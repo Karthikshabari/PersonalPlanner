@@ -1,0 +1,8 @@
+targets:
+  $default:
+    builders:
+      drift_dev|drift_dev:
+        options:
+          store_date_time_values_as_text: true
+      freezed|freezed:
+        enabled: true
