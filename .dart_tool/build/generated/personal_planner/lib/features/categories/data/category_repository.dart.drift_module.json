@@ -1,0 +1,9 @@
+{
+  "elements": {},
+  "imports": [
+    "package:drift/drift.dart",
+    "package:personal_planner/core/database/app_database.dart",
+    "package:personal_planner/core/models/category.dart",
+    "package:personal_planner/core/utils/uuid.dart"
+  ]
+}

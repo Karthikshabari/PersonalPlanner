@@ -1,0 +1,70 @@
+{
+  "elements": {
+    "AppDatabase": {
+      "id": {
+        "library_uri": "package:personal_planner/core/database/app_database.dart",
+        "name": "AppDatabase"
+      },
+      "declaration": {
+        "source_uri": "package:personal_planner/core/database/app_database.dart",
+        "offset": 486,
+        "name": "AppDatabase"
+      },
+      "references": [
+        {
+          "library_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+          "name": "tasks"
+        },
+        {
+          "library_uri": "package:personal_planner/core/database/tables/categories_table.dart",
+          "name": "categories"
+        },
+        {
+          "library_uri": "package:personal_planner/core/database/tables/app_settings_table.dart",
+          "name": "app_settings"
+        }
+      ],
+      "type": "database",
+      "tables": [
+        {
+          "library_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+          "name": "tasks"
+        },
+        {
+          "library_uri": "package:personal_planner/core/database/tables/categories_table.dart",
+          "name": "categories"
+        },
+        {
+          "library_uri": "package:personal_planner/core/database/tables/app_settings_table.dart",
+          "name": "app_settings"
+        }
+      ],
+      "views": [],
+      "includes": [],
+      "queries": [],
+      "schema_version": 1,
+      "daos": [
+        {
+          "library_uri": "package:personal_planner/core/database/daos/task_dao.dart",
+          "name": "TaskDao"
+        },
+        {
+          "library_uri": "package:personal_planner/core/database/daos/category_dao.dart",
+          "name": "CategoryDao"
+        }
+      ],
+      "has_constructor_arg": true
+    }
+  },
+  "imports": [
+    "package:drift/drift.dart",
+    "package:drift/native.dart",
+    "package:path/path.dart",
+    "package:path_provider/path_provider.dart",
+    "package:personal_planner/core/database/daos/category_dao.dart",
+    "package:personal_planner/core/database/daos/task_dao.dart",
+    "package:personal_planner/core/database/tables/app_settings_table.dart",
+    "package:personal_planner/core/database/tables/categories_table.dart",
+    "package:personal_planner/core/database/tables/tasks_table.dart"
+  ]
+}

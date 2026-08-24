@@ -1,0 +1,8 @@
+{
+  "elements": {},
+  "imports": [
+    "package:flutter/material.dart",
+    "package:personal_planner/core/router/app_router.dart",
+    "package:personal_planner/core/theme/app_theme.dart"
+  ]
+}

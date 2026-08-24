@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/CMakeFiles/sqlite3-populate-complete.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-build.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-configure.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-download.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-install.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-mkdir.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-patch.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-test.rule"
+		},
+		{
+			"file" : "/home/karthik-shabari/Documents/PersonalPlanner/build/linux/x64/debug/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/sqlite3-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"sqlite3-populate"
+		],
+		"name" : "sqlite3-populate"
+	}
+}

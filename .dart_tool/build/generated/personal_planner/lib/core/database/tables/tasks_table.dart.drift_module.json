@@ -1,0 +1,635 @@
+{
+  "elements": {
+    "tasks": {
+      "id": {
+        "library_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+        "name": "tasks"
+      },
+      "declaration": {
+        "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+        "offset": 98,
+        "name": "Tasks"
+      },
+      "references": [],
+      "type": "table",
+      "columns": [
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": false,
+          "nameInSql": "id",
+          "nameInDart": "id",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 137,
+            "name": "id"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": false,
+          "nameInSql": "title",
+          "nameInDart": "title",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 170,
+            "name": "title"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [
+            {
+              "type": "limit_text_length",
+              "min_length": 1,
+              "max_length": 500
+            }
+          ],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "description",
+          "nameInDart": "description",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 235,
+            "name": "description"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "start_time",
+          "nameInDart": "startTime",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 288,
+            "name": "startTime"
+          },
+          "typeConverter": {
+            "expression": {
+              "elements": [
+                "const ",
+                {
+                  "lexeme": "NullableDateTimeUtcConverter",
+                  "import_uri": "package:personal_planner/core/database/converters.dart"
+                },
+                "()"
+              ]
+            },
+            "dart_type": 0,
+            "json_type": null,
+            "sql_type": {
+              "builtin": "string"
+            },
+            "dart_type_is_nullable": true,
+            "sql_type_is_nullable": true,
+            "json_type_is_nullable": false,
+            "is_drift_enum_converter": false
+          },
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "end_time",
+          "nameInDart": "endTime",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 381,
+            "name": "endTime"
+          },
+          "typeConverter": {
+            "expression": {
+              "elements": [
+                "const ",
+                {
+                  "lexeme": "NullableDateTimeUtcConverter",
+                  "import_uri": "package:personal_planner/core/database/converters.dart"
+                },
+                "()"
+              ]
+            },
+            "dart_type": 1,
+            "json_type": null,
+            "sql_type": {
+              "builtin": "string"
+            },
+            "dart_type_is_nullable": true,
+            "sql_type_is_nullable": true,
+            "json_type_is_nullable": false,
+            "is_drift_enum_converter": false
+          },
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "int"
+          },
+          "nullable": true,
+          "nameInSql": "estimated_duration_min",
+          "nameInDart": "estimatedDurationMin",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 471,
+            "name": "estimatedDurationMin"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "int"
+          },
+          "nullable": true,
+          "nameInSql": "actual_duration_min",
+          "nameInDart": "actualDurationMin",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 535,
+            "name": "actualDurationMin"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "category_id",
+          "nameInDart": "categoryId",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 597,
+            "name": "categoryId"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "int"
+          },
+          "nullable": false,
+          "nameInSql": "priority",
+          "nameInDart": "priority",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 648,
+            "name": "priority"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": {
+            "elements": [
+              "const ",
+              {
+                "lexeme": "Constant",
+                "import_uri": "package:drift/src/runtime/query_builder/query_builder.dart"
+              },
+              "(0)"
+            ]
+          },
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": false,
+          "nameInSql": "status",
+          "nameInDart": "status",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 721,
+            "name": "status"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": {
+            "elements": [
+              "const ",
+              {
+                "lexeme": "Constant",
+                "import_uri": "package:drift/src/runtime/query_builder/query_builder.dart"
+              },
+              "('planned')"
+            ]
+          },
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "notes",
+          "nameInDart": "notes",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 797,
+            "name": "notes"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "recurring_rule_id",
+          "nameInDart": "recurringRuleId",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 844,
+            "name": "recurringRuleId"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "rescheduled_from_id",
+          "nameInDart": "rescheduledFromId",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 901,
+            "name": "rescheduledFromId"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "rescheduled_to_id",
+          "nameInDart": "rescheduledToId",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 960,
+            "name": "rescheduledToId"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "bool"
+          },
+          "nullable": false,
+          "nameInSql": "is_inbox",
+          "nameInDart": "isInbox",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1017,
+            "name": "isInbox"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": {
+            "elements": [
+              "const ",
+              {
+                "lexeme": "Constant",
+                "import_uri": "package:drift/src/runtime/query_builder/query_builder.dart"
+              },
+              "(false)"
+            ]
+          },
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "missed_at",
+          "nameInDart": "missedAt",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1093,
+            "name": "missedAt"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": false,
+          "nameInSql": "created_at",
+          "nameInDart": "createdAt",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1143,
+            "name": "createdAt"
+          },
+          "typeConverter": {
+            "expression": {
+              "elements": [
+                "const ",
+                {
+                  "lexeme": "DateTimeUtcConverter",
+                  "import_uri": "package:personal_planner/core/database/converters.dart"
+                },
+                "()"
+              ]
+            },
+            "dart_type": 2,
+            "json_type": null,
+            "sql_type": {
+              "builtin": "string"
+            },
+            "dart_type_is_nullable": false,
+            "sql_type_is_nullable": false,
+            "json_type_is_nullable": false,
+            "is_drift_enum_converter": false
+          },
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": false,
+          "nameInSql": "updated_at",
+          "nameInDart": "updatedAt",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1217,
+            "name": "updatedAt"
+          },
+          "typeConverter": {
+            "expression": {
+              "elements": [
+                "const ",
+                {
+                  "lexeme": "DateTimeUtcConverter",
+                  "import_uri": "package:personal_planner/core/database/converters.dart"
+                },
+                "()"
+              ]
+            },
+            "dart_type": 3,
+            "json_type": null,
+            "sql_type": {
+              "builtin": "string"
+            },
+            "dart_type_is_nullable": false,
+            "sql_type_is_nullable": false,
+            "json_type_is_nullable": false,
+            "is_drift_enum_converter": false
+          },
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "string"
+          },
+          "nullable": true,
+          "nameInSql": "deleted_at",
+          "nameInDart": "deletedAt",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1291,
+            "name": "deletedAt"
+          },
+          "typeConverter": {
+            "expression": {
+              "elements": [
+                "const ",
+                {
+                  "lexeme": "NullableDateTimeUtcConverter",
+                  "import_uri": "package:personal_planner/core/database/converters.dart"
+                },
+                "()"
+              ]
+            },
+            "dart_type": 4,
+            "json_type": null,
+            "sql_type": {
+              "builtin": "string"
+            },
+            "dart_type_is_nullable": true,
+            "sql_type_is_nullable": true,
+            "json_type_is_nullable": false,
+            "is_drift_enum_converter": false
+          },
+          "clientDefaultCode": null,
+          "defaultArgument": null,
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "int"
+          },
+          "nullable": false,
+          "nameInSql": "sync_status",
+          "nameInDart": "syncStatus",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1383,
+            "name": "syncStatus"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": {
+            "elements": [
+              "const ",
+              {
+                "lexeme": "Constant",
+                "import_uri": "package:drift/src/runtime/query_builder/query_builder.dart"
+              },
+              "(0)"
+            ]
+          },
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        },
+        {
+          "sqlType": {
+            "builtin": "int"
+          },
+          "nullable": false,
+          "nameInSql": "revision",
+          "nameInDart": "revision",
+          "declaration": {
+            "source_uri": "package:personal_planner/core/database/tables/tasks_table.dart",
+            "offset": 1457,
+            "name": "revision"
+          },
+          "typeConverter": null,
+          "clientDefaultCode": null,
+          "defaultArgument": {
+            "elements": [
+              "const ",
+              {
+                "lexeme": "Constant",
+                "import_uri": "package:drift/src/runtime/query_builder/query_builder.dart"
+              },
+              "(1)"
+            ]
+          },
+          "overriddenJsonName": null,
+          "referenceName": null,
+          "documentationComment": null,
+          "constraints": [],
+          "customConstraints": null
+        }
+      ],
+      "existing_data_class": null,
+      "table_constraints": [
+        {
+          "type": "primary_key",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "custom_parent_class": null,
+      "interfaces_for_row_class": [],
+      "fixed_entity_info_name": null,
+      "base_dart_name": "Tasks",
+      "row_class_name": "TaskRow",
+      "companion_class_name": null,
+      "without_rowid": false,
+      "strict": false,
+      "write_default_constraints": true,
+      "custom_constraints": [],
+      "attached_indices": []
+    }
+  },
+  "imports": [
+    "package:drift/drift.dart",
+    "package:personal_planner/core/database/converters.dart"
+  ]
+}

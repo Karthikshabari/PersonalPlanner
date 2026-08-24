@@ -1,0 +1,9 @@
+{
+  "elements": {},
+  "imports": [
+    "package:flutter_riverpod/flutter_riverpod.dart",
+    "package:personal_planner/core/database/app_database.dart",
+    "package:personal_planner/features/categories/data/category_repository.dart",
+    "package:personal_planner/features/timeline/data/task_repository.dart"
+  ]
+}

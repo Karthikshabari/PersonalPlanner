@@ -1,0 +1,6 @@
+{
+  "elements": {},
+  "imports": [
+    "package:uuid/uuid.dart"
+  ]
+}

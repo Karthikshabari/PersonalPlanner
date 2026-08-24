@@ -1,0 +1,1 @@
+{"valid_import":true,"imports":[{"uri":"package:flutter_riverpod/flutter_riverpod.dart","transitive":false},{"uri":"package:personal_planner/features/data/category_repository.dart","transitive":false},{"uri":"package:personal_planner/core/providers/database_provider.dart","transitive":false}],"elements":[]}

@@ -1,0 +1,12 @@
+{
+  "elements": {},
+  "imports": [
+    "package:flutter/material.dart",
+    "package:flutter_riverpod/flutter_riverpod.dart",
+    "package:personal_planner/core/constants/app_constants.dart",
+    "package:personal_planner/features/task_editor/presentation/screens/task_editor_panel.dart",
+    "package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart",
+    "package:personal_planner/features/timeline/presentation/widgets/day_header.dart",
+    "package:personal_planner/features/timeline/presentation/widgets/timeline_widget.dart"
+  ]
+}

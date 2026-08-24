@@ -1,0 +1,9 @@
+{
+  "elements": {},
+  "imports": [
+    "package:flutter/material.dart",
+    "package:flutter/services.dart",
+    "package:personal_planner/core/theme/app_colors.dart",
+    "package:personal_planner/core/theme/app_spacing.dart"
+  ]
+}

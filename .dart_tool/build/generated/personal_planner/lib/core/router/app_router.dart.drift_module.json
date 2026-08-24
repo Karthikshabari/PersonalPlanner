@@ -1,0 +1,10 @@
+{
+  "elements": {},
+  "imports": [
+    "package:go_router/go_router.dart",
+    "package:personal_planner/features/categories/presentation/screens/categories_screen.dart",
+    "package:personal_planner/features/settings/presentation/screens/settings_screen.dart",
+    "package:personal_planner/features/timeline/presentation/screens/day_view_screen.dart",
+    "package:personal_planner/core/widgets/adaptive_shell.dart"
+  ]
+}

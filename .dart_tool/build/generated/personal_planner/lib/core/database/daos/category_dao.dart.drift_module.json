@@ -1,0 +1,52 @@
+{
+  "elements": {
+    "CategoryDao": {
+      "id": {
+        "library_uri": "package:personal_planner/core/database/daos/category_dao.dart",
+        "name": "CategoryDao"
+      },
+      "declaration": {
+        "source_uri": "package:personal_planner/core/database/daos/category_dao.dart",
+        "offset": 182,
+        "name": "CategoryDao"
+      },
+      "references": [
+        {
+          "library_uri": "package:personal_planner/core/database/tables/categories_table.dart",
+          "name": "categories"
+        }
+      ],
+      "type": "dao",
+      "tables": [
+        {
+          "library_uri": "package:personal_planner/core/database/tables/categories_table.dart",
+          "name": "categories"
+        }
+      ],
+      "views": [],
+      "includes": [],
+      "queries": [],
+      "dart_type": {
+        "elements": [
+          {
+            "lexeme": "CategoryDao",
+            "import_uri": "package:personal_planner/core/database/daos/category_dao.dart"
+          }
+        ]
+      },
+      "database": {
+        "elements": [
+          {
+            "lexeme": "AppDatabase",
+            "import_uri": "package:personal_planner/core/database/app_database.dart"
+          }
+        ]
+      }
+    }
+  },
+  "imports": [
+    "package:drift/drift.dart",
+    "package:personal_planner/core/database/app_database.dart",
+    "package:personal_planner/core/database/tables/categories_table.dart"
+  ]
+}

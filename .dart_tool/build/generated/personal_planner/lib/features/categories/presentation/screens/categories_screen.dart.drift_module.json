@@ -1,0 +1,10 @@
+{
+  "elements": {},
+  "imports": [
+    "package:flutter/material.dart",
+    "package:flutter_riverpod/flutter_riverpod.dart",
+    "package:personal_planner/core/theme/app_colors.dart",
+    "package:personal_planner/core/theme/app_spacing.dart",
+    "package:personal_planner/features/categories/providers/category_providers.dart"
+  ]
+}

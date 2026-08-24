@@ -1,0 +1,26 @@
+{
+  "assets": {},
+  "config": {
+    "build_asset_types": [
+      "code_assets/code"
+    ],
+    "extensions": {
+      "code_assets": {
+        "c_compiler": {
+          "ar": "/usr/bin/ar",
+          "cc": "/usr/lib/llvm-18/bin/clang",
+          "ld": "/usr/bin/ld"
+        },
+        "link_mode_preference": "dynamic",
+        "target_architecture": "x64",
+        "target_os": "linux"
+      }
+    },
+    "linking_enabled": false
+  },
+  "out_dir_shared": "/home/karthik-shabari/Documents/PersonalPlanner/.dart_tool/hooks_runner/shared/objective_c/build/",
+  "out_file": "/home/karthik-shabari/Documents/PersonalPlanner/.dart_tool/hooks_runner/objective_c/c3dea15f32/output.json",
+  "package_name": "objective_c",
+  "package_root": "/home/karthik-shabari/.pub-cache/hosted/pub.dev/objective_c-9.5.0/",
+  "user_defines": {}
+}

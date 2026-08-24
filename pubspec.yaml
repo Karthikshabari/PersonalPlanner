@@ -1,0 +1,52 @@
+name: personal_planner
+description: "Personal Planner — offline-first day planner for Ubuntu desktop and Android."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^3.0.0
+  riverpod_annotation: ^3.0.0
+
+  # Database (Drift + SQLite)
+  drift: ^2.28.0
+  sqlite3_flutter_libs: ^0.5.32
+  sqlite3: ^2.7.0
+
+  # Models
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+
+  # Routing
+  go_router: ^16.0.0
+
+  # Utilities
+  uuid: ^4.5.1
+  intl: ^0.20.0
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Code generation
+  build_runner: ^2.4.15
+  drift_dev: ^2.28.0
+  riverpod_generator: ^3.0.0
+  freezed: ^3.0.6
+  json_serializable: ^6.9.5
+
+flutter:
+  uses-material-design: true

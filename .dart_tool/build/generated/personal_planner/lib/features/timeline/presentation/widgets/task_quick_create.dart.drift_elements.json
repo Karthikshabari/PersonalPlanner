@@ -1,0 +1,1 @@
+{"valid_import":true,"imports":[{"uri":"package:flutter/material.dart","transitive":false},{"uri":"package:flutter/services.dart","transitive":false},{"uri":"package:personal_planner/core/theme/app_colors.dart","transitive":false},{"uri":"package:personal_planner/core/theme/app_spacing.dart","transitive":false}],"elements":[]}

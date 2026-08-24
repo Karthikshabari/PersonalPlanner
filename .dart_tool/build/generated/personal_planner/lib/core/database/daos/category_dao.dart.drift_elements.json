@@ -1,0 +1,1 @@
+{"valid_import":true,"imports":[{"uri":"package:drift/drift.dart","transitive":false},{"uri":"package:personal_planner/core/database/app_database.dart","transitive":false},{"uri":"package:personal_planner/core/database/tables/categories_table.dart","transitive":false}],"elements":[{"kind":"databaseAccessor","name":"CategoryDao","dart_name":"CategoryDao"}]}
