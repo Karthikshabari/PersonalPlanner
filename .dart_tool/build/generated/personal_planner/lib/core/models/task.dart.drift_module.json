@@ -1,8 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:freezed_annotation/freezed_annotation.dart",
-    "package:personal_planner/core/models/enums/priority.dart",
-    "package:personal_planner/core/models/enums/task_status.dart"
-  ]
-}

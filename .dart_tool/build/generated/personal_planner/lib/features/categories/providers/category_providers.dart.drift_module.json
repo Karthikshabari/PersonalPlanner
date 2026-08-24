@@ -1,8 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:flutter_riverpod/flutter_riverpod.dart",
-    "package:personal_planner/features/data/category_repository.dart",
-    "package:personal_planner/core/providers/database_provider.dart"
-  ]
-}

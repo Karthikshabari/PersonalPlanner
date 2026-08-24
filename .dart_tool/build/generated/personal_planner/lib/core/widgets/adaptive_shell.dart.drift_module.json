@@ -1,8 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:flutter/material.dart",
-    "package:go_router/go_router.dart",
-    "package:personal_planner/core/constants/app_constants.dart"
-  ]
-}

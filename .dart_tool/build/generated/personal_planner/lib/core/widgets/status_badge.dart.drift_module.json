@@ -1,9 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:flutter/material.dart",
-    "package:personal_planner/core/models/enums/task_status.dart",
-    "package:personal_planner/core/theme/app_colors.dart",
-    "package:personal_planner/core/theme/app_spacing.dart"
-  ]
-}

@@ -1,8 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:flutter/material.dart",
-    "package:go_router/go_router.dart",
-    "package:personal_planner/core/theme/app_spacing.dart"
-  ]
-}

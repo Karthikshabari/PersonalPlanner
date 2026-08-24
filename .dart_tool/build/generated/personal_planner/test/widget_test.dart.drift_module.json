@@ -1,8 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:flutter/material.dart",
-    "package:flutter_test/flutter_test.dart",
-    "package:personal_planner/main.dart"
-  ]
-}

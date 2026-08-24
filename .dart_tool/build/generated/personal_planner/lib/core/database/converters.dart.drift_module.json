@@ -1,6 +1,0 @@
-{
-  "elements": {},
-  "imports": [
-    "package:drift/drift.dart"
-  ]
-}
