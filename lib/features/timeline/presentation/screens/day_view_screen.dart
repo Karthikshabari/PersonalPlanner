@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../inbox/presentation/widgets/inbox_sidebar.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/overlap_flags_provider.dart';
+import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../providers/day_view_controller.dart';
+import '../../../recurring/providers/recurring_providers.dart';
 import '../providers/undo_stack_provider.dart';
 import '../widgets/day_header.dart';
 import '../widgets/timeline_widget.dart';
@@ -24,6 +28,10 @@ class DayViewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Materialize recurring rules for the viewed date (Chunk 4 #3). Watching
+    // the provider keeps the work alive and re-runs when the date changes.
+    final selectedDate = ref.watch(selectedDateProvider);
+    ref.watch(dayMaterializationProvider(selectedDate));
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
@@ -37,6 +45,12 @@ class DayViewScreen extends ConsumerWidget {
             _deleteSelected(context, ref),
         const SingleActivator(LogicalKeyboardKey.backspace): () =>
             _deleteSelected(context, ref),
+        // Chunk 5 navigation shortcuts: W toggles Day ↔ Week, Ctrl+R opens
+        // the Daily Review for today.
+        const SingleActivator(LogicalKeyboardKey.keyW): () =>
+            _toggleWeekView(context),
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () =>
+            _openDailyReview(context),
       },
       child: Focus(
         autofocus: true,
@@ -62,6 +76,7 @@ class DayViewScreen extends ConsumerWidget {
                       ],
                     ),
                   ),
+                  InboxSidebar(),
                 ],
               );
             }
@@ -126,5 +141,15 @@ class DayViewScreen extends ConsumerWidget {
     final task = _selectedTask(ref);
     if (task == null) return;
     TimelineActions.deleteWithConfirmation(context, ref, task);
+  }
+
+  void _toggleWeekView(BuildContext context) {
+    if (_isEditingText()) return;
+    GoRouter.of(context).go('/week');
+  }
+
+  void _openDailyReview(BuildContext context) {
+    if (_isEditingText()) return;
+    GoRouter.of(context).go('/review');
   }
 }

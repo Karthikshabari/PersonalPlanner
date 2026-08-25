@@ -4,14 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/models/enums/task_status.dart';
+import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
+import '../../../inbox/providers/inbox_provider.dart';
 import '../../domain/commands/create_task_command.dart';
 import '../../domain/commands/batch_command.dart';
 import '../../domain/commands/move_task_command.dart';
@@ -440,7 +443,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final dragTaskId = _drag?.task.id;
     final resizeTaskId = _resize?.task.id;
 
-    return GestureDetector(
+    return DragTarget<InboxItem>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (details) =>
+          _handleInboxDrop(details.data, details.offset),
+      builder: (context, candidateItems, rejectedItems) => GestureDetector(
       key: const ValueKey('timeline-gestures'),
       behavior: HitTestBehavior.translucent,
       onDoubleTapDown: _handleDoubleTapDown,
@@ -500,7 +507,36 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           ),
         ],
       ),
+      ),
     );
+  }
+
+  /// Handles a drop from the Inbox (Flows 5 & 6): explicit items are
+  /// scheduled at the snapped drop position; overdue items are rescheduled
+  /// (original → rescheduled, linked copy created).
+  Future<void> _handleInboxDrop(InboxItem item, Offset globalPosition) async {
+    final box = context.findRenderObject() as RenderBox;
+    final local = box.globalToLocal(globalPosition);
+    final grid = _gridMinutes;
+    final contentY = (local.dy + _scrollController.offset).clamp(0.0, _totalHeight);
+    var minutes = (contentY / _pixelsPerMinute).round();
+    minutes = (minutes ~/ grid) * grid;
+    minutes = minutes.clamp(0, Duration.minutesPerDay - grid);
+
+    final date = ref.read(selectedDateProvider);
+    final start =
+        snapToGrid(date.add(Duration(minutes: minutes)), grid);
+    if (!isSameDay(start, date)) return;
+    final end = start.add(Duration(minutes: grid));
+
+    final repo = ref.read(inboxRepositoryProvider);
+    if (item.isOverdue) {
+      await repo.rescheduleOverdue(item.task.id, start, end);
+      if (mounted) showAppToast(context, 'Rescheduled to ${start.hour}:${start.minute.toString().padLeft(2, '0')}');
+    } else {
+      await repo.scheduleItem(item.task.id, start, end);
+      if (mounted) showAppToast(context, 'Scheduled');
+    }
   }
 
   bool _startsAtOrBefore(Task a, Task b) =>

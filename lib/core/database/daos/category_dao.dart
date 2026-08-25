@@ -21,7 +21,9 @@ class CategoryDao extends DatabaseAccessor<AppDatabase>
       (select(categories)..where((c) => c.id.equals(id))).getSingleOrNull();
 
   Future<List<CategoryRow>> getActiveCategories() =>
-      (select(categories)..where((c) => c.deletedAt.isNull()))
+      (select(categories)
+            ..where((c) => c.deletedAt.isNull())
+            ..orderBy([(c) => OrderingTerm.asc(c.sortOrder)]))
           .get();
 
   Future<void> insertCategory(CategoriesCompanion entry) =>

@@ -9,18 +9,35 @@ part 'task_dao.g.dart';
 class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   TaskDao(super.db);
 
-  Stream<List<TaskRow>> watchTasksForDay(DateTime day) {
-    final dayStartUtc = _iso(day);
-    final dayEndUtc = _iso(day.add(const Duration(days: 1)));
-    return (select(tasks)
-          ..where((t) =>
-              t.deletedAt.isNull() &
-              t.isInbox.equals(false) &
-              t.startTime.isBiggerOrEqualValue(dayStartUtc) &
-              t.startTime.isSmallerThanValue(dayEndUtc))
-          ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
-        .watch();
-  }
+  Stream<List<TaskRow>> watchTasksForDay(DateTime day) =>
+      (select(tasks)..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day))))
+          .watch();
+
+  /// One-shot variant of [watchTasksForDay] used by stats computation
+  /// (planner.md Chunk 5 #9).
+  Future<List<TaskRow>> getTasksForDay(DateTime day) =>
+      (select(tasks)..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day))))
+          .get();
+
+  /// Scheduled non-deleted tasks starting within [start, end) — used for
+  /// week-level aggregation.
+  Future<List<TaskRow>> getTasksBetween(DateTime start, DateTime end) =>
+      (select(tasks)
+            ..where((t) => _dayFilter(t, start, dayEnd: end))
+            ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
+          .get();
+
+  Expression<bool> _dayFilter(
+    Tasks t,
+    DateTime dayStart, {
+    required DateTime dayEnd,
+  }) =>
+      t.deletedAt.isNull() &
+      t.isInbox.equals(false) &
+      t.startTime.isBiggerOrEqualValue(_iso(dayStart)) &
+      t.startTime.isSmallerThanValue(_iso(dayEnd));
+
+  DateTime _nextDay(DateTime day) => day.add(const Duration(days: 1));
 
   Future<TaskRow?> getTaskById(String id) =>
       (select(tasks)..where((t) => t.id.equals(id))).getSingleOrNull();

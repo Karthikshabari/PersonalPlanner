@@ -46,14 +46,14 @@ class TaskRepository {
   }
 
   Stream<List<Task>> watchTasksForDay(DateTime date) =>
-      _dao.watchTasksForDay(date).map((rows) => rows.map(_fromRow).toList());
+      _dao.watchTasksForDay(date).map((rows) => rows.map(TaskRepository.fromRow).toList());
 
   Future<Task?> getTaskById(String taskId) async {
     final row = await _dao.getTaskById(taskId);
-    return row == null ? null : _fromRow(row);
+    return row == null ? null : fromRow(row);
   }
 
-  static Task _fromRow(TaskRow row) => Task(
+  static Task fromRow(TaskRow row) => Task(
         id: row.id,
         title: row.title,
         description: row.description,

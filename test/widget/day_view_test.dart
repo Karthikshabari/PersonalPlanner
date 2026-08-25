@@ -8,6 +8,7 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/theme/app_colors.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/task_quick_create.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
 
 import '../helpers/test_container.dart';
@@ -53,7 +54,11 @@ void main() {
     await settle(tester);
     expect(find.text('Task title…'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), 'Deep Work');
+    await tester.enterText(
+        find.descendant(
+            of: find.byType(TaskQuickCreate),
+            matching: find.byType(TextField)),
+        'Deep Work');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 
@@ -160,6 +165,14 @@ void main() {
     );
     await tester.enterText(notesField, 'Some notes');
 
+    // The editor content scrolls (subtasks/tags sections); bring Save into
+    // view before tapping.
+    await tester.scrollUntilVisible(
+      find.text('Save'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await settle(tester);
     await tester.tap(find.text('Save'));
     await settle(tester);
 

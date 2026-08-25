@@ -31,6 +31,17 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           Card(
             child: ListTile(
+              key: const ValueKey('templates-tile'),
+              leading: const Icon(Icons.bookmark_border_outlined),
+              title: const Text('Task Templates'),
+              subtitle: const Text('Reusable task presets'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/templates'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Card(
+            child: ListTile(
               key: const ValueKey('grid-interval-tile'),
               leading: const Icon(Icons.grid_on_outlined),
               title: const Text('Timeline grid interval'),
