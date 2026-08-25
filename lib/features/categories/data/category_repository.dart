@@ -35,7 +35,27 @@ class CategoryRepository {
   }
 
   Future<void> deleteCategory(String categoryId) async {
+    // Per planner.md Chunk 3 #6: deleting a category sets tasks in it to
+    // category = null instead of deleting them.
+    await _db.customStatement(
+      'UPDATE tasks SET category_id = NULL, updated_at = ? '
+      'WHERE category_id = ? AND deleted_at IS NULL',
+      [DateTime.now().toUtc().toIso8601String(), categoryId],
+    );
     await _dao.softDeleteCategory(categoryId, DateTime.now());
+  }
+
+  /// Persists a new sort order for the category list.
+  Future<void> reorderCategories(List<String> orderedIds) async {
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      for (var i = 0; i < orderedIds.length; i++) {
+        await (_db.update(_db.categories)
+              ..where((c) => c.id.equals(orderedIds[i])))
+            .write(CategoriesCompanion(
+                sortOrder: Value(i), updatedAt: Value(now)));
+      }
+    });
   }
 
   Future<Category?> getCategoryById(String categoryId) async {

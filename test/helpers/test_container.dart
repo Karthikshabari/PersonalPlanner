@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +59,15 @@ Future<void> teardownApp(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
+  await tester.pump(const Duration(milliseconds: 100));
+}
+
+/// Resets platform overrides and pumps the customary end-of-test frame.
+Future<void> finish(
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
+  debugDefaultTargetPlatformOverride = null;
   await tester.pump(const Duration(milliseconds: 100));
 }
 

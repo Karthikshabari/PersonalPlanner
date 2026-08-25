@@ -9,3 +9,12 @@ final dayTasksProvider = StreamProvider<List<Task>>((ref) {
   final repo = ref.watch(taskRepositoryProvider);
   return repo.watchTasksForDay(date);
 });
+
+/// Tasks for an explicit date, independent of [selectedDateProvider] — used
+/// by surfaces that show other days (Week View columns, Daily Review
+/// mini-timeline).
+final dayTasksForDateProvider =
+    StreamProvider.autoDispose.family<List<Task>, DateTime>((ref, date) {
+  final normalized = DateTime(date.year, date.month, date.day);
+  return ref.watch(taskRepositoryProvider).watchTasksForDay(normalized);
+});

@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category.dart';
 import '../models/task.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/duration_utils.dart';
+import '../../features/task_editor/providers/subtask_providers.dart';
 import 'status_badge.dart';
 
-class TaskBlockWidget extends StatelessWidget {
+class TaskBlockWidget extends ConsumerWidget {
   final Task task;
   final Category? category;
   final bool selected;
@@ -30,10 +32,18 @@ class TaskBlockWidget extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final categoryColor =
         category == null ? null : AppColors.parseHex(category!.colorHex);
     final duration = task.scheduledDuration;
+    // "2/4" completion count; only rendered when the task has subtasks.
+    final subtasksAsync = ref.watch(subtasksForTaskProvider(task.id));
+    final subtaskCount = subtasksAsync.maybeWhen(
+      data: (subtasks) => subtasks.isEmpty
+          ? null
+          : '${subtasks.where((s) => s.isCompleted).length}/${subtasks.length}',
+      orElse: () => null,
+    );
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -135,6 +145,33 @@ class TaskBlockWidget extends StatelessWidget {
                       Icons.warning_amber_rounded,
                       size: 13,
                       color: AppColors.warning,
+                    ),
+                  ),
+                // Recurring-series marker (Chunk 4 #14): small ↻ in the
+                // corner; the overlap warning wins when both apply.
+                if (task.recurringRuleId != null && !hasOverlap)
+                  Positioned(
+                    top: 0,
+                    right: 2,
+                    child: Icon(
+                      key: const ValueKey('recurring-indicator'),
+                      Icons.refresh,
+                      size: 13,
+                      color: AppColors.textSecondaryDark,
+                    ),
+                  ),
+                if (subtaskCount != null)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Text(
+                      subtaskCount,
+                      key: const ValueKey('subtask-count'),
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: AppColors.textSecondaryDark,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
               ],

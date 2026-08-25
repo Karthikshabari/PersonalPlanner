@@ -10,6 +10,13 @@ class AdaptiveShell extends StatelessWidget {
 
   static const _destinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
+    ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
+    (
+      '/inbox',
+      Icons.inbox_outlined,
+      Icons.inbox,
+      'Inbox'
+    ),
     (
       '/categories',
       Icons.label_outline,

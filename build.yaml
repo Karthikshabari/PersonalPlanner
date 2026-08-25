@@ -6,3 +6,9 @@ targets:
           store_date_time_values_as_text: true
       freezed|freezed:
         enabled: true
+        options:
+          # Workaround for freezed#1352: with Dart >= 3.13 the generated
+          # `final` on collection-typed parameters is a syntax error. Our
+          # models treat lists as immutable values, so the unmodifiable
+          # wrapper is not needed.
+          make_collections_unmodifiable: false
