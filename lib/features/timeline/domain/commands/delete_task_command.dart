@@ -1,6 +1,7 @@
 import '../../../../core/models/task.dart';
 import '../../data/task_repository.dart';
 import 'scheduling_command.dart';
+import 'task_aggregate_snapshot.dart';
 
 /// execute: soft-delete (deleted_at = now); undo: restore the task from the
 /// snapshot taken before deletion.
@@ -9,6 +10,7 @@ class DeleteTaskCommand implements SchedulingCommand {
 
   /// Immutable snapshot of the task before deletion.
   final Task original;
+  TaskAggregateSnapshot? _snapshot;
 
   DeleteTaskCommand({
     required this.repository,
@@ -20,18 +22,16 @@ class DeleteTaskCommand implements SchedulingCommand {
 
   @override
   Future<void> execute() async {
-    await repository.deleteTask(original.id);
+    _snapshot ??= await TaskAggregateSnapshot.capture(
+      repository.database,
+      original.id,
+    );
+    await _snapshot?.softDelete(repository.database);
   }
 
   @override
   Future<void> undo() async {
-    final current = await repository.getTaskById(original.id);
-    if (current == null) {
-      // Row was hard-deleted externally — recreate from the snapshot.
-      final restored = await repository.insertTask(original);
-      assert(restored.id == original.id);
-      return;
-    }
-    await repository.updateTask(original.copyWith(deletedAt: null));
+    final snapshot = _snapshot;
+    if (snapshot != null) await snapshot.restore(repository.database);
   }
 }

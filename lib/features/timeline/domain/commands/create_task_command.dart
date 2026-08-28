@@ -1,13 +1,15 @@
 import '../../../../core/models/task.dart';
 import '../../data/task_repository.dart';
 import 'scheduling_command.dart';
+import 'task_aggregate_snapshot.dart';
 
-/// execute: INSERT the task; undo: hard-delete it (so redo can re-insert
-/// with the same deterministic UUIDv7 id).
+/// Creation Undo is a reversible aggregate tombstone. Redo restores the same
+/// task id and any subtasks/tags attached before Undo.
 class CreateTaskCommand implements SchedulingCommand {
   final TaskRepository repository;
   final Task _task;
   Task? _created;
+  TaskAggregateSnapshot? _snapshot;
 
   CreateTaskCommand(this.repository, this._task);
 
@@ -16,6 +18,12 @@ class CreateTaskCommand implements SchedulingCommand {
 
   @override
   Future<void> execute() async {
+    final snapshot = _snapshot;
+    if (snapshot != null) {
+      await snapshot.restore(repository.database);
+      _created = TaskRepository.fromRow(snapshot.task);
+      return;
+    }
     _created = await repository.insertTask(_task);
   }
 
@@ -23,7 +31,10 @@ class CreateTaskCommand implements SchedulingCommand {
   Future<void> undo() async {
     final created = _created;
     if (created == null) return;
-    await repository.hardDeleteTask(created.id);
-    _created = null;
+    _snapshot = await TaskAggregateSnapshot.capture(
+      repository.database,
+      created.id,
+    );
+    await _snapshot?.softDelete(repository.database);
   }
 }

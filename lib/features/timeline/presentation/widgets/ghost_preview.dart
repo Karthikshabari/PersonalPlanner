@@ -33,7 +33,7 @@ class GhostPreview extends StatelessWidget {
       top: topPx,
       left: left,
       right: right,
-      height: heightPx.clamp(24.0, double.infinity),
+      height: heightPx.clamp(1.0, double.infinity),
       child: IgnorePointer(
         child: Opacity(
           opacity: 0.55,

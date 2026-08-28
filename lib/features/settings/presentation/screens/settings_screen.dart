@@ -31,12 +31,34 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           Card(
             child: ListTile(
+              key: const ValueKey('tags-tile'),
+              leading: const Icon(Icons.sell_outlined),
+              title: const Text('Tags'),
+              subtitle: const Text('Manage task tags'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/settings/tags'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Card(
+            child: ListTile(
               key: const ValueKey('templates-tile'),
               leading: const Icon(Icons.bookmark_border_outlined),
               title: const Text('Task Templates'),
               subtitle: const Text('Reusable task presets'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.go('/templates'),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Card(
+            child: ListTile(
+              key: const ValueKey('notifications-tile'),
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('Notifications'),
+              subtitle: const Text('Daily review reminder'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/settings/notifications'),
             ),
           ),
           const SizedBox(height: AppSpacing.sm),

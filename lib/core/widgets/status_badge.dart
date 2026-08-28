@@ -13,7 +13,7 @@ class StatusBadge extends StatelessWidget {
   static TaskStatus nextStatus(TaskStatus current) => switch (current) {
         TaskStatus.planned => TaskStatus.inProgress,
         TaskStatus.inProgress => TaskStatus.completed,
-        _ => TaskStatus.planned,
+        _ => current,
       };
 
   @override

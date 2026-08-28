@@ -1,9 +1,14 @@
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/timeline/domain/commands/batch_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/command_history.dart';
 import 'package:personal_planner/features/timeline/domain/commands/scheduling_command.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/undo_stack_provider.dart';
+
+import '../../helpers/sqlite_setup.dart';
 
 class FakeCommand implements SchedulingCommand {
   final String name;
@@ -69,15 +74,21 @@ void main() {
 
   group('UndoStackNotifier', () {
     late ProviderContainer container;
+    late AppDatabase database;
     late List<String> log;
 
     setUp(() {
+      setupSqliteForTests();
       log = [];
-      container = ProviderContainer();
+      database = AppDatabase(NativeDatabase.memory());
+      container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWithValue(database)],
+      );
     });
 
     tearDown(() async {
       container.dispose();
+      await database.close();
     });
 
     test('execute → undo → redo round trip', () async {

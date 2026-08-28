@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../utils/duration_utils.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
+import '../../features/timer/providers/timer_providers.dart';
 import 'status_badge.dart';
 
 class TaskBlockWidget extends ConsumerWidget {
@@ -44,6 +45,14 @@ class TaskBlockWidget extends ConsumerWidget {
           : '${subtasks.where((s) => s.isCompleted).length}/${subtasks.length}',
       orElse: () => null,
     );
+    // Live timer display (Chunk 6 #7): ticks every second while THIS block's
+    // timer runs. The tick stream is only listened to when relevant.
+    final activeTimer = ref.watch(activeTimerProvider).value;
+    final isTimingHere = activeTimer?.session.taskId == task.id;
+    final timerLabel = isTimingHere
+        ? formatTimerClock(
+            ref.watch(activeTimerElapsedProvider(task.id)).value ?? 0)
+        : null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -91,6 +100,22 @@ class TaskBlockWidget extends ConsumerWidget {
             // Short blocks (15-min grid slots, live shrink-resize) only fit
             // the title; showing the badge row there overflows the Column.
             final compact = constraints.maxHeight < 38;
+            if (constraints.maxHeight < 24) {
+              return ClipRect(
+                child: SizedBox(
+                  height: constraints.maxHeight,
+                  child: Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              );
+            }
             return Stack(
               children: [
                 if (hasOverlap)
@@ -158,6 +183,31 @@ class TaskBlockWidget extends ConsumerWidget {
                       Icons.refresh,
                       size: 13,
                       color: AppColors.textSecondaryDark,
+                    ),
+                  ),
+                if (timerLabel != null)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    child: Row(
+                      key: const ValueKey('block-timer-chip'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.timer_outlined,
+                            size: 10, color: AppColors.inProgress),
+                        const SizedBox(width: 2),
+                        Text(
+                          timerLabel,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.inProgress,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 if (subtaskCount != null)

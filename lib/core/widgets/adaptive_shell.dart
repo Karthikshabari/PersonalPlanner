@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../constants/app_constants.dart';
+import '../layout/adaptive_layout.dart';
 
 class AdaptiveShell extends StatelessWidget {
   final Widget child;
@@ -35,8 +35,7 @@ class AdaptiveShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isDesktop =
-            constraints.maxWidth >= AppConstants.desktopBreakpoint;
+        final isDesktop = isDesktopWidth(constraints.maxWidth);
         if (isDesktop) {
           return Scaffold(
             body: Row(

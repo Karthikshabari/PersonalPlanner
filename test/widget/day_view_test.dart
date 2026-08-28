@@ -62,7 +62,13 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 
-    expect(find.text('Deep Work'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TaskBlockWidget),
+        matching: find.text('Deep Work'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('1h'), findsOneWidget);
     expect(find.text('Planned'), findsOneWidget);
 

@@ -18,6 +18,8 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
       : DateTime.parse(json['endTime'] as String),
   estimatedDurationMin: (json['estimatedDurationMin'] as num?)?.toInt(),
   actualDurationMin: (json['actualDurationMin'] as num?)?.toInt(),
+  manualDurationAdjustmentMin:
+      (json['manualDurationAdjustmentMin'] as num?)?.toInt() ?? 0,
   categoryId: json['categoryId'] as String?,
   priority:
       $enumDecodeNullable(_$PriorityEnumMap, json['priority']) ?? Priority.none,
@@ -45,6 +47,7 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'endTime': instance.endTime?.toIso8601String(),
   'estimatedDurationMin': instance.estimatedDurationMin,
   'actualDurationMin': instance.actualDurationMin,
+  'manualDurationAdjustmentMin': instance.manualDurationAdjustmentMin,
   'categoryId': instance.categoryId,
   'priority': _$PriorityEnumMap[instance.priority]!,
   'status': _$TaskStatusEnumMap[instance.status]!,

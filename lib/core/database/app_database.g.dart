@@ -3,1194 +3,6 @@
 part of 'app_database.dart';
 
 // ignore_for_file: type=lint
-class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $TasksTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<String> id = GeneratedColumn<String>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _titleMeta = const VerificationMeta('title');
-  @override
-  late final GeneratedColumn<String> title = GeneratedColumn<String>(
-    'title',
-    aliasedName,
-    false,
-    additionalChecks: GeneratedColumn.checkTextLength(
-      minTextLength: 1,
-      maxTextLength: 500,
-    ),
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _descriptionMeta = const VerificationMeta(
-    'description',
-  );
-  @override
-  late final GeneratedColumn<String> description = GeneratedColumn<String>(
-    'description',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime?, String> startTime =
-      GeneratedColumn<String>(
-        'start_time',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      ).withConverter<DateTime?>($TasksTable.$converterstartTime);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime?, String> endTime =
-      GeneratedColumn<String>(
-        'end_time',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      ).withConverter<DateTime?>($TasksTable.$converterendTime);
-  static const VerificationMeta _estimatedDurationMinMeta =
-      const VerificationMeta('estimatedDurationMin');
-  @override
-  late final GeneratedColumn<int> estimatedDurationMin = GeneratedColumn<int>(
-    'estimated_duration_min',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _actualDurationMinMeta = const VerificationMeta(
-    'actualDurationMin',
-  );
-  @override
-  late final GeneratedColumn<int> actualDurationMin = GeneratedColumn<int>(
-    'actual_duration_min',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _categoryIdMeta = const VerificationMeta(
-    'categoryId',
-  );
-  @override
-  late final GeneratedColumn<String> categoryId = GeneratedColumn<String>(
-    'category_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _priorityMeta = const VerificationMeta(
-    'priority',
-  );
-  @override
-  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
-    'priority',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  static const VerificationMeta _statusMeta = const VerificationMeta('status');
-  @override
-  late final GeneratedColumn<String> status = GeneratedColumn<String>(
-    'status',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant('planned'),
-  );
-  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
-  @override
-  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
-    'notes',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _recurringRuleIdMeta = const VerificationMeta(
-    'recurringRuleId',
-  );
-  @override
-  late final GeneratedColumn<String> recurringRuleId = GeneratedColumn<String>(
-    'recurring_rule_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _rescheduledFromIdMeta = const VerificationMeta(
-    'rescheduledFromId',
-  );
-  @override
-  late final GeneratedColumn<String> rescheduledFromId =
-      GeneratedColumn<String>(
-        'rescheduled_from_id',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _rescheduledToIdMeta = const VerificationMeta(
-    'rescheduledToId',
-  );
-  @override
-  late final GeneratedColumn<String> rescheduledToId = GeneratedColumn<String>(
-    'rescheduled_to_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _isInboxMeta = const VerificationMeta(
-    'isInbox',
-  );
-  @override
-  late final GeneratedColumn<bool> isInbox = GeneratedColumn<bool>(
-    'is_inbox',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_inbox" IN (0, 1))',
-    ),
-    defaultValue: const Constant(false),
-  );
-  static const VerificationMeta _missedAtMeta = const VerificationMeta(
-    'missedAt',
-  );
-  @override
-  late final GeneratedColumn<String> missedAt = GeneratedColumn<String>(
-    'missed_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
-      GeneratedColumn<String>(
-        'created_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($TasksTable.$convertercreatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
-      GeneratedColumn<String>(
-        'updated_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($TasksTable.$converterupdatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
-      GeneratedColumn<String>(
-        'deleted_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      ).withConverter<DateTime?>($TasksTable.$converterdeletedAt);
-  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
-    'syncStatus',
-  );
-  @override
-  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
-    'sync_status',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  static const VerificationMeta _revisionMeta = const VerificationMeta(
-    'revision',
-  );
-  @override
-  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
-    'revision',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(1),
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    title,
-    description,
-    startTime,
-    endTime,
-    estimatedDurationMin,
-    actualDurationMin,
-    categoryId,
-    priority,
-    status,
-    notes,
-    recurringRuleId,
-    rescheduledFromId,
-    rescheduledToId,
-    isInbox,
-    missedAt,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'tasks';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<TaskRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    } else if (isInserting) {
-      context.missing(_idMeta);
-    }
-    if (data.containsKey('title')) {
-      context.handle(
-        _titleMeta,
-        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_titleMeta);
-    }
-    if (data.containsKey('description')) {
-      context.handle(
-        _descriptionMeta,
-        description.isAcceptableOrUnknown(
-          data['description']!,
-          _descriptionMeta,
-        ),
-      );
-    }
-    if (data.containsKey('estimated_duration_min')) {
-      context.handle(
-        _estimatedDurationMinMeta,
-        estimatedDurationMin.isAcceptableOrUnknown(
-          data['estimated_duration_min']!,
-          _estimatedDurationMinMeta,
-        ),
-      );
-    }
-    if (data.containsKey('actual_duration_min')) {
-      context.handle(
-        _actualDurationMinMeta,
-        actualDurationMin.isAcceptableOrUnknown(
-          data['actual_duration_min']!,
-          _actualDurationMinMeta,
-        ),
-      );
-    }
-    if (data.containsKey('category_id')) {
-      context.handle(
-        _categoryIdMeta,
-        categoryId.isAcceptableOrUnknown(data['category_id']!, _categoryIdMeta),
-      );
-    }
-    if (data.containsKey('priority')) {
-      context.handle(
-        _priorityMeta,
-        priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta),
-      );
-    }
-    if (data.containsKey('status')) {
-      context.handle(
-        _statusMeta,
-        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
-      );
-    }
-    if (data.containsKey('notes')) {
-      context.handle(
-        _notesMeta,
-        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
-      );
-    }
-    if (data.containsKey('recurring_rule_id')) {
-      context.handle(
-        _recurringRuleIdMeta,
-        recurringRuleId.isAcceptableOrUnknown(
-          data['recurring_rule_id']!,
-          _recurringRuleIdMeta,
-        ),
-      );
-    }
-    if (data.containsKey('rescheduled_from_id')) {
-      context.handle(
-        _rescheduledFromIdMeta,
-        rescheduledFromId.isAcceptableOrUnknown(
-          data['rescheduled_from_id']!,
-          _rescheduledFromIdMeta,
-        ),
-      );
-    }
-    if (data.containsKey('rescheduled_to_id')) {
-      context.handle(
-        _rescheduledToIdMeta,
-        rescheduledToId.isAcceptableOrUnknown(
-          data['rescheduled_to_id']!,
-          _rescheduledToIdMeta,
-        ),
-      );
-    }
-    if (data.containsKey('is_inbox')) {
-      context.handle(
-        _isInboxMeta,
-        isInbox.isAcceptableOrUnknown(data['is_inbox']!, _isInboxMeta),
-      );
-    }
-    if (data.containsKey('missed_at')) {
-      context.handle(
-        _missedAtMeta,
-        missedAt.isAcceptableOrUnknown(data['missed_at']!, _missedAtMeta),
-      );
-    }
-    if (data.containsKey('sync_status')) {
-      context.handle(
-        _syncStatusMeta,
-        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
-      );
-    }
-    if (data.containsKey('revision')) {
-      context.handle(
-        _revisionMeta,
-        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  TaskRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return TaskRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      title: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}title'],
-      )!,
-      description: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}description'],
-      ),
-      startTime: $TasksTable.$converterstartTime.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}start_time'],
-        ),
-      ),
-      endTime: $TasksTable.$converterendTime.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}end_time'],
-        ),
-      ),
-      estimatedDurationMin: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}estimated_duration_min'],
-      ),
-      actualDurationMin: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}actual_duration_min'],
-      ),
-      categoryId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}category_id'],
-      ),
-      priority: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}priority'],
-      )!,
-      status: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}status'],
-      )!,
-      notes: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}notes'],
-      ),
-      recurringRuleId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}recurring_rule_id'],
-      ),
-      rescheduledFromId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}rescheduled_from_id'],
-      ),
-      rescheduledToId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}rescheduled_to_id'],
-      ),
-      isInbox: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_inbox'],
-      )!,
-      missedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}missed_at'],
-      ),
-      createdAt: $TasksTable.$convertercreatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}created_at'],
-        )!,
-      ),
-      updatedAt: $TasksTable.$converterupdatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}updated_at'],
-        )!,
-      ),
-      deletedAt: $TasksTable.$converterdeletedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}deleted_at'],
-        ),
-      ),
-      syncStatus: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}sync_status'],
-      )!,
-      revision: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}revision'],
-      )!,
-    );
-  }
-
-  @override
-  $TasksTable createAlias(String alias) {
-    return $TasksTable(attachedDatabase, alias);
-  }
-
-  static TypeConverter<DateTime?, String?> $converterstartTime =
-      const NullableDateTimeUtcConverter();
-  static TypeConverter<DateTime?, String?> $converterendTime =
-      const NullableDateTimeUtcConverter();
-  static TypeConverter<DateTime, String> $convertercreatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime, String> $converterupdatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime?, String?> $converterdeletedAt =
-      const NullableDateTimeUtcConverter();
-}
-
-class TaskRow extends DataClass implements Insertable<TaskRow> {
-  final String id;
-  final String title;
-  final String? description;
-  final DateTime? startTime;
-  final DateTime? endTime;
-  final int? estimatedDurationMin;
-  final int? actualDurationMin;
-  final String? categoryId;
-  final int priority;
-  final String status;
-  final String? notes;
-  final String? recurringRuleId;
-  final String? rescheduledFromId;
-  final String? rescheduledToId;
-  final bool isInbox;
-  final String? missedAt;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final DateTime? deletedAt;
-  final int syncStatus;
-  final int revision;
-  const TaskRow({
-    required this.id,
-    required this.title,
-    this.description,
-    this.startTime,
-    this.endTime,
-    this.estimatedDurationMin,
-    this.actualDurationMin,
-    this.categoryId,
-    required this.priority,
-    required this.status,
-    this.notes,
-    this.recurringRuleId,
-    this.rescheduledFromId,
-    this.rescheduledToId,
-    required this.isInbox,
-    this.missedAt,
-    required this.createdAt,
-    required this.updatedAt,
-    this.deletedAt,
-    required this.syncStatus,
-    required this.revision,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['title'] = Variable<String>(title);
-    if (!nullToAbsent || description != null) {
-      map['description'] = Variable<String>(description);
-    }
-    if (!nullToAbsent || startTime != null) {
-      map['start_time'] = Variable<String>(
-        $TasksTable.$converterstartTime.toSql(startTime),
-      );
-    }
-    if (!nullToAbsent || endTime != null) {
-      map['end_time'] = Variable<String>(
-        $TasksTable.$converterendTime.toSql(endTime),
-      );
-    }
-    if (!nullToAbsent || estimatedDurationMin != null) {
-      map['estimated_duration_min'] = Variable<int>(estimatedDurationMin);
-    }
-    if (!nullToAbsent || actualDurationMin != null) {
-      map['actual_duration_min'] = Variable<int>(actualDurationMin);
-    }
-    if (!nullToAbsent || categoryId != null) {
-      map['category_id'] = Variable<String>(categoryId);
-    }
-    map['priority'] = Variable<int>(priority);
-    map['status'] = Variable<String>(status);
-    if (!nullToAbsent || notes != null) {
-      map['notes'] = Variable<String>(notes);
-    }
-    if (!nullToAbsent || recurringRuleId != null) {
-      map['recurring_rule_id'] = Variable<String>(recurringRuleId);
-    }
-    if (!nullToAbsent || rescheduledFromId != null) {
-      map['rescheduled_from_id'] = Variable<String>(rescheduledFromId);
-    }
-    if (!nullToAbsent || rescheduledToId != null) {
-      map['rescheduled_to_id'] = Variable<String>(rescheduledToId);
-    }
-    map['is_inbox'] = Variable<bool>(isInbox);
-    if (!nullToAbsent || missedAt != null) {
-      map['missed_at'] = Variable<String>(missedAt);
-    }
-    {
-      map['created_at'] = Variable<String>(
-        $TasksTable.$convertercreatedAt.toSql(createdAt),
-      );
-    }
-    {
-      map['updated_at'] = Variable<String>(
-        $TasksTable.$converterupdatedAt.toSql(updatedAt),
-      );
-    }
-    if (!nullToAbsent || deletedAt != null) {
-      map['deleted_at'] = Variable<String>(
-        $TasksTable.$converterdeletedAt.toSql(deletedAt),
-      );
-    }
-    map['sync_status'] = Variable<int>(syncStatus);
-    map['revision'] = Variable<int>(revision);
-    return map;
-  }
-
-  TasksCompanion toCompanion(bool nullToAbsent) {
-    return TasksCompanion(
-      id: Value(id),
-      title: Value(title),
-      description: description == null && nullToAbsent
-          ? const Value.absent()
-          : Value(description),
-      startTime: startTime == null && nullToAbsent
-          ? const Value.absent()
-          : Value(startTime),
-      endTime: endTime == null && nullToAbsent
-          ? const Value.absent()
-          : Value(endTime),
-      estimatedDurationMin: estimatedDurationMin == null && nullToAbsent
-          ? const Value.absent()
-          : Value(estimatedDurationMin),
-      actualDurationMin: actualDurationMin == null && nullToAbsent
-          ? const Value.absent()
-          : Value(actualDurationMin),
-      categoryId: categoryId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(categoryId),
-      priority: Value(priority),
-      status: Value(status),
-      notes: notes == null && nullToAbsent
-          ? const Value.absent()
-          : Value(notes),
-      recurringRuleId: recurringRuleId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(recurringRuleId),
-      rescheduledFromId: rescheduledFromId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rescheduledFromId),
-      rescheduledToId: rescheduledToId == null && nullToAbsent
-          ? const Value.absent()
-          : Value(rescheduledToId),
-      isInbox: Value(isInbox),
-      missedAt: missedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(missedAt),
-      createdAt: Value(createdAt),
-      updatedAt: Value(updatedAt),
-      deletedAt: deletedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(deletedAt),
-      syncStatus: Value(syncStatus),
-      revision: Value(revision),
-    );
-  }
-
-  factory TaskRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return TaskRow(
-      id: serializer.fromJson<String>(json['id']),
-      title: serializer.fromJson<String>(json['title']),
-      description: serializer.fromJson<String?>(json['description']),
-      startTime: serializer.fromJson<DateTime?>(json['startTime']),
-      endTime: serializer.fromJson<DateTime?>(json['endTime']),
-      estimatedDurationMin: serializer.fromJson<int?>(
-        json['estimatedDurationMin'],
-      ),
-      actualDurationMin: serializer.fromJson<int?>(json['actualDurationMin']),
-      categoryId: serializer.fromJson<String?>(json['categoryId']),
-      priority: serializer.fromJson<int>(json['priority']),
-      status: serializer.fromJson<String>(json['status']),
-      notes: serializer.fromJson<String?>(json['notes']),
-      recurringRuleId: serializer.fromJson<String?>(json['recurringRuleId']),
-      rescheduledFromId: serializer.fromJson<String?>(
-        json['rescheduledFromId'],
-      ),
-      rescheduledToId: serializer.fromJson<String?>(json['rescheduledToId']),
-      isInbox: serializer.fromJson<bool>(json['isInbox']),
-      missedAt: serializer.fromJson<String?>(json['missedAt']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
-      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
-      syncStatus: serializer.fromJson<int>(json['syncStatus']),
-      revision: serializer.fromJson<int>(json['revision']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<String>(id),
-      'title': serializer.toJson<String>(title),
-      'description': serializer.toJson<String?>(description),
-      'startTime': serializer.toJson<DateTime?>(startTime),
-      'endTime': serializer.toJson<DateTime?>(endTime),
-      'estimatedDurationMin': serializer.toJson<int?>(estimatedDurationMin),
-      'actualDurationMin': serializer.toJson<int?>(actualDurationMin),
-      'categoryId': serializer.toJson<String?>(categoryId),
-      'priority': serializer.toJson<int>(priority),
-      'status': serializer.toJson<String>(status),
-      'notes': serializer.toJson<String?>(notes),
-      'recurringRuleId': serializer.toJson<String?>(recurringRuleId),
-      'rescheduledFromId': serializer.toJson<String?>(rescheduledFromId),
-      'rescheduledToId': serializer.toJson<String?>(rescheduledToId),
-      'isInbox': serializer.toJson<bool>(isInbox),
-      'missedAt': serializer.toJson<String?>(missedAt),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'updatedAt': serializer.toJson<DateTime>(updatedAt),
-      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
-      'syncStatus': serializer.toJson<int>(syncStatus),
-      'revision': serializer.toJson<int>(revision),
-    };
-  }
-
-  TaskRow copyWith({
-    String? id,
-    String? title,
-    Value<String?> description = const Value.absent(),
-    Value<DateTime?> startTime = const Value.absent(),
-    Value<DateTime?> endTime = const Value.absent(),
-    Value<int?> estimatedDurationMin = const Value.absent(),
-    Value<int?> actualDurationMin = const Value.absent(),
-    Value<String?> categoryId = const Value.absent(),
-    int? priority,
-    String? status,
-    Value<String?> notes = const Value.absent(),
-    Value<String?> recurringRuleId = const Value.absent(),
-    Value<String?> rescheduledFromId = const Value.absent(),
-    Value<String?> rescheduledToId = const Value.absent(),
-    bool? isInbox,
-    Value<String?> missedAt = const Value.absent(),
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
-    int? syncStatus,
-    int? revision,
-  }) => TaskRow(
-    id: id ?? this.id,
-    title: title ?? this.title,
-    description: description.present ? description.value : this.description,
-    startTime: startTime.present ? startTime.value : this.startTime,
-    endTime: endTime.present ? endTime.value : this.endTime,
-    estimatedDurationMin: estimatedDurationMin.present
-        ? estimatedDurationMin.value
-        : this.estimatedDurationMin,
-    actualDurationMin: actualDurationMin.present
-        ? actualDurationMin.value
-        : this.actualDurationMin,
-    categoryId: categoryId.present ? categoryId.value : this.categoryId,
-    priority: priority ?? this.priority,
-    status: status ?? this.status,
-    notes: notes.present ? notes.value : this.notes,
-    recurringRuleId: recurringRuleId.present
-        ? recurringRuleId.value
-        : this.recurringRuleId,
-    rescheduledFromId: rescheduledFromId.present
-        ? rescheduledFromId.value
-        : this.rescheduledFromId,
-    rescheduledToId: rescheduledToId.present
-        ? rescheduledToId.value
-        : this.rescheduledToId,
-    isInbox: isInbox ?? this.isInbox,
-    missedAt: missedAt.present ? missedAt.value : this.missedAt,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
-    syncStatus: syncStatus ?? this.syncStatus,
-    revision: revision ?? this.revision,
-  );
-  TaskRow copyWithCompanion(TasksCompanion data) {
-    return TaskRow(
-      id: data.id.present ? data.id.value : this.id,
-      title: data.title.present ? data.title.value : this.title,
-      description: data.description.present
-          ? data.description.value
-          : this.description,
-      startTime: data.startTime.present ? data.startTime.value : this.startTime,
-      endTime: data.endTime.present ? data.endTime.value : this.endTime,
-      estimatedDurationMin: data.estimatedDurationMin.present
-          ? data.estimatedDurationMin.value
-          : this.estimatedDurationMin,
-      actualDurationMin: data.actualDurationMin.present
-          ? data.actualDurationMin.value
-          : this.actualDurationMin,
-      categoryId: data.categoryId.present
-          ? data.categoryId.value
-          : this.categoryId,
-      priority: data.priority.present ? data.priority.value : this.priority,
-      status: data.status.present ? data.status.value : this.status,
-      notes: data.notes.present ? data.notes.value : this.notes,
-      recurringRuleId: data.recurringRuleId.present
-          ? data.recurringRuleId.value
-          : this.recurringRuleId,
-      rescheduledFromId: data.rescheduledFromId.present
-          ? data.rescheduledFromId.value
-          : this.rescheduledFromId,
-      rescheduledToId: data.rescheduledToId.present
-          ? data.rescheduledToId.value
-          : this.rescheduledToId,
-      isInbox: data.isInbox.present ? data.isInbox.value : this.isInbox,
-      missedAt: data.missedAt.present ? data.missedAt.value : this.missedAt,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
-      syncStatus: data.syncStatus.present
-          ? data.syncStatus.value
-          : this.syncStatus,
-      revision: data.revision.present ? data.revision.value : this.revision,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TaskRow(')
-          ..write('id: $id, ')
-          ..write('title: $title, ')
-          ..write('description: $description, ')
-          ..write('startTime: $startTime, ')
-          ..write('endTime: $endTime, ')
-          ..write('estimatedDurationMin: $estimatedDurationMin, ')
-          ..write('actualDurationMin: $actualDurationMin, ')
-          ..write('categoryId: $categoryId, ')
-          ..write('priority: $priority, ')
-          ..write('status: $status, ')
-          ..write('notes: $notes, ')
-          ..write('recurringRuleId: $recurringRuleId, ')
-          ..write('rescheduledFromId: $rescheduledFromId, ')
-          ..write('rescheduledToId: $rescheduledToId, ')
-          ..write('isInbox: $isInbox, ')
-          ..write('missedAt: $missedAt, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hashAll([
-    id,
-    title,
-    description,
-    startTime,
-    endTime,
-    estimatedDurationMin,
-    actualDurationMin,
-    categoryId,
-    priority,
-    status,
-    notes,
-    recurringRuleId,
-    rescheduledFromId,
-    rescheduledToId,
-    isInbox,
-    missedAt,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  ]);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is TaskRow &&
-          other.id == this.id &&
-          other.title == this.title &&
-          other.description == this.description &&
-          other.startTime == this.startTime &&
-          other.endTime == this.endTime &&
-          other.estimatedDurationMin == this.estimatedDurationMin &&
-          other.actualDurationMin == this.actualDurationMin &&
-          other.categoryId == this.categoryId &&
-          other.priority == this.priority &&
-          other.status == this.status &&
-          other.notes == this.notes &&
-          other.recurringRuleId == this.recurringRuleId &&
-          other.rescheduledFromId == this.rescheduledFromId &&
-          other.rescheduledToId == this.rescheduledToId &&
-          other.isInbox == this.isInbox &&
-          other.missedAt == this.missedAt &&
-          other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt &&
-          other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
-}
-
-class TasksCompanion extends UpdateCompanion<TaskRow> {
-  final Value<String> id;
-  final Value<String> title;
-  final Value<String?> description;
-  final Value<DateTime?> startTime;
-  final Value<DateTime?> endTime;
-  final Value<int?> estimatedDurationMin;
-  final Value<int?> actualDurationMin;
-  final Value<String?> categoryId;
-  final Value<int> priority;
-  final Value<String> status;
-  final Value<String?> notes;
-  final Value<String?> recurringRuleId;
-  final Value<String?> rescheduledFromId;
-  final Value<String?> rescheduledToId;
-  final Value<bool> isInbox;
-  final Value<String?> missedAt;
-  final Value<DateTime> createdAt;
-  final Value<DateTime> updatedAt;
-  final Value<DateTime?> deletedAt;
-  final Value<int> syncStatus;
-  final Value<int> revision;
-  final Value<int> rowid;
-  const TasksCompanion({
-    this.id = const Value.absent(),
-    this.title = const Value.absent(),
-    this.description = const Value.absent(),
-    this.startTime = const Value.absent(),
-    this.endTime = const Value.absent(),
-    this.estimatedDurationMin = const Value.absent(),
-    this.actualDurationMin = const Value.absent(),
-    this.categoryId = const Value.absent(),
-    this.priority = const Value.absent(),
-    this.status = const Value.absent(),
-    this.notes = const Value.absent(),
-    this.recurringRuleId = const Value.absent(),
-    this.rescheduledFromId = const Value.absent(),
-    this.rescheduledToId = const Value.absent(),
-    this.isInbox = const Value.absent(),
-    this.missedAt = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  TasksCompanion.insert({
-    required String id,
-    required String title,
-    this.description = const Value.absent(),
-    this.startTime = const Value.absent(),
-    this.endTime = const Value.absent(),
-    this.estimatedDurationMin = const Value.absent(),
-    this.actualDurationMin = const Value.absent(),
-    this.categoryId = const Value.absent(),
-    this.priority = const Value.absent(),
-    this.status = const Value.absent(),
-    this.notes = const Value.absent(),
-    this.recurringRuleId = const Value.absent(),
-    this.rescheduledFromId = const Value.absent(),
-    this.rescheduledToId = const Value.absent(),
-    this.isInbox = const Value.absent(),
-    this.missedAt = const Value.absent(),
-    required DateTime createdAt,
-    required DateTime updatedAt,
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : id = Value(id),
-       title = Value(title),
-       createdAt = Value(createdAt),
-       updatedAt = Value(updatedAt);
-  static Insertable<TaskRow> custom({
-    Expression<String>? id,
-    Expression<String>? title,
-    Expression<String>? description,
-    Expression<String>? startTime,
-    Expression<String>? endTime,
-    Expression<int>? estimatedDurationMin,
-    Expression<int>? actualDurationMin,
-    Expression<String>? categoryId,
-    Expression<int>? priority,
-    Expression<String>? status,
-    Expression<String>? notes,
-    Expression<String>? recurringRuleId,
-    Expression<String>? rescheduledFromId,
-    Expression<String>? rescheduledToId,
-    Expression<bool>? isInbox,
-    Expression<String>? missedAt,
-    Expression<String>? createdAt,
-    Expression<String>? updatedAt,
-    Expression<String>? deletedAt,
-    Expression<int>? syncStatus,
-    Expression<int>? revision,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (title != null) 'title': title,
-      if (description != null) 'description': description,
-      if (startTime != null) 'start_time': startTime,
-      if (endTime != null) 'end_time': endTime,
-      if (estimatedDurationMin != null)
-        'estimated_duration_min': estimatedDurationMin,
-      if (actualDurationMin != null) 'actual_duration_min': actualDurationMin,
-      if (categoryId != null) 'category_id': categoryId,
-      if (priority != null) 'priority': priority,
-      if (status != null) 'status': status,
-      if (notes != null) 'notes': notes,
-      if (recurringRuleId != null) 'recurring_rule_id': recurringRuleId,
-      if (rescheduledFromId != null) 'rescheduled_from_id': rescheduledFromId,
-      if (rescheduledToId != null) 'rescheduled_to_id': rescheduledToId,
-      if (isInbox != null) 'is_inbox': isInbox,
-      if (missedAt != null) 'missed_at': missedAt,
-      if (createdAt != null) 'created_at': createdAt,
-      if (updatedAt != null) 'updated_at': updatedAt,
-      if (deletedAt != null) 'deleted_at': deletedAt,
-      if (syncStatus != null) 'sync_status': syncStatus,
-      if (revision != null) 'revision': revision,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  TasksCompanion copyWith({
-    Value<String>? id,
-    Value<String>? title,
-    Value<String?>? description,
-    Value<DateTime?>? startTime,
-    Value<DateTime?>? endTime,
-    Value<int?>? estimatedDurationMin,
-    Value<int?>? actualDurationMin,
-    Value<String?>? categoryId,
-    Value<int>? priority,
-    Value<String>? status,
-    Value<String?>? notes,
-    Value<String?>? recurringRuleId,
-    Value<String?>? rescheduledFromId,
-    Value<String?>? rescheduledToId,
-    Value<bool>? isInbox,
-    Value<String?>? missedAt,
-    Value<DateTime>? createdAt,
-    Value<DateTime>? updatedAt,
-    Value<DateTime?>? deletedAt,
-    Value<int>? syncStatus,
-    Value<int>? revision,
-    Value<int>? rowid,
-  }) {
-    return TasksCompanion(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      description: description ?? this.description,
-      startTime: startTime ?? this.startTime,
-      endTime: endTime ?? this.endTime,
-      estimatedDurationMin: estimatedDurationMin ?? this.estimatedDurationMin,
-      actualDurationMin: actualDurationMin ?? this.actualDurationMin,
-      categoryId: categoryId ?? this.categoryId,
-      priority: priority ?? this.priority,
-      status: status ?? this.status,
-      notes: notes ?? this.notes,
-      recurringRuleId: recurringRuleId ?? this.recurringRuleId,
-      rescheduledFromId: rescheduledFromId ?? this.rescheduledFromId,
-      rescheduledToId: rescheduledToId ?? this.rescheduledToId,
-      isInbox: isInbox ?? this.isInbox,
-      missedAt: missedAt ?? this.missedAt,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      deletedAt: deletedAt ?? this.deletedAt,
-      syncStatus: syncStatus ?? this.syncStatus,
-      revision: revision ?? this.revision,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<String>(id.value);
-    }
-    if (title.present) {
-      map['title'] = Variable<String>(title.value);
-    }
-    if (description.present) {
-      map['description'] = Variable<String>(description.value);
-    }
-    if (startTime.present) {
-      map['start_time'] = Variable<String>(
-        $TasksTable.$converterstartTime.toSql(startTime.value),
-      );
-    }
-    if (endTime.present) {
-      map['end_time'] = Variable<String>(
-        $TasksTable.$converterendTime.toSql(endTime.value),
-      );
-    }
-    if (estimatedDurationMin.present) {
-      map['estimated_duration_min'] = Variable<int>(estimatedDurationMin.value);
-    }
-    if (actualDurationMin.present) {
-      map['actual_duration_min'] = Variable<int>(actualDurationMin.value);
-    }
-    if (categoryId.present) {
-      map['category_id'] = Variable<String>(categoryId.value);
-    }
-    if (priority.present) {
-      map['priority'] = Variable<int>(priority.value);
-    }
-    if (status.present) {
-      map['status'] = Variable<String>(status.value);
-    }
-    if (notes.present) {
-      map['notes'] = Variable<String>(notes.value);
-    }
-    if (recurringRuleId.present) {
-      map['recurring_rule_id'] = Variable<String>(recurringRuleId.value);
-    }
-    if (rescheduledFromId.present) {
-      map['rescheduled_from_id'] = Variable<String>(rescheduledFromId.value);
-    }
-    if (rescheduledToId.present) {
-      map['rescheduled_to_id'] = Variable<String>(rescheduledToId.value);
-    }
-    if (isInbox.present) {
-      map['is_inbox'] = Variable<bool>(isInbox.value);
-    }
-    if (missedAt.present) {
-      map['missed_at'] = Variable<String>(missedAt.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<String>(
-        $TasksTable.$convertercreatedAt.toSql(createdAt.value),
-      );
-    }
-    if (updatedAt.present) {
-      map['updated_at'] = Variable<String>(
-        $TasksTable.$converterupdatedAt.toSql(updatedAt.value),
-      );
-    }
-    if (deletedAt.present) {
-      map['deleted_at'] = Variable<String>(
-        $TasksTable.$converterdeletedAt.toSql(deletedAt.value),
-      );
-    }
-    if (syncStatus.present) {
-      map['sync_status'] = Variable<int>(syncStatus.value);
-    }
-    if (revision.present) {
-      map['revision'] = Variable<int>(revision.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TasksCompanion(')
-          ..write('id: $id, ')
-          ..write('title: $title, ')
-          ..write('description: $description, ')
-          ..write('startTime: $startTime, ')
-          ..write('endTime: $endTime, ')
-          ..write('estimatedDurationMin: $estimatedDurationMin, ')
-          ..write('actualDurationMin: $actualDurationMin, ')
-          ..write('categoryId: $categoryId, ')
-          ..write('priority: $priority, ')
-          ..write('status: $status, ')
-          ..write('notes: $notes, ')
-          ..write('recurringRuleId: $recurringRuleId, ')
-          ..write('rescheduledFromId: $rescheduledFromId, ')
-          ..write('rescheduledToId: $rescheduledToId, ')
-          ..write('isInbox: $isInbox, ')
-          ..write('missedAt: $missedAt, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $CategoriesTable extends Categories
     with TableInfo<$CategoriesTable, CategoryRow> {
   @override
@@ -1804,1604 +616,6 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
   }
 }
 
-class $AppSettingsTable extends AppSettings
-    with TableInfo<$AppSettingsTable, AppSetting> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $AppSettingsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _keyMeta = const VerificationMeta('key');
-  @override
-  late final GeneratedColumn<String> key = GeneratedColumn<String>(
-    'key',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _valueMeta = const VerificationMeta('value');
-  @override
-  late final GeneratedColumn<String> value = GeneratedColumn<String>(
-    'value',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [key, value];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'app_settings';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<AppSetting> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('key')) {
-      context.handle(
-        _keyMeta,
-        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_keyMeta);
-    }
-    if (data.containsKey('value')) {
-      context.handle(
-        _valueMeta,
-        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_valueMeta);
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {key};
-  @override
-  AppSetting map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return AppSetting(
-      key: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}key'],
-      )!,
-      value: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}value'],
-      )!,
-    );
-  }
-
-  @override
-  $AppSettingsTable createAlias(String alias) {
-    return $AppSettingsTable(attachedDatabase, alias);
-  }
-}
-
-class AppSetting extends DataClass implements Insertable<AppSetting> {
-  final String key;
-  final String value;
-  const AppSetting({required this.key, required this.value});
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['key'] = Variable<String>(key);
-    map['value'] = Variable<String>(value);
-    return map;
-  }
-
-  AppSettingsCompanion toCompanion(bool nullToAbsent) {
-    return AppSettingsCompanion(key: Value(key), value: Value(value));
-  }
-
-  factory AppSetting.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return AppSetting(
-      key: serializer.fromJson<String>(json['key']),
-      value: serializer.fromJson<String>(json['value']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'key': serializer.toJson<String>(key),
-      'value': serializer.toJson<String>(value),
-    };
-  }
-
-  AppSetting copyWith({String? key, String? value}) =>
-      AppSetting(key: key ?? this.key, value: value ?? this.value);
-  AppSetting copyWithCompanion(AppSettingsCompanion data) {
-    return AppSetting(
-      key: data.key.present ? data.key.value : this.key,
-      value: data.value.present ? data.value.value : this.value,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('AppSetting(')
-          ..write('key: $key, ')
-          ..write('value: $value')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(key, value);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is AppSetting &&
-          other.key == this.key &&
-          other.value == this.value);
-}
-
-class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
-  final Value<String> key;
-  final Value<String> value;
-  final Value<int> rowid;
-  const AppSettingsCompanion({
-    this.key = const Value.absent(),
-    this.value = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  AppSettingsCompanion.insert({
-    required String key,
-    required String value,
-    this.rowid = const Value.absent(),
-  }) : key = Value(key),
-       value = Value(value);
-  static Insertable<AppSetting> custom({
-    Expression<String>? key,
-    Expression<String>? value,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (key != null) 'key': key,
-      if (value != null) 'value': value,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  AppSettingsCompanion copyWith({
-    Value<String>? key,
-    Value<String>? value,
-    Value<int>? rowid,
-  }) {
-    return AppSettingsCompanion(
-      key: key ?? this.key,
-      value: value ?? this.value,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (key.present) {
-      map['key'] = Variable<String>(key.value);
-    }
-    if (value.present) {
-      map['value'] = Variable<String>(value.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('AppSettingsCompanion(')
-          ..write('key: $key, ')
-          ..write('value: $value, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $SubtasksTable extends Subtasks
-    with TableInfo<$SubtasksTable, SubtaskRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $SubtasksTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<String> id = GeneratedColumn<String>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
-  @override
-  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
-    'task_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _titleMeta = const VerificationMeta('title');
-  @override
-  late final GeneratedColumn<String> title = GeneratedColumn<String>(
-    'title',
-    aliasedName,
-    false,
-    additionalChecks: GeneratedColumn.checkTextLength(
-      minTextLength: 1,
-      maxTextLength: 500,
-    ),
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _isCompletedMeta = const VerificationMeta(
-    'isCompleted',
-  );
-  @override
-  late final GeneratedColumn<bool> isCompleted = GeneratedColumn<bool>(
-    'is_completed',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_completed" IN (0, 1))',
-    ),
-    defaultValue: const Constant(false),
-  );
-  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
-    'sortOrder',
-  );
-  @override
-  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
-    'sort_order',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
-      GeneratedColumn<String>(
-        'created_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($SubtasksTable.$convertercreatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
-      GeneratedColumn<String>(
-        'updated_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($SubtasksTable.$converterupdatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
-      GeneratedColumn<String>(
-        'deleted_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      ).withConverter<DateTime?>($SubtasksTable.$converterdeletedAt);
-  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
-    'syncStatus',
-  );
-  @override
-  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
-    'sync_status',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  static const VerificationMeta _revisionMeta = const VerificationMeta(
-    'revision',
-  );
-  @override
-  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
-    'revision',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(1),
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    taskId,
-    title,
-    isCompleted,
-    sortOrder,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'subtasks';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<SubtaskRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    } else if (isInserting) {
-      context.missing(_idMeta);
-    }
-    if (data.containsKey('task_id')) {
-      context.handle(
-        _taskIdMeta,
-        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_taskIdMeta);
-    }
-    if (data.containsKey('title')) {
-      context.handle(
-        _titleMeta,
-        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_titleMeta);
-    }
-    if (data.containsKey('is_completed')) {
-      context.handle(
-        _isCompletedMeta,
-        isCompleted.isAcceptableOrUnknown(
-          data['is_completed']!,
-          _isCompletedMeta,
-        ),
-      );
-    }
-    if (data.containsKey('sort_order')) {
-      context.handle(
-        _sortOrderMeta,
-        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
-      );
-    }
-    if (data.containsKey('sync_status')) {
-      context.handle(
-        _syncStatusMeta,
-        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
-      );
-    }
-    if (data.containsKey('revision')) {
-      context.handle(
-        _revisionMeta,
-        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  SubtaskRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return SubtaskRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      taskId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}task_id'],
-      )!,
-      title: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}title'],
-      )!,
-      isCompleted: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_completed'],
-      )!,
-      sortOrder: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}sort_order'],
-      )!,
-      createdAt: $SubtasksTable.$convertercreatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}created_at'],
-        )!,
-      ),
-      updatedAt: $SubtasksTable.$converterupdatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}updated_at'],
-        )!,
-      ),
-      deletedAt: $SubtasksTable.$converterdeletedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}deleted_at'],
-        ),
-      ),
-      syncStatus: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}sync_status'],
-      )!,
-      revision: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}revision'],
-      )!,
-    );
-  }
-
-  @override
-  $SubtasksTable createAlias(String alias) {
-    return $SubtasksTable(attachedDatabase, alias);
-  }
-
-  static TypeConverter<DateTime, String> $convertercreatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime, String> $converterupdatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime?, String?> $converterdeletedAt =
-      const NullableDateTimeUtcConverter();
-}
-
-class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
-  final String id;
-  final String taskId;
-  final String title;
-  final bool isCompleted;
-  final int sortOrder;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final DateTime? deletedAt;
-  final int syncStatus;
-  final int revision;
-  const SubtaskRow({
-    required this.id,
-    required this.taskId,
-    required this.title,
-    required this.isCompleted,
-    required this.sortOrder,
-    required this.createdAt,
-    required this.updatedAt,
-    this.deletedAt,
-    required this.syncStatus,
-    required this.revision,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['task_id'] = Variable<String>(taskId);
-    map['title'] = Variable<String>(title);
-    map['is_completed'] = Variable<bool>(isCompleted);
-    map['sort_order'] = Variable<int>(sortOrder);
-    {
-      map['created_at'] = Variable<String>(
-        $SubtasksTable.$convertercreatedAt.toSql(createdAt),
-      );
-    }
-    {
-      map['updated_at'] = Variable<String>(
-        $SubtasksTable.$converterupdatedAt.toSql(updatedAt),
-      );
-    }
-    if (!nullToAbsent || deletedAt != null) {
-      map['deleted_at'] = Variable<String>(
-        $SubtasksTable.$converterdeletedAt.toSql(deletedAt),
-      );
-    }
-    map['sync_status'] = Variable<int>(syncStatus);
-    map['revision'] = Variable<int>(revision);
-    return map;
-  }
-
-  SubtasksCompanion toCompanion(bool nullToAbsent) {
-    return SubtasksCompanion(
-      id: Value(id),
-      taskId: Value(taskId),
-      title: Value(title),
-      isCompleted: Value(isCompleted),
-      sortOrder: Value(sortOrder),
-      createdAt: Value(createdAt),
-      updatedAt: Value(updatedAt),
-      deletedAt: deletedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(deletedAt),
-      syncStatus: Value(syncStatus),
-      revision: Value(revision),
-    );
-  }
-
-  factory SubtaskRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return SubtaskRow(
-      id: serializer.fromJson<String>(json['id']),
-      taskId: serializer.fromJson<String>(json['taskId']),
-      title: serializer.fromJson<String>(json['title']),
-      isCompleted: serializer.fromJson<bool>(json['isCompleted']),
-      sortOrder: serializer.fromJson<int>(json['sortOrder']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
-      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
-      syncStatus: serializer.fromJson<int>(json['syncStatus']),
-      revision: serializer.fromJson<int>(json['revision']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<String>(id),
-      'taskId': serializer.toJson<String>(taskId),
-      'title': serializer.toJson<String>(title),
-      'isCompleted': serializer.toJson<bool>(isCompleted),
-      'sortOrder': serializer.toJson<int>(sortOrder),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'updatedAt': serializer.toJson<DateTime>(updatedAt),
-      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
-      'syncStatus': serializer.toJson<int>(syncStatus),
-      'revision': serializer.toJson<int>(revision),
-    };
-  }
-
-  SubtaskRow copyWith({
-    String? id,
-    String? taskId,
-    String? title,
-    bool? isCompleted,
-    int? sortOrder,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
-    int? syncStatus,
-    int? revision,
-  }) => SubtaskRow(
-    id: id ?? this.id,
-    taskId: taskId ?? this.taskId,
-    title: title ?? this.title,
-    isCompleted: isCompleted ?? this.isCompleted,
-    sortOrder: sortOrder ?? this.sortOrder,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
-    syncStatus: syncStatus ?? this.syncStatus,
-    revision: revision ?? this.revision,
-  );
-  SubtaskRow copyWithCompanion(SubtasksCompanion data) {
-    return SubtaskRow(
-      id: data.id.present ? data.id.value : this.id,
-      taskId: data.taskId.present ? data.taskId.value : this.taskId,
-      title: data.title.present ? data.title.value : this.title,
-      isCompleted: data.isCompleted.present
-          ? data.isCompleted.value
-          : this.isCompleted,
-      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
-      syncStatus: data.syncStatus.present
-          ? data.syncStatus.value
-          : this.syncStatus,
-      revision: data.revision.present ? data.revision.value : this.revision,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('SubtaskRow(')
-          ..write('id: $id, ')
-          ..write('taskId: $taskId, ')
-          ..write('title: $title, ')
-          ..write('isCompleted: $isCompleted, ')
-          ..write('sortOrder: $sortOrder, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    taskId,
-    title,
-    isCompleted,
-    sortOrder,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is SubtaskRow &&
-          other.id == this.id &&
-          other.taskId == this.taskId &&
-          other.title == this.title &&
-          other.isCompleted == this.isCompleted &&
-          other.sortOrder == this.sortOrder &&
-          other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt &&
-          other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
-}
-
-class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
-  final Value<String> id;
-  final Value<String> taskId;
-  final Value<String> title;
-  final Value<bool> isCompleted;
-  final Value<int> sortOrder;
-  final Value<DateTime> createdAt;
-  final Value<DateTime> updatedAt;
-  final Value<DateTime?> deletedAt;
-  final Value<int> syncStatus;
-  final Value<int> revision;
-  final Value<int> rowid;
-  const SubtasksCompanion({
-    this.id = const Value.absent(),
-    this.taskId = const Value.absent(),
-    this.title = const Value.absent(),
-    this.isCompleted = const Value.absent(),
-    this.sortOrder = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  SubtasksCompanion.insert({
-    required String id,
-    required String taskId,
-    required String title,
-    this.isCompleted = const Value.absent(),
-    this.sortOrder = const Value.absent(),
-    required DateTime createdAt,
-    required DateTime updatedAt,
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : id = Value(id),
-       taskId = Value(taskId),
-       title = Value(title),
-       createdAt = Value(createdAt),
-       updatedAt = Value(updatedAt);
-  static Insertable<SubtaskRow> custom({
-    Expression<String>? id,
-    Expression<String>? taskId,
-    Expression<String>? title,
-    Expression<bool>? isCompleted,
-    Expression<int>? sortOrder,
-    Expression<String>? createdAt,
-    Expression<String>? updatedAt,
-    Expression<String>? deletedAt,
-    Expression<int>? syncStatus,
-    Expression<int>? revision,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (taskId != null) 'task_id': taskId,
-      if (title != null) 'title': title,
-      if (isCompleted != null) 'is_completed': isCompleted,
-      if (sortOrder != null) 'sort_order': sortOrder,
-      if (createdAt != null) 'created_at': createdAt,
-      if (updatedAt != null) 'updated_at': updatedAt,
-      if (deletedAt != null) 'deleted_at': deletedAt,
-      if (syncStatus != null) 'sync_status': syncStatus,
-      if (revision != null) 'revision': revision,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  SubtasksCompanion copyWith({
-    Value<String>? id,
-    Value<String>? taskId,
-    Value<String>? title,
-    Value<bool>? isCompleted,
-    Value<int>? sortOrder,
-    Value<DateTime>? createdAt,
-    Value<DateTime>? updatedAt,
-    Value<DateTime?>? deletedAt,
-    Value<int>? syncStatus,
-    Value<int>? revision,
-    Value<int>? rowid,
-  }) {
-    return SubtasksCompanion(
-      id: id ?? this.id,
-      taskId: taskId ?? this.taskId,
-      title: title ?? this.title,
-      isCompleted: isCompleted ?? this.isCompleted,
-      sortOrder: sortOrder ?? this.sortOrder,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      deletedAt: deletedAt ?? this.deletedAt,
-      syncStatus: syncStatus ?? this.syncStatus,
-      revision: revision ?? this.revision,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<String>(id.value);
-    }
-    if (taskId.present) {
-      map['task_id'] = Variable<String>(taskId.value);
-    }
-    if (title.present) {
-      map['title'] = Variable<String>(title.value);
-    }
-    if (isCompleted.present) {
-      map['is_completed'] = Variable<bool>(isCompleted.value);
-    }
-    if (sortOrder.present) {
-      map['sort_order'] = Variable<int>(sortOrder.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<String>(
-        $SubtasksTable.$convertercreatedAt.toSql(createdAt.value),
-      );
-    }
-    if (updatedAt.present) {
-      map['updated_at'] = Variable<String>(
-        $SubtasksTable.$converterupdatedAt.toSql(updatedAt.value),
-      );
-    }
-    if (deletedAt.present) {
-      map['deleted_at'] = Variable<String>(
-        $SubtasksTable.$converterdeletedAt.toSql(deletedAt.value),
-      );
-    }
-    if (syncStatus.present) {
-      map['sync_status'] = Variable<int>(syncStatus.value);
-    }
-    if (revision.present) {
-      map['revision'] = Variable<int>(revision.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('SubtasksCompanion(')
-          ..write('id: $id, ')
-          ..write('taskId: $taskId, ')
-          ..write('title: $title, ')
-          ..write('isCompleted: $isCompleted, ')
-          ..write('sortOrder: $sortOrder, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $TagsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<String> id = GeneratedColumn<String>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _nameMeta = const VerificationMeta('name');
-  @override
-  late final GeneratedColumn<String> name = GeneratedColumn<String>(
-    'name',
-    aliasedName,
-    false,
-    additionalChecks: GeneratedColumn.checkTextLength(
-      minTextLength: 1,
-      maxTextLength: 100,
-    ),
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
-      GeneratedColumn<String>(
-        'created_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($TagsTable.$convertercreatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
-      GeneratedColumn<String>(
-        'updated_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($TagsTable.$converterupdatedAt);
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
-      GeneratedColumn<String>(
-        'deleted_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      ).withConverter<DateTime?>($TagsTable.$converterdeletedAt);
-  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
-    'syncStatus',
-  );
-  @override
-  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
-    'sync_status',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  static const VerificationMeta _revisionMeta = const VerificationMeta(
-    'revision',
-  );
-  @override
-  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
-    'revision',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(1),
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    name,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'tags';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<TagRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    } else if (isInserting) {
-      context.missing(_idMeta);
-    }
-    if (data.containsKey('name')) {
-      context.handle(
-        _nameMeta,
-        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_nameMeta);
-    }
-    if (data.containsKey('sync_status')) {
-      context.handle(
-        _syncStatusMeta,
-        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
-      );
-    }
-    if (data.containsKey('revision')) {
-      context.handle(
-        _revisionMeta,
-        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  TagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return TagRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      name: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}name'],
-      )!,
-      createdAt: $TagsTable.$convertercreatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}created_at'],
-        )!,
-      ),
-      updatedAt: $TagsTable.$converterupdatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}updated_at'],
-        )!,
-      ),
-      deletedAt: $TagsTable.$converterdeletedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}deleted_at'],
-        ),
-      ),
-      syncStatus: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}sync_status'],
-      )!,
-      revision: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}revision'],
-      )!,
-    );
-  }
-
-  @override
-  $TagsTable createAlias(String alias) {
-    return $TagsTable(attachedDatabase, alias);
-  }
-
-  static TypeConverter<DateTime, String> $convertercreatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime, String> $converterupdatedAt =
-      const DateTimeUtcConverter();
-  static TypeConverter<DateTime?, String?> $converterdeletedAt =
-      const NullableDateTimeUtcConverter();
-}
-
-class TagRow extends DataClass implements Insertable<TagRow> {
-  final String id;
-  final String name;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final DateTime? deletedAt;
-  final int syncStatus;
-  final int revision;
-  const TagRow({
-    required this.id,
-    required this.name,
-    required this.createdAt,
-    required this.updatedAt,
-    this.deletedAt,
-    required this.syncStatus,
-    required this.revision,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['name'] = Variable<String>(name);
-    {
-      map['created_at'] = Variable<String>(
-        $TagsTable.$convertercreatedAt.toSql(createdAt),
-      );
-    }
-    {
-      map['updated_at'] = Variable<String>(
-        $TagsTable.$converterupdatedAt.toSql(updatedAt),
-      );
-    }
-    if (!nullToAbsent || deletedAt != null) {
-      map['deleted_at'] = Variable<String>(
-        $TagsTable.$converterdeletedAt.toSql(deletedAt),
-      );
-    }
-    map['sync_status'] = Variable<int>(syncStatus);
-    map['revision'] = Variable<int>(revision);
-    return map;
-  }
-
-  TagsCompanion toCompanion(bool nullToAbsent) {
-    return TagsCompanion(
-      id: Value(id),
-      name: Value(name),
-      createdAt: Value(createdAt),
-      updatedAt: Value(updatedAt),
-      deletedAt: deletedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(deletedAt),
-      syncStatus: Value(syncStatus),
-      revision: Value(revision),
-    );
-  }
-
-  factory TagRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return TagRow(
-      id: serializer.fromJson<String>(json['id']),
-      name: serializer.fromJson<String>(json['name']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
-      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
-      syncStatus: serializer.fromJson<int>(json['syncStatus']),
-      revision: serializer.fromJson<int>(json['revision']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<String>(id),
-      'name': serializer.toJson<String>(name),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'updatedAt': serializer.toJson<DateTime>(updatedAt),
-      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
-      'syncStatus': serializer.toJson<int>(syncStatus),
-      'revision': serializer.toJson<int>(revision),
-    };
-  }
-
-  TagRow copyWith({
-    String? id,
-    String? name,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    Value<DateTime?> deletedAt = const Value.absent(),
-    int? syncStatus,
-    int? revision,
-  }) => TagRow(
-    id: id ?? this.id,
-    name: name ?? this.name,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
-    syncStatus: syncStatus ?? this.syncStatus,
-    revision: revision ?? this.revision,
-  );
-  TagRow copyWithCompanion(TagsCompanion data) {
-    return TagRow(
-      id: data.id.present ? data.id.value : this.id,
-      name: data.name.present ? data.name.value : this.name,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
-      syncStatus: data.syncStatus.present
-          ? data.syncStatus.value
-          : this.syncStatus,
-      revision: data.revision.present ? data.revision.value : this.revision,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TagRow(')
-          ..write('id: $id, ')
-          ..write('name: $name, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    name,
-    createdAt,
-    updatedAt,
-    deletedAt,
-    syncStatus,
-    revision,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is TagRow &&
-          other.id == this.id &&
-          other.name == this.name &&
-          other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt &&
-          other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
-}
-
-class TagsCompanion extends UpdateCompanion<TagRow> {
-  final Value<String> id;
-  final Value<String> name;
-  final Value<DateTime> createdAt;
-  final Value<DateTime> updatedAt;
-  final Value<DateTime?> deletedAt;
-  final Value<int> syncStatus;
-  final Value<int> revision;
-  final Value<int> rowid;
-  const TagsCompanion({
-    this.id = const Value.absent(),
-    this.name = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  TagsCompanion.insert({
-    required String id,
-    required String name,
-    required DateTime createdAt,
-    required DateTime updatedAt,
-    this.deletedAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.revision = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : id = Value(id),
-       name = Value(name),
-       createdAt = Value(createdAt),
-       updatedAt = Value(updatedAt);
-  static Insertable<TagRow> custom({
-    Expression<String>? id,
-    Expression<String>? name,
-    Expression<String>? createdAt,
-    Expression<String>? updatedAt,
-    Expression<String>? deletedAt,
-    Expression<int>? syncStatus,
-    Expression<int>? revision,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (name != null) 'name': name,
-      if (createdAt != null) 'created_at': createdAt,
-      if (updatedAt != null) 'updated_at': updatedAt,
-      if (deletedAt != null) 'deleted_at': deletedAt,
-      if (syncStatus != null) 'sync_status': syncStatus,
-      if (revision != null) 'revision': revision,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  TagsCompanion copyWith({
-    Value<String>? id,
-    Value<String>? name,
-    Value<DateTime>? createdAt,
-    Value<DateTime>? updatedAt,
-    Value<DateTime?>? deletedAt,
-    Value<int>? syncStatus,
-    Value<int>? revision,
-    Value<int>? rowid,
-  }) {
-    return TagsCompanion(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      deletedAt: deletedAt ?? this.deletedAt,
-      syncStatus: syncStatus ?? this.syncStatus,
-      revision: revision ?? this.revision,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<String>(id.value);
-    }
-    if (name.present) {
-      map['name'] = Variable<String>(name.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<String>(
-        $TagsTable.$convertercreatedAt.toSql(createdAt.value),
-      );
-    }
-    if (updatedAt.present) {
-      map['updated_at'] = Variable<String>(
-        $TagsTable.$converterupdatedAt.toSql(updatedAt.value),
-      );
-    }
-    if (deletedAt.present) {
-      map['deleted_at'] = Variable<String>(
-        $TagsTable.$converterdeletedAt.toSql(deletedAt.value),
-      );
-    }
-    if (syncStatus.present) {
-      map['sync_status'] = Variable<int>(syncStatus.value);
-    }
-    if (revision.present) {
-      map['revision'] = Variable<int>(revision.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TagsCompanion(')
-          ..write('id: $id, ')
-          ..write('name: $name, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $TaskTagsTable extends TaskTags
-    with TableInfo<$TaskTagsTable, TaskTagRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $TaskTagsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
-  @override
-  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
-    'task_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
-  @override
-  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
-    'tag_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  @override
-  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
-      GeneratedColumn<String>(
-        'created_at',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      ).withConverter<DateTime>($TaskTagsTable.$convertercreatedAt);
-  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
-    'syncStatus',
-  );
-  @override
-  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
-    'sync_status',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultValue: const Constant(0),
-  );
-  @override
-  List<GeneratedColumn> get $columns => [taskId, tagId, createdAt, syncStatus];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'task_tags';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<TaskTagRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('task_id')) {
-      context.handle(
-        _taskIdMeta,
-        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_taskIdMeta);
-    }
-    if (data.containsKey('tag_id')) {
-      context.handle(
-        _tagIdMeta,
-        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_tagIdMeta);
-    }
-    if (data.containsKey('sync_status')) {
-      context.handle(
-        _syncStatusMeta,
-        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {taskId, tagId};
-  @override
-  TaskTagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return TaskTagRow(
-      taskId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}task_id'],
-      )!,
-      tagId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}tag_id'],
-      )!,
-      createdAt: $TaskTagsTable.$convertercreatedAt.fromSql(
-        attachedDatabase.typeMapping.read(
-          DriftSqlType.string,
-          data['${effectivePrefix}created_at'],
-        )!,
-      ),
-      syncStatus: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}sync_status'],
-      )!,
-    );
-  }
-
-  @override
-  $TaskTagsTable createAlias(String alias) {
-    return $TaskTagsTable(attachedDatabase, alias);
-  }
-
-  static TypeConverter<DateTime, String> $convertercreatedAt =
-      const DateTimeUtcConverter();
-}
-
-class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
-  final String taskId;
-  final String tagId;
-  final DateTime createdAt;
-  final int syncStatus;
-  const TaskTagRow({
-    required this.taskId,
-    required this.tagId,
-    required this.createdAt,
-    required this.syncStatus,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['task_id'] = Variable<String>(taskId);
-    map['tag_id'] = Variable<String>(tagId);
-    {
-      map['created_at'] = Variable<String>(
-        $TaskTagsTable.$convertercreatedAt.toSql(createdAt),
-      );
-    }
-    map['sync_status'] = Variable<int>(syncStatus);
-    return map;
-  }
-
-  TaskTagsCompanion toCompanion(bool nullToAbsent) {
-    return TaskTagsCompanion(
-      taskId: Value(taskId),
-      tagId: Value(tagId),
-      createdAt: Value(createdAt),
-      syncStatus: Value(syncStatus),
-    );
-  }
-
-  factory TaskTagRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return TaskTagRow(
-      taskId: serializer.fromJson<String>(json['taskId']),
-      tagId: serializer.fromJson<String>(json['tagId']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      syncStatus: serializer.fromJson<int>(json['syncStatus']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'taskId': serializer.toJson<String>(taskId),
-      'tagId': serializer.toJson<String>(tagId),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'syncStatus': serializer.toJson<int>(syncStatus),
-    };
-  }
-
-  TaskTagRow copyWith({
-    String? taskId,
-    String? tagId,
-    DateTime? createdAt,
-    int? syncStatus,
-  }) => TaskTagRow(
-    taskId: taskId ?? this.taskId,
-    tagId: tagId ?? this.tagId,
-    createdAt: createdAt ?? this.createdAt,
-    syncStatus: syncStatus ?? this.syncStatus,
-  );
-  TaskTagRow copyWithCompanion(TaskTagsCompanion data) {
-    return TaskTagRow(
-      taskId: data.taskId.present ? data.taskId.value : this.taskId,
-      tagId: data.tagId.present ? data.tagId.value : this.tagId,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      syncStatus: data.syncStatus.present
-          ? data.syncStatus.value
-          : this.syncStatus,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TaskTagRow(')
-          ..write('taskId: $taskId, ')
-          ..write('tagId: $tagId, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('syncStatus: $syncStatus')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(taskId, tagId, createdAt, syncStatus);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is TaskTagRow &&
-          other.taskId == this.taskId &&
-          other.tagId == this.tagId &&
-          other.createdAt == this.createdAt &&
-          other.syncStatus == this.syncStatus);
-}
-
-class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
-  final Value<String> taskId;
-  final Value<String> tagId;
-  final Value<DateTime> createdAt;
-  final Value<int> syncStatus;
-  final Value<int> rowid;
-  const TaskTagsCompanion({
-    this.taskId = const Value.absent(),
-    this.tagId = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.syncStatus = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  TaskTagsCompanion.insert({
-    required String taskId,
-    required String tagId,
-    required DateTime createdAt,
-    this.syncStatus = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : taskId = Value(taskId),
-       tagId = Value(tagId),
-       createdAt = Value(createdAt);
-  static Insertable<TaskTagRow> custom({
-    Expression<String>? taskId,
-    Expression<String>? tagId,
-    Expression<String>? createdAt,
-    Expression<int>? syncStatus,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (taskId != null) 'task_id': taskId,
-      if (tagId != null) 'tag_id': tagId,
-      if (createdAt != null) 'created_at': createdAt,
-      if (syncStatus != null) 'sync_status': syncStatus,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  TaskTagsCompanion copyWith({
-    Value<String>? taskId,
-    Value<String>? tagId,
-    Value<DateTime>? createdAt,
-    Value<int>? syncStatus,
-    Value<int>? rowid,
-  }) {
-    return TaskTagsCompanion(
-      taskId: taskId ?? this.taskId,
-      tagId: tagId ?? this.tagId,
-      createdAt: createdAt ?? this.createdAt,
-      syncStatus: syncStatus ?? this.syncStatus,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (taskId.present) {
-      map['task_id'] = Variable<String>(taskId.value);
-    }
-    if (tagId.present) {
-      map['tag_id'] = Variable<String>(tagId.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<String>(
-        $TaskTagsTable.$convertercreatedAt.toSql(createdAt.value),
-      );
-    }
-    if (syncStatus.present) {
-      map['sync_status'] = Variable<int>(syncStatus.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('TaskTagsCompanion(')
-          ..write('taskId: $taskId, ')
-          ..write('tagId: $tagId, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('syncStatus: $syncStatus, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
 class $RecurringRulesTable extends RecurringRules
     with TableInfo<$RecurringRulesTable, RecurringRuleRow> {
   @override
@@ -3477,6 +691,9 @@ class $RecurringRulesTable extends RecurringRules
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES categories (id) ON DELETE SET NULL',
+    ),
   );
   static const VerificationMeta _priorityMeta = const VerificationMeta(
     'priority',
@@ -4431,6 +1648,3028 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
   }
 }
 
+class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TasksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 500,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> startTime =
+      GeneratedColumn<String>(
+        'start_time',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TasksTable.$converterstartTime);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> endTime =
+      GeneratedColumn<String>(
+        'end_time',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TasksTable.$converterendTime);
+  static const VerificationMeta _estimatedDurationMinMeta =
+      const VerificationMeta('estimatedDurationMin');
+  @override
+  late final GeneratedColumn<int> estimatedDurationMin = GeneratedColumn<int>(
+    'estimated_duration_min',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _actualDurationMinMeta = const VerificationMeta(
+    'actualDurationMin',
+  );
+  @override
+  late final GeneratedColumn<int> actualDurationMin = GeneratedColumn<int>(
+    'actual_duration_min',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _manualDurationAdjustmentMinMeta =
+      const VerificationMeta('manualDurationAdjustmentMin');
+  @override
+  late final GeneratedColumn<int> manualDurationAdjustmentMin =
+      GeneratedColumn<int>(
+        'manual_duration_adjustment_min',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      );
+  static const VerificationMeta _categoryIdMeta = const VerificationMeta(
+    'categoryId',
+  );
+  @override
+  late final GeneratedColumn<String> categoryId = GeneratedColumn<String>(
+    'category_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES categories (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _priorityMeta = const VerificationMeta(
+    'priority',
+  );
+  @override
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+    'priority',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('planned'),
+  );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _recurringRuleIdMeta = const VerificationMeta(
+    'recurringRuleId',
+  );
+  @override
+  late final GeneratedColumn<String> recurringRuleId = GeneratedColumn<String>(
+    'recurring_rule_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES recurring_rules (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _rescheduledFromIdMeta = const VerificationMeta(
+    'rescheduledFromId',
+  );
+  @override
+  late final GeneratedColumn<String> rescheduledFromId =
+      GeneratedColumn<String>(
+        'rescheduled_from_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES tasks (id) ON DELETE SET NULL',
+        ),
+      );
+  static const VerificationMeta _rescheduledToIdMeta = const VerificationMeta(
+    'rescheduledToId',
+  );
+  @override
+  late final GeneratedColumn<String> rescheduledToId = GeneratedColumn<String>(
+    'rescheduled_to_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _isInboxMeta = const VerificationMeta(
+    'isInbox',
+  );
+  @override
+  late final GeneratedColumn<bool> isInbox = GeneratedColumn<bool>(
+    'is_inbox',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_inbox" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _missedAtMeta = const VerificationMeta(
+    'missedAt',
+  );
+  @override
+  late final GeneratedColumn<String> missedAt = GeneratedColumn<String>(
+    'missed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TasksTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TasksTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TasksTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    title,
+    description,
+    startTime,
+    endTime,
+    estimatedDurationMin,
+    actualDurationMin,
+    manualDurationAdjustmentMin,
+    categoryId,
+    priority,
+    status,
+    notes,
+    recurringRuleId,
+    rescheduledFromId,
+    rescheduledToId,
+    isInbox,
+    missedAt,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tasks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TaskRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('estimated_duration_min')) {
+      context.handle(
+        _estimatedDurationMinMeta,
+        estimatedDurationMin.isAcceptableOrUnknown(
+          data['estimated_duration_min']!,
+          _estimatedDurationMinMeta,
+        ),
+      );
+    }
+    if (data.containsKey('actual_duration_min')) {
+      context.handle(
+        _actualDurationMinMeta,
+        actualDurationMin.isAcceptableOrUnknown(
+          data['actual_duration_min']!,
+          _actualDurationMinMeta,
+        ),
+      );
+    }
+    if (data.containsKey('manual_duration_adjustment_min')) {
+      context.handle(
+        _manualDurationAdjustmentMinMeta,
+        manualDurationAdjustmentMin.isAcceptableOrUnknown(
+          data['manual_duration_adjustment_min']!,
+          _manualDurationAdjustmentMinMeta,
+        ),
+      );
+    }
+    if (data.containsKey('category_id')) {
+      context.handle(
+        _categoryIdMeta,
+        categoryId.isAcceptableOrUnknown(data['category_id']!, _categoryIdMeta),
+      );
+    }
+    if (data.containsKey('priority')) {
+      context.handle(
+        _priorityMeta,
+        priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
+    if (data.containsKey('recurring_rule_id')) {
+      context.handle(
+        _recurringRuleIdMeta,
+        recurringRuleId.isAcceptableOrUnknown(
+          data['recurring_rule_id']!,
+          _recurringRuleIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rescheduled_from_id')) {
+      context.handle(
+        _rescheduledFromIdMeta,
+        rescheduledFromId.isAcceptableOrUnknown(
+          data['rescheduled_from_id']!,
+          _rescheduledFromIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rescheduled_to_id')) {
+      context.handle(
+        _rescheduledToIdMeta,
+        rescheduledToId.isAcceptableOrUnknown(
+          data['rescheduled_to_id']!,
+          _rescheduledToIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_inbox')) {
+      context.handle(
+        _isInboxMeta,
+        isInbox.isAcceptableOrUnknown(data['is_inbox']!, _isInboxMeta),
+      );
+    }
+    if (data.containsKey('missed_at')) {
+      context.handle(
+        _missedAtMeta,
+        missedAt.isAcceptableOrUnknown(data['missed_at']!, _missedAtMeta),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TaskRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TaskRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      ),
+      startTime: $TasksTable.$converterstartTime.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}start_time'],
+        ),
+      ),
+      endTime: $TasksTable.$converterendTime.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}end_time'],
+        ),
+      ),
+      estimatedDurationMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}estimated_duration_min'],
+      ),
+      actualDurationMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}actual_duration_min'],
+      ),
+      manualDurationAdjustmentMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}manual_duration_adjustment_min'],
+      )!,
+      categoryId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category_id'],
+      ),
+      priority: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}priority'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      ),
+      recurringRuleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurring_rule_id'],
+      ),
+      rescheduledFromId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rescheduled_from_id'],
+      ),
+      rescheduledToId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rescheduled_to_id'],
+      ),
+      isInbox: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_inbox'],
+      )!,
+      missedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}missed_at'],
+      ),
+      createdAt: $TasksTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $TasksTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $TasksTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+    );
+  }
+
+  @override
+  $TasksTable createAlias(String alias) {
+    return $TasksTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime?, String?> $converterstartTime =
+      const NullableDateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterendTime =
+      const NullableDateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class TaskRow extends DataClass implements Insertable<TaskRow> {
+  final String id;
+  final String title;
+  final String? description;
+  final DateTime? startTime;
+  final DateTime? endTime;
+  final int? estimatedDurationMin;
+  final int? actualDurationMin;
+  final int manualDurationAdjustmentMin;
+  final String? categoryId;
+  final int priority;
+  final String status;
+  final String? notes;
+  final String? recurringRuleId;
+  final String? rescheduledFromId;
+  final String? rescheduledToId;
+  final bool isInbox;
+  final String? missedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  const TaskRow({
+    required this.id,
+    required this.title,
+    this.description,
+    this.startTime,
+    this.endTime,
+    this.estimatedDurationMin,
+    this.actualDurationMin,
+    required this.manualDurationAdjustmentMin,
+    this.categoryId,
+    required this.priority,
+    required this.status,
+    this.notes,
+    this.recurringRuleId,
+    this.rescheduledFromId,
+    this.rescheduledToId,
+    required this.isInbox,
+    this.missedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    if (!nullToAbsent || startTime != null) {
+      map['start_time'] = Variable<String>(
+        $TasksTable.$converterstartTime.toSql(startTime),
+      );
+    }
+    if (!nullToAbsent || endTime != null) {
+      map['end_time'] = Variable<String>(
+        $TasksTable.$converterendTime.toSql(endTime),
+      );
+    }
+    if (!nullToAbsent || estimatedDurationMin != null) {
+      map['estimated_duration_min'] = Variable<int>(estimatedDurationMin);
+    }
+    if (!nullToAbsent || actualDurationMin != null) {
+      map['actual_duration_min'] = Variable<int>(actualDurationMin);
+    }
+    map['manual_duration_adjustment_min'] = Variable<int>(
+      manualDurationAdjustmentMin,
+    );
+    if (!nullToAbsent || categoryId != null) {
+      map['category_id'] = Variable<String>(categoryId);
+    }
+    map['priority'] = Variable<int>(priority);
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    if (!nullToAbsent || recurringRuleId != null) {
+      map['recurring_rule_id'] = Variable<String>(recurringRuleId);
+    }
+    if (!nullToAbsent || rescheduledFromId != null) {
+      map['rescheduled_from_id'] = Variable<String>(rescheduledFromId);
+    }
+    if (!nullToAbsent || rescheduledToId != null) {
+      map['rescheduled_to_id'] = Variable<String>(rescheduledToId);
+    }
+    map['is_inbox'] = Variable<bool>(isInbox);
+    if (!nullToAbsent || missedAt != null) {
+      map['missed_at'] = Variable<String>(missedAt);
+    }
+    {
+      map['created_at'] = Variable<String>(
+        $TasksTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $TasksTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $TasksTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    return map;
+  }
+
+  TasksCompanion toCompanion(bool nullToAbsent) {
+    return TasksCompanion(
+      id: Value(id),
+      title: Value(title),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      startTime: startTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(startTime),
+      endTime: endTime == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endTime),
+      estimatedDurationMin: estimatedDurationMin == null && nullToAbsent
+          ? const Value.absent()
+          : Value(estimatedDurationMin),
+      actualDurationMin: actualDurationMin == null && nullToAbsent
+          ? const Value.absent()
+          : Value(actualDurationMin),
+      manualDurationAdjustmentMin: Value(manualDurationAdjustmentMin),
+      categoryId: categoryId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(categoryId),
+      priority: Value(priority),
+      status: Value(status),
+      notes: notes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notes),
+      recurringRuleId: recurringRuleId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurringRuleId),
+      rescheduledFromId: rescheduledFromId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rescheduledFromId),
+      rescheduledToId: rescheduledToId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rescheduledToId),
+      isInbox: Value(isInbox),
+      missedAt: missedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(missedAt),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+    );
+  }
+
+  factory TaskRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TaskRow(
+      id: serializer.fromJson<String>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      description: serializer.fromJson<String?>(json['description']),
+      startTime: serializer.fromJson<DateTime?>(json['startTime']),
+      endTime: serializer.fromJson<DateTime?>(json['endTime']),
+      estimatedDurationMin: serializer.fromJson<int?>(
+        json['estimatedDurationMin'],
+      ),
+      actualDurationMin: serializer.fromJson<int?>(json['actualDurationMin']),
+      manualDurationAdjustmentMin: serializer.fromJson<int>(
+        json['manualDurationAdjustmentMin'],
+      ),
+      categoryId: serializer.fromJson<String?>(json['categoryId']),
+      priority: serializer.fromJson<int>(json['priority']),
+      status: serializer.fromJson<String>(json['status']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      recurringRuleId: serializer.fromJson<String?>(json['recurringRuleId']),
+      rescheduledFromId: serializer.fromJson<String?>(
+        json['rescheduledFromId'],
+      ),
+      rescheduledToId: serializer.fromJson<String?>(json['rescheduledToId']),
+      isInbox: serializer.fromJson<bool>(json['isInbox']),
+      missedAt: serializer.fromJson<String?>(json['missedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'title': serializer.toJson<String>(title),
+      'description': serializer.toJson<String?>(description),
+      'startTime': serializer.toJson<DateTime?>(startTime),
+      'endTime': serializer.toJson<DateTime?>(endTime),
+      'estimatedDurationMin': serializer.toJson<int?>(estimatedDurationMin),
+      'actualDurationMin': serializer.toJson<int?>(actualDurationMin),
+      'manualDurationAdjustmentMin': serializer.toJson<int>(
+        manualDurationAdjustmentMin,
+      ),
+      'categoryId': serializer.toJson<String?>(categoryId),
+      'priority': serializer.toJson<int>(priority),
+      'status': serializer.toJson<String>(status),
+      'notes': serializer.toJson<String?>(notes),
+      'recurringRuleId': serializer.toJson<String?>(recurringRuleId),
+      'rescheduledFromId': serializer.toJson<String?>(rescheduledFromId),
+      'rescheduledToId': serializer.toJson<String?>(rescheduledToId),
+      'isInbox': serializer.toJson<bool>(isInbox),
+      'missedAt': serializer.toJson<String?>(missedAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+    };
+  }
+
+  TaskRow copyWith({
+    String? id,
+    String? title,
+    Value<String?> description = const Value.absent(),
+    Value<DateTime?> startTime = const Value.absent(),
+    Value<DateTime?> endTime = const Value.absent(),
+    Value<int?> estimatedDurationMin = const Value.absent(),
+    Value<int?> actualDurationMin = const Value.absent(),
+    int? manualDurationAdjustmentMin,
+    Value<String?> categoryId = const Value.absent(),
+    int? priority,
+    String? status,
+    Value<String?> notes = const Value.absent(),
+    Value<String?> recurringRuleId = const Value.absent(),
+    Value<String?> rescheduledFromId = const Value.absent(),
+    Value<String?> rescheduledToId = const Value.absent(),
+    bool? isInbox,
+    Value<String?> missedAt = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+  }) => TaskRow(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    description: description.present ? description.value : this.description,
+    startTime: startTime.present ? startTime.value : this.startTime,
+    endTime: endTime.present ? endTime.value : this.endTime,
+    estimatedDurationMin: estimatedDurationMin.present
+        ? estimatedDurationMin.value
+        : this.estimatedDurationMin,
+    actualDurationMin: actualDurationMin.present
+        ? actualDurationMin.value
+        : this.actualDurationMin,
+    manualDurationAdjustmentMin:
+        manualDurationAdjustmentMin ?? this.manualDurationAdjustmentMin,
+    categoryId: categoryId.present ? categoryId.value : this.categoryId,
+    priority: priority ?? this.priority,
+    status: status ?? this.status,
+    notes: notes.present ? notes.value : this.notes,
+    recurringRuleId: recurringRuleId.present
+        ? recurringRuleId.value
+        : this.recurringRuleId,
+    rescheduledFromId: rescheduledFromId.present
+        ? rescheduledFromId.value
+        : this.rescheduledFromId,
+    rescheduledToId: rescheduledToId.present
+        ? rescheduledToId.value
+        : this.rescheduledToId,
+    isInbox: isInbox ?? this.isInbox,
+    missedAt: missedAt.present ? missedAt.value : this.missedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+  );
+  TaskRow copyWithCompanion(TasksCompanion data) {
+    return TaskRow(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
+      startTime: data.startTime.present ? data.startTime.value : this.startTime,
+      endTime: data.endTime.present ? data.endTime.value : this.endTime,
+      estimatedDurationMin: data.estimatedDurationMin.present
+          ? data.estimatedDurationMin.value
+          : this.estimatedDurationMin,
+      actualDurationMin: data.actualDurationMin.present
+          ? data.actualDurationMin.value
+          : this.actualDurationMin,
+      manualDurationAdjustmentMin: data.manualDurationAdjustmentMin.present
+          ? data.manualDurationAdjustmentMin.value
+          : this.manualDurationAdjustmentMin,
+      categoryId: data.categoryId.present
+          ? data.categoryId.value
+          : this.categoryId,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      status: data.status.present ? data.status.value : this.status,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      recurringRuleId: data.recurringRuleId.present
+          ? data.recurringRuleId.value
+          : this.recurringRuleId,
+      rescheduledFromId: data.rescheduledFromId.present
+          ? data.rescheduledFromId.value
+          : this.rescheduledFromId,
+      rescheduledToId: data.rescheduledToId.present
+          ? data.rescheduledToId.value
+          : this.rescheduledToId,
+      isInbox: data.isInbox.present ? data.isInbox.value : this.isInbox,
+      missedAt: data.missedAt.present ? data.missedAt.value : this.missedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TaskRow(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('description: $description, ')
+          ..write('startTime: $startTime, ')
+          ..write('endTime: $endTime, ')
+          ..write('estimatedDurationMin: $estimatedDurationMin, ')
+          ..write('actualDurationMin: $actualDurationMin, ')
+          ..write('manualDurationAdjustmentMin: $manualDurationAdjustmentMin, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('priority: $priority, ')
+          ..write('status: $status, ')
+          ..write('notes: $notes, ')
+          ..write('recurringRuleId: $recurringRuleId, ')
+          ..write('rescheduledFromId: $rescheduledFromId, ')
+          ..write('rescheduledToId: $rescheduledToId, ')
+          ..write('isInbox: $isInbox, ')
+          ..write('missedAt: $missedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    id,
+    title,
+    description,
+    startTime,
+    endTime,
+    estimatedDurationMin,
+    actualDurationMin,
+    manualDurationAdjustmentMin,
+    categoryId,
+    priority,
+    status,
+    notes,
+    recurringRuleId,
+    rescheduledFromId,
+    rescheduledToId,
+    isInbox,
+    missedAt,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TaskRow &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.description == this.description &&
+          other.startTime == this.startTime &&
+          other.endTime == this.endTime &&
+          other.estimatedDurationMin == this.estimatedDurationMin &&
+          other.actualDurationMin == this.actualDurationMin &&
+          other.manualDurationAdjustmentMin ==
+              this.manualDurationAdjustmentMin &&
+          other.categoryId == this.categoryId &&
+          other.priority == this.priority &&
+          other.status == this.status &&
+          other.notes == this.notes &&
+          other.recurringRuleId == this.recurringRuleId &&
+          other.rescheduledFromId == this.rescheduledFromId &&
+          other.rescheduledToId == this.rescheduledToId &&
+          other.isInbox == this.isInbox &&
+          other.missedAt == this.missedAt &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision);
+}
+
+class TasksCompanion extends UpdateCompanion<TaskRow> {
+  final Value<String> id;
+  final Value<String> title;
+  final Value<String?> description;
+  final Value<DateTime?> startTime;
+  final Value<DateTime?> endTime;
+  final Value<int?> estimatedDurationMin;
+  final Value<int?> actualDurationMin;
+  final Value<int> manualDurationAdjustmentMin;
+  final Value<String?> categoryId;
+  final Value<int> priority;
+  final Value<String> status;
+  final Value<String?> notes;
+  final Value<String?> recurringRuleId;
+  final Value<String?> rescheduledFromId;
+  final Value<String?> rescheduledToId;
+  final Value<bool> isInbox;
+  final Value<String?> missedAt;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int> rowid;
+  const TasksCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.description = const Value.absent(),
+    this.startTime = const Value.absent(),
+    this.endTime = const Value.absent(),
+    this.estimatedDurationMin = const Value.absent(),
+    this.actualDurationMin = const Value.absent(),
+    this.manualDurationAdjustmentMin = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.status = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.recurringRuleId = const Value.absent(),
+    this.rescheduledFromId = const Value.absent(),
+    this.rescheduledToId = const Value.absent(),
+    this.isInbox = const Value.absent(),
+    this.missedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TasksCompanion.insert({
+    required String id,
+    required String title,
+    this.description = const Value.absent(),
+    this.startTime = const Value.absent(),
+    this.endTime = const Value.absent(),
+    this.estimatedDurationMin = const Value.absent(),
+    this.actualDurationMin = const Value.absent(),
+    this.manualDurationAdjustmentMin = const Value.absent(),
+    this.categoryId = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.status = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.recurringRuleId = const Value.absent(),
+    this.rescheduledFromId = const Value.absent(),
+    this.rescheduledToId = const Value.absent(),
+    this.isInbox = const Value.absent(),
+    this.missedAt = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       title = Value(title),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<TaskRow> custom({
+    Expression<String>? id,
+    Expression<String>? title,
+    Expression<String>? description,
+    Expression<String>? startTime,
+    Expression<String>? endTime,
+    Expression<int>? estimatedDurationMin,
+    Expression<int>? actualDurationMin,
+    Expression<int>? manualDurationAdjustmentMin,
+    Expression<String>? categoryId,
+    Expression<int>? priority,
+    Expression<String>? status,
+    Expression<String>? notes,
+    Expression<String>? recurringRuleId,
+    Expression<String>? rescheduledFromId,
+    Expression<String>? rescheduledToId,
+    Expression<bool>? isInbox,
+    Expression<String>? missedAt,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (description != null) 'description': description,
+      if (startTime != null) 'start_time': startTime,
+      if (endTime != null) 'end_time': endTime,
+      if (estimatedDurationMin != null)
+        'estimated_duration_min': estimatedDurationMin,
+      if (actualDurationMin != null) 'actual_duration_min': actualDurationMin,
+      if (manualDurationAdjustmentMin != null)
+        'manual_duration_adjustment_min': manualDurationAdjustmentMin,
+      if (categoryId != null) 'category_id': categoryId,
+      if (priority != null) 'priority': priority,
+      if (status != null) 'status': status,
+      if (notes != null) 'notes': notes,
+      if (recurringRuleId != null) 'recurring_rule_id': recurringRuleId,
+      if (rescheduledFromId != null) 'rescheduled_from_id': rescheduledFromId,
+      if (rescheduledToId != null) 'rescheduled_to_id': rescheduledToId,
+      if (isInbox != null) 'is_inbox': isInbox,
+      if (missedAt != null) 'missed_at': missedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TasksCompanion copyWith({
+    Value<String>? id,
+    Value<String>? title,
+    Value<String?>? description,
+    Value<DateTime?>? startTime,
+    Value<DateTime?>? endTime,
+    Value<int?>? estimatedDurationMin,
+    Value<int?>? actualDurationMin,
+    Value<int>? manualDurationAdjustmentMin,
+    Value<String?>? categoryId,
+    Value<int>? priority,
+    Value<String>? status,
+    Value<String?>? notes,
+    Value<String?>? recurringRuleId,
+    Value<String?>? rescheduledFromId,
+    Value<String?>? rescheduledToId,
+    Value<bool>? isInbox,
+    Value<String?>? missedAt,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int>? rowid,
+  }) {
+    return TasksCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      estimatedDurationMin: estimatedDurationMin ?? this.estimatedDurationMin,
+      actualDurationMin: actualDurationMin ?? this.actualDurationMin,
+      manualDurationAdjustmentMin:
+          manualDurationAdjustmentMin ?? this.manualDurationAdjustmentMin,
+      categoryId: categoryId ?? this.categoryId,
+      priority: priority ?? this.priority,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+      recurringRuleId: recurringRuleId ?? this.recurringRuleId,
+      rescheduledFromId: rescheduledFromId ?? this.rescheduledFromId,
+      rescheduledToId: rescheduledToId ?? this.rescheduledToId,
+      isInbox: isInbox ?? this.isInbox,
+      missedAt: missedAt ?? this.missedAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (startTime.present) {
+      map['start_time'] = Variable<String>(
+        $TasksTable.$converterstartTime.toSql(startTime.value),
+      );
+    }
+    if (endTime.present) {
+      map['end_time'] = Variable<String>(
+        $TasksTable.$converterendTime.toSql(endTime.value),
+      );
+    }
+    if (estimatedDurationMin.present) {
+      map['estimated_duration_min'] = Variable<int>(estimatedDurationMin.value);
+    }
+    if (actualDurationMin.present) {
+      map['actual_duration_min'] = Variable<int>(actualDurationMin.value);
+    }
+    if (manualDurationAdjustmentMin.present) {
+      map['manual_duration_adjustment_min'] = Variable<int>(
+        manualDurationAdjustmentMin.value,
+      );
+    }
+    if (categoryId.present) {
+      map['category_id'] = Variable<String>(categoryId.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (recurringRuleId.present) {
+      map['recurring_rule_id'] = Variable<String>(recurringRuleId.value);
+    }
+    if (rescheduledFromId.present) {
+      map['rescheduled_from_id'] = Variable<String>(rescheduledFromId.value);
+    }
+    if (rescheduledToId.present) {
+      map['rescheduled_to_id'] = Variable<String>(rescheduledToId.value);
+    }
+    if (isInbox.present) {
+      map['is_inbox'] = Variable<bool>(isInbox.value);
+    }
+    if (missedAt.present) {
+      map['missed_at'] = Variable<String>(missedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $TasksTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $TasksTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $TasksTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TasksCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('description: $description, ')
+          ..write('startTime: $startTime, ')
+          ..write('endTime: $endTime, ')
+          ..write('estimatedDurationMin: $estimatedDurationMin, ')
+          ..write('actualDurationMin: $actualDurationMin, ')
+          ..write('manualDurationAdjustmentMin: $manualDurationAdjustmentMin, ')
+          ..write('categoryId: $categoryId, ')
+          ..write('priority: $priority, ')
+          ..write('status: $status, ')
+          ..write('notes: $notes, ')
+          ..write('recurringRuleId: $recurringRuleId, ')
+          ..write('rescheduledFromId: $rescheduledFromId, ')
+          ..write('rescheduledToId: $rescheduledToId, ')
+          ..write('isInbox: $isInbox, ')
+          ..write('missedAt: $missedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AppSettingsTable extends AppSettings
+    with TableInfo<$AppSettingsTable, AppSetting> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AppSettingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'app_settings';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AppSetting> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  AppSetting map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AppSetting(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+    );
+  }
+
+  @override
+  $AppSettingsTable createAlias(String alias) {
+    return $AppSettingsTable(attachedDatabase, alias);
+  }
+}
+
+class AppSetting extends DataClass implements Insertable<AppSetting> {
+  final String key;
+  final String value;
+  const AppSetting({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  AppSettingsCompanion toCompanion(bool nullToAbsent) {
+    return AppSettingsCompanion(key: Value(key), value: Value(value));
+  }
+
+  factory AppSetting.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AppSetting(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  AppSetting copyWith({String? key, String? value}) =>
+      AppSetting(key: key ?? this.key, value: value ?? this.value);
+  AppSetting copyWithCompanion(AppSettingsCompanion data) {
+    return AppSetting(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppSetting(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AppSetting &&
+          other.key == this.key &&
+          other.value == this.value);
+}
+
+class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const AppSettingsCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AppSettingsCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       value = Value(value);
+  static Insertable<AppSetting> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AppSettingsCompanion copyWith({
+    Value<String>? key,
+    Value<String>? value,
+    Value<int>? rowid,
+  }) {
+    return AppSettingsCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppSettingsCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SubtasksTable extends Subtasks
+    with TableInfo<$SubtasksTable, SubtaskRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SubtasksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 500,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isCompletedMeta = const VerificationMeta(
+    'isCompleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isCompleted = GeneratedColumn<bool>(
+    'is_completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SubtasksTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SubtasksTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($SubtasksTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    taskId,
+    title,
+    isCompleted,
+    sortOrder,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'subtasks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SubtaskRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('is_completed')) {
+      context.handle(
+        _isCompletedMeta,
+        isCompleted.isAcceptableOrUnknown(
+          data['is_completed']!,
+          _isCompletedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SubtaskRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SubtaskRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      isCompleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_completed'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: $SubtasksTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $SubtasksTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $SubtasksTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+    );
+  }
+
+  @override
+  $SubtasksTable createAlias(String alias) {
+    return $SubtasksTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
+  final String id;
+  final String taskId;
+  final String title;
+  final bool isCompleted;
+  final int sortOrder;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  const SubtaskRow({
+    required this.id,
+    required this.taskId,
+    required this.title,
+    required this.isCompleted,
+    required this.sortOrder,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['task_id'] = Variable<String>(taskId);
+    map['title'] = Variable<String>(title);
+    map['is_completed'] = Variable<bool>(isCompleted);
+    map['sort_order'] = Variable<int>(sortOrder);
+    {
+      map['created_at'] = Variable<String>(
+        $SubtasksTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $SubtasksTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $SubtasksTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    return map;
+  }
+
+  SubtasksCompanion toCompanion(bool nullToAbsent) {
+    return SubtasksCompanion(
+      id: Value(id),
+      taskId: Value(taskId),
+      title: Value(title),
+      isCompleted: Value(isCompleted),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+    );
+  }
+
+  factory SubtaskRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SubtaskRow(
+      id: serializer.fromJson<String>(json['id']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      title: serializer.fromJson<String>(json['title']),
+      isCompleted: serializer.fromJson<bool>(json['isCompleted']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'taskId': serializer.toJson<String>(taskId),
+      'title': serializer.toJson<String>(title),
+      'isCompleted': serializer.toJson<bool>(isCompleted),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+    };
+  }
+
+  SubtaskRow copyWith({
+    String? id,
+    String? taskId,
+    String? title,
+    bool? isCompleted,
+    int? sortOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+  }) => SubtaskRow(
+    id: id ?? this.id,
+    taskId: taskId ?? this.taskId,
+    title: title ?? this.title,
+    isCompleted: isCompleted ?? this.isCompleted,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+  );
+  SubtaskRow copyWithCompanion(SubtasksCompanion data) {
+    return SubtaskRow(
+      id: data.id.present ? data.id.value : this.id,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      title: data.title.present ? data.title.value : this.title,
+      isCompleted: data.isCompleted.present
+          ? data.isCompleted.value
+          : this.isCompleted,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubtaskRow(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('title: $title, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    taskId,
+    title,
+    isCompleted,
+    sortOrder,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SubtaskRow &&
+          other.id == this.id &&
+          other.taskId == this.taskId &&
+          other.title == this.title &&
+          other.isCompleted == this.isCompleted &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision);
+}
+
+class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
+  final Value<String> id;
+  final Value<String> taskId;
+  final Value<String> title;
+  final Value<bool> isCompleted;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int> rowid;
+  const SubtasksCompanion({
+    this.id = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.isCompleted = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SubtasksCompanion.insert({
+    required String id,
+    required String taskId,
+    required String title,
+    this.isCompleted = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       taskId = Value(taskId),
+       title = Value(title),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<SubtaskRow> custom({
+    Expression<String>? id,
+    Expression<String>? taskId,
+    Expression<String>? title,
+    Expression<bool>? isCompleted,
+    Expression<int>? sortOrder,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (taskId != null) 'task_id': taskId,
+      if (title != null) 'title': title,
+      if (isCompleted != null) 'is_completed': isCompleted,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SubtasksCompanion copyWith({
+    Value<String>? id,
+    Value<String>? taskId,
+    Value<String>? title,
+    Value<bool>? isCompleted,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int>? rowid,
+  }) {
+    return SubtasksCompanion(
+      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      title: title ?? this.title,
+      isCompleted: isCompleted ?? this.isCompleted,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (isCompleted.present) {
+      map['is_completed'] = Variable<bool>(isCompleted.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $SubtasksTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $SubtasksTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $SubtasksTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubtasksCompanion(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('title: $title, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 100,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TagsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TagsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TagsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TagRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      createdAt: $TagsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $TagsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $TagsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+    );
+  }
+
+  @override
+  $TagsTable createAlias(String alias) {
+    return $TagsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class TagRow extends DataClass implements Insertable<TagRow> {
+  final String id;
+  final String name;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  const TagRow({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    {
+      map['created_at'] = Variable<String>(
+        $TagsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $TagsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $TagsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    return map;
+  }
+
+  TagsCompanion toCompanion(bool nullToAbsent) {
+    return TagsCompanion(
+      id: Value(id),
+      name: Value(name),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+    );
+  }
+
+  factory TagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TagRow(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+    };
+  }
+
+  TagRow copyWith({
+    String? id,
+    String? name,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+  }) => TagRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+  );
+  TagRow copyWithCompanion(TagsCompanion data) {
+    return TagRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TagRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision);
+}
+
+class TagsCompanion extends UpdateCompanion<TagRow> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int> rowid;
+  const TagsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TagsCompanion.insert({
+    required String id,
+    required String name,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<TagRow> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TagsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int>? rowid,
+  }) {
+    return TagsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $TagsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $TagsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $TagsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TaskTagsTable extends TaskTags
+    with TableInfo<$TaskTagsTable, TaskTagRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TaskTagsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
+    'tag_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tags (id) ON DELETE CASCADE',
+    ),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TaskTagsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TaskTagsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TaskTagsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    taskId,
+    tagId,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'task_tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TaskTagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+        _tagIdMeta,
+        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {taskId, tagId};
+  @override
+  TaskTagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TaskTagRow(
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      tagId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_id'],
+      )!,
+      createdAt: $TaskTagsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $TaskTagsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $TaskTagsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+    );
+  }
+
+  @override
+  $TaskTagsTable createAlias(String alias) {
+    return $TaskTagsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
+  final String taskId;
+  final String tagId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  const TaskTagRow({
+    required this.taskId,
+    required this.tagId,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['task_id'] = Variable<String>(taskId);
+    map['tag_id'] = Variable<String>(tagId);
+    {
+      map['created_at'] = Variable<String>(
+        $TaskTagsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $TaskTagsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $TaskTagsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    return map;
+  }
+
+  TaskTagsCompanion toCompanion(bool nullToAbsent) {
+    return TaskTagsCompanion(
+      taskId: Value(taskId),
+      tagId: Value(tagId),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+    );
+  }
+
+  factory TaskTagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TaskTagRow(
+      taskId: serializer.fromJson<String>(json['taskId']),
+      tagId: serializer.fromJson<String>(json['tagId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'taskId': serializer.toJson<String>(taskId),
+      'tagId': serializer.toJson<String>(tagId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+    };
+  }
+
+  TaskTagRow copyWith({
+    String? taskId,
+    String? tagId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+  }) => TaskTagRow(
+    taskId: taskId ?? this.taskId,
+    tagId: tagId ?? this.tagId,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+  );
+  TaskTagRow copyWithCompanion(TaskTagsCompanion data) {
+    return TaskTagRow(
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TaskTagRow(')
+          ..write('taskId: $taskId, ')
+          ..write('tagId: $tagId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    taskId,
+    tagId,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TaskTagRow &&
+          other.taskId == this.taskId &&
+          other.tagId == this.tagId &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision);
+}
+
+class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
+  final Value<String> taskId;
+  final Value<String> tagId;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int> rowid;
+  const TaskTagsCompanion({
+    this.taskId = const Value.absent(),
+    this.tagId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TaskTagsCompanion.insert({
+    required String taskId,
+    required String tagId,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : taskId = Value(taskId),
+       tagId = Value(tagId),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<TaskTagRow> custom({
+    Expression<String>? taskId,
+    Expression<String>? tagId,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (taskId != null) 'task_id': taskId,
+      if (tagId != null) 'tag_id': tagId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TaskTagsCompanion copyWith({
+    Value<String>? taskId,
+    Value<String>? tagId,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int>? rowid,
+  }) {
+    return TaskTagsCompanion(
+      taskId: taskId ?? this.taskId,
+      tagId: tagId ?? this.tagId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<String>(tagId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $TaskTagsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $TaskTagsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $TaskTagsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TaskTagsCompanion(')
+          ..write('taskId: $taskId, ')
+          ..write('tagId: $tagId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $TaskTemplatesTable extends TaskTemplates
     with TableInfo<$TaskTemplatesTable, TaskTemplateRow> {
   @override
@@ -4491,6 +4730,9 @@ class $TaskTemplatesTable extends TaskTemplates
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES categories (id) ON DELETE SET NULL',
+    ),
   );
   static const VerificationMeta _priorityMeta = const VerificationMeta(
     'priority',
@@ -5173,7 +5415,6 @@ class $DailyReviewsTable extends DailyReviews
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
   static const VerificationMeta _reflectionMeta = const VerificationMeta(
     'reflection',
@@ -5967,7 +6208,6 @@ class $WeeklyReviewsTable extends WeeklyReviews
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
   );
   static const VerificationMeta _reflectionMeta = const VerificationMeta(
     'reflection',
@@ -6730,6 +6970,30 @@ class $DailyStatsCacheTable extends DailyStatsCache
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _plannedTasksMeta = const VerificationMeta(
+    'plannedTasks',
+  );
+  @override
+  late final GeneratedColumn<int> plannedTasks = GeneratedColumn<int>(
+    'planned_tasks',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _inProgressTasksMeta = const VerificationMeta(
+    'inProgressTasks',
+  );
+  @override
+  late final GeneratedColumn<int> inProgressTasks = GeneratedColumn<int>(
+    'in_progress_tasks',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _missedTasksMeta = const VerificationMeta(
     'missedTasks',
   );
@@ -6859,6 +7123,8 @@ class $DailyStatsCacheTable extends DailyStatsCache
     date,
     totalTasks,
     completedTasks,
+    plannedTasks,
+    inProgressTasks,
     missedTasks,
     skippedTasks,
     cancelledTasks,
@@ -6903,6 +7169,24 @@ class $DailyStatsCacheTable extends DailyStatsCache
         completedTasks.isAcceptableOrUnknown(
           data['completed_tasks']!,
           _completedTasksMeta,
+        ),
+      );
+    }
+    if (data.containsKey('planned_tasks')) {
+      context.handle(
+        _plannedTasksMeta,
+        plannedTasks.isAcceptableOrUnknown(
+          data['planned_tasks']!,
+          _plannedTasksMeta,
+        ),
+      );
+    }
+    if (data.containsKey('in_progress_tasks')) {
+      context.handle(
+        _inProgressTasksMeta,
+        inProgressTasks.isAcceptableOrUnknown(
+          data['in_progress_tasks']!,
+          _inProgressTasksMeta,
         ),
       );
     }
@@ -7017,6 +7301,14 @@ class $DailyStatsCacheTable extends DailyStatsCache
         DriftSqlType.int,
         data['${effectivePrefix}completed_tasks'],
       )!,
+      plannedTasks: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}planned_tasks'],
+      )!,
+      inProgressTasks: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}in_progress_tasks'],
+      )!,
       missedTasks: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}missed_tasks'],
@@ -7081,6 +7373,8 @@ class DailyStatsCacheRow extends DataClass
   final String date;
   final int totalTasks;
   final int completedTasks;
+  final int plannedTasks;
+  final int inProgressTasks;
   final int missedTasks;
   final int skippedTasks;
   final int cancelledTasks;
@@ -7096,6 +7390,8 @@ class DailyStatsCacheRow extends DataClass
     required this.date,
     required this.totalTasks,
     required this.completedTasks,
+    required this.plannedTasks,
+    required this.inProgressTasks,
     required this.missedTasks,
     required this.skippedTasks,
     required this.cancelledTasks,
@@ -7114,6 +7410,8 @@ class DailyStatsCacheRow extends DataClass
     map['date'] = Variable<String>(date);
     map['total_tasks'] = Variable<int>(totalTasks);
     map['completed_tasks'] = Variable<int>(completedTasks);
+    map['planned_tasks'] = Variable<int>(plannedTasks);
+    map['in_progress_tasks'] = Variable<int>(inProgressTasks);
     map['missed_tasks'] = Variable<int>(missedTasks);
     map['skipped_tasks'] = Variable<int>(skippedTasks);
     map['cancelled_tasks'] = Variable<int>(cancelledTasks);
@@ -7143,6 +7441,8 @@ class DailyStatsCacheRow extends DataClass
       date: Value(date),
       totalTasks: Value(totalTasks),
       completedTasks: Value(completedTasks),
+      plannedTasks: Value(plannedTasks),
+      inProgressTasks: Value(inProgressTasks),
       missedTasks: Value(missedTasks),
       skippedTasks: Value(skippedTasks),
       cancelledTasks: Value(cancelledTasks),
@@ -7172,6 +7472,8 @@ class DailyStatsCacheRow extends DataClass
       date: serializer.fromJson<String>(json['date']),
       totalTasks: serializer.fromJson<int>(json['totalTasks']),
       completedTasks: serializer.fromJson<int>(json['completedTasks']),
+      plannedTasks: serializer.fromJson<int>(json['plannedTasks']),
+      inProgressTasks: serializer.fromJson<int>(json['inProgressTasks']),
       missedTasks: serializer.fromJson<int>(json['missedTasks']),
       skippedTasks: serializer.fromJson<int>(json['skippedTasks']),
       cancelledTasks: serializer.fromJson<int>(json['cancelledTasks']),
@@ -7194,6 +7496,8 @@ class DailyStatsCacheRow extends DataClass
       'date': serializer.toJson<String>(date),
       'totalTasks': serializer.toJson<int>(totalTasks),
       'completedTasks': serializer.toJson<int>(completedTasks),
+      'plannedTasks': serializer.toJson<int>(plannedTasks),
+      'inProgressTasks': serializer.toJson<int>(inProgressTasks),
       'missedTasks': serializer.toJson<int>(missedTasks),
       'skippedTasks': serializer.toJson<int>(skippedTasks),
       'cancelledTasks': serializer.toJson<int>(cancelledTasks),
@@ -7212,6 +7516,8 @@ class DailyStatsCacheRow extends DataClass
     String? date,
     int? totalTasks,
     int? completedTasks,
+    int? plannedTasks,
+    int? inProgressTasks,
     int? missedTasks,
     int? skippedTasks,
     int? cancelledTasks,
@@ -7227,6 +7533,8 @@ class DailyStatsCacheRow extends DataClass
     date: date ?? this.date,
     totalTasks: totalTasks ?? this.totalTasks,
     completedTasks: completedTasks ?? this.completedTasks,
+    plannedTasks: plannedTasks ?? this.plannedTasks,
+    inProgressTasks: inProgressTasks ?? this.inProgressTasks,
     missedTasks: missedTasks ?? this.missedTasks,
     skippedTasks: skippedTasks ?? this.skippedTasks,
     cancelledTasks: cancelledTasks ?? this.cancelledTasks,
@@ -7252,6 +7560,12 @@ class DailyStatsCacheRow extends DataClass
       completedTasks: data.completedTasks.present
           ? data.completedTasks.value
           : this.completedTasks,
+      plannedTasks: data.plannedTasks.present
+          ? data.plannedTasks.value
+          : this.plannedTasks,
+      inProgressTasks: data.inProgressTasks.present
+          ? data.inProgressTasks.value
+          : this.inProgressTasks,
       missedTasks: data.missedTasks.present
           ? data.missedTasks.value
           : this.missedTasks,
@@ -7294,6 +7608,8 @@ class DailyStatsCacheRow extends DataClass
           ..write('date: $date, ')
           ..write('totalTasks: $totalTasks, ')
           ..write('completedTasks: $completedTasks, ')
+          ..write('plannedTasks: $plannedTasks, ')
+          ..write('inProgressTasks: $inProgressTasks, ')
           ..write('missedTasks: $missedTasks, ')
           ..write('skippedTasks: $skippedTasks, ')
           ..write('cancelledTasks: $cancelledTasks, ')
@@ -7314,6 +7630,8 @@ class DailyStatsCacheRow extends DataClass
     date,
     totalTasks,
     completedTasks,
+    plannedTasks,
+    inProgressTasks,
     missedTasks,
     skippedTasks,
     cancelledTasks,
@@ -7333,6 +7651,8 @@ class DailyStatsCacheRow extends DataClass
           other.date == this.date &&
           other.totalTasks == this.totalTasks &&
           other.completedTasks == this.completedTasks &&
+          other.plannedTasks == this.plannedTasks &&
+          other.inProgressTasks == this.inProgressTasks &&
           other.missedTasks == this.missedTasks &&
           other.skippedTasks == this.skippedTasks &&
           other.cancelledTasks == this.cancelledTasks &&
@@ -7350,6 +7670,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
   final Value<String> date;
   final Value<int> totalTasks;
   final Value<int> completedTasks;
+  final Value<int> plannedTasks;
+  final Value<int> inProgressTasks;
   final Value<int> missedTasks;
   final Value<int> skippedTasks;
   final Value<int> cancelledTasks;
@@ -7366,6 +7688,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
     this.date = const Value.absent(),
     this.totalTasks = const Value.absent(),
     this.completedTasks = const Value.absent(),
+    this.plannedTasks = const Value.absent(),
+    this.inProgressTasks = const Value.absent(),
     this.missedTasks = const Value.absent(),
     this.skippedTasks = const Value.absent(),
     this.cancelledTasks = const Value.absent(),
@@ -7383,6 +7707,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
     required String date,
     this.totalTasks = const Value.absent(),
     this.completedTasks = const Value.absent(),
+    this.plannedTasks = const Value.absent(),
+    this.inProgressTasks = const Value.absent(),
     this.missedTasks = const Value.absent(),
     this.skippedTasks = const Value.absent(),
     this.cancelledTasks = const Value.absent(),
@@ -7401,6 +7727,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
     Expression<String>? date,
     Expression<int>? totalTasks,
     Expression<int>? completedTasks,
+    Expression<int>? plannedTasks,
+    Expression<int>? inProgressTasks,
     Expression<int>? missedTasks,
     Expression<int>? skippedTasks,
     Expression<int>? cancelledTasks,
@@ -7418,6 +7746,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
       if (date != null) 'date': date,
       if (totalTasks != null) 'total_tasks': totalTasks,
       if (completedTasks != null) 'completed_tasks': completedTasks,
+      if (plannedTasks != null) 'planned_tasks': plannedTasks,
+      if (inProgressTasks != null) 'in_progress_tasks': inProgressTasks,
       if (missedTasks != null) 'missed_tasks': missedTasks,
       if (skippedTasks != null) 'skipped_tasks': skippedTasks,
       if (cancelledTasks != null) 'cancelled_tasks': cancelledTasks,
@@ -7439,6 +7769,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
     Value<String>? date,
     Value<int>? totalTasks,
     Value<int>? completedTasks,
+    Value<int>? plannedTasks,
+    Value<int>? inProgressTasks,
     Value<int>? missedTasks,
     Value<int>? skippedTasks,
     Value<int>? cancelledTasks,
@@ -7456,6 +7788,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
       date: date ?? this.date,
       totalTasks: totalTasks ?? this.totalTasks,
       completedTasks: completedTasks ?? this.completedTasks,
+      plannedTasks: plannedTasks ?? this.plannedTasks,
+      inProgressTasks: inProgressTasks ?? this.inProgressTasks,
       missedTasks: missedTasks ?? this.missedTasks,
       skippedTasks: skippedTasks ?? this.skippedTasks,
       cancelledTasks: cancelledTasks ?? this.cancelledTasks,
@@ -7482,6 +7816,12 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
     }
     if (completedTasks.present) {
       map['completed_tasks'] = Variable<int>(completedTasks.value);
+    }
+    if (plannedTasks.present) {
+      map['planned_tasks'] = Variable<int>(plannedTasks.value);
+    }
+    if (inProgressTasks.present) {
+      map['in_progress_tasks'] = Variable<int>(inProgressTasks.value);
     }
     if (missedTasks.present) {
       map['missed_tasks'] = Variable<int>(missedTasks.value);
@@ -7532,6 +7872,8 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
           ..write('date: $date, ')
           ..write('totalTasks: $totalTasks, ')
           ..write('completedTasks: $completedTasks, ')
+          ..write('plannedTasks: $plannedTasks, ')
+          ..write('inProgressTasks: $inProgressTasks, ')
           ..write('missedTasks: $missedTasks, ')
           ..write('skippedTasks: $skippedTasks, ')
           ..write('cancelledTasks: $cancelledTasks, ')
@@ -7549,22 +7891,638 @@ class DailyStatsCacheCompanion extends UpdateCompanion<DailyStatsCacheRow> {
   }
 }
 
+class $TimerSessionsTable extends TimerSessions
+    with TableInfo<$TimerSessionsTable, TimerSessionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TimerSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id) ON DELETE CASCADE',
+    ),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> startedAt =
+      GeneratedColumn<String>(
+        'started_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TimerSessionsTable.$converterstartedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> endedAt =
+      GeneratedColumn<String>(
+        'ended_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TimerSessionsTable.$converterendedAt);
+  static const VerificationMeta _durationSecMeta = const VerificationMeta(
+    'durationSec',
+  );
+  @override
+  late final GeneratedColumn<int> durationSec = GeneratedColumn<int>(
+    'duration_sec',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TimerSessionsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($TimerSessionsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TimerSessionsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    taskId,
+    startedAt,
+    endedAt,
+    durationSec,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'timer_sessions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TimerSessionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('duration_sec')) {
+      context.handle(
+        _durationSecMeta,
+        durationSec.isAcceptableOrUnknown(
+          data['duration_sec']!,
+          _durationSecMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TimerSessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TimerSessionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      startedAt: $TimerSessionsTable.$converterstartedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}started_at'],
+        )!,
+      ),
+      endedAt: $TimerSessionsTable.$converterendedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}ended_at'],
+        ),
+      ),
+      durationSec: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_sec'],
+      )!,
+      createdAt: $TimerSessionsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $TimerSessionsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $TimerSessionsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+    );
+  }
+
+  @override
+  $TimerSessionsTable createAlias(String alias) {
+    return $TimerSessionsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $converterstartedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterendedAt =
+      const NullableDateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
+  final String id;
+  final String taskId;
+  final DateTime startedAt;
+
+  /// Null while the timer is running (architecture.md §3 TIMER_SESSIONS).
+  final DateTime? endedAt;
+  final int durationSec;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  const TimerSessionRow({
+    required this.id,
+    required this.taskId,
+    required this.startedAt,
+    this.endedAt,
+    required this.durationSec,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['task_id'] = Variable<String>(taskId);
+    {
+      map['started_at'] = Variable<String>(
+        $TimerSessionsTable.$converterstartedAt.toSql(startedAt),
+      );
+    }
+    if (!nullToAbsent || endedAt != null) {
+      map['ended_at'] = Variable<String>(
+        $TimerSessionsTable.$converterendedAt.toSql(endedAt),
+      );
+    }
+    map['duration_sec'] = Variable<int>(durationSec);
+    {
+      map['created_at'] = Variable<String>(
+        $TimerSessionsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $TimerSessionsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $TimerSessionsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    return map;
+  }
+
+  TimerSessionsCompanion toCompanion(bool nullToAbsent) {
+    return TimerSessionsCompanion(
+      id: Value(id),
+      taskId: Value(taskId),
+      startedAt: Value(startedAt),
+      endedAt: endedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endedAt),
+      durationSec: Value(durationSec),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+    );
+  }
+
+  factory TimerSessionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TimerSessionRow(
+      id: serializer.fromJson<String>(json['id']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+      endedAt: serializer.fromJson<DateTime?>(json['endedAt']),
+      durationSec: serializer.fromJson<int>(json['durationSec']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'taskId': serializer.toJson<String>(taskId),
+      'startedAt': serializer.toJson<DateTime>(startedAt),
+      'endedAt': serializer.toJson<DateTime?>(endedAt),
+      'durationSec': serializer.toJson<int>(durationSec),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+    };
+  }
+
+  TimerSessionRow copyWith({
+    String? id,
+    String? taskId,
+    DateTime? startedAt,
+    Value<DateTime?> endedAt = const Value.absent(),
+    int? durationSec,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+  }) => TimerSessionRow(
+    id: id ?? this.id,
+    taskId: taskId ?? this.taskId,
+    startedAt: startedAt ?? this.startedAt,
+    endedAt: endedAt.present ? endedAt.value : this.endedAt,
+    durationSec: durationSec ?? this.durationSec,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+  );
+  TimerSessionRow copyWithCompanion(TimerSessionsCompanion data) {
+    return TimerSessionRow(
+      id: data.id.present ? data.id.value : this.id,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+      endedAt: data.endedAt.present ? data.endedAt.value : this.endedAt,
+      durationSec: data.durationSec.present
+          ? data.durationSec.value
+          : this.durationSec,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TimerSessionRow(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endedAt: $endedAt, ')
+          ..write('durationSec: $durationSec, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    taskId,
+    startedAt,
+    endedAt,
+    durationSec,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TimerSessionRow &&
+          other.id == this.id &&
+          other.taskId == this.taskId &&
+          other.startedAt == this.startedAt &&
+          other.endedAt == this.endedAt &&
+          other.durationSec == this.durationSec &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision);
+}
+
+class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
+  final Value<String> id;
+  final Value<String> taskId;
+  final Value<DateTime> startedAt;
+  final Value<DateTime?> endedAt;
+  final Value<int> durationSec;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int> rowid;
+  const TimerSessionsCompanion({
+    this.id = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.startedAt = const Value.absent(),
+    this.endedAt = const Value.absent(),
+    this.durationSec = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TimerSessionsCompanion.insert({
+    required String id,
+    required String taskId,
+    required DateTime startedAt,
+    this.endedAt = const Value.absent(),
+    this.durationSec = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       taskId = Value(taskId),
+       startedAt = Value(startedAt),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<TimerSessionRow> custom({
+    Expression<String>? id,
+    Expression<String>? taskId,
+    Expression<String>? startedAt,
+    Expression<String>? endedAt,
+    Expression<int>? durationSec,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (taskId != null) 'task_id': taskId,
+      if (startedAt != null) 'started_at': startedAt,
+      if (endedAt != null) 'ended_at': endedAt,
+      if (durationSec != null) 'duration_sec': durationSec,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TimerSessionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? taskId,
+    Value<DateTime>? startedAt,
+    Value<DateTime?>? endedAt,
+    Value<int>? durationSec,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int>? rowid,
+  }) {
+    return TimerSessionsCompanion(
+      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      durationSec: durationSec ?? this.durationSec,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (startedAt.present) {
+      map['started_at'] = Variable<String>(
+        $TimerSessionsTable.$converterstartedAt.toSql(startedAt.value),
+      );
+    }
+    if (endedAt.present) {
+      map['ended_at'] = Variable<String>(
+        $TimerSessionsTable.$converterendedAt.toSql(endedAt.value),
+      );
+    }
+    if (durationSec.present) {
+      map['duration_sec'] = Variable<int>(durationSec.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $TimerSessionsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $TimerSessionsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $TimerSessionsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TimerSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endedAt: $endedAt, ')
+          ..write('durationSec: $durationSec, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
-  late final $TasksTable tasks = $TasksTable(this);
   late final $CategoriesTable categories = $CategoriesTable(this);
+  late final $RecurringRulesTable recurringRules = $RecurringRulesTable(this);
+  late final $TasksTable tasks = $TasksTable(this);
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
   late final $SubtasksTable subtasks = $SubtasksTable(this);
   late final $TagsTable tags = $TagsTable(this);
   late final $TaskTagsTable taskTags = $TaskTagsTable(this);
-  late final $RecurringRulesTable recurringRules = $RecurringRulesTable(this);
   late final $TaskTemplatesTable taskTemplates = $TaskTemplatesTable(this);
   late final $DailyReviewsTable dailyReviews = $DailyReviewsTable(this);
   late final $WeeklyReviewsTable weeklyReviews = $WeeklyReviewsTable(this);
   late final $DailyStatsCacheTable dailyStatsCache = $DailyStatsCacheTable(
     this,
   );
+  late final $TimerSessionsTable timerSessions = $TimerSessionsTable(this);
   late final TaskDao taskDao = TaskDao(this as AppDatabase);
   late final CategoryDao categoryDao = CategoryDao(this as AppDatabase);
   late final SubtaskDao subtaskDao = SubtaskDao(this as AppDatabase);
@@ -7575,546 +8533,103 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final TemplateDao templateDao = TemplateDao(this as AppDatabase);
   late final ReviewDao reviewDao = ReviewDao(this as AppDatabase);
   late final StatsDao statsDao = StatsDao(this as AppDatabase);
+  late final TimerDao timerDao = TimerDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
-    tasks,
     categories,
+    recurringRules,
+    tasks,
     appSettings,
     subtasks,
     tags,
     taskTags,
-    recurringRules,
     taskTemplates,
     dailyReviews,
     weeklyReviews,
     dailyStatsCache,
+    timerSessions,
   ];
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'categories',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('recurring_rules', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'categories',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('tasks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'recurring_rules',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('tasks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('tasks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('tasks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('subtasks', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('task_tags', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tags',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('task_tags', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'categories',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('task_templates', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('timer_sessions', kind: UpdateKind.delete)],
+    ),
+  ]);
   @override
   DriftDatabaseOptions get options =>
       const DriftDatabaseOptions(storeDateTimeAsText: true);
 }
 
-typedef $$TasksTableCreateCompanionBuilder =
-    TasksCompanion Function({
-      required String id,
-      required String title,
-      Value<String?> description,
-      Value<DateTime?> startTime,
-      Value<DateTime?> endTime,
-      Value<int?> estimatedDurationMin,
-      Value<int?> actualDurationMin,
-      Value<String?> categoryId,
-      Value<int> priority,
-      Value<String> status,
-      Value<String?> notes,
-      Value<String?> recurringRuleId,
-      Value<String?> rescheduledFromId,
-      Value<String?> rescheduledToId,
-      Value<bool> isInbox,
-      Value<String?> missedAt,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> syncStatus,
-      Value<int> revision,
-      Value<int> rowid,
-    });
-typedef $$TasksTableUpdateCompanionBuilder =
-    TasksCompanion Function({
-      Value<String> id,
-      Value<String> title,
-      Value<String?> description,
-      Value<DateTime?> startTime,
-      Value<DateTime?> endTime,
-      Value<int?> estimatedDurationMin,
-      Value<int?> actualDurationMin,
-      Value<String?> categoryId,
-      Value<int> priority,
-      Value<String> status,
-      Value<String?> notes,
-      Value<String?> recurringRuleId,
-      Value<String?> rescheduledFromId,
-      Value<String?> rescheduledToId,
-      Value<bool> isInbox,
-      Value<String?> missedAt,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> syncStatus,
-      Value<int> revision,
-      Value<int> rowid,
-    });
-
-class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
-  $$TasksTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get description => $composableBuilder(
-    column: $table.description,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get startTime =>
-      $composableBuilder(
-        column: $table.startTime,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get endTime =>
-      $composableBuilder(
-        column: $table.endTime,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnFilters<int> get estimatedDurationMin => $composableBuilder(
-    column: $table.estimatedDurationMin,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get actualDurationMin => $composableBuilder(
-    column: $table.actualDurationMin,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get priority => $composableBuilder(
-    column: $table.priority,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get status => $composableBuilder(
-    column: $table.status,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get notes => $composableBuilder(
-    column: $table.notes,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get recurringRuleId => $composableBuilder(
-    column: $table.recurringRuleId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rescheduledFromId => $composableBuilder(
-    column: $table.rescheduledFromId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rescheduledToId => $composableBuilder(
-    column: $table.rescheduledToId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isInbox => $composableBuilder(
-    column: $table.isInbox,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get missedAt => $composableBuilder(
-    column: $table.missedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
-      $composableBuilder(
-        column: $table.createdAt,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
-      $composableBuilder(
-        column: $table.updatedAt,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
-      $composableBuilder(
-        column: $table.deletedAt,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnFilters<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get revision => $composableBuilder(
-    column: $table.revision,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$TasksTableOrderingComposer
-    extends Composer<_$AppDatabase, $TasksTable> {
-  $$TasksTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get description => $composableBuilder(
-    column: $table.description,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get startTime => $composableBuilder(
-    column: $table.startTime,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get endTime => $composableBuilder(
-    column: $table.endTime,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get estimatedDurationMin => $composableBuilder(
-    column: $table.estimatedDurationMin,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get actualDurationMin => $composableBuilder(
-    column: $table.actualDurationMin,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get priority => $composableBuilder(
-    column: $table.priority,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get status => $composableBuilder(
-    column: $table.status,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get notes => $composableBuilder(
-    column: $table.notes,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get recurringRuleId => $composableBuilder(
-    column: $table.recurringRuleId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rescheduledFromId => $composableBuilder(
-    column: $table.rescheduledFromId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rescheduledToId => $composableBuilder(
-    column: $table.rescheduledToId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get isInbox => $composableBuilder(
-    column: $table.isInbox,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get missedAt => $composableBuilder(
-    column: $table.missedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get updatedAt => $composableBuilder(
-    column: $table.updatedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get deletedAt => $composableBuilder(
-    column: $table.deletedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get revision => $composableBuilder(
-    column: $table.revision,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$TasksTableAnnotationComposer
-    extends Composer<_$AppDatabase, $TasksTable> {
-  $$TasksTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get title =>
-      $composableBuilder(column: $table.title, builder: (column) => column);
-
-  GeneratedColumn<String> get description => $composableBuilder(
-    column: $table.description,
-    builder: (column) => column,
-  );
-
-  GeneratedColumnWithTypeConverter<DateTime?, String> get startTime =>
-      $composableBuilder(column: $table.startTime, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<DateTime?, String> get endTime =>
-      $composableBuilder(column: $table.endTime, builder: (column) => column);
-
-  GeneratedColumn<int> get estimatedDurationMin => $composableBuilder(
-    column: $table.estimatedDurationMin,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get actualDurationMin => $composableBuilder(
-    column: $table.actualDurationMin,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get priority =>
-      $composableBuilder(column: $table.priority, builder: (column) => column);
-
-  GeneratedColumn<String> get status =>
-      $composableBuilder(column: $table.status, builder: (column) => column);
-
-  GeneratedColumn<String> get notes =>
-      $composableBuilder(column: $table.notes, builder: (column) => column);
-
-  GeneratedColumn<String> get recurringRuleId => $composableBuilder(
-    column: $table.recurringRuleId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get rescheduledFromId => $composableBuilder(
-    column: $table.rescheduledFromId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get rescheduledToId => $composableBuilder(
-    column: $table.rescheduledToId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<bool> get isInbox =>
-      $composableBuilder(column: $table.isInbox, builder: (column) => column);
-
-  GeneratedColumn<String> get missedAt =>
-      $composableBuilder(column: $table.missedAt, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
-      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
-      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
-
-  GeneratedColumn<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get revision =>
-      $composableBuilder(column: $table.revision, builder: (column) => column);
-}
-
-class $$TasksTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $TasksTable,
-          TaskRow,
-          $$TasksTableFilterComposer,
-          $$TasksTableOrderingComposer,
-          $$TasksTableAnnotationComposer,
-          $$TasksTableCreateCompanionBuilder,
-          $$TasksTableUpdateCompanionBuilder,
-          (TaskRow, BaseReferences<_$AppDatabase, $TasksTable, TaskRow>),
-          TaskRow,
-          PrefetchHooks Function()
-        > {
-  $$TasksTableTableManager(_$AppDatabase db, $TasksTable table)
-    : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$TasksTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$TasksTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$TasksTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<String> id = const Value.absent(),
-                Value<String> title = const Value.absent(),
-                Value<String?> description = const Value.absent(),
-                Value<DateTime?> startTime = const Value.absent(),
-                Value<DateTime?> endTime = const Value.absent(),
-                Value<int?> estimatedDurationMin = const Value.absent(),
-                Value<int?> actualDurationMin = const Value.absent(),
-                Value<String?> categoryId = const Value.absent(),
-                Value<int> priority = const Value.absent(),
-                Value<String> status = const Value.absent(),
-                Value<String?> notes = const Value.absent(),
-                Value<String?> recurringRuleId = const Value.absent(),
-                Value<String?> rescheduledFromId = const Value.absent(),
-                Value<String?> rescheduledToId = const Value.absent(),
-                Value<bool> isInbox = const Value.absent(),
-                Value<String?> missedAt = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<DateTime> updatedAt = const Value.absent(),
-                Value<DateTime?> deletedAt = const Value.absent(),
-                Value<int> syncStatus = const Value.absent(),
-                Value<int> revision = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => TasksCompanion(
-                id: id,
-                title: title,
-                description: description,
-                startTime: startTime,
-                endTime: endTime,
-                estimatedDurationMin: estimatedDurationMin,
-                actualDurationMin: actualDurationMin,
-                categoryId: categoryId,
-                priority: priority,
-                status: status,
-                notes: notes,
-                recurringRuleId: recurringRuleId,
-                rescheduledFromId: rescheduledFromId,
-                rescheduledToId: rescheduledToId,
-                isInbox: isInbox,
-                missedAt: missedAt,
-                createdAt: createdAt,
-                updatedAt: updatedAt,
-                deletedAt: deletedAt,
-                syncStatus: syncStatus,
-                revision: revision,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String id,
-                required String title,
-                Value<String?> description = const Value.absent(),
-                Value<DateTime?> startTime = const Value.absent(),
-                Value<DateTime?> endTime = const Value.absent(),
-                Value<int?> estimatedDurationMin = const Value.absent(),
-                Value<int?> actualDurationMin = const Value.absent(),
-                Value<String?> categoryId = const Value.absent(),
-                Value<int> priority = const Value.absent(),
-                Value<String> status = const Value.absent(),
-                Value<String?> notes = const Value.absent(),
-                Value<String?> recurringRuleId = const Value.absent(),
-                Value<String?> rescheduledFromId = const Value.absent(),
-                Value<String?> rescheduledToId = const Value.absent(),
-                Value<bool> isInbox = const Value.absent(),
-                Value<String?> missedAt = const Value.absent(),
-                required DateTime createdAt,
-                required DateTime updatedAt,
-                Value<DateTime?> deletedAt = const Value.absent(),
-                Value<int> syncStatus = const Value.absent(),
-                Value<int> revision = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => TasksCompanion.insert(
-                id: id,
-                title: title,
-                description: description,
-                startTime: startTime,
-                endTime: endTime,
-                estimatedDurationMin: estimatedDurationMin,
-                actualDurationMin: actualDurationMin,
-                categoryId: categoryId,
-                priority: priority,
-                status: status,
-                notes: notes,
-                recurringRuleId: recurringRuleId,
-                rescheduledFromId: rescheduledFromId,
-                rescheduledToId: rescheduledToId,
-                isInbox: isInbox,
-                missedAt: missedAt,
-                createdAt: createdAt,
-                updatedAt: updatedAt,
-                deletedAt: deletedAt,
-                syncStatus: syncStatus,
-                revision: revision,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$TasksTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $TasksTable,
-      TaskRow,
-      $$TasksTableFilterComposer,
-      $$TasksTableOrderingComposer,
-      $$TasksTableAnnotationComposer,
-      $$TasksTableCreateCompanionBuilder,
-      $$TasksTableUpdateCompanionBuilder,
-      (TaskRow, BaseReferences<_$AppDatabase, $TasksTable, TaskRow>),
-      TaskRow,
-      PrefetchHooks Function()
-    >;
 typedef $$CategoriesTableCreateCompanionBuilder =
     CategoriesCompanion Function({
       required String id,
@@ -8143,6 +8658,72 @@ typedef $$CategoriesTableUpdateCompanionBuilder =
       Value<int> revision,
       Value<int> rowid,
     });
+
+final class $$CategoriesTableReferences
+    extends BaseReferences<_$AppDatabase, $CategoriesTable, CategoryRow> {
+  $$CategoriesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$RecurringRulesTable, List<RecurringRuleRow>>
+  _recurringRulesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.recurringRules,
+    aliasName: $_aliasNameGenerator(
+      db.categories.id,
+      db.recurringRules.categoryId,
+    ),
+  );
+
+  $$RecurringRulesTableProcessedTableManager get recurringRulesRefs {
+    final manager = $$RecurringRulesTableTableManager(
+      $_db,
+      $_db.recurringRules,
+    ).filter((f) => f.categoryId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_recurringRulesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$TasksTable, List<TaskRow>> _tasksRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.tasks,
+    aliasName: $_aliasNameGenerator(db.categories.id, db.tasks.categoryId),
+  );
+
+  $$TasksTableProcessedTableManager get tasksRefs {
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.categoryId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_tasksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$TaskTemplatesTable, List<TaskTemplateRow>>
+  _taskTemplatesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.taskTemplates,
+    aliasName: $_aliasNameGenerator(
+      db.categories.id,
+      db.taskTemplates.categoryId,
+    ),
+  );
+
+  $$TaskTemplatesTableProcessedTableManager get taskTemplatesRefs {
+    final manager = $$TaskTemplatesTableTableManager(
+      $_db,
+      $_db.taskTemplates,
+    ).filter((f) => f.categoryId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_taskTemplatesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$CategoriesTableFilterComposer
     extends Composer<_$AppDatabase, $CategoriesTable> {
@@ -8205,6 +8786,81 @@ class $$CategoriesTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> recurringRulesRefs(
+    Expression<bool> Function($$RecurringRulesTableFilterComposer f) f,
+  ) {
+    final $$RecurringRulesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.recurringRules,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RecurringRulesTableFilterComposer(
+            $db: $db,
+            $table: $db.recurringRules,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> tasksRefs(
+    Expression<bool> Function($$TasksTableFilterComposer f) f,
+  ) {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> taskTemplatesRefs(
+    Expression<bool> Function($$TaskTemplatesTableFilterComposer f) f,
+  ) {
+    final $$TaskTemplatesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTemplates,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTemplatesTableFilterComposer(
+            $db: $db,
+            $table: $db.taskTemplates,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CategoriesTableOrderingComposer
@@ -8307,6 +8963,81 @@ class $$CategoriesTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  Expression<T> recurringRulesRefs<T extends Object>(
+    Expression<T> Function($$RecurringRulesTableAnnotationComposer a) f,
+  ) {
+    final $$RecurringRulesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.recurringRules,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RecurringRulesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.recurringRules,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> tasksRefs<T extends Object>(
+    Expression<T> Function($$TasksTableAnnotationComposer a) f,
+  ) {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> taskTemplatesRefs<T extends Object>(
+    Expression<T> Function($$TaskTemplatesTableAnnotationComposer a) f,
+  ) {
+    final $$TaskTemplatesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTemplates,
+      getReferencedColumn: (t) => t.categoryId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTemplatesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.taskTemplates,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$CategoriesTableTableManager
@@ -8320,12 +9051,13 @@ class $$CategoriesTableTableManager
           $$CategoriesTableAnnotationComposer,
           $$CategoriesTableCreateCompanionBuilder,
           $$CategoriesTableUpdateCompanionBuilder,
-          (
-            CategoryRow,
-            BaseReferences<_$AppDatabase, $CategoriesTable, CategoryRow>,
-          ),
+          (CategoryRow, $$CategoriesTableReferences),
           CategoryRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({
+            bool recurringRulesRefs,
+            bool tasksRefs,
+            bool taskTemplatesRefs,
+          })
         > {
   $$CategoriesTableTableManager(_$AppDatabase db, $CategoriesTable table)
     : super(
@@ -8391,9 +9123,96 @@ class $$CategoriesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$CategoriesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback:
+              ({
+                recurringRulesRefs = false,
+                tasksRefs = false,
+                taskTemplatesRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (recurringRulesRefs) db.recurringRules,
+                    if (tasksRefs) db.tasks,
+                    if (taskTemplatesRefs) db.taskTemplates,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (recurringRulesRefs)
+                        await $_getPrefetchedData<
+                          CategoryRow,
+                          $CategoriesTable,
+                          RecurringRuleRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CategoriesTableReferences
+                              ._recurringRulesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CategoriesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).recurringRulesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.categoryId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (tasksRefs)
+                        await $_getPrefetchedData<
+                          CategoryRow,
+                          $CategoriesTable,
+                          TaskRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CategoriesTableReferences
+                              ._tasksRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CategoriesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).tasksRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.categoryId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (taskTemplatesRefs)
+                        await $_getPrefetchedData<
+                          CategoryRow,
+                          $CategoriesTable,
+                          TaskTemplateRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$CategoriesTableReferences
+                              ._taskTemplatesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$CategoriesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).taskTemplatesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.categoryId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
         ),
       );
 }
@@ -8408,12 +9227,1904 @@ typedef $$CategoriesTableProcessedTableManager =
       $$CategoriesTableAnnotationComposer,
       $$CategoriesTableCreateCompanionBuilder,
       $$CategoriesTableUpdateCompanionBuilder,
-      (
-        CategoryRow,
-        BaseReferences<_$AppDatabase, $CategoriesTable, CategoryRow>,
-      ),
+      (CategoryRow, $$CategoriesTableReferences),
       CategoryRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({
+        bool recurringRulesRefs,
+        bool tasksRefs,
+        bool taskTemplatesRefs,
+      })
+    >;
+typedef $$RecurringRulesTableCreateCompanionBuilder =
+    RecurringRulesCompanion Function({
+      required String id,
+      required String rrule,
+      required String taskTitle,
+      Value<String?> taskDescription,
+      required int durationMin,
+      Value<String?> categoryId,
+      Value<int> priority,
+      Value<String?> tagsJson,
+      required String startTimeOfDay,
+      required String startDate,
+      Value<String?> endDate,
+      Value<bool> isActive,
+      Value<String?> exceptionsJson,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+typedef $$RecurringRulesTableUpdateCompanionBuilder =
+    RecurringRulesCompanion Function({
+      Value<String> id,
+      Value<String> rrule,
+      Value<String> taskTitle,
+      Value<String?> taskDescription,
+      Value<int> durationMin,
+      Value<String?> categoryId,
+      Value<int> priority,
+      Value<String?> tagsJson,
+      Value<String> startTimeOfDay,
+      Value<String> startDate,
+      Value<String?> endDate,
+      Value<bool> isActive,
+      Value<String?> exceptionsJson,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+
+final class $$RecurringRulesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $RecurringRulesTable, RecurringRuleRow> {
+  $$RecurringRulesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $CategoriesTable _categoryIdTable(_$AppDatabase db) =>
+      db.categories.createAlias(
+        $_aliasNameGenerator(db.recurringRules.categoryId, db.categories.id),
+      );
+
+  $$CategoriesTableProcessedTableManager? get categoryId {
+    final $_column = $_itemColumn<String>('category_id');
+    if ($_column == null) return null;
+    final manager = $$CategoriesTableTableManager(
+      $_db,
+      $_db.categories,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$TasksTable, List<TaskRow>> _tasksRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.tasks,
+    aliasName: $_aliasNameGenerator(
+      db.recurringRules.id,
+      db.tasks.recurringRuleId,
+    ),
+  );
+
+  $$TasksTableProcessedTableManager get tasksRefs {
+    final manager = $$TasksTableTableManager($_db, $_db.tasks).filter(
+      (f) => f.recurringRuleId.id.sqlEquals($_itemColumn<String>('id')!),
+    );
+
+    final cache = $_typedResult.readTableOrNull(_tasksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$RecurringRulesTableFilterComposer
+    extends Composer<_$AppDatabase, $RecurringRulesTable> {
+  $$RecurringRulesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rrule => $composableBuilder(
+    column: $table.rrule,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskTitle => $composableBuilder(
+    column: $table.taskTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskDescription => $composableBuilder(
+    column: $table.taskDescription,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMin => $composableBuilder(
+    column: $table.durationMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get startTimeOfDay => $composableBuilder(
+    column: $table.startTimeOfDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get startDate => $composableBuilder(
+    column: $table.startDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get exceptionsJson => $composableBuilder(
+    column: $table.exceptionsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CategoriesTableFilterComposer get categoryId {
+    final $$CategoriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableFilterComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> tasksRefs(
+    Expression<bool> Function($$TasksTableFilterComposer f) f,
+  ) {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.recurringRuleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$RecurringRulesTableOrderingComposer
+    extends Composer<_$AppDatabase, $RecurringRulesTable> {
+  $$RecurringRulesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rrule => $composableBuilder(
+    column: $table.rrule,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskTitle => $composableBuilder(
+    column: $table.taskTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskDescription => $composableBuilder(
+    column: $table.taskDescription,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMin => $composableBuilder(
+    column: $table.durationMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tagsJson => $composableBuilder(
+    column: $table.tagsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startTimeOfDay => $composableBuilder(
+    column: $table.startTimeOfDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startDate => $composableBuilder(
+    column: $table.startDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get exceptionsJson => $composableBuilder(
+    column: $table.exceptionsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CategoriesTableOrderingComposer get categoryId {
+    final $$CategoriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$RecurringRulesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $RecurringRulesTable> {
+  $$RecurringRulesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get rrule =>
+      $composableBuilder(column: $table.rrule, builder: (column) => column);
+
+  GeneratedColumn<String> get taskTitle =>
+      $composableBuilder(column: $table.taskTitle, builder: (column) => column);
+
+  GeneratedColumn<String> get taskDescription => $composableBuilder(
+    column: $table.taskDescription,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMin => $composableBuilder(
+    column: $table.durationMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<String> get tagsJson =>
+      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get startTimeOfDay => $composableBuilder(
+    column: $table.startTimeOfDay,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get startDate =>
+      $composableBuilder(column: $table.startDate, builder: (column) => column);
+
+  GeneratedColumn<String> get endDate =>
+      $composableBuilder(column: $table.endDate, builder: (column) => column);
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
+
+  GeneratedColumn<String> get exceptionsJson => $composableBuilder(
+    column: $table.exceptionsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$CategoriesTableAnnotationComposer get categoryId {
+    final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> tasksRefs<T extends Object>(
+    Expression<T> Function($$TasksTableAnnotationComposer a) f,
+  ) {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.recurringRuleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$RecurringRulesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $RecurringRulesTable,
+          RecurringRuleRow,
+          $$RecurringRulesTableFilterComposer,
+          $$RecurringRulesTableOrderingComposer,
+          $$RecurringRulesTableAnnotationComposer,
+          $$RecurringRulesTableCreateCompanionBuilder,
+          $$RecurringRulesTableUpdateCompanionBuilder,
+          (RecurringRuleRow, $$RecurringRulesTableReferences),
+          RecurringRuleRow,
+          PrefetchHooks Function({bool categoryId, bool tasksRefs})
+        > {
+  $$RecurringRulesTableTableManager(
+    _$AppDatabase db,
+    $RecurringRulesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RecurringRulesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RecurringRulesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$RecurringRulesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> rrule = const Value.absent(),
+                Value<String> taskTitle = const Value.absent(),
+                Value<String?> taskDescription = const Value.absent(),
+                Value<int> durationMin = const Value.absent(),
+                Value<String?> categoryId = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                Value<String> startTimeOfDay = const Value.absent(),
+                Value<String> startDate = const Value.absent(),
+                Value<String?> endDate = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
+                Value<String?> exceptionsJson = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RecurringRulesCompanion(
+                id: id,
+                rrule: rrule,
+                taskTitle: taskTitle,
+                taskDescription: taskDescription,
+                durationMin: durationMin,
+                categoryId: categoryId,
+                priority: priority,
+                tagsJson: tagsJson,
+                startTimeOfDay: startTimeOfDay,
+                startDate: startDate,
+                endDate: endDate,
+                isActive: isActive,
+                exceptionsJson: exceptionsJson,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String rrule,
+                required String taskTitle,
+                Value<String?> taskDescription = const Value.absent(),
+                required int durationMin,
+                Value<String?> categoryId = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String?> tagsJson = const Value.absent(),
+                required String startTimeOfDay,
+                required String startDate,
+                Value<String?> endDate = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
+                Value<String?> exceptionsJson = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RecurringRulesCompanion.insert(
+                id: id,
+                rrule: rrule,
+                taskTitle: taskTitle,
+                taskDescription: taskDescription,
+                durationMin: durationMin,
+                categoryId: categoryId,
+                priority: priority,
+                tagsJson: tagsJson,
+                startTimeOfDay: startTimeOfDay,
+                startDate: startDate,
+                endDate: endDate,
+                isActive: isActive,
+                exceptionsJson: exceptionsJson,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$RecurringRulesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({categoryId = false, tasksRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (tasksRefs) db.tasks],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (categoryId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.categoryId,
+                                referencedTable: $$RecurringRulesTableReferences
+                                    ._categoryIdTable(db),
+                                referencedColumn:
+                                    $$RecurringRulesTableReferences
+                                        ._categoryIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (tasksRefs)
+                    await $_getPrefetchedData<
+                      RecurringRuleRow,
+                      $RecurringRulesTable,
+                      TaskRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$RecurringRulesTableReferences
+                          ._tasksRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$RecurringRulesTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).tasksRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.recurringRuleId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$RecurringRulesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $RecurringRulesTable,
+      RecurringRuleRow,
+      $$RecurringRulesTableFilterComposer,
+      $$RecurringRulesTableOrderingComposer,
+      $$RecurringRulesTableAnnotationComposer,
+      $$RecurringRulesTableCreateCompanionBuilder,
+      $$RecurringRulesTableUpdateCompanionBuilder,
+      (RecurringRuleRow, $$RecurringRulesTableReferences),
+      RecurringRuleRow,
+      PrefetchHooks Function({bool categoryId, bool tasksRefs})
+    >;
+typedef $$TasksTableCreateCompanionBuilder =
+    TasksCompanion Function({
+      required String id,
+      required String title,
+      Value<String?> description,
+      Value<DateTime?> startTime,
+      Value<DateTime?> endTime,
+      Value<int?> estimatedDurationMin,
+      Value<int?> actualDurationMin,
+      Value<int> manualDurationAdjustmentMin,
+      Value<String?> categoryId,
+      Value<int> priority,
+      Value<String> status,
+      Value<String?> notes,
+      Value<String?> recurringRuleId,
+      Value<String?> rescheduledFromId,
+      Value<String?> rescheduledToId,
+      Value<bool> isInbox,
+      Value<String?> missedAt,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+typedef $$TasksTableUpdateCompanionBuilder =
+    TasksCompanion Function({
+      Value<String> id,
+      Value<String> title,
+      Value<String?> description,
+      Value<DateTime?> startTime,
+      Value<DateTime?> endTime,
+      Value<int?> estimatedDurationMin,
+      Value<int?> actualDurationMin,
+      Value<int> manualDurationAdjustmentMin,
+      Value<String?> categoryId,
+      Value<int> priority,
+      Value<String> status,
+      Value<String?> notes,
+      Value<String?> recurringRuleId,
+      Value<String?> rescheduledFromId,
+      Value<String?> rescheduledToId,
+      Value<bool> isInbox,
+      Value<String?> missedAt,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+
+final class $$TasksTableReferences
+    extends BaseReferences<_$AppDatabase, $TasksTable, TaskRow> {
+  $$TasksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $CategoriesTable _categoryIdTable(_$AppDatabase db) => db.categories
+      .createAlias($_aliasNameGenerator(db.tasks.categoryId, db.categories.id));
+
+  $$CategoriesTableProcessedTableManager? get categoryId {
+    final $_column = $_itemColumn<String>('category_id');
+    if ($_column == null) return null;
+    final manager = $$CategoriesTableTableManager(
+      $_db,
+      $_db.categories,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $RecurringRulesTable _recurringRuleIdTable(_$AppDatabase db) =>
+      db.recurringRules.createAlias(
+        $_aliasNameGenerator(db.tasks.recurringRuleId, db.recurringRules.id),
+      );
+
+  $$RecurringRulesTableProcessedTableManager? get recurringRuleId {
+    final $_column = $_itemColumn<String>('recurring_rule_id');
+    if ($_column == null) return null;
+    final manager = $$RecurringRulesTableTableManager(
+      $_db,
+      $_db.recurringRules,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_recurringRuleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TasksTable _rescheduledFromIdTable(_$AppDatabase db) =>
+      db.tasks.createAlias(
+        $_aliasNameGenerator(db.tasks.rescheduledFromId, db.tasks.id),
+      );
+
+  $$TasksTableProcessedTableManager? get rescheduledFromId {
+    final $_column = $_itemColumn<String>('rescheduled_from_id');
+    if ($_column == null) return null;
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_rescheduledFromIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TasksTable _rescheduledToIdTable(_$AppDatabase db) => db.tasks
+      .createAlias($_aliasNameGenerator(db.tasks.rescheduledToId, db.tasks.id));
+
+  $$TasksTableProcessedTableManager? get rescheduledToId {
+    final $_column = $_itemColumn<String>('rescheduled_to_id');
+    if ($_column == null) return null;
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_rescheduledToIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$SubtasksTable, List<SubtaskRow>>
+  _subtasksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.subtasks,
+    aliasName: $_aliasNameGenerator(db.tasks.id, db.subtasks.taskId),
+  );
+
+  $$SubtasksTableProcessedTableManager get subtasksRefs {
+    final manager = $$SubtasksTableTableManager(
+      $_db,
+      $_db.subtasks,
+    ).filter((f) => f.taskId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_subtasksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$TaskTagsTable, List<TaskTagRow>>
+  _taskTagsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.taskTags,
+    aliasName: $_aliasNameGenerator(db.tasks.id, db.taskTags.taskId),
+  );
+
+  $$TaskTagsTableProcessedTableManager get taskTagsRefs {
+    final manager = $$TaskTagsTableTableManager(
+      $_db,
+      $_db.taskTags,
+    ).filter((f) => f.taskId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_taskTagsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$TimerSessionsTable, List<TimerSessionRow>>
+  _timerSessionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.timerSessions,
+    aliasName: $_aliasNameGenerator(db.tasks.id, db.timerSessions.taskId),
+  );
+
+  $$TimerSessionsTableProcessedTableManager get timerSessionsRefs {
+    final manager = $$TimerSessionsTableTableManager(
+      $_db,
+      $_db.timerSessions,
+    ).filter((f) => f.taskId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_timerSessionsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
+  $$TasksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get startTime =>
+      $composableBuilder(
+        column: $table.startTime,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get endTime =>
+      $composableBuilder(
+        column: $table.endTime,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get estimatedDurationMin => $composableBuilder(
+    column: $table.estimatedDurationMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get actualDurationMin => $composableBuilder(
+    column: $table.actualDurationMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get manualDurationAdjustmentMin => $composableBuilder(
+    column: $table.manualDurationAdjustmentMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isInbox => $composableBuilder(
+    column: $table.isInbox,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get missedAt => $composableBuilder(
+    column: $table.missedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$CategoriesTableFilterComposer get categoryId {
+    final $$CategoriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableFilterComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$RecurringRulesTableFilterComposer get recurringRuleId {
+    final $$RecurringRulesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.recurringRuleId,
+      referencedTable: $db.recurringRules,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RecurringRulesTableFilterComposer(
+            $db: $db,
+            $table: $db.recurringRules,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableFilterComposer get rescheduledFromId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledFromId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableFilterComposer get rescheduledToId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledToId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> subtasksRefs(
+    Expression<bool> Function($$SubtasksTableFilterComposer f) f,
+  ) {
+    final $$SubtasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.subtasks,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SubtasksTableFilterComposer(
+            $db: $db,
+            $table: $db.subtasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> taskTagsRefs(
+    Expression<bool> Function($$TaskTagsTableFilterComposer f) f,
+  ) {
+    final $$TaskTagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTags,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTagsTableFilterComposer(
+            $db: $db,
+            $table: $db.taskTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> timerSessionsRefs(
+    Expression<bool> Function($$TimerSessionsTableFilterComposer f) f,
+  ) {
+    final $$TimerSessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.timerSessions,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TimerSessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.timerSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$TasksTableOrderingComposer
+    extends Composer<_$AppDatabase, $TasksTable> {
+  $$TasksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startTime => $composableBuilder(
+    column: $table.startTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endTime => $composableBuilder(
+    column: $table.endTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get estimatedDurationMin => $composableBuilder(
+    column: $table.estimatedDurationMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get actualDurationMin => $composableBuilder(
+    column: $table.actualDurationMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get manualDurationAdjustmentMin => $composableBuilder(
+    column: $table.manualDurationAdjustmentMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isInbox => $composableBuilder(
+    column: $table.isInbox,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get missedAt => $composableBuilder(
+    column: $table.missedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$CategoriesTableOrderingComposer get categoryId {
+    final $$CategoriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$RecurringRulesTableOrderingComposer get recurringRuleId {
+    final $$RecurringRulesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.recurringRuleId,
+      referencedTable: $db.recurringRules,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RecurringRulesTableOrderingComposer(
+            $db: $db,
+            $table: $db.recurringRules,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableOrderingComposer get rescheduledFromId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledFromId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableOrderingComposer get rescheduledToId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledToId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TasksTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TasksTable> {
+  $$TasksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get startTime =>
+      $composableBuilder(column: $table.startTime, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get endTime =>
+      $composableBuilder(column: $table.endTime, builder: (column) => column);
+
+  GeneratedColumn<int> get estimatedDurationMin => $composableBuilder(
+    column: $table.estimatedDurationMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get actualDurationMin => $composableBuilder(
+    column: $table.actualDurationMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get manualDurationAdjustmentMin => $composableBuilder(
+    column: $table.manualDurationAdjustmentMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<bool> get isInbox =>
+      $composableBuilder(column: $table.isInbox, builder: (column) => column);
+
+  GeneratedColumn<String> get missedAt =>
+      $composableBuilder(column: $table.missedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$CategoriesTableAnnotationComposer get categoryId {
+    final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$RecurringRulesTableAnnotationComposer get recurringRuleId {
+    final $$RecurringRulesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.recurringRuleId,
+      referencedTable: $db.recurringRules,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$RecurringRulesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.recurringRules,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableAnnotationComposer get rescheduledFromId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledFromId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableAnnotationComposer get rescheduledToId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.rescheduledToId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> subtasksRefs<T extends Object>(
+    Expression<T> Function($$SubtasksTableAnnotationComposer a) f,
+  ) {
+    final $$SubtasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.subtasks,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SubtasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.subtasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> taskTagsRefs<T extends Object>(
+    Expression<T> Function($$TaskTagsTableAnnotationComposer a) f,
+  ) {
+    final $$TaskTagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTags,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.taskTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> timerSessionsRefs<T extends Object>(
+    Expression<T> Function($$TimerSessionsTableAnnotationComposer a) f,
+  ) {
+    final $$TimerSessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.timerSessions,
+      getReferencedColumn: (t) => t.taskId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TimerSessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.timerSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$TasksTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TasksTable,
+          TaskRow,
+          $$TasksTableFilterComposer,
+          $$TasksTableOrderingComposer,
+          $$TasksTableAnnotationComposer,
+          $$TasksTableCreateCompanionBuilder,
+          $$TasksTableUpdateCompanionBuilder,
+          (TaskRow, $$TasksTableReferences),
+          TaskRow,
+          PrefetchHooks Function({
+            bool categoryId,
+            bool recurringRuleId,
+            bool rescheduledFromId,
+            bool rescheduledToId,
+            bool subtasksRefs,
+            bool taskTagsRefs,
+            bool timerSessionsRefs,
+          })
+        > {
+  $$TasksTableTableManager(_$AppDatabase db, $TasksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TasksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TasksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TasksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String?> description = const Value.absent(),
+                Value<DateTime?> startTime = const Value.absent(),
+                Value<DateTime?> endTime = const Value.absent(),
+                Value<int?> estimatedDurationMin = const Value.absent(),
+                Value<int?> actualDurationMin = const Value.absent(),
+                Value<int> manualDurationAdjustmentMin = const Value.absent(),
+                Value<String?> categoryId = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> recurringRuleId = const Value.absent(),
+                Value<String?> rescheduledFromId = const Value.absent(),
+                Value<String?> rescheduledToId = const Value.absent(),
+                Value<bool> isInbox = const Value.absent(),
+                Value<String?> missedAt = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TasksCompanion(
+                id: id,
+                title: title,
+                description: description,
+                startTime: startTime,
+                endTime: endTime,
+                estimatedDurationMin: estimatedDurationMin,
+                actualDurationMin: actualDurationMin,
+                manualDurationAdjustmentMin: manualDurationAdjustmentMin,
+                categoryId: categoryId,
+                priority: priority,
+                status: status,
+                notes: notes,
+                recurringRuleId: recurringRuleId,
+                rescheduledFromId: rescheduledFromId,
+                rescheduledToId: rescheduledToId,
+                isInbox: isInbox,
+                missedAt: missedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String title,
+                Value<String?> description = const Value.absent(),
+                Value<DateTime?> startTime = const Value.absent(),
+                Value<DateTime?> endTime = const Value.absent(),
+                Value<int?> estimatedDurationMin = const Value.absent(),
+                Value<int?> actualDurationMin = const Value.absent(),
+                Value<int> manualDurationAdjustmentMin = const Value.absent(),
+                Value<String?> categoryId = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> recurringRuleId = const Value.absent(),
+                Value<String?> rescheduledFromId = const Value.absent(),
+                Value<String?> rescheduledToId = const Value.absent(),
+                Value<bool> isInbox = const Value.absent(),
+                Value<String?> missedAt = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TasksCompanion.insert(
+                id: id,
+                title: title,
+                description: description,
+                startTime: startTime,
+                endTime: endTime,
+                estimatedDurationMin: estimatedDurationMin,
+                actualDurationMin: actualDurationMin,
+                manualDurationAdjustmentMin: manualDurationAdjustmentMin,
+                categoryId: categoryId,
+                priority: priority,
+                status: status,
+                notes: notes,
+                recurringRuleId: recurringRuleId,
+                rescheduledFromId: rescheduledFromId,
+                rescheduledToId: rescheduledToId,
+                isInbox: isInbox,
+                missedAt: missedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) =>
+                    (e.readTable(table), $$TasksTableReferences(db, table, e)),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({
+                categoryId = false,
+                recurringRuleId = false,
+                rescheduledFromId = false,
+                rescheduledToId = false,
+                subtasksRefs = false,
+                taskTagsRefs = false,
+                timerSessionsRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (subtasksRefs) db.subtasks,
+                    if (taskTagsRefs) db.taskTags,
+                    if (timerSessionsRefs) db.timerSessions,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (categoryId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.categoryId,
+                                    referencedTable: $$TasksTableReferences
+                                        ._categoryIdTable(db),
+                                    referencedColumn: $$TasksTableReferences
+                                        ._categoryIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+                        if (recurringRuleId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.recurringRuleId,
+                                    referencedTable: $$TasksTableReferences
+                                        ._recurringRuleIdTable(db),
+                                    referencedColumn: $$TasksTableReferences
+                                        ._recurringRuleIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+                        if (rescheduledFromId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.rescheduledFromId,
+                                    referencedTable: $$TasksTableReferences
+                                        ._rescheduledFromIdTable(db),
+                                    referencedColumn: $$TasksTableReferences
+                                        ._rescheduledFromIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+                        if (rescheduledToId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.rescheduledToId,
+                                    referencedTable: $$TasksTableReferences
+                                        ._rescheduledToIdTable(db),
+                                    referencedColumn: $$TasksTableReferences
+                                        ._rescheduledToIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (subtasksRefs)
+                        await $_getPrefetchedData<
+                          TaskRow,
+                          $TasksTable,
+                          SubtaskRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TasksTableReferences
+                              ._subtasksRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TasksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).subtasksRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.taskId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (taskTagsRefs)
+                        await $_getPrefetchedData<
+                          TaskRow,
+                          $TasksTable,
+                          TaskTagRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TasksTableReferences
+                              ._taskTagsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TasksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).taskTagsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.taskId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (timerSessionsRefs)
+                        await $_getPrefetchedData<
+                          TaskRow,
+                          $TasksTable,
+                          TimerSessionRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TasksTableReferences
+                              ._timerSessionsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TasksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).timerSessionsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.taskId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$TasksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TasksTable,
+      TaskRow,
+      $$TasksTableFilterComposer,
+      $$TasksTableOrderingComposer,
+      $$TasksTableAnnotationComposer,
+      $$TasksTableCreateCompanionBuilder,
+      $$TasksTableUpdateCompanionBuilder,
+      (TaskRow, $$TasksTableReferences),
+      TaskRow,
+      PrefetchHooks Function({
+        bool categoryId,
+        bool recurringRuleId,
+        bool rescheduledFromId,
+        bool rescheduledToId,
+        bool subtasksRefs,
+        bool taskTagsRefs,
+        bool timerSessionsRefs,
+      })
     >;
 typedef $$AppSettingsTableCreateCompanionBuilder =
     AppSettingsCompanion Function({
@@ -8583,6 +11294,29 @@ typedef $$SubtasksTableUpdateCompanionBuilder =
       Value<int> rowid,
     });
 
+final class $$SubtasksTableReferences
+    extends BaseReferences<_$AppDatabase, $SubtasksTable, SubtaskRow> {
+  $$SubtasksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $TasksTable _taskIdTable(_$AppDatabase db) => db.tasks.createAlias(
+    $_aliasNameGenerator(db.subtasks.taskId, db.tasks.id),
+  );
+
+  $$TasksTableProcessedTableManager get taskId {
+    final $_column = $_itemColumn<String>('task_id')!;
+
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_taskIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
 class $$SubtasksTableFilterComposer
     extends Composer<_$AppDatabase, $SubtasksTable> {
   $$SubtasksTableFilterComposer({
@@ -8594,11 +11328,6 @@ class $$SubtasksTableFilterComposer
   });
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get taskId => $composableBuilder(
-    column: $table.taskId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8644,6 +11373,29 @@ class $$SubtasksTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$TasksTableFilterComposer get taskId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$SubtasksTableOrderingComposer
@@ -8657,11 +11409,6 @@ class $$SubtasksTableOrderingComposer
   });
   ColumnOrderings<String> get id => $composableBuilder(
     column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get taskId => $composableBuilder(
-    column: $table.taskId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -8704,6 +11451,29 @@ class $$SubtasksTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$TasksTableOrderingComposer get taskId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$SubtasksTableAnnotationComposer
@@ -8717,9 +11487,6 @@ class $$SubtasksTableAnnotationComposer
   });
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get taskId =>
-      $composableBuilder(column: $table.taskId, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -8748,6 +11515,29 @@ class $$SubtasksTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$TasksTableAnnotationComposer get taskId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$SubtasksTableTableManager
@@ -8761,12 +11551,9 @@ class $$SubtasksTableTableManager
           $$SubtasksTableAnnotationComposer,
           $$SubtasksTableCreateCompanionBuilder,
           $$SubtasksTableUpdateCompanionBuilder,
-          (
-            SubtaskRow,
-            BaseReferences<_$AppDatabase, $SubtasksTable, SubtaskRow>,
-          ),
+          (SubtaskRow, $$SubtasksTableReferences),
           SubtaskRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool taskId})
         > {
   $$SubtasksTableTableManager(_$AppDatabase db, $SubtasksTable table)
     : super(
@@ -8832,9 +11619,54 @@ class $$SubtasksTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$SubtasksTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({taskId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (taskId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.taskId,
+                                referencedTable: $$SubtasksTableReferences
+                                    ._taskIdTable(db),
+                                referencedColumn: $$SubtasksTableReferences
+                                    ._taskIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -8849,9 +11681,9 @@ typedef $$SubtasksTableProcessedTableManager =
       $$SubtasksTableAnnotationComposer,
       $$SubtasksTableCreateCompanionBuilder,
       $$SubtasksTableUpdateCompanionBuilder,
-      (SubtaskRow, BaseReferences<_$AppDatabase, $SubtasksTable, SubtaskRow>),
+      (SubtaskRow, $$SubtasksTableReferences),
       SubtaskRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool taskId})
     >;
 typedef $$TagsTableCreateCompanionBuilder =
     TagsCompanion Function({
@@ -8875,6 +11707,29 @@ typedef $$TagsTableUpdateCompanionBuilder =
       Value<int> revision,
       Value<int> rowid,
     });
+
+final class $$TagsTableReferences
+    extends BaseReferences<_$AppDatabase, $TagsTable, TagRow> {
+  $$TagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$TaskTagsTable, List<TaskTagRow>>
+  _taskTagsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.taskTags,
+    aliasName: $_aliasNameGenerator(db.tags.id, db.taskTags.tagId),
+  );
+
+  $$TaskTagsTableProcessedTableManager get taskTagsRefs {
+    final manager = $$TaskTagsTableTableManager(
+      $_db,
+      $_db.taskTags,
+    ).filter((f) => f.tagId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_taskTagsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
   $$TagsTableFilterComposer({
@@ -8921,6 +11776,31 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> taskTagsRefs(
+    Expression<bool> Function($$TaskTagsTableFilterComposer f) f,
+  ) {
+    final $$TaskTagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTags,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTagsTableFilterComposer(
+            $db: $db,
+            $table: $db.taskTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
@@ -8998,6 +11878,31 @@ class $$TagsTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  Expression<T> taskTagsRefs<T extends Object>(
+    Expression<T> Function($$TaskTagsTableAnnotationComposer a) f,
+  ) {
+    final $$TaskTagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.taskTags,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TaskTagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.taskTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TagsTableTableManager
@@ -9011,9 +11916,9 @@ class $$TagsTableTableManager
           $$TagsTableAnnotationComposer,
           $$TagsTableCreateCompanionBuilder,
           $$TagsTableUpdateCompanionBuilder,
-          (TagRow, BaseReferences<_$AppDatabase, $TagsTable, TagRow>),
+          (TagRow, $$TagsTableReferences),
           TagRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool taskTagsRefs})
         > {
   $$TagsTableTableManager(_$AppDatabase db, $TagsTable table)
     : super(
@@ -9067,9 +11972,34 @@ class $$TagsTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) =>
+                    (e.readTable(table), $$TagsTableReferences(db, table, e)),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({taskTagsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [if (taskTagsRefs) db.taskTags],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (taskTagsRefs)
+                    await $_getPrefetchedData<TagRow, $TagsTable, TaskTagRow>(
+                      currentTable: table,
+                      referencedTable: $$TagsTableReferences._taskTagsRefsTable(
+                        db,
+                      ),
+                      managerFromTypedResult: (p0) =>
+                          $$TagsTableReferences(db, table, p0).taskTagsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.tagId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -9084,16 +12014,19 @@ typedef $$TagsTableProcessedTableManager =
       $$TagsTableAnnotationComposer,
       $$TagsTableCreateCompanionBuilder,
       $$TagsTableUpdateCompanionBuilder,
-      (TagRow, BaseReferences<_$AppDatabase, $TagsTable, TagRow>),
+      (TagRow, $$TagsTableReferences),
       TagRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool taskTagsRefs})
     >;
 typedef $$TaskTagsTableCreateCompanionBuilder =
     TaskTagsCompanion Function({
       required String taskId,
       required String tagId,
       required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> syncStatus,
+      Value<int> revision,
       Value<int> rowid,
     });
 typedef $$TaskTagsTableUpdateCompanionBuilder =
@@ -9101,9 +12034,52 @@ typedef $$TaskTagsTableUpdateCompanionBuilder =
       Value<String> taskId,
       Value<String> tagId,
       Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> syncStatus,
+      Value<int> revision,
       Value<int> rowid,
     });
+
+final class $$TaskTagsTableReferences
+    extends BaseReferences<_$AppDatabase, $TaskTagsTable, TaskTagRow> {
+  $$TaskTagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $TasksTable _taskIdTable(_$AppDatabase db) => db.tasks.createAlias(
+    $_aliasNameGenerator(db.taskTags.taskId, db.tasks.id),
+  );
+
+  $$TasksTableProcessedTableManager get taskId {
+    final $_column = $_itemColumn<String>('task_id')!;
+
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_taskIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TagsTable _tagIdTable(_$AppDatabase db) =>
+      db.tags.createAlias($_aliasNameGenerator(db.taskTags.tagId, db.tags.id));
+
+  $$TagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<String>('tag_id')!;
+
+    final manager = $$TagsTableTableManager(
+      $_db,
+      $_db.tags,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
 
 class $$TaskTagsTableFilterComposer
     extends Composer<_$AppDatabase, $TaskTagsTable> {
@@ -9114,280 +12090,6 @@ class $$TaskTagsTableFilterComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get taskId => $composableBuilder(
-    column: $table.taskId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get tagId => $composableBuilder(
-    column: $table.tagId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
-      $composableBuilder(
-        column: $table.createdAt,
-        builder: (column) => ColumnWithTypeConverterFilters(column),
-      );
-
-  ColumnFilters<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$TaskTagsTableOrderingComposer
-    extends Composer<_$AppDatabase, $TaskTagsTable> {
-  $$TaskTagsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get taskId => $composableBuilder(
-    column: $table.taskId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get tagId => $composableBuilder(
-    column: $table.tagId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$TaskTagsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $TaskTagsTable> {
-  $$TaskTagsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get taskId =>
-      $composableBuilder(column: $table.taskId, builder: (column) => column);
-
-  GeneratedColumn<String> get tagId =>
-      $composableBuilder(column: $table.tagId, builder: (column) => column);
-
-  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumn<int> get syncStatus => $composableBuilder(
-    column: $table.syncStatus,
-    builder: (column) => column,
-  );
-}
-
-class $$TaskTagsTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $TaskTagsTable,
-          TaskTagRow,
-          $$TaskTagsTableFilterComposer,
-          $$TaskTagsTableOrderingComposer,
-          $$TaskTagsTableAnnotationComposer,
-          $$TaskTagsTableCreateCompanionBuilder,
-          $$TaskTagsTableUpdateCompanionBuilder,
-          (
-            TaskTagRow,
-            BaseReferences<_$AppDatabase, $TaskTagsTable, TaskTagRow>,
-          ),
-          TaskTagRow,
-          PrefetchHooks Function()
-        > {
-  $$TaskTagsTableTableManager(_$AppDatabase db, $TaskTagsTable table)
-    : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$TaskTagsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$TaskTagsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$TaskTagsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<String> taskId = const Value.absent(),
-                Value<String> tagId = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<int> syncStatus = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => TaskTagsCompanion(
-                taskId: taskId,
-                tagId: tagId,
-                createdAt: createdAt,
-                syncStatus: syncStatus,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String taskId,
-                required String tagId,
-                required DateTime createdAt,
-                Value<int> syncStatus = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => TaskTagsCompanion.insert(
-                taskId: taskId,
-                tagId: tagId,
-                createdAt: createdAt,
-                syncStatus: syncStatus,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$TaskTagsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $TaskTagsTable,
-      TaskTagRow,
-      $$TaskTagsTableFilterComposer,
-      $$TaskTagsTableOrderingComposer,
-      $$TaskTagsTableAnnotationComposer,
-      $$TaskTagsTableCreateCompanionBuilder,
-      $$TaskTagsTableUpdateCompanionBuilder,
-      (TaskTagRow, BaseReferences<_$AppDatabase, $TaskTagsTable, TaskTagRow>),
-      TaskTagRow,
-      PrefetchHooks Function()
-    >;
-typedef $$RecurringRulesTableCreateCompanionBuilder =
-    RecurringRulesCompanion Function({
-      required String id,
-      required String rrule,
-      required String taskTitle,
-      Value<String?> taskDescription,
-      required int durationMin,
-      Value<String?> categoryId,
-      Value<int> priority,
-      Value<String?> tagsJson,
-      required String startTimeOfDay,
-      required String startDate,
-      Value<String?> endDate,
-      Value<bool> isActive,
-      Value<String?> exceptionsJson,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> syncStatus,
-      Value<int> revision,
-      Value<int> rowid,
-    });
-typedef $$RecurringRulesTableUpdateCompanionBuilder =
-    RecurringRulesCompanion Function({
-      Value<String> id,
-      Value<String> rrule,
-      Value<String> taskTitle,
-      Value<String?> taskDescription,
-      Value<int> durationMin,
-      Value<String?> categoryId,
-      Value<int> priority,
-      Value<String?> tagsJson,
-      Value<String> startTimeOfDay,
-      Value<String> startDate,
-      Value<String?> endDate,
-      Value<bool> isActive,
-      Value<String?> exceptionsJson,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> syncStatus,
-      Value<int> revision,
-      Value<int> rowid,
-    });
-
-class $$RecurringRulesTableFilterComposer
-    extends Composer<_$AppDatabase, $RecurringRulesTable> {
-  $$RecurringRulesTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get rrule => $composableBuilder(
-    column: $table.rrule,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get taskTitle => $composableBuilder(
-    column: $table.taskTitle,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get taskDescription => $composableBuilder(
-    column: $table.taskDescription,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get durationMin => $composableBuilder(
-    column: $table.durationMin,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get priority => $composableBuilder(
-    column: $table.priority,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get tagsJson => $composableBuilder(
-    column: $table.tagsJson,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get startTimeOfDay => $composableBuilder(
-    column: $table.startTimeOfDay,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get startDate => $composableBuilder(
-    column: $table.startDate,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get endDate => $composableBuilder(
-    column: $table.endDate,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isActive => $composableBuilder(
-    column: $table.isActive,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get exceptionsJson => $composableBuilder(
-    column: $table.exceptionsJson,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
       $composableBuilder(
         column: $table.createdAt,
@@ -9415,82 +12117,63 @@ class $$RecurringRulesTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$TasksTableFilterComposer get taskId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableFilterComposer get tagId {
+    final $$TagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableFilterComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
-class $$RecurringRulesTableOrderingComposer
-    extends Composer<_$AppDatabase, $RecurringRulesTable> {
-  $$RecurringRulesTableOrderingComposer({
+class $$TaskTagsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TaskTagsTable> {
+  $$TaskTagsTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get rrule => $composableBuilder(
-    column: $table.rrule,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get taskTitle => $composableBuilder(
-    column: $table.taskTitle,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get taskDescription => $composableBuilder(
-    column: $table.taskDescription,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get durationMin => $composableBuilder(
-    column: $table.durationMin,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get priority => $composableBuilder(
-    column: $table.priority,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get tagsJson => $composableBuilder(
-    column: $table.tagsJson,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get startTimeOfDay => $composableBuilder(
-    column: $table.startTimeOfDay,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get startDate => $composableBuilder(
-    column: $table.startDate,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get endDate => $composableBuilder(
-    column: $table.endDate,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get isActive => $composableBuilder(
-    column: $table.isActive,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get exceptionsJson => $composableBuilder(
-    column: $table.exceptionsJson,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9515,66 +12198,63 @@ class $$RecurringRulesTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$TasksTableOrderingComposer get taskId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableOrderingComposer get tagId {
+    final $$TagsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableOrderingComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
-class $$RecurringRulesTableAnnotationComposer
-    extends Composer<_$AppDatabase, $RecurringRulesTable> {
-  $$RecurringRulesTableAnnotationComposer({
+class $$TaskTagsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TaskTagsTable> {
+  $$TaskTagsTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get rrule =>
-      $composableBuilder(column: $table.rrule, builder: (column) => column);
-
-  GeneratedColumn<String> get taskTitle =>
-      $composableBuilder(column: $table.taskTitle, builder: (column) => column);
-
-  GeneratedColumn<String> get taskDescription => $composableBuilder(
-    column: $table.taskDescription,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get durationMin => $composableBuilder(
-    column: $table.durationMin,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get priority =>
-      $composableBuilder(column: $table.priority, builder: (column) => column);
-
-  GeneratedColumn<String> get tagsJson =>
-      $composableBuilder(column: $table.tagsJson, builder: (column) => column);
-
-  GeneratedColumn<String> get startTimeOfDay => $composableBuilder(
-    column: $table.startTimeOfDay,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get startDate =>
-      $composableBuilder(column: $table.startDate, builder: (column) => column);
-
-  GeneratedColumn<String> get endDate =>
-      $composableBuilder(column: $table.endDate, builder: (column) => column);
-
-  GeneratedColumn<bool> get isActive =>
-      $composableBuilder(column: $table.isActive, builder: (column) => column);
-
-  GeneratedColumn<String> get exceptionsJson => $composableBuilder(
-    column: $table.exceptionsJson,
-    builder: (column) => column,
-  );
-
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -9591,78 +12271,93 @@ class $$RecurringRulesTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$TasksTableAnnotationComposer get taskId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableAnnotationComposer get tagId {
+    final $$TagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
-class $$RecurringRulesTableTableManager
+class $$TaskTagsTableTableManager
     extends
         RootTableManager<
           _$AppDatabase,
-          $RecurringRulesTable,
-          RecurringRuleRow,
-          $$RecurringRulesTableFilterComposer,
-          $$RecurringRulesTableOrderingComposer,
-          $$RecurringRulesTableAnnotationComposer,
-          $$RecurringRulesTableCreateCompanionBuilder,
-          $$RecurringRulesTableUpdateCompanionBuilder,
-          (
-            RecurringRuleRow,
-            BaseReferences<
-              _$AppDatabase,
-              $RecurringRulesTable,
-              RecurringRuleRow
-            >,
-          ),
-          RecurringRuleRow,
-          PrefetchHooks Function()
+          $TaskTagsTable,
+          TaskTagRow,
+          $$TaskTagsTableFilterComposer,
+          $$TaskTagsTableOrderingComposer,
+          $$TaskTagsTableAnnotationComposer,
+          $$TaskTagsTableCreateCompanionBuilder,
+          $$TaskTagsTableUpdateCompanionBuilder,
+          (TaskTagRow, $$TaskTagsTableReferences),
+          TaskTagRow,
+          PrefetchHooks Function({bool taskId, bool tagId})
         > {
-  $$RecurringRulesTableTableManager(
-    _$AppDatabase db,
-    $RecurringRulesTable table,
-  ) : super(
+  $$TaskTagsTableTableManager(_$AppDatabase db, $TaskTagsTable table)
+    : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$RecurringRulesTableFilterComposer($db: db, $table: table),
+              $$TaskTagsTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$RecurringRulesTableOrderingComposer($db: db, $table: table),
+              $$TaskTagsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$RecurringRulesTableAnnotationComposer($db: db, $table: table),
+              $$TaskTagsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
-                Value<String> id = const Value.absent(),
-                Value<String> rrule = const Value.absent(),
-                Value<String> taskTitle = const Value.absent(),
-                Value<String?> taskDescription = const Value.absent(),
-                Value<int> durationMin = const Value.absent(),
-                Value<String?> categoryId = const Value.absent(),
-                Value<int> priority = const Value.absent(),
-                Value<String?> tagsJson = const Value.absent(),
-                Value<String> startTimeOfDay = const Value.absent(),
-                Value<String> startDate = const Value.absent(),
-                Value<String?> endDate = const Value.absent(),
-                Value<bool> isActive = const Value.absent(),
-                Value<String?> exceptionsJson = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<String> tagId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => RecurringRulesCompanion(
-                id: id,
-                rrule: rrule,
-                taskTitle: taskTitle,
-                taskDescription: taskDescription,
-                durationMin: durationMin,
-                categoryId: categoryId,
-                priority: priority,
-                tagsJson: tagsJson,
-                startTimeOfDay: startTimeOfDay,
-                startDate: startDate,
-                endDate: endDate,
-                isActive: isActive,
-                exceptionsJson: exceptionsJson,
+              }) => TaskTagsCompanion(
+                taskId: taskId,
+                tagId: tagId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -9672,39 +12367,17 @@ class $$RecurringRulesTableTableManager
               ),
           createCompanionCallback:
               ({
-                required String id,
-                required String rrule,
-                required String taskTitle,
-                Value<String?> taskDescription = const Value.absent(),
-                required int durationMin,
-                Value<String?> categoryId = const Value.absent(),
-                Value<int> priority = const Value.absent(),
-                Value<String?> tagsJson = const Value.absent(),
-                required String startTimeOfDay,
-                required String startDate,
-                Value<String?> endDate = const Value.absent(),
-                Value<bool> isActive = const Value.absent(),
-                Value<String?> exceptionsJson = const Value.absent(),
+                required String taskId,
+                required String tagId,
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => RecurringRulesCompanion.insert(
-                id: id,
-                rrule: rrule,
-                taskTitle: taskTitle,
-                taskDescription: taskDescription,
-                durationMin: durationMin,
-                categoryId: categoryId,
-                priority: priority,
-                tagsJson: tagsJson,
-                startTimeOfDay: startTimeOfDay,
-                startDate: startDate,
-                endDate: endDate,
-                isActive: isActive,
-                exceptionsJson: exceptionsJson,
+              }) => TaskTagsCompanion.insert(
+                taskId: taskId,
+                tagId: tagId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -9713,29 +12386,84 @@ class $$RecurringRulesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$TaskTagsTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({taskId = false, tagId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (taskId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.taskId,
+                                referencedTable: $$TaskTagsTableReferences
+                                    ._taskIdTable(db),
+                                referencedColumn: $$TaskTagsTableReferences
+                                    ._taskIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (tagId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.tagId,
+                                referencedTable: $$TaskTagsTableReferences
+                                    ._tagIdTable(db),
+                                referencedColumn: $$TaskTagsTableReferences
+                                    ._tagIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
 
-typedef $$RecurringRulesTableProcessedTableManager =
+typedef $$TaskTagsTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
-      $RecurringRulesTable,
-      RecurringRuleRow,
-      $$RecurringRulesTableFilterComposer,
-      $$RecurringRulesTableOrderingComposer,
-      $$RecurringRulesTableAnnotationComposer,
-      $$RecurringRulesTableCreateCompanionBuilder,
-      $$RecurringRulesTableUpdateCompanionBuilder,
-      (
-        RecurringRuleRow,
-        BaseReferences<_$AppDatabase, $RecurringRulesTable, RecurringRuleRow>,
-      ),
-      RecurringRuleRow,
-      PrefetchHooks Function()
+      $TaskTagsTable,
+      TaskTagRow,
+      $$TaskTagsTableFilterComposer,
+      $$TaskTagsTableOrderingComposer,
+      $$TaskTagsTableAnnotationComposer,
+      $$TaskTagsTableCreateCompanionBuilder,
+      $$TaskTagsTableUpdateCompanionBuilder,
+      (TaskTagRow, $$TaskTagsTableReferences),
+      TaskTagRow,
+      PrefetchHooks Function({bool taskId, bool tagId})
     >;
 typedef $$TaskTemplatesTableCreateCompanionBuilder =
     TaskTemplatesCompanion Function({
@@ -9770,6 +12498,35 @@ typedef $$TaskTemplatesTableUpdateCompanionBuilder =
       Value<int> rowid,
     });
 
+final class $$TaskTemplatesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $TaskTemplatesTable, TaskTemplateRow> {
+  $$TaskTemplatesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $CategoriesTable _categoryIdTable(_$AppDatabase db) =>
+      db.categories.createAlias(
+        $_aliasNameGenerator(db.taskTemplates.categoryId, db.categories.id),
+      );
+
+  $$CategoriesTableProcessedTableManager? get categoryId {
+    final $_column = $_itemColumn<String>('category_id');
+    if ($_column == null) return null;
+    final manager = $$CategoriesTableTableManager(
+      $_db,
+      $_db.categories,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_categoryIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
 class $$TaskTemplatesTableFilterComposer
     extends Composer<_$AppDatabase, $TaskTemplatesTable> {
   $$TaskTemplatesTableFilterComposer({
@@ -9796,11 +12553,6 @@ class $$TaskTemplatesTableFilterComposer
 
   ColumnFilters<int> get durationMin => $composableBuilder(
     column: $table.durationMin,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9841,6 +12593,29 @@ class $$TaskTemplatesTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$CategoriesTableFilterComposer get categoryId {
+    final $$CategoriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableFilterComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TaskTemplatesTableOrderingComposer
@@ -9869,11 +12644,6 @@ class $$TaskTemplatesTableOrderingComposer
 
   ColumnOrderings<int> get durationMin => $composableBuilder(
     column: $table.durationMin,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -9911,6 +12681,29 @@ class $$TaskTemplatesTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$CategoriesTableOrderingComposer get categoryId {
+    final $$CategoriesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableOrderingComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TaskTemplatesTableAnnotationComposer
@@ -9938,11 +12731,6 @@ class $$TaskTemplatesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get categoryId => $composableBuilder(
-    column: $table.categoryId,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<int> get priority =>
       $composableBuilder(column: $table.priority, builder: (column) => column);
 
@@ -9965,6 +12753,29 @@ class $$TaskTemplatesTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$CategoriesTableAnnotationComposer get categoryId {
+    final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.categoryId,
+      referencedTable: $db.categories,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$CategoriesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.categories,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TaskTemplatesTableTableManager
@@ -9978,12 +12789,9 @@ class $$TaskTemplatesTableTableManager
           $$TaskTemplatesTableAnnotationComposer,
           $$TaskTemplatesTableCreateCompanionBuilder,
           $$TaskTemplatesTableUpdateCompanionBuilder,
-          (
-            TaskTemplateRow,
-            BaseReferences<_$AppDatabase, $TaskTemplatesTable, TaskTemplateRow>,
-          ),
+          (TaskTemplateRow, $$TaskTemplatesTableReferences),
           TaskTemplateRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool categoryId})
         > {
   $$TaskTemplatesTableTableManager(_$AppDatabase db, $TaskTemplatesTable table)
     : super(
@@ -10057,9 +12865,54 @@ class $$TaskTemplatesTableTableManager
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$TaskTemplatesTableReferences(db, table, e),
+                ),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({categoryId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (categoryId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.categoryId,
+                                referencedTable: $$TaskTemplatesTableReferences
+                                    ._categoryIdTable(db),
+                                referencedColumn: $$TaskTemplatesTableReferences
+                                    ._categoryIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
         ),
       );
 }
@@ -10074,12 +12927,9 @@ typedef $$TaskTemplatesTableProcessedTableManager =
       $$TaskTemplatesTableAnnotationComposer,
       $$TaskTemplatesTableCreateCompanionBuilder,
       $$TaskTemplatesTableUpdateCompanionBuilder,
-      (
-        TaskTemplateRow,
-        BaseReferences<_$AppDatabase, $TaskTemplatesTable, TaskTemplateRow>,
-      ),
+      (TaskTemplateRow, $$TaskTemplatesTableReferences),
       TaskTemplateRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool categoryId})
     >;
 typedef $$DailyReviewsTableCreateCompanionBuilder =
     DailyReviewsCompanion Function({
@@ -10803,6 +13653,8 @@ typedef $$DailyStatsCacheTableCreateCompanionBuilder =
       required String date,
       Value<int> totalTasks,
       Value<int> completedTasks,
+      Value<int> plannedTasks,
+      Value<int> inProgressTasks,
       Value<int> missedTasks,
       Value<int> skippedTasks,
       Value<int> cancelledTasks,
@@ -10821,6 +13673,8 @@ typedef $$DailyStatsCacheTableUpdateCompanionBuilder =
       Value<String> date,
       Value<int> totalTasks,
       Value<int> completedTasks,
+      Value<int> plannedTasks,
+      Value<int> inProgressTasks,
       Value<int> missedTasks,
       Value<int> skippedTasks,
       Value<int> cancelledTasks,
@@ -10856,6 +13710,16 @@ class $$DailyStatsCacheTableFilterComposer
 
   ColumnFilters<int> get completedTasks => $composableBuilder(
     column: $table.completedTasks,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get plannedTasks => $composableBuilder(
+    column: $table.plannedTasks,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get inProgressTasks => $composableBuilder(
+    column: $table.inProgressTasks,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10940,6 +13804,16 @@ class $$DailyStatsCacheTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get plannedTasks => $composableBuilder(
+    column: $table.plannedTasks,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get inProgressTasks => $composableBuilder(
+    column: $table.inProgressTasks,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get missedTasks => $composableBuilder(
     column: $table.missedTasks,
     builder: (column) => ColumnOrderings(column),
@@ -11015,6 +13889,16 @@ class $$DailyStatsCacheTableAnnotationComposer
 
   GeneratedColumn<int> get completedTasks => $composableBuilder(
     column: $table.completedTasks,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get plannedTasks => $composableBuilder(
+    column: $table.plannedTasks,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get inProgressTasks => $composableBuilder(
+    column: $table.inProgressTasks,
     builder: (column) => column,
   );
 
@@ -11115,6 +13999,8 @@ class $$DailyStatsCacheTableTableManager
                 Value<String> date = const Value.absent(),
                 Value<int> totalTasks = const Value.absent(),
                 Value<int> completedTasks = const Value.absent(),
+                Value<int> plannedTasks = const Value.absent(),
+                Value<int> inProgressTasks = const Value.absent(),
                 Value<int> missedTasks = const Value.absent(),
                 Value<int> skippedTasks = const Value.absent(),
                 Value<int> cancelledTasks = const Value.absent(),
@@ -11131,6 +14017,8 @@ class $$DailyStatsCacheTableTableManager
                 date: date,
                 totalTasks: totalTasks,
                 completedTasks: completedTasks,
+                plannedTasks: plannedTasks,
+                inProgressTasks: inProgressTasks,
                 missedTasks: missedTasks,
                 skippedTasks: skippedTasks,
                 cancelledTasks: cancelledTasks,
@@ -11149,6 +14037,8 @@ class $$DailyStatsCacheTableTableManager
                 required String date,
                 Value<int> totalTasks = const Value.absent(),
                 Value<int> completedTasks = const Value.absent(),
+                Value<int> plannedTasks = const Value.absent(),
+                Value<int> inProgressTasks = const Value.absent(),
                 Value<int> missedTasks = const Value.absent(),
                 Value<int> skippedTasks = const Value.absent(),
                 Value<int> cancelledTasks = const Value.absent(),
@@ -11165,6 +14055,8 @@ class $$DailyStatsCacheTableTableManager
                 date: date,
                 totalTasks: totalTasks,
                 completedTasks: completedTasks,
+                plannedTasks: plannedTasks,
+                inProgressTasks: inProgressTasks,
                 missedTasks: missedTasks,
                 skippedTasks: skippedTasks,
                 cancelledTasks: cancelledTasks,
@@ -11207,14 +14099,443 @@ typedef $$DailyStatsCacheTableProcessedTableManager =
       DailyStatsCacheRow,
       PrefetchHooks Function()
     >;
+typedef $$TimerSessionsTableCreateCompanionBuilder =
+    TimerSessionsCompanion Function({
+      required String id,
+      required String taskId,
+      required DateTime startedAt,
+      Value<DateTime?> endedAt,
+      Value<int> durationSec,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+typedef $$TimerSessionsTableUpdateCompanionBuilder =
+    TimerSessionsCompanion Function({
+      Value<String> id,
+      Value<String> taskId,
+      Value<DateTime> startedAt,
+      Value<DateTime?> endedAt,
+      Value<int> durationSec,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int> rowid,
+    });
+
+final class $$TimerSessionsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $TimerSessionsTable, TimerSessionRow> {
+  $$TimerSessionsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $TasksTable _taskIdTable(_$AppDatabase db) => db.tasks.createAlias(
+    $_aliasNameGenerator(db.timerSessions.taskId, db.tasks.id),
+  );
+
+  $$TasksTableProcessedTableManager get taskId {
+    final $_column = $_itemColumn<String>('task_id')!;
+
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_taskIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$TimerSessionsTableFilterComposer
+    extends Composer<_$AppDatabase, $TimerSessionsTable> {
+  $$TimerSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get startedAt =>
+      $composableBuilder(
+        column: $table.startedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get endedAt =>
+      $composableBuilder(
+        column: $table.endedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get durationSec => $composableBuilder(
+    column: $table.durationSec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$TasksTableFilterComposer get taskId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TimerSessionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TimerSessionsTable> {
+  $$TimerSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endedAt => $composableBuilder(
+    column: $table.endedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationSec => $composableBuilder(
+    column: $table.durationSec,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$TasksTableOrderingComposer get taskId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TimerSessionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TimerSessionsTable> {
+  $$TimerSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get endedAt =>
+      $composableBuilder(column: $table.endedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get durationSec => $composableBuilder(
+    column: $table.durationSec,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  $$TasksTableAnnotationComposer get taskId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.taskId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TimerSessionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TimerSessionsTable,
+          TimerSessionRow,
+          $$TimerSessionsTableFilterComposer,
+          $$TimerSessionsTableOrderingComposer,
+          $$TimerSessionsTableAnnotationComposer,
+          $$TimerSessionsTableCreateCompanionBuilder,
+          $$TimerSessionsTableUpdateCompanionBuilder,
+          (TimerSessionRow, $$TimerSessionsTableReferences),
+          TimerSessionRow,
+          PrefetchHooks Function({bool taskId})
+        > {
+  $$TimerSessionsTableTableManager(_$AppDatabase db, $TimerSessionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TimerSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TimerSessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TimerSessionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+                Value<DateTime?> endedAt = const Value.absent(),
+                Value<int> durationSec = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TimerSessionsCompanion(
+                id: id,
+                taskId: taskId,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                durationSec: durationSec,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String taskId,
+                required DateTime startedAt,
+                Value<DateTime?> endedAt = const Value.absent(),
+                Value<int> durationSec = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TimerSessionsCompanion.insert(
+                id: id,
+                taskId: taskId,
+                startedAt: startedAt,
+                endedAt: endedAt,
+                durationSec: durationSec,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$TimerSessionsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({taskId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (taskId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.taskId,
+                                referencedTable: $$TimerSessionsTableReferences
+                                    ._taskIdTable(db),
+                                referencedColumn: $$TimerSessionsTableReferences
+                                    ._taskIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$TimerSessionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TimerSessionsTable,
+      TimerSessionRow,
+      $$TimerSessionsTableFilterComposer,
+      $$TimerSessionsTableOrderingComposer,
+      $$TimerSessionsTableAnnotationComposer,
+      $$TimerSessionsTableCreateCompanionBuilder,
+      $$TimerSessionsTableUpdateCompanionBuilder,
+      (TimerSessionRow, $$TimerSessionsTableReferences),
+      TimerSessionRow,
+      PrefetchHooks Function({bool taskId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
   $AppDatabaseManager(this._db);
-  $$TasksTableTableManager get tasks =>
-      $$TasksTableTableManager(_db, _db.tasks);
   $$CategoriesTableTableManager get categories =>
       $$CategoriesTableTableManager(_db, _db.categories);
+  $$RecurringRulesTableTableManager get recurringRules =>
+      $$RecurringRulesTableTableManager(_db, _db.recurringRules);
+  $$TasksTableTableManager get tasks =>
+      $$TasksTableTableManager(_db, _db.tasks);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
   $$SubtasksTableTableManager get subtasks =>
@@ -11222,8 +14543,6 @@ class $AppDatabaseManager {
   $$TagsTableTableManager get tags => $$TagsTableTableManager(_db, _db.tags);
   $$TaskTagsTableTableManager get taskTags =>
       $$TaskTagsTableTableManager(_db, _db.taskTags);
-  $$RecurringRulesTableTableManager get recurringRules =>
-      $$RecurringRulesTableTableManager(_db, _db.recurringRules);
   $$TaskTemplatesTableTableManager get taskTemplates =>
       $$TaskTemplatesTableTableManager(_db, _db.taskTemplates);
   $$DailyReviewsTableTableManager get dailyReviews =>
@@ -11232,4 +14551,6 @@ class $AppDatabaseManager {
       $$WeeklyReviewsTableTableManager(_db, _db.weeklyReviews);
   $$DailyStatsCacheTableTableManager get dailyStatsCache =>
       $$DailyStatsCacheTableTableManager(_db, _db.dailyStatsCache);
+  $$TimerSessionsTableTableManager get timerSessions =>
+      $$TimerSessionsTableTableManager(_db, _db.timerSessions);
 }

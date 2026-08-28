@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -18,7 +19,11 @@ class DayHeader extends ConsumerWidget {
         horizontal: AppSpacing.lg,
         vertical: AppSpacing.sm,
       ),
-      child: Row(
+      child: Wrap(
+        alignment: WrapAlignment.start,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: AppSpacing.xs,
+        runSpacing: AppSpacing.xs,
         children: [
           IconButton(
             tooltip: 'Previous day',
@@ -40,6 +45,17 @@ class DayHeader extends ConsumerWidget {
               notifier.state = DateTime(now.year, now.month, now.day);
             },
             child: const Text('Today'),
+          ),
+          SegmentedButton<String>(
+            key: const ValueKey('day-week-switcher'),
+            segments: const [
+              ButtonSegment(value: 'day', label: Text('Day')),
+              ButtonSegment(value: 'week', label: Text('Week')),
+            ],
+            selected: const {'day'},
+            onSelectionChanged: (selection) {
+              if (selection.contains('week')) context.go('/week');
+            },
           ),
         ],
       ),

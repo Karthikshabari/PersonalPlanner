@@ -15,6 +15,7 @@ abstract class Task with _$Task {
     DateTime? endTime,
     int? estimatedDurationMin,
     int? actualDurationMin,
+    @Default(0) int manualDurationAdjustmentMin,
     String? categoryId,
     @Default(Priority.none) Priority priority,
     @Default(TaskStatus.planned) TaskStatus status,
