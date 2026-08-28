@@ -6,6 +6,8 @@ import '../../../core/models/category.dart';
 import '../../../core/utils/uuid.dart';
 
 class CategoryRepository {
+  static const String _defaultsSeededKey = 'default_categories_seeded';
+
   final AppDatabase _db;
 
   CategoryRepository(this._db);
@@ -30,19 +32,50 @@ class CategoryRepository {
     if (row == null) {
       throw StateError('Category ${effective.id} not found');
     }
-    await _dao.updateCategory(_toRow(effective, syncStatus: row.syncStatus, revision: row.revision));
+    await _dao.updateCategory(
+      _toRow(effective, syncStatus: 1, revision: row.revision + 1),
+    );
     return effective;
   }
 
   Future<void> deleteCategory(String categoryId) async {
     // Per planner.md Chunk 3 #6: deleting a category sets tasks in it to
     // category = null instead of deleting them.
-    await _db.customStatement(
-      'UPDATE tasks SET category_id = NULL, updated_at = ? '
-      'WHERE category_id = ? AND deleted_at IS NULL',
-      [DateTime.now().toUtc().toIso8601String(), categoryId],
-    );
-    await _dao.softDeleteCategory(categoryId, DateTime.now());
+    final now = DateTime.now().toUtc().toIso8601String();
+    await _db.transaction(() async {
+      await _db.customUpdate(
+        'UPDATE tasks SET category_id = NULL, updated_at = ?, '
+        'sync_status = 1, revision = revision + 1 '
+        'WHERE category_id = ? AND deleted_at IS NULL',
+        variables: [Variable<String>(now), Variable<String>(categoryId)],
+        updates: {_db.tasks},
+      );
+      await _db.customUpdate(
+        'UPDATE recurring_rules SET category_id = NULL, updated_at = ?, '
+        'sync_status = 1, revision = revision + 1 '
+        'WHERE category_id = ? AND deleted_at IS NULL',
+        variables: [Variable<String>(now), Variable<String>(categoryId)],
+        updates: {_db.recurringRules},
+      );
+      await _db.customUpdate(
+        'UPDATE task_templates SET category_id = NULL, updated_at = ?, '
+        'sync_status = 1, revision = revision + 1 '
+        'WHERE category_id = ? AND deleted_at IS NULL',
+        variables: [Variable<String>(now), Variable<String>(categoryId)],
+        updates: {_db.taskTemplates},
+      );
+      await _db.customUpdate(
+        'UPDATE categories SET deleted_at = ?, updated_at = ?, '
+        'sync_status = 1, revision = revision + 1 '
+        'WHERE id = ? AND deleted_at IS NULL',
+        variables: [
+          Variable<String>(now),
+          Variable<String>(now),
+          Variable<String>(categoryId),
+        ],
+        updates: {_db.categories},
+      );
+    });
   }
 
   /// Persists a new sort order for the category list.
@@ -53,7 +86,13 @@ class CategoryRepository {
         await (_db.update(_db.categories)
               ..where((c) => c.id.equals(orderedIds[i])))
             .write(CategoriesCompanion(
-                sortOrder: Value(i), updatedAt: Value(now)));
+              sortOrder: Value(i),
+              updatedAt: Value(now),
+              syncStatus: const Value(1),
+              revision: Value(
+                (await _dao.getCategoryById(orderedIds[i]))!.revision + 1,
+              ),
+            ));
       }
     });
   }
@@ -70,26 +109,42 @@ class CategoryRepository {
       (await _dao.getActiveCategories()).map(_fromRow).toList();
 
   Future<void> seedDefaultsIfEmpty() async {
-    final existing = await _dao.getActiveCategories();
-    if (existing.isNotEmpty) return;
-    final now = DateTime.now();
-    const defaults = [
-      ('Work', '#4285F4'),
-      ('Personal', '#34A853'),
-      ('Health', '#EA4335'),
-      ('Learning', '#FBBC04'),
-    ];
-    for (var i = 0; i < defaults.length; i++) {
-      await _dao.insertCategory(CategoriesCompanion.insert(
-        id: generateUuidV7(),
-        name: defaults[i].$1,
-        colorHex: defaults[i].$2,
-        sortOrder: Value(i),
-        isFocus: const Value(false),
-        createdAt: now,
-        updatedAt: now,
-      ));
-    }
+    await _db.transaction(() async {
+      final marker = await (_db.select(_db.appSettings)
+            ..where((s) => s.key.equals(_defaultsSeededKey)))
+          .getSingleOrNull();
+      if (marker != null) return;
+
+      final anyCategory = await (_db.select(_db.categories)..limit(1)).get();
+      if (anyCategory.isEmpty) {
+        final now = DateTime.now();
+        const defaults = [
+          ('Work', '#4285F4'),
+          ('Personal', '#34A853'),
+          ('Health', '#EA4335'),
+          ('Learning', '#FBBC04'),
+        ];
+        for (var i = 0; i < defaults.length; i++) {
+          await _dao.insertCategory(CategoriesCompanion.insert(
+            id: generateUuidV7(),
+            name: defaults[i].$1,
+            colorHex: defaults[i].$2,
+            sortOrder: Value(i),
+            isFocus: const Value(false),
+            createdAt: now,
+            updatedAt: now,
+            syncStatus: const Value(1),
+            revision: const Value(1),
+          ));
+        }
+      }
+      await _db.into(_db.appSettings).insertOnConflictUpdate(
+            AppSettingsCompanion.insert(
+              key: _defaultsSeededKey,
+              value: 'true',
+            ),
+          );
+    });
   }
 
   static Category _fromRow(CategoryRow row) => Category(
@@ -113,6 +168,8 @@ class CategoryRepository {
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
         deletedAt: Value(c.deletedAt),
+        syncStatus: const Value(1),
+        revision: const Value(1),
       );
 
   static CategoryRow _toRow(Category c, {int syncStatus = 0, int revision = 1}) =>

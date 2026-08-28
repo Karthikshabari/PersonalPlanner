@@ -9,14 +9,20 @@ part 'task_dao.g.dart';
 class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   TaskDao(super.db);
 
+  /// Day tasks in chronological order — callers (timeline block layout,
+  /// conflict planning) rely on start_time ordering.
   Stream<List<TaskRow>> watchTasksForDay(DateTime day) =>
-      (select(tasks)..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day))))
+      (select(tasks)
+            ..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day)))
+            ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
           .watch();
 
   /// One-shot variant of [watchTasksForDay] used by stats computation
   /// (planner.md Chunk 5 #9).
   Future<List<TaskRow>> getTasksForDay(DateTime day) =>
-      (select(tasks)..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day))))
+      (select(tasks)
+            ..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day)))
+            ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
           .get();
 
   /// Scheduled non-deleted tasks starting within [start, end) — used for
@@ -46,16 +52,8 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
 
   Future<bool> updateTask(TaskRow row) => update(tasks).replace(row);
 
-  Future<int> softDeleteTask(String id, DateTime deletedAt) =>
-      (update(tasks)..where((t) => t.id.equals(id))).write(
-        TasksCompanion(
-          deletedAt: Value(deletedAt),
-          updatedAt: Value(deletedAt),
-        ),
-      );
-
-  /// Permanently removes the row. Used by CreateTaskCommand.undo so that a
-  /// redo can re-insert the same UUIDv7 id without a primary-key conflict.
+  /// Reserved for acknowledged tombstone cleanup and migration repair. Normal
+  /// application deletion and Undo use soft deletes through TaskRepository.
   Future<int> hardDeleteTask(String id) =>
       (delete(tasks)..where((t) => t.id.equals(id))).go();
 

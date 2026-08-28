@@ -33,5 +33,26 @@ enum TaskStatus {
       };
 
   bool get isTerminal =>
-      this == TaskStatus.cancelled || this == TaskStatus.rescheduled;
+      this == TaskStatus.completed ||
+      this == TaskStatus.skipped ||
+      this == TaskStatus.cancelled ||
+      this == TaskStatus.rescheduled;
+
+  List<TaskStatus> get allowedTransitions => switch (this) {
+        TaskStatus.planned => const [
+            TaskStatus.inProgress,
+            TaskStatus.completed,
+            TaskStatus.skipped,
+            TaskStatus.cancelled,
+          ],
+        TaskStatus.inProgress => const [
+            TaskStatus.planned,
+            TaskStatus.completed,
+            TaskStatus.skipped,
+            TaskStatus.cancelled,
+          ],
+        TaskStatus.completed || TaskStatus.skipped || TaskStatus.cancelled =>
+          const [TaskStatus.planned],
+        TaskStatus.rescheduled => const [],
+      };
 }

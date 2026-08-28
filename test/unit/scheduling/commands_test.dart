@@ -39,7 +39,7 @@ void main() {
       );
 
   group('CreateTaskCommand', () {
-    test('execute inserts; undo hard-deletes so redo re-inserts', () async {
+    test('execute inserts; undo tombstones so redo restores the aggregate', () async {
       final command = CreateTaskCommand(
         repo,
         newTask(
@@ -56,12 +56,14 @@ void main() {
 
       await command.undo();
       fetched = await repo.getTaskById('create-test-id');
-      expect(fetched, isNull); // hard-deleted, not just soft-deleted
+      expect(fetched, isNotNull);
+      expect(fetched!.deletedAt, isNotNull);
 
-      // Redo re-inserts with the same id without a conflict.
+      // Redo restores the same id without a conflict.
       await command.execute();
       fetched = await repo.getTaskById('create-test-id');
       expect(fetched!.title, 'Created');
+      expect(fetched.deletedAt, isNull);
     });
   });
 

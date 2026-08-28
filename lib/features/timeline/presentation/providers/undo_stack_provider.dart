@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/providers/database_provider.dart';
 import '../../domain/commands/command_history.dart';
 import '../../domain/commands/scheduling_command.dart';
 
@@ -10,32 +13,61 @@ final undoStackProvider =
 );
 
 class UndoStackNotifier extends Notifier<CommandHistoryState> {
+  Future<void> _tail = Future<void>.value();
+
   @override
   CommandHistoryState build() => const CommandHistoryState();
 
   /// Executes [command] and pushes it onto the undo stack (clearing redo).
   Future<void> execute(SchedulingCommand command) async {
-    await command.execute();
-    state = state.push(command);
+    await _serialized(() async {
+      final db = ref.read(appDatabaseProvider);
+      await db.transaction(command.execute);
+      state = state.push(command);
+    });
   }
 
   /// Reverts the most recent command. Returns its description, or null when
   /// there is nothing to undo.
   Future<String?> undo() async {
-    if (!state.canUndo) return null;
-    final command = state.lastCommand!;
-    await command.undo();
-    state = state.popUndo();
-    return command.description;
+    return _serialized(() async {
+      if (!state.canUndo) return null;
+      final command = state.lastCommand!;
+      final db = ref.read(appDatabaseProvider);
+      await db.transaction(command.undo);
+      state = state.popUndo();
+      return command.description;
+    });
   }
 
   /// Re-executes the most recently undone command. Returns its description,
   /// or null when there is nothing to redo.
   Future<String?> redo() async {
-    if (!state.canRedo) return null;
-    final command = state.redoStack.last;
-    await command.execute();
-    state = state.popRedo();
-    return command.description;
+    return _serialized(() async {
+      if (!state.canRedo) return null;
+      final command = state.redoStack.last;
+      final db = ref.read(appDatabaseProvider);
+      await db.transaction(command.execute);
+      state = state.popRedo();
+      return command.description;
+    });
+  }
+
+  Future<T> _serialized<T>(Future<T> Function() operation) {
+    final previous = _tail;
+    final completer = Completer<T>();
+    _tail = () async {
+      try {
+        await previous;
+      } catch (_) {
+        // A failed command must not poison later queue entries.
+      }
+      try {
+        completer.complete(await operation());
+      } catch (error, stack) {
+        completer.completeError(error, stack);
+      }
+    }();
+    return completer.future;
   }
 }

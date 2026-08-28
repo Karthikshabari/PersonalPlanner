@@ -59,16 +59,31 @@ Future<void> teardownApp(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
-  await tester.pump(const Duration(milliseconds: 100));
+  final database = container.read(appDatabaseProvider);
+  await tester.pumpWidget(const SizedBox.shrink());
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  // ProviderContainer.dispose() synchronously marks elements disposed, while
+  // Drift stream subscriptions finish cancelling asynchronously. Run both
+  // operations in the real async zone, outside Flutter's FakeAsync clock.
+  await tester.runAsync(() async {
+    container.dispose();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await database.close();
+  });
 }
 
-/// Resets platform overrides and pumps the customary end-of-test frame.
+/// Resets platform overrides, unmounts the widget tree and pumps several
+/// frames so Riverpod's ProviderScheduler flushes pending autoDispose
+/// disposals — cancelling periodic streams (e.g. timer tickers) before
+/// Flutter's pending-timer invariant runs.
 Future<void> finish(
   WidgetTester tester,
   ProviderContainer container,
 ) async {
   debugDefaultTargetPlatformOverride = null;
-  await tester.pump(const Duration(milliseconds: 100));
+  await teardownApp(tester, container);
 }
 
 Future<void> doubleTap(WidgetTester tester, Finder finder) async {

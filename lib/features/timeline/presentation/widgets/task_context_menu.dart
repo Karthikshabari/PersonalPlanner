@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../providers/day_view_controller.dart';
 import '../providers/selected_task_provider.dart';
 
@@ -25,15 +27,16 @@ Future<void> showTaskContextMenu(
       overlay.size.width - globalPosition.dx,
       overlay.size.height - globalPosition.dy,
     ),
-    items: const [
-      PopupMenuItem(value: 'edit', height: 40, child: Text('Edit')),
-      PopupMenuItem(value: 'duplicate', height: 40, child: Text('Duplicate')),
-      PopupMenuItem(
+    items: [
+      const PopupMenuItem(value: 'edit', height: 40, child: Text('Edit')),
+      const PopupMenuItem(value: 'duplicate', height: 40, child: Text('Duplicate')),
+      const PopupMenuItem(
           value: 'delete', height: 40, child: Text('Delete')),
-      PopupMenuItem(
-          value: 'status',
-          height: 40,
-          child: Text('Change Status ›')),
+      if (task.status.allowedTransitions.isNotEmpty)
+        const PopupMenuItem(
+            value: 'status',
+            height: 40,
+            child: Text('Change Status ›')),
     ],
   );
   if (choice == null || !context.mounted) return;
@@ -41,6 +44,10 @@ Future<void> showTaskContextMenu(
   switch (choice) {
     case 'edit':
       ref.read(selectedTaskIdProvider.notifier).state = task.id;
+      if (MediaQuery.sizeOf(context).width <
+          AppConstants.desktopBreakpoint) {
+        await TaskEditorPanel.showAsBottomSheet(context);
+      }
       break;
     case 'duplicate':
       await TimelineActions.duplicateTask(context, ref, task);
@@ -49,7 +56,8 @@ Future<void> showTaskContextMenu(
       await TimelineActions.deleteWithConfirmation(context, ref, task);
       break;
     case 'status':
-      final status = await _showStatusSubmenu(context, globalPosition);
+      final status =
+          await _showStatusSubmenu(context, globalPosition, task.status);
       if (status != null) {
         await TimelineActions.setStatus(ref, task, status);
         if (!context.mounted) return;
@@ -62,6 +70,7 @@ Future<void> showTaskContextMenu(
 Future<TaskStatus?> _showStatusSubmenu(
   BuildContext context,
   Offset globalPosition,
+  TaskStatus current,
 ) {
   final overlay =
       Overlay.of(context).context.findRenderObject() as RenderBox;
@@ -74,7 +83,7 @@ Future<TaskStatus?> _showStatusSubmenu(
       overlay.size.height - globalPosition.dy,
     ),
     items: [
-      for (final status in TaskStatus.values)
+      for (final status in current.allowedTransitions)
         PopupMenuItem(
           value: status,
           height: 36,

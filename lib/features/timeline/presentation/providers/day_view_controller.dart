@@ -1,16 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/enums/task_status.dart';
+import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
+import '../../../recurring/domain/recurrence_aggregate_command.dart';
 import '../../../recurring/providers/recurring_providers.dart';
-import '../../domain/commands/create_task_command.dart';
+import '../../../timer/providers/timer_providers.dart';
+import '../../../inbox/domain/inbox_commands.dart';
+import '../../../inbox/providers/inbox_provider.dart';
+import '../../domain/commands/batch_command.dart';
+import '../../domain/commands/move_task_command.dart';
+import '../../domain/conflict_detector.dart';
+import '../widgets/conflict_resolution_dialog.dart';
+import '../../domain/commands/change_status_command.dart';
 import '../../domain/commands/delete_task_command.dart';
+import '../../domain/commands/duplicate_task_command.dart';
 import '../../domain/conflict_resolver.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/selected_date_provider.dart';
@@ -19,6 +30,83 @@ import '../providers/undo_stack_provider.dart';
 /// Shared high-level scheduling actions, invoked from the context menu,
 /// keyboard shortcuts and dialogs.
 abstract final class TimelineActions {
+  /// Schedules/reschedules an Inbox item through the same conflict-aware
+  /// command path used by timeline drops.
+  static Future<bool> scheduleInboxItem(
+    BuildContext context,
+    WidgetRef ref,
+    InboxItem item,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final tasksRepo = ref.read(taskRepositoryProvider);
+    final dayTasks = await tasksRepo.watchTasksForDay(start).first;
+    final command = item.isOverdue
+        ? RescheduleOverdueCommand(
+            repository: ref.read(inboxRepositoryProvider),
+            originalId: item.task.id,
+            start: start,
+            end: end,
+          )
+        : ScheduleInboxItemCommand(
+            repository: ref.read(inboxRepositoryProvider),
+            taskId: item.task.id,
+            start: start,
+            end: end,
+          );
+    final hypothetical = item.task.copyWith(
+      id: item.isOverdue ? 'reschedule-preview-${item.task.id}' : item.task.id,
+      isInbox: false,
+      startTime: start,
+      endTime: end,
+      actualDurationMin: item.isOverdue ? null : item.task.actualDurationMin,
+      status: item.isOverdue ? TaskStatus.planned : item.task.status,
+      recurringRuleId: item.task.recurringRuleId,
+      rescheduledFromId: item.isOverdue ? item.task.id : item.task.rescheduledFromId,
+      rescheduledToId: null,
+      missedAt: null,
+    );
+    final conflicts = ConflictDetector.detect(hypothetical, dayTasks);
+    if (conflicts.isEmpty) {
+      await ref.read(undoStackProvider.notifier).execute(command);
+      return true;
+    }
+    if (!context.mounted) return false;
+    final choice = await showConflictResolutionDialog(
+      context,
+      droppedTask: hypothetical,
+      conflicts: conflicts,
+    );
+    if (choice == null) return false;
+    if (choice == ConflictResolution.keepOverlap) {
+      await ref.read(undoStackProvider.notifier).execute(command);
+      return true;
+    }
+    final plan = choice == ConflictResolution.shiftAllFollowing
+        ? ConflictResolver.planShiftAllFollowing(
+            moved: hypothetical,
+            dayTasks: dayTasks,
+          )
+        : ConflictResolver.planShiftOnlyOverlapping(
+            moved: hypothetical,
+            dayTasks: dayTasks,
+            maxCascadeDepth: AppConstants.maxCascadeDepth,
+          );
+    final byId = {for (final task in dayTasks) task.id: task};
+    await ref.read(undoStackProvider.notifier).execute(BatchCommand([
+      command,
+      for (final shift in plan.shifts)
+        if (byId[shift.taskId] != null)
+          MoveTaskCommand(
+            repository: tasksRepo,
+            original: byId[shift.taskId]!,
+            newStart: shift.newStart,
+            newEnd: shift.newEnd,
+          ),
+    ]));
+    return true;
+  }
+
   /// Duplicates [task] into the next available slot after the original.
   /// All fields are copied except id / created_at / updated_at.
   static Future<void> duplicateTask(
@@ -47,17 +135,13 @@ abstract final class TimelineActions {
     final day = ref.read(selectedDateProvider);
     final start = day.add(Duration(minutes: slot));
     final end = start.add(Duration(minutes: durationMin));
-    final now = DateTime.now();
-    final copy = task.copyWith(
-      id: '',
-      startTime: start,
-      endTime: end,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    );
     await history.execute(
-      CreateTaskCommand(ref.read(taskRepositoryProvider), copy),
+      DuplicateTaskCommand(
+        repository: ref.read(taskRepositoryProvider),
+        source: task,
+        newStart: start,
+        newEnd: end,
+      ),
     );
     if (!context.mounted) return;
     showAppToast(context, 'Duplicated "${task.title}"');
@@ -76,6 +160,8 @@ abstract final class TimelineActions {
     // provider graph.
     final viewedDate = ref.read(selectedDateProvider);
     final repository = ref.read(taskRepositoryProvider);
+    final wasTiming =
+        ref.read(activeTimerProvider).value?.session.taskId == task.id;
 
     final confirmed = await showConfirmDialog(
       context,
@@ -86,8 +172,6 @@ abstract final class TimelineActions {
     );
     if (!confirmed) return;
     if (!context.mounted) return;
-
-    final command = DeleteTaskCommand(repository: repository, original: task);
 
     if (task.recurringRuleId != null) {
       final scope = await showRecurrenceScopeDialog(
@@ -100,44 +184,65 @@ abstract final class TimelineActions {
       );
       if (scope == null) return;
 
-      await ref.read(undoStackProvider.notifier).execute(command);
-
       final rulesRepo = ref.read(recurringRepositoryProvider);
-      if (scope == RecurrenceScope.thisOccurrence) {
-        // Prevent re-materialization of exactly this date.
-        if (task.startTime != null) {
-          await rulesRepo.addException(
-              task.recurringRuleId!, startOfDay(task.startTime!));
-        }
-        if (!context.mounted) return;
-        showAppToast(context, 'Occurrence deleted');
-      } else {
-        // End the series: last allowed occurrence is the day before this one.
-        if (task.startTime != null) {
-          await rulesRepo.setEndDate(
-            task.recurringRuleId!,
-            startOfDay(task.startTime!).subtract(const Duration(days: 1)),
-          );
-        }
-        await rulesRepo.deactivateRule(task.recurringRuleId!);
-        if (!context.mounted) return;
-        showAppToast(context, 'Recurring series ended');
-      }
+      final ruleId = task.recurringRuleId!;
+      final boundary = startOfDay(task.startTime ?? viewedDate);
+      final command = RecurrenceAggregateCommand(
+        database: repository.database,
+        ruleId: ruleId,
+        description: scope == RecurrenceScope.thisOccurrence
+            ? 'Delete recurring occurrence'
+            : 'End recurring series',
+        mutation: () async {
+          await repository.deleteTask(task.id);
+          if (scope == RecurrenceScope.thisOccurrence) {
+            await rulesRepo.addException(ruleId, boundary);
+          } else {
+            await rulesRepo.setEndDate(
+              ruleId,
+              boundary.subtract(const Duration(days: 1)),
+            );
+            await rulesRepo.deactivateRule(ruleId);
+            await ref.read(recurrenceServiceProvider).deleteMaterializedFuture(
+                  ruleId,
+                  boundary,
+                  keepTaskId: task.id,
+                );
+          }
+        },
+      );
+      await ref.read(undoStackProvider.notifier).execute(command);
+      if (!context.mounted) return;
+      showAppToast(
+        context,
+        scope == RecurrenceScope.thisOccurrence
+            ? 'Occurrence deleted'
+            : 'Recurring series ended',
+      );
       ref.invalidate(dayMaterializationProvider(viewedDate));
-      return;
+    } else {
+      final command = DeleteTaskCommand(repository: repository, original: task);
+      await ref.read(undoStackProvider.notifier).execute(command);
     }
 
-    await ref.read(undoStackProvider.notifier).execute(command);
+    // A deleted task must not leave an invisible open session behind
+    // (the active-timer join filters soft-deleted rows). Finalize silently;
+    // undo restores the task with its tracked time intact.
+    if (wasTiming) {
+      await ref.read(timerServiceProvider).stop();
+    }
   }
 
-  /// Direct status update (not part of the reversible scheduling commands).
   static Future<void> setStatus(WidgetRef ref, Task task, TaskStatus status) {
-    return ref
-        .read(taskRepositoryProvider)
-        .updateTask(task.copyWith(status: status));
+    return ref.read(undoStackProvider.notifier).execute(
+          ChangeStatusCommand(
+            repository: ref.read(taskRepositoryProvider),
+            taskId: task.id,
+            newStatus: status,
+          ),
+        );
   }
 }
 
 /// Grid fallback used when the setting has not finished loading yet; mirrors
 /// [AppConstants.defaultGridMinutes].
-

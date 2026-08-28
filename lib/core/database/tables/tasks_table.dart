@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 
 import '../converters.dart';
+import 'categories_table.dart';
+import 'recurring_rules_table.dart';
 
 @DataClassName('TaskRow')
 class Tasks extends Table {
@@ -11,13 +13,23 @@ class Tasks extends Table {
   TextColumn get endTime => text().nullable().map(const NullableDateTimeUtcConverter())();
   IntColumn get estimatedDurationMin => integer().nullable()();
   IntColumn get actualDurationMin => integer().nullable()();
-  TextColumn get categoryId => text().nullable()();
+  IntColumn get manualDurationAdjustmentMin =>
+      integer().withDefault(const Constant(0))();
+  TextColumn get categoryId => text()
+      .nullable()
+      .references(Categories, #id, onDelete: KeyAction.setNull)();
   IntColumn get priority => integer().withDefault(const Constant(0))();
   TextColumn get status => text().withDefault(const Constant('planned'))();
   TextColumn get notes => text().nullable()();
-  TextColumn get recurringRuleId => text().nullable()();
-  TextColumn get rescheduledFromId => text().nullable()();
-  TextColumn get rescheduledToId => text().nullable()();
+  TextColumn get recurringRuleId => text()
+      .nullable()
+      .references(RecurringRules, #id, onDelete: KeyAction.setNull)();
+  TextColumn get rescheduledFromId => text()
+      .nullable()
+      .references(Tasks, #id, onDelete: KeyAction.setNull)();
+  TextColumn get rescheduledToId => text()
+      .nullable()
+      .references(Tasks, #id, onDelete: KeyAction.setNull)();
   BoolColumn get isInbox => boolean().withDefault(const Constant(false))();
   TextColumn get missedAt => text().nullable()();
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
@@ -28,4 +40,15 @@ class Tasks extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
+
+  @override
+  List<String> get customConstraints => const [
+        'CHECK (priority BETWEEN 0 AND 4)',
+        "CHECK (status IN ('planned', 'in_progress', 'completed', 'skipped', 'cancelled', 'rescheduled'))",
+        'CHECK (estimated_duration_min IS NULL OR estimated_duration_min > 0)',
+        'CHECK (actual_duration_min IS NULL OR actual_duration_min >= 0)',
+        'CHECK (manual_duration_adjustment_min IS NOT NULL)',
+        'CHECK (end_time IS NULL OR start_time IS NOT NULL)',
+        'CHECK (end_time IS NULL OR end_time > start_time)',
+      ];
 }

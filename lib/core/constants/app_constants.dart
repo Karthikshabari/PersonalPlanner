@@ -3,6 +3,7 @@ abstract final class AppConstants {
   static const List<int> gridOptions = [15, 30, 60];
   static const int maxCascadeDepth = 10;
   static const double hourRowHeight = 64.0;
+  static const double pixelsPerMinute = hourRowHeight / 60.0;
   static const double hourLabelWidth = 56.0;
   static const double desktopBreakpoint = 900;
   static const Duration quickCreateDefaultDuration = Duration(hours: 1);

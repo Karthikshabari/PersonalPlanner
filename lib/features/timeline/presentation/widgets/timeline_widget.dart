@@ -14,6 +14,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
+import '../../../inbox/domain/inbox_commands.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../domain/commands/create_task_command.dart';
 import '../../domain/commands/batch_command.dart';
@@ -24,6 +25,7 @@ import '../../domain/conflict_detector.dart';
 import '../../domain/conflict_resolver.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
+import '../providers/day_view_controller.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
@@ -82,7 +84,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   _ResizePreview? _resize;
 
   double get _pixelsPerMinute =>
-      AppConstants.hourRowHeight / Duration.minutesPerHour;
+      AppConstants.pixelsPerMinute;
 
   double get _totalHeight =>
       AppConstants.hourRowHeight * Duration.hoursPerDay + AppSpacing.huge;
@@ -392,7 +394,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
   void _cycleStatus(Task task) {
     final next = StatusBadge.nextStatus(task.status);
-    ref.read(taskRepositoryProvider).updateTask(task.copyWith(status: next));
+    if (next == task.status) return;
+    TimelineActions.setStatus(ref, task, next);
   }
 
   // ------------------------------------------------------------------
@@ -427,18 +430,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ...ConflictDetector.overlappingIdSet(tasks),
       ...keepFlags,
     };
-    // Offset index per overlapping block: how many other overlapped blocks
-    // start at-or-before it. Drives the slight horizontal offset.
-    final overlapIndex = <String, int>{};
-    for (final task in tasks) {
-      if (!overlapIds.contains(task.id)) continue;
-      var idx = 0;
-      for (final other in tasks) {
-        if (other.id == task.id || !overlapIds.contains(other.id)) continue;
-        if (_startsAtOrBefore(other, task)) idx++;
-      }
-      overlapIndex[task.id] = idx;
-    }
+    final overlapIndex = ConflictDetector.overlapLanes(tasks);
 
     final dragTaskId = _drag?.task.id;
     final resizeTaskId = _resize?.task.id;
@@ -520,7 +512,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final grid = _gridMinutes;
     final contentY = (local.dy + _scrollController.offset).clamp(0.0, _totalHeight);
     var minutes = (contentY / _pixelsPerMinute).round();
-    minutes = (minutes ~/ grid) * grid;
+    minutes = ((minutes / grid).round()) * grid;
     minutes = minutes.clamp(0, Duration.minutesPerDay - grid);
 
     final date = ref.read(selectedDateProvider);
@@ -530,19 +522,48 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final end = start.add(Duration(minutes: grid));
 
     final repo = ref.read(inboxRepositoryProvider);
+    late final SchedulingCommand command;
+    late final Task hypothetical;
     if (item.isOverdue) {
-      await repo.rescheduleOverdue(item.task.id, start, end);
-      if (mounted) showAppToast(context, 'Rescheduled to ${start.hour}:${start.minute.toString().padLeft(2, '0')}');
+      command = RescheduleOverdueCommand(
+        repository: repo,
+        originalId: item.task.id,
+        start: start,
+        end: end,
+      );
+      hypothetical = item.task.copyWith(
+        id: 'reschedule-preview-${item.task.id}',
+        startTime: start,
+        endTime: end,
+        actualDurationMin: null,
+        status: TaskStatus.planned,
+        recurringRuleId: item.task.recurringRuleId,
+        rescheduledFromId: item.task.id,
+        rescheduledToId: null,
+        missedAt: null,
+      );
     } else {
-      await repo.scheduleItem(item.task.id, start, end);
-      if (mounted) showAppToast(context, 'Scheduled');
+      command = ScheduleInboxItemCommand(
+        repository: repo,
+        taskId: item.task.id,
+        start: start,
+        end: end,
+      );
+      hypothetical = item.task.copyWith(
+        isInbox: false,
+        startTime: start,
+        endTime: end,
+      );
+    }
+    final committed = await _resolveConflictsAndCommit(command, hypothetical);
+    if (!committed || !mounted) return;
+    if (item.isOverdue) {
+      showAppToast(context,
+          'Rescheduled to ${start.hour}:${start.minute.toString().padLeft(2, '0')}');
+    } else {
+      showAppToast(context, 'Scheduled');
     }
   }
-
-  bool _startsAtOrBefore(Task a, Task b) =>
-      a.startTime != null &&
-      b.startTime != null &&
-      !a.startTime!.isAfter(b.startTime!);
 
   Color _accentColor(Category? category) => category == null
       ? AppColors.primary
@@ -610,9 +631,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         (task.scheduledDuration?.inMinutes.toDouble() ??
             task.estimatedDurationMin?.toDouble() ??
             AppConstants.defaultGridMinutes.toDouble());
-    const minHeight = 30.0;
     final height = (durationMinutes * _pixelsPerMinute)
-        .clamp(minHeight, _totalHeight - startMinutes * _pixelsPerMinute);
+        .clamp(1.0, _totalHeight - startMinutes * _pixelsPerMinute);
     final leftOffset = overlapIndex * AppConstants.overlapOffsetPerIndex;
 
     final block = Stack(

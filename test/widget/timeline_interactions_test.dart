@@ -110,7 +110,7 @@ Future<void> pressCtrlZ(WidgetTester tester, {bool shift = false}) async {
 /// customary end-of-test frame.
 Future<void> finish(WidgetTester tester, ProviderContainer container) async {
   debugDefaultTargetPlatformOverride = null;
-  await tester.pump(const Duration(milliseconds: 100));
+  await teardownApp(tester, container);
 }
 
 /// Boots the app at [platform] for the fixed [viewDay], runs [body] with the

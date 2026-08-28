@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/constants/app_constants.dart';
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../inbox/presentation/widgets/inbox_sidebar.dart';
+import '../../../inbox/presentation/widgets/inbox_quick_add.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/overlap_flags_provider.dart';
@@ -14,6 +16,7 @@ import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../providers/day_view_controller.dart';
 import '../../../recurring/providers/recurring_providers.dart';
+import '../../../timer/presentation/widgets/timer_overlay.dart';
 import '../providers/undo_stack_provider.dart';
 import '../widgets/day_header.dart';
 import '../widgets/timeline_widget.dart';
@@ -41,6 +44,8 @@ class DayViewScreen extends ConsumerWidget {
             () => _redo(context, ref),
         const SingleActivator(LogicalKeyboardKey.keyD): () =>
             _duplicateSelected(context, ref),
+        const SingleActivator(LogicalKeyboardKey.keyI): () =>
+            _quickAddInbox(context, ref),
         const SingleActivator(LogicalKeyboardKey.delete): () =>
             _deleteSelected(context, ref),
         const SingleActivator(LogicalKeyboardKey.backspace): () =>
@@ -56,27 +61,36 @@ class DayViewScreen extends ConsumerWidget {
         autofocus: true,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final isDesktop =
-                constraints.maxWidth >= AppConstants.desktopBreakpoint;
+            final isDesktop = isDesktopWidth(constraints.maxWidth);
             if (isDesktop) {
-              return const Column(
+              return Stack(
                 children: [
-                  DayHeader(),
-                  Divider(height: 1),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(child: TimelineWidget()),
-                        VerticalDivider(width: 1),
-                        SizedBox(
-                          width: 340,
-                          child: TaskEditorPanel(),
+                  const Column(
+                    children: [
+                      DayHeader(),
+                      Divider(height: 1),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: TimelineWidget()),
+                            VerticalDivider(width: 1),
+                            SizedBox(
+                              width: 340,
+                              child: TaskEditorPanel(),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      InboxSidebar(),
+                    ],
                   ),
-                  InboxSidebar(),
+                  // Floating running-timer widget (Chunk 6 #8).
+                  Positioned(
+                    bottom: AppSpacing.lg,
+                    right: AppSpacing.lg,
+                    child: TimerOverlay(),
+                  ),
                 ],
               );
             }
@@ -151,5 +165,10 @@ class DayViewScreen extends ConsumerWidget {
   void _openDailyReview(BuildContext context) {
     if (_isEditingText()) return;
     GoRouter.of(context).go('/review');
+  }
+
+  void _quickAddInbox(BuildContext context, WidgetRef ref) {
+    if (_isEditingText()) return;
+    showInboxQuickAddDialog(context, ref);
   }
 }
