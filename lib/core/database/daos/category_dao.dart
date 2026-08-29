@@ -29,8 +29,15 @@ class CategoryDao extends DatabaseAccessor<AppDatabase>
   Future<void> insertCategory(CategoriesCompanion entry) =>
       into(categories).insert(entry);
 
-  Future<bool> updateCategory(CategoryRow row) =>
-      update(categories).replace(row);
+  Future<bool> updateCategory(CategoryRow row) async {
+    final count =
+        await (update(
+          categories,
+        )..where((category) => category.id.equals(row.id))).write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   Future<int> softDeleteCategory(String id, DateTime deletedAt) =>
       (update(categories)..where((c) => c.id.equals(id))).write(

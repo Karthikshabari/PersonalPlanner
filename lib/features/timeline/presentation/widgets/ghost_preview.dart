@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/duration_utils.dart';
 
@@ -29,6 +28,7 @@ class GhostPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Positioned(
       top: topPx,
       left: left,
@@ -39,11 +39,14 @@ class GhostPreview extends StatelessWidget {
           opacity: 0.55,
           child: Container(
             decoration: BoxDecoration(
-              color: AppColors.surfaceVariantDark.withValues(alpha: 0.6),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: accentColor, width: 1.5),
-              boxShadow: const [
-                BoxShadow(color: Colors.black45, blurRadius: 10),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.shadow.withValues(alpha: 0.45),
+                  blurRadius: 10,
+                ),
               ],
             ),
             padding: const EdgeInsets.symmetric(
@@ -69,7 +72,7 @@ class GhostPreview extends StatelessWidget {
                     Duration(minutes: durationMinutes).shortLabel,
                     style: TextStyle(
                       fontSize: 10,
-                      color: AppColors.textSecondaryDark,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),

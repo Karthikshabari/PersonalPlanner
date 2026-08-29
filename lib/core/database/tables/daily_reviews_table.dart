@@ -20,6 +20,7 @@ class DailyReviews extends Table {
       text().nullable().map(const NullableDateTimeUtcConverter())();
   IntColumn get syncStatus => integer().withDefault(const Constant(0))();
   IntColumn get revision => integer().withDefault(const Constant(1))();
+  IntColumn get serverVersion => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

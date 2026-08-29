@@ -5,6 +5,8 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../../../core/utils/planner_time_zone.dart';
+
 /// Daily-review reminder notifications (planner.md Chunk 6 #13/#14).
 ///
 /// Scheduling uses OS-level daily matching (`DateTimeComponents.time`) and is
@@ -29,7 +31,9 @@ class NotificationService {
     try {
       await _plugin.initialize(
         settings: InitializationSettings(
-          android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+          android: const AndroidInitializationSettings(
+            '@drawable/ic_notification',
+          ),
           linux: LinuxInitializationSettings(defaultActionName: 'Open'),
         ),
         onDidReceiveNotificationResponse: (response) =>
@@ -54,8 +58,10 @@ class NotificationService {
     if (!_initialized) return false;
     if (!Platform.isAndroid) return true;
     try {
-      final android = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       return await android?.requestNotificationsPermission() ?? false;
     } catch (_) {
       return false;
@@ -65,8 +71,10 @@ class NotificationService {
   Future<bool> notificationsEnabled() async {
     if (!_initialized || !Platform.isAndroid) return true;
     try {
-      final android = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       return await android?.areNotificationsEnabled() ?? false;
     } catch (_) {
       return false;
@@ -79,9 +87,17 @@ class NotificationService {
 
   /// Next wall-clock occurrence of [hour]:[minute] after [now].
   static DateTime nextOccurrence(DateTime now, int hour, int minute) {
-    var next = DateTime(now.year, now.month, now.day, hour, minute);
+    final local = PlannerTimeZone.toPlannerLocal(now);
+    DateTime next = tz.TZDateTime(
+      PlannerTimeZone.location,
+      local.year,
+      local.month,
+      local.day,
+      hour,
+      minute,
+    );
     if (!next.isAfter(now)) {
-      next = next.add(const Duration(days: 1));
+      next = PlannerTimeZone.addDays(next, 1);
     }
     return next;
   }
@@ -139,7 +155,9 @@ Future<void> initializeTimezone() async {
   try {
     final info = await FlutterTimezone.getLocalTimezone();
     tz.setLocalLocation(tz.getLocation(info.identifier));
+    PlannerTimeZone.initialize(identifier: info.identifier);
   } catch (_) {
     tz.setLocalLocation(tz.getLocation('UTC'));
+    PlannerTimeZone.initialize(identifier: 'UTC');
   }
 }

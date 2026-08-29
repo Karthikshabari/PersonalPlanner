@@ -25,20 +25,24 @@ class InboxRepository {
   Stream<List<InboxItem>> watchInboxItems([DateTime? asOf]) {
     final effectiveNow = asOf ?? DateTime.now();
     final query = _db.select(_db.tasks)
-      ..where((t) =>
-          t.deletedAt.isNull() &
-          ((t.isInbox.equals(true) &
-                  t.startTime.isNull() &
-                  t.status.isNotIn([
-                    TaskStatus.completed.dbValue,
-                    TaskStatus.cancelled.dbValue,
-                    TaskStatus.skipped.dbValue,
-                  ])) |
-              (t.isInbox.equals(false) &
-                  t.endTime.isNotNull() &
-                  t.endTime.isSmallerThanValue(_utcIso(effectiveNow)) &
-                  t.status.isIn(
-                      [TaskStatus.planned.dbValue, TaskStatus.inProgress.dbValue]))))
+      ..where(
+        (t) =>
+            t.deletedAt.isNull() &
+            ((t.isInbox.equals(true) &
+                    t.startTime.isNull() &
+                    t.status.isNotIn([
+                      TaskStatus.completed.dbValue,
+                      TaskStatus.cancelled.dbValue,
+                      TaskStatus.skipped.dbValue,
+                    ])) |
+                (t.isInbox.equals(false) &
+                    t.endTime.isNotNull() &
+                    t.endTime.isSmallerThanValue(_utcIso(effectiveNow)) &
+                    t.status.isIn([
+                      TaskStatus.planned.dbValue,
+                      TaskStatus.inProgress.dbValue,
+                    ]))),
+      )
       ..orderBy([(t) => OrderingTerm.asc(t.startTime)]);
 
     return query.watch().map((rows) {
@@ -67,13 +71,15 @@ class InboxRepository {
 
   Future<Task> addToInbox(String title) {
     final now = DateTime.now();
-    return _tasks.insertTask(Task(
-      id: '',
-      title: title.trim(),
-      isInbox: true,
-      createdAt: now,
-      updatedAt: now,
-    ));
+    return _tasks.insertTask(
+      Task(
+        id: '',
+        title: title.trim(),
+        isInbox: true,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
   }
 
   /// First-detection stamping: any scheduled task whose end time has passed
@@ -101,11 +107,9 @@ class InboxRepository {
   Future<Task> scheduleItem(String taskId, DateTime start, DateTime end) async {
     final task = await _tasks.getTaskById(taskId);
     if (task == null) throw StateError('Task $taskId not found');
-    return _tasks.updateTask(task.copyWith(
-      isInbox: false,
-      startTime: start,
-      endTime: end,
-    ));
+    return _tasks.updateTask(
+      task.copyWith(isInbox: false, startTime: start, endTime: end),
+    );
   }
 
   /// Marks an inbox/overdue item as skipped without scheduling it
@@ -135,49 +139,61 @@ class InboxRepository {
       }
 
       final now = DateTime.now();
-      final newTask = await _tasks.insertTask(original.copyWith(
-        id: successorId ?? generateUuidV7(),
-        isInbox: false,
-        startTime: newStart,
-        endTime: newEnd,
-        actualDurationMin: null,
-        status: TaskStatus.planned,
-        recurringRuleId: original.recurringRuleId,
-        rescheduledFromId: original.id,
-        rescheduledToId: null,
-        missedAt: null,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-      ));
+      final newTask = await _tasks.insertTask(
+        original.copyWith(
+          id: successorId ?? generateUuidV7(),
+          isInbox: false,
+          startTime: newStart,
+          endTime: newEnd,
+          actualDurationMin: null,
+          manualDurationAdjustmentMin: 0,
+          status: TaskStatus.planned,
+          recurringRuleId: original.recurringRuleId,
+          rescheduledFromId: original.id,
+          rescheduledToId: null,
+          missedAt: null,
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: null,
+        ),
+      );
 
-      final links = await (_db.select(_db.taskTags)
-            ..where((row) =>
-                row.taskId.equals(original.id) & row.deletedAt.isNull()))
-          .get();
+      final links =
+          await (_db.select(_db.taskTags)..where(
+                (row) =>
+                    row.taskId.equals(original.id) & row.deletedAt.isNull(),
+              ))
+              .get();
       for (final link in links) {
         await _db.tagDao.linkTaskTag(newTask.id, link.tagId, now);
       }
 
-      final unfinished = await (_db.select(_db.subtasks)
-            ..where((row) =>
-                row.taskId.equals(original.id) &
-                row.deletedAt.isNull() &
-                row.isCompleted.equals(false))
-            ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
-          .get();
+      final unfinished =
+          await (_db.select(_db.subtasks)
+                ..where(
+                  (row) =>
+                      row.taskId.equals(original.id) &
+                      row.deletedAt.isNull() &
+                      row.isCompleted.equals(false),
+                )
+                ..orderBy([(row) => OrderingTerm.asc(row.sortOrder)]))
+              .get();
       for (var index = 0; index < unfinished.length; index++) {
-        await _db.into(_db.subtasks).insert(SubtasksCompanion.insert(
-              id: generateUuidV7(),
-              taskId: newTask.id,
-              title: unfinished[index].title,
-              isCompleted: const Value(false),
-              sortOrder: Value(index),
-              createdAt: now,
-              updatedAt: now,
-              syncStatus: const Value(1),
-              revision: const Value(1),
-            ));
+        await _db
+            .into(_db.subtasks)
+            .insert(
+              SubtasksCompanion.insert(
+                id: generateUuidV7(),
+                taskId: newTask.id,
+                title: unfinished[index].title,
+                isCompleted: const Value(false),
+                sortOrder: Value(index),
+                createdAt: now,
+                updatedAt: now,
+                syncStatus: const Value(1),
+                revision: const Value(1),
+              ),
+            );
       }
 
       await _tasks.markRescheduled(original.id, newTask.id);
@@ -185,6 +201,5 @@ class InboxRepository {
     });
   }
 
-  static String _utcIso(DateTime local) =>
-      local.toUtc().toIso8601String();
+  static String _utcIso(DateTime local) => local.toUtc().toIso8601String();
 }

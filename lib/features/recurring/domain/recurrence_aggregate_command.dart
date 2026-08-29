@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart';
+
 import '../../../core/database/app_database.dart';
 import '../../timeline/domain/commands/scheduling_command.dart';
 
@@ -22,20 +24,20 @@ class RecurrenceAggregateSnapshot {
   ) async {
     final rule = await db.recurringRuleDao.getRuleById(ruleId);
     if (rule == null) return null;
-    final tasks = await (db.select(db.tasks)
-          ..where((task) => task.recurringRuleId.equals(ruleId)))
-        .get();
+    final tasks = await (db.select(
+      db.tasks,
+    )..where((task) => task.recurringRuleId.equals(ruleId))).get();
     final taskIds = tasks.map((task) => task.id).toSet();
     final subtasks = taskIds.isEmpty
         ? <SubtaskRow>[]
-        : await (db.select(db.subtasks)
-              ..where((row) => row.taskId.isIn(taskIds)))
-            .get();
+        : await (db.select(
+            db.subtasks,
+          )..where((row) => row.taskId.isIn(taskIds))).get();
     final taskTags = taskIds.isEmpty
         ? <TaskTagRow>[]
-        : await (db.select(db.taskTags)
-              ..where((row) => row.taskId.isIn(taskIds)))
-            .get();
+        : await (db.select(
+            db.taskTags,
+          )..where((row) => row.taskId.isIn(taskIds))).get();
     return RecurrenceAggregateSnapshot(
       rule: rule,
       tasks: tasks,
@@ -45,15 +47,37 @@ class RecurrenceAggregateSnapshot {
   }
 
   Future<void> restore(AppDatabase db) async {
-    await db.into(db.recurringRules).insertOnConflictUpdate(rule.toCompanion(true));
+    await db
+        .into(db.recurringRules)
+        .insertOnConflictUpdate(
+          rule.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
     for (final task in tasks) {
-      await db.into(db.tasks).insertOnConflictUpdate(task.toCompanion(true));
+      await db
+          .into(db.tasks)
+          .insertOnConflictUpdate(
+            task
+                .toCompanion(false)
+                .copyWith(serverVersion: const Value.absent()),
+          );
     }
     for (final subtask in subtasks) {
-      await db.into(db.subtasks).insertOnConflictUpdate(subtask.toCompanion(true));
+      await db
+          .into(db.subtasks)
+          .insertOnConflictUpdate(
+            subtask
+                .toCompanion(false)
+                .copyWith(serverVersion: const Value.absent()),
+          );
     }
     for (final taskTag in taskTags) {
-      await db.into(db.taskTags).insertOnConflictUpdate(taskTag.toCompanion(true));
+      await db
+          .into(db.taskTags)
+          .insertOnConflictUpdate(
+            taskTag
+                .toCompanion(false)
+                .copyWith(serverVersion: const Value.absent()),
+          );
     }
   }
 }
@@ -80,11 +104,13 @@ class RecurrenceAggregateCommand implements SchedulingCommand {
   Future<void> execute() async {
     _before ??= await RecurrenceAggregateSnapshot.capture(database, ruleId);
     if (_before == null) throw StateError('Recurring rule $ruleId not found');
-    await mutation();
+    await database.transaction(mutation);
   }
 
   @override
   Future<void> undo() async {
-    await _before?.restore(database);
+    await database.transaction(() async {
+      await _before?.restore(database);
+    });
   }
 }

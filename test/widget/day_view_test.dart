@@ -14,19 +14,16 @@ import 'package:personal_planner/features/timeline/presentation/widgets/current_
 import '../helpers/test_container.dart';
 
 void main() {
-  Future<void> pumpDesktop(
-          WidgetTester tester, ProviderContainer container) =>
+  Future<void> pumpDesktop(WidgetTester tester, ProviderContainer container) =>
       pumpApp(tester, container, surface: const Size(1400, 1000));
 
-  testWidgets('app launches with dark theme and 24-hour grid',
-      (tester) async {
+  testWidgets('app launches with dark theme and 24-hour grid', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
     expect(find.byType(MaterialApp), findsOneWidget);
     final context = tester.element(find.byType(Scaffold).first);
     expect(Theme.of(context).brightness, Brightness.dark);
-    expect(Theme.of(context).scaffoldBackgroundColor,
-        AppColors.backgroundDark);
+    expect(Theme.of(context).scaffoldBackgroundColor, AppColors.backgroundDark);
     for (var hour = 0; hour < 24; hour++) {
       expect(
         find.text('${hour.toString().padLeft(2, '0')}:00'),
@@ -37,28 +34,29 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('current time indicator is visible on today',
-      (tester) async {
+  testWidgets('current time indicator is visible on today', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
     expect(find.byType(CurrentTimeIndicator), findsOneWidget);
     await teardownApp(tester, container);
   });
 
-  testWidgets('double-tap empty slot creates task via quick create',
-      (tester) async {
+  testWidgets('double-tap empty slot creates task via quick create', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    await doubleTap(
-        tester, find.byKey(const ValueKey('timeline-gestures')));
+    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
     await settle(tester);
     expect(find.text('Task title…'), findsOneWidget);
 
     await tester.enterText(
-        find.descendant(
-            of: find.byType(TaskQuickCreate),
-            matching: find.byType(TextField)),
-        'Deep Work');
+      find.descendant(
+        of: find.byType(TaskQuickCreate),
+        matching: find.byType(TextField),
+      ),
+      'Deep Work',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 
@@ -87,21 +85,20 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('task block renders category color left border',
-      (tester) async {
+  testWidgets('task block renders category color left border', (tester) async {
     final container = await buildTestContainer(tester);
     final categories = await runDb(
       tester,
-      () => container
-          .read(categoryRepositoryProvider)
-          .watchAllCategories()
-          .first,
+      () =>
+          container.read(categoryRepositoryProvider).watchAllCategories().first,
     );
     final work = categories.firstWhere((c) => c.name == 'Work');
     final now = DateTime.now();
     await runDb(
       tester,
-      () => container.read(taskRepositoryProvider).insertTask(
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
             Task(
               id: '',
               title: 'Categorized',
@@ -134,19 +131,22 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('tapping a task opens editor panel and saves edits',
-      (tester) async {
+  testWidgets('tapping a task opens editor panel and saves edits', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
+    final hour = now.hour >= 22 ? 20 : now.hour;
     final inserted = await runDb(
       tester,
-      () => container.read(taskRepositoryProvider).insertTask(
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
             Task(
               id: '',
               title: 'Editable task',
-              startTime: DateTime(now.year, now.month, now.day, now.hour),
-              endTime:
-                  DateTime(now.year, now.month, now.day, now.hour + 1),
+              startTime: DateTime(now.year, now.month, now.day, hour),
+              endTime: DateTime(now.year, now.month, now.day, hour + 1),
               estimatedDurationMin: 60,
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
@@ -155,7 +155,12 @@ void main() {
     );
     await pumpDesktop(tester, container);
 
-    await tester.tap(find.text('Editable task'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(TaskBlockWidget),
+        matching: find.text('Editable task'),
+      ),
+    );
     await settle(tester);
     expect(container.read(selectedTaskIdProvider), inserted.id);
     expect(find.text('Edit Task'), findsOneWidget);
@@ -173,39 +178,44 @@ void main() {
 
     // The editor content scrolls (subtasks/tags sections); bring Save into
     // view before tapping.
-    await tester.scrollUntilVisible(
-      find.text('Save'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    final saveButton = find.byKey(const ValueKey('save-task-button'));
+    await tester.ensureVisible(saveButton);
     await settle(tester);
-    await tester.tap(find.text('Save'));
+    await tester.tap(saveButton);
     await settle(tester);
 
     final saved = await runDb(
       tester,
-      () =>
-          container.read(taskRepositoryProvider).getTaskById(inserted.id),
+      () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
     );
     expect(saved!.title, 'Renamed via editor');
     expect(saved.notes, 'Some notes');
-    expect(find.text('Renamed via editor'), findsNWidgets(2));
+    expect(
+      find.descendant(
+        of: find.byType(TaskBlockWidget),
+        matching: find.text('Renamed via editor'),
+      ),
+      findsOneWidget,
+    );
     await teardownApp(tester, container);
   });
 
-  testWidgets('status cycles Planned -> In Progress -> Completed',
-      (tester) async {
+  testWidgets('status cycles Planned -> In Progress -> Completed', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
+    final hour = now.hour >= 22 ? 20 : now.hour;
     await runDb(
       tester,
-      () => container.read(taskRepositoryProvider).insertTask(
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
             Task(
               id: '',
               title: 'Cycle me',
-              startTime: DateTime(now.year, now.month, now.day, now.hour),
-              endTime:
-                  DateTime(now.year, now.month, now.day, now.hour + 1),
+              startTime: DateTime(now.year, now.month, now.day, hour),
+              endTime: DateTime(now.year, now.month, now.day, hour + 1),
               createdAt: DateTime.now(),
               updatedAt: DateTime.now(),
             ),
@@ -233,27 +243,22 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('date navigation prev/next/today updates header',
-      (tester) async {
+  testWidgets('date navigation prev/next/today updates header', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
     final todayLabel = DateFormat('MMM d, yyyy')
         .format(DateTime.now())
         .replaceAll(',', '');
     Finder label(String raw) => find.byWidgetPredicate(
-          (w) =>
-              w is Text &&
-              w.data != null &&
-              w.data!.replaceAll(',', '') == raw,
-        );
+      (w) => w is Text && w.data != null && w.data!.replaceAll(',', '') == raw,
+    );
     expect(label(todayLabel), findsOneWidget);
 
     await tester.tap(find.byTooltip('Next day'));
     await settle(tester);
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     expect(
-      label(
-          DateFormat('MMM d, yyyy').format(tomorrow).replaceAll(',', '')),
+      label(DateFormat('MMM d, yyyy').format(tomorrow).replaceAll(',', '')),
       findsOneWidget,
     );
 
@@ -280,19 +285,22 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('timeline auto-scrolls near current time on launch',
-      (tester) async {
+  testWidgets('timeline auto-scrolls near current time on launch', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    final scrollable =
-        tester.state<ScrollableState>(find.byType(Scrollable).first);
+    final scrollable = tester.state<ScrollableState>(
+      find.byType(Scrollable).first,
+    );
     final offset = scrollable.position.pixels;
-    final nowMinutes =
-        DateTime.now().hour * 60 + DateTime.now().minute;
+    final nowMinutes = DateTime.now().hour * 60 + DateTime.now().minute;
     const pixelsPerMinute = 64 / 60;
     final maxExtent = scrollable.position.maxScrollExtent;
-    final expected = ((nowMinutes - 90) * pixelsPerMinute - 64 * 1.5)
-        .clamp(0.0, maxExtent);
+    final expected = ((nowMinutes - 90) * pixelsPerMinute - 64 * 1.5).clamp(
+      0.0,
+      maxExtent,
+    );
     expect(offset, closeTo(expected, 2.0));
     await teardownApp(tester, container);
   });

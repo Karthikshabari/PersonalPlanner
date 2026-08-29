@@ -124,6 +124,17 @@ class $CategoriesTable extends Categories
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -136,6 +147,7 @@ class $CategoriesTable extends Categories
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -194,6 +206,15 @@ class $CategoriesTable extends Categories
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -249,6 +270,10 @@ class $CategoriesTable extends Categories
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -276,6 +301,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const CategoryRow({
     required this.id,
     required this.name,
@@ -287,6 +313,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -313,6 +340,9 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -330,6 +360,9 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -349,6 +382,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -365,6 +399,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -379,6 +414,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => CategoryRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -390,6 +426,9 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   CategoryRow copyWithCompanion(CategoriesCompanion data) {
     return CategoryRow(
@@ -405,6 +444,9 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -420,7 +462,8 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -437,6 +480,7 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -451,7 +495,8 @@ class CategoryRow extends DataClass implements Insertable<CategoryRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
@@ -465,6 +510,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const CategoriesCompanion({
     this.id = const Value.absent(),
@@ -477,6 +523,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CategoriesCompanion.insert({
@@ -490,6 +537,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -507,6 +555,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -520,6 +569,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -535,6 +585,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return CategoriesCompanion(
@@ -548,6 +599,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -591,6 +643,9 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -610,6 +665,7 @@ class CategoriesCompanion extends UpdateCompanion<CategoryRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -828,6 +884,17 @@ class $RecurringRulesTable extends RecurringRules
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -848,6 +915,7 @@ class $RecurringRulesTable extends RecurringRules
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -972,6 +1040,15 @@ class $RecurringRulesTable extends RecurringRules
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1059,6 +1136,10 @@ class $RecurringRulesTable extends RecurringRules
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -1095,6 +1176,7 @@ class RecurringRuleRow extends DataClass
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const RecurringRuleRow({
     required this.id,
     required this.rrule,
@@ -1114,6 +1196,7 @@ class RecurringRuleRow extends DataClass
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1158,6 +1241,9 @@ class RecurringRuleRow extends DataClass
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -1193,6 +1279,9 @@ class RecurringRuleRow extends DataClass
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -1220,6 +1309,7 @@ class RecurringRuleRow extends DataClass
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -1244,6 +1334,7 @@ class RecurringRuleRow extends DataClass
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -1266,6 +1357,7 @@ class RecurringRuleRow extends DataClass
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => RecurringRuleRow(
     id: id ?? this.id,
     rrule: rrule ?? this.rrule,
@@ -1289,6 +1381,9 @@ class RecurringRuleRow extends DataClass
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   RecurringRuleRow copyWithCompanion(RecurringRulesCompanion data) {
     return RecurringRuleRow(
@@ -1322,6 +1417,9 @@ class RecurringRuleRow extends DataClass
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -1345,7 +1443,8 @@ class RecurringRuleRow extends DataClass
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -1370,6 +1469,7 @@ class RecurringRuleRow extends DataClass
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -1392,7 +1492,8 @@ class RecurringRuleRow extends DataClass
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
@@ -1414,6 +1515,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const RecurringRulesCompanion({
     this.id = const Value.absent(),
@@ -1434,6 +1536,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   RecurringRulesCompanion.insert({
@@ -1455,6 +1558,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        rrule = Value(rrule),
@@ -1483,6 +1587,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1504,6 +1609,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1527,6 +1633,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return RecurringRulesCompanion(
@@ -1548,6 +1655,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1615,6 +1723,9 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1642,6 +1753,7 @@ class RecurringRulesCompanion extends UpdateCompanion<RecurringRuleRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1902,6 +2014,17 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1926,6 +2049,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2063,6 +2187,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2170,6 +2303,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -2213,6 +2350,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+
+  /// Nullable until the row is acknowledged by Supabase.
+  final int? serverVersion;
   const TaskRow({
     required this.id,
     required this.title,
@@ -2236,6 +2376,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2302,6 +2443,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -2353,6 +2497,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -2390,6 +2537,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -2420,6 +2568,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -2446,6 +2595,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => TaskRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -2480,6 +2630,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   TaskRow copyWithCompanion(TasksCompanion data) {
     return TaskRow(
@@ -2523,6 +2676,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -2550,7 +2706,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -2579,6 +2736,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -2606,7 +2764,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class TasksCompanion extends UpdateCompanion<TaskRow> {
@@ -2632,6 +2791,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const TasksCompanion({
     this.id = const Value.absent(),
@@ -2656,6 +2816,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TasksCompanion.insert({
@@ -2681,6 +2842,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -2709,6 +2871,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2736,6 +2899,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2763,6 +2927,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return TasksCompanion(
@@ -2789,6 +2954,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2874,6 +3040,9 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2905,6 +3074,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3237,6 +3407,17 @@ class $SubtasksTable extends Subtasks
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3249,6 +3430,7 @@ class $SubtasksTable extends Subtasks
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3310,6 +3492,15 @@ class $SubtasksTable extends Subtasks
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3365,6 +3556,10 @@ class $SubtasksTable extends Subtasks
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -3392,6 +3587,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const SubtaskRow({
     required this.id,
     required this.taskId,
@@ -3403,6 +3599,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3429,6 +3626,9 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -3446,6 +3646,9 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -3465,6 +3668,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -3481,6 +3685,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -3495,6 +3700,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => SubtaskRow(
     id: id ?? this.id,
     taskId: taskId ?? this.taskId,
@@ -3506,6 +3712,9 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   SubtaskRow copyWithCompanion(SubtasksCompanion data) {
     return SubtaskRow(
@@ -3523,6 +3732,9 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -3538,7 +3750,8 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -3555,6 +3768,7 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -3569,7 +3783,8 @@ class SubtaskRow extends DataClass implements Insertable<SubtaskRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
@@ -3583,6 +3798,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const SubtasksCompanion({
     this.id = const Value.absent(),
@@ -3595,6 +3811,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SubtasksCompanion.insert({
@@ -3608,6 +3825,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        taskId = Value(taskId),
@@ -3625,6 +3843,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3638,6 +3857,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3653,6 +3873,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return SubtasksCompanion(
@@ -3666,6 +3887,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3709,6 +3931,9 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3728,6 +3953,7 @@ class SubtasksCompanion extends UpdateCompanion<SubtaskRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3812,6 +4038,17 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3821,6 +4058,7 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3857,6 +4095,15 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
       context.handle(
         _revisionMeta,
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
       );
     }
     return context;
@@ -3902,6 +4149,10 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -3926,6 +4177,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const TagRow({
     required this.id,
     required this.name,
@@ -3934,6 +4186,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3957,6 +4210,9 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -3971,6 +4227,9 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -3987,6 +4246,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -4000,6 +4260,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -4011,6 +4272,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => TagRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -4019,6 +4281,9 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   TagRow copyWithCompanion(TagsCompanion data) {
     return TagRow(
@@ -4031,6 +4296,9 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -4043,7 +4311,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -4057,6 +4326,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -4068,7 +4338,8 @@ class TagRow extends DataClass implements Insertable<TagRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class TagsCompanion extends UpdateCompanion<TagRow> {
@@ -4079,6 +4350,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const TagsCompanion({
     this.id = const Value.absent(),
@@ -4088,6 +4360,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TagsCompanion.insert({
@@ -4098,6 +4371,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -4111,6 +4385,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4121,6 +4396,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4133,6 +4409,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return TagsCompanion(
@@ -4143,6 +4420,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4177,6 +4455,9 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4193,6 +4474,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4280,6 +4562,17 @@ class $TaskTagsTable extends TaskTags
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     taskId,
@@ -4289,6 +4582,7 @@ class $TaskTagsTable extends TaskTags
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4328,6 +4622,15 @@ class $TaskTagsTable extends TaskTags
       context.handle(
         _revisionMeta,
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
       );
     }
     return context;
@@ -4373,6 +4676,10 @@ class $TaskTagsTable extends TaskTags
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -4397,6 +4704,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const TaskTagRow({
     required this.taskId,
     required this.tagId,
@@ -4405,6 +4713,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4428,6 +4737,9 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -4442,6 +4754,9 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -4458,6 +4773,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -4471,6 +4787,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -4482,6 +4799,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => TaskTagRow(
     taskId: taskId ?? this.taskId,
     tagId: tagId ?? this.tagId,
@@ -4490,6 +4808,9 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   TaskTagRow copyWithCompanion(TaskTagsCompanion data) {
     return TaskTagRow(
@@ -4502,6 +4823,9 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -4514,7 +4838,8 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -4528,6 +4853,7 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -4539,7 +4865,8 @@ class TaskTagRow extends DataClass implements Insertable<TaskTagRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
@@ -4550,6 +4877,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const TaskTagsCompanion({
     this.taskId = const Value.absent(),
@@ -4559,6 +4887,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TaskTagsCompanion.insert({
@@ -4569,6 +4898,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : taskId = Value(taskId),
        tagId = Value(tagId),
@@ -4582,6 +4912,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4592,6 +4923,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4604,6 +4936,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return TaskTagsCompanion(
@@ -4614,6 +4947,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4648,6 +4982,9 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4664,6 +5001,7 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4808,6 +5146,17 @@ class $TaskTemplatesTable extends TaskTemplates
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4822,6 +5171,7 @@ class $TaskTemplatesTable extends TaskTemplates
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4898,6 +5248,15 @@ class $TaskTemplatesTable extends TaskTemplates
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4961,6 +5320,10 @@ class $TaskTemplatesTable extends TaskTemplates
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -4990,6 +5353,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const TaskTemplateRow({
     required this.id,
     required this.name,
@@ -5003,6 +5367,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5037,6 +5402,9 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -5062,6 +5430,9 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -5083,6 +5454,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -5101,6 +5473,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -5117,6 +5490,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => TaskTemplateRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -5130,6 +5504,9 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   TaskTemplateRow copyWithCompanion(TaskTemplatesCompanion data) {
     return TaskTemplateRow(
@@ -5153,6 +5530,9 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -5170,7 +5550,8 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -5189,6 +5570,7 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -5205,7 +5587,8 @@ class TaskTemplateRow extends DataClass implements Insertable<TaskTemplateRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
@@ -5221,6 +5604,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const TaskTemplatesCompanion({
     this.id = const Value.absent(),
@@ -5235,6 +5619,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TaskTemplatesCompanion.insert({
@@ -5250,6 +5635,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -5269,6 +5655,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -5284,6 +5671,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -5301,6 +5689,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return TaskTemplatesCompanion(
@@ -5316,6 +5705,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -5365,6 +5755,9 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -5386,6 +5779,7 @@ class TaskTemplatesCompanion extends UpdateCompanion<TaskTemplateRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5531,6 +5925,17 @@ class $DailyReviewsTable extends DailyReviews
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -5546,6 +5951,7 @@ class $DailyReviewsTable extends DailyReviews
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -5632,6 +6038,15 @@ class $DailyReviewsTable extends DailyReviews
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -5699,6 +6114,10 @@ class $DailyReviewsTable extends DailyReviews
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -5732,6 +6151,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const DailyReviewRow({
     required this.id,
     required this.date,
@@ -5746,6 +6166,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -5787,6 +6208,9 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -5819,6 +6243,9 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -5843,6 +6270,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -5862,6 +6290,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -5879,6 +6308,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => DailyReviewRow(
     id: id ?? this.id,
     date: date ?? this.date,
@@ -5899,6 +6329,9 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   DailyReviewRow copyWithCompanion(DailyReviewsCompanion data) {
     return DailyReviewRow(
@@ -5927,6 +6360,9 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -5945,7 +6381,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -5965,6 +6402,7 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -5982,7 +6420,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
@@ -5999,6 +6438,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const DailyReviewsCompanion({
     this.id = const Value.absent(),
@@ -6014,6 +6454,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DailyReviewsCompanion.insert({
@@ -6030,6 +6471,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        date = Value(date),
@@ -6049,6 +6491,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6066,6 +6509,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6084,6 +6528,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return DailyReviewsCompanion(
@@ -6101,6 +6546,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6155,6 +6601,9 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6177,6 +6626,7 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6316,6 +6766,17 @@ class $WeeklyReviewsTable extends WeeklyReviews
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -6330,6 +6791,7 @@ class $WeeklyReviewsTable extends WeeklyReviews
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -6413,6 +6875,15 @@ class $WeeklyReviewsTable extends WeeklyReviews
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
       );
     }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6476,6 +6947,10 @@ class $WeeklyReviewsTable extends WeeklyReviews
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -6508,6 +6983,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const WeeklyReviewRow({
     required this.id,
     required this.weekStartDate,
@@ -6521,6 +6997,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -6559,6 +7036,9 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -6588,6 +7068,9 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -6611,6 +7094,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -6629,6 +7113,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -6645,6 +7130,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => WeeklyReviewRow(
     id: id ?? this.id,
     weekStartDate: weekStartDate ?? this.weekStartDate,
@@ -6664,6 +7150,9 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   WeeklyReviewRow copyWithCompanion(WeeklyReviewsCompanion data) {
     return WeeklyReviewRow(
@@ -6693,6 +7182,9 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -6710,7 +7202,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -6729,6 +7222,7 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -6745,7 +7239,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
@@ -6761,6 +7256,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const WeeklyReviewsCompanion({
     this.id = const Value.absent(),
@@ -6775,6 +7271,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   WeeklyReviewsCompanion.insert({
@@ -6790,6 +7287,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        weekStartDate = Value(weekStartDate),
@@ -6808,6 +7306,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -6823,6 +7322,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -6840,6 +7340,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return WeeklyReviewsCompanion(
@@ -6855,6 +7356,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -6904,6 +7406,9 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -6925,6 +7430,7 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7999,6 +8505,17 @@ class $TimerSessionsTable extends TimerSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -8011,6 +8528,7 @@ class $TimerSessionsTable extends TimerSessions
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8056,6 +8574,15 @@ class $TimerSessionsTable extends TimerSessions
       context.handle(
         _revisionMeta,
         revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
       );
     }
     return context;
@@ -8117,6 +8644,10 @@ class $TimerSessionsTable extends TimerSessions
         DriftSqlType.int,
         data['${effectivePrefix}revision'],
       )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
     );
   }
 
@@ -8150,6 +8681,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
   final DateTime? deletedAt;
   final int syncStatus;
   final int revision;
+  final int? serverVersion;
   const TimerSessionRow({
     required this.id,
     required this.taskId,
@@ -8161,6 +8693,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     this.deletedAt,
     required this.syncStatus,
     required this.revision,
+    this.serverVersion,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8195,6 +8728,9 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     }
     map['sync_status'] = Variable<int>(syncStatus);
     map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
     return map;
   }
 
@@ -8214,6 +8750,9 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           : Value(deletedAt),
       syncStatus: Value(syncStatus),
       revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
     );
   }
 
@@ -8233,6 +8772,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       syncStatus: serializer.fromJson<int>(json['syncStatus']),
       revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
     );
   }
   @override
@@ -8249,6 +8789,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'syncStatus': serializer.toJson<int>(syncStatus),
       'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
     };
   }
 
@@ -8263,6 +8804,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     Value<DateTime?> deletedAt = const Value.absent(),
     int? syncStatus,
     int? revision,
+    Value<int?> serverVersion = const Value.absent(),
   }) => TimerSessionRow(
     id: id ?? this.id,
     taskId: taskId ?? this.taskId,
@@ -8274,6 +8816,9 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncStatus: syncStatus ?? this.syncStatus,
     revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
   );
   TimerSessionRow copyWithCompanion(TimerSessionsCompanion data) {
     return TimerSessionRow(
@@ -8291,6 +8836,9 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           ? data.syncStatus.value
           : this.syncStatus,
       revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
     );
   }
 
@@ -8306,7 +8854,8 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
-          ..write('revision: $revision')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
           ..write(')'))
         .toString();
   }
@@ -8323,6 +8872,7 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     deletedAt,
     syncStatus,
     revision,
+    serverVersion,
   );
   @override
   bool operator ==(Object other) =>
@@ -8337,7 +8887,8 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncStatus == this.syncStatus &&
-          other.revision == this.revision);
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
 }
 
 class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
@@ -8351,6 +8902,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
   final Value<DateTime?> deletedAt;
   final Value<int> syncStatus;
   final Value<int> revision;
+  final Value<int?> serverVersion;
   final Value<int> rowid;
   const TimerSessionsCompanion({
     this.id = const Value.absent(),
@@ -8363,6 +8915,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TimerSessionsCompanion.insert({
@@ -8376,6 +8929,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     this.deletedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        taskId = Value(taskId),
@@ -8393,6 +8947,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     Expression<String>? deletedAt,
     Expression<int>? syncStatus,
     Expression<int>? revision,
+    Expression<int>? serverVersion,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8406,6 +8961,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8421,6 +8977,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     Value<DateTime?>? deletedAt,
     Value<int>? syncStatus,
     Value<int>? revision,
+    Value<int?>? serverVersion,
     Value<int>? rowid,
   }) {
     return TimerSessionsCompanion(
@@ -8434,6 +8991,7 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
       deletedAt: deletedAt ?? this.deletedAt,
       syncStatus: syncStatus ?? this.syncStatus,
       revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8481,6 +9039,9 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     if (revision.present) {
       map['revision'] = Variable<int>(revision.value);
     }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8500,6 +9061,1621 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
           ..write('deletedAt: $deletedAt, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncLogTable extends SyncLog with TableInfo<$SyncLogTable, SyncLogRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncLogTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _operationIdMeta = const VerificationMeta(
+    'operationId',
+  );
+  @override
+  late final GeneratedColumn<String> operationId = GeneratedColumn<String>(
+    'operation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityTableNameMeta = const VerificationMeta(
+    'entityTableName',
+  );
+  @override
+  late final GeneratedColumn<String> entityTableName = GeneratedColumn<String>(
+    'table_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _recordIdMeta = const VerificationMeta(
+    'recordId',
+  );
+  @override
+  late final GeneratedColumn<String> recordId = GeneratedColumn<String>(
+    'record_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _operationMeta = const VerificationMeta(
+    'operation',
+  );
+  @override
+  late final GeneratedColumn<String> operation = GeneratedColumn<String>(
+    'operation',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _expectedServerVersionMeta =
+      const VerificationMeta('expectedServerVersion');
+  @override
+  late final GeneratedColumn<int> expectedServerVersion = GeneratedColumn<int>(
+    'expected_server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _stateMeta = const VerificationMeta('state');
+  @override
+  late final GeneratedColumn<String> state = GeneratedColumn<String>(
+    'state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  static const VerificationMeta _attemptCountMeta = const VerificationMeta(
+    'attemptCount',
+  );
+  @override
+  late final GeneratedColumn<int> attemptCount = GeneratedColumn<int>(
+    'attempt_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> nextAttemptAt =
+      GeneratedColumn<String>(
+        'next_attempt_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($SyncLogTable.$converternextAttemptAt);
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SyncLogTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SyncLogTable.$converterupdatedAt);
+  @override
+  List<GeneratedColumn> get $columns => [
+    operationId,
+    entityTableName,
+    recordId,
+    operation,
+    expectedServerVersion,
+    payload,
+    state,
+    attemptCount,
+    nextAttemptAt,
+    lastError,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_log';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncLogRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('operation_id')) {
+      context.handle(
+        _operationIdMeta,
+        operationId.isAcceptableOrUnknown(
+          data['operation_id']!,
+          _operationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_operationIdMeta);
+    }
+    if (data.containsKey('table_name')) {
+      context.handle(
+        _entityTableNameMeta,
+        entityTableName.isAcceptableOrUnknown(
+          data['table_name']!,
+          _entityTableNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTableNameMeta);
+    }
+    if (data.containsKey('record_id')) {
+      context.handle(
+        _recordIdMeta,
+        recordId.isAcceptableOrUnknown(data['record_id']!, _recordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_recordIdMeta);
+    }
+    if (data.containsKey('operation')) {
+      context.handle(
+        _operationMeta,
+        operation.isAcceptableOrUnknown(data['operation']!, _operationMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_operationMeta);
+    }
+    if (data.containsKey('expected_server_version')) {
+      context.handle(
+        _expectedServerVersionMeta,
+        expectedServerVersion.isAcceptableOrUnknown(
+          data['expected_server_version']!,
+          _expectedServerVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    if (data.containsKey('state')) {
+      context.handle(
+        _stateMeta,
+        state.isAcceptableOrUnknown(data['state']!, _stateMeta),
+      );
+    }
+    if (data.containsKey('attempt_count')) {
+      context.handle(
+        _attemptCountMeta,
+        attemptCount.isAcceptableOrUnknown(
+          data['attempt_count']!,
+          _attemptCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {operationId};
+  @override
+  SyncLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncLogRow(
+      operationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}operation_id'],
+      )!,
+      entityTableName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}table_name'],
+      )!,
+      recordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}record_id'],
+      )!,
+      operation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}operation'],
+      )!,
+      expectedServerVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}expected_server_version'],
+      ),
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+      state: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}state'],
+      )!,
+      attemptCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempt_count'],
+      )!,
+      nextAttemptAt: $SyncLogTable.$converternextAttemptAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}next_attempt_at'],
+        ),
+      ),
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+      createdAt: $SyncLogTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $SyncLogTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $SyncLogTable createAlias(String alias) {
+    return $SyncLogTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime?, String?> $converternextAttemptAt =
+      const NullableDateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+}
+
+class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
+  final String operationId;
+  final String entityTableName;
+  final String recordId;
+  final String operation;
+  final int? expectedServerVersion;
+  final String payload;
+  final String state;
+  final int attemptCount;
+  final DateTime? nextAttemptAt;
+  final String? lastError;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const SyncLogRow({
+    required this.operationId,
+    required this.entityTableName,
+    required this.recordId,
+    required this.operation,
+    this.expectedServerVersion,
+    required this.payload,
+    required this.state,
+    required this.attemptCount,
+    this.nextAttemptAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['operation_id'] = Variable<String>(operationId);
+    map['table_name'] = Variable<String>(entityTableName);
+    map['record_id'] = Variable<String>(recordId);
+    map['operation'] = Variable<String>(operation);
+    if (!nullToAbsent || expectedServerVersion != null) {
+      map['expected_server_version'] = Variable<int>(expectedServerVersion);
+    }
+    map['payload'] = Variable<String>(payload);
+    map['state'] = Variable<String>(state);
+    map['attempt_count'] = Variable<int>(attemptCount);
+    if (!nullToAbsent || nextAttemptAt != null) {
+      map['next_attempt_at'] = Variable<String>(
+        $SyncLogTable.$converternextAttemptAt.toSql(nextAttemptAt),
+      );
+    }
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    {
+      map['created_at'] = Variable<String>(
+        $SyncLogTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $SyncLogTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    return map;
+  }
+
+  SyncLogCompanion toCompanion(bool nullToAbsent) {
+    return SyncLogCompanion(
+      operationId: Value(operationId),
+      entityTableName: Value(entityTableName),
+      recordId: Value(recordId),
+      operation: Value(operation),
+      expectedServerVersion: expectedServerVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(expectedServerVersion),
+      payload: Value(payload),
+      state: Value(state),
+      attemptCount: Value(attemptCount),
+      nextAttemptAt: nextAttemptAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nextAttemptAt),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SyncLogRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncLogRow(
+      operationId: serializer.fromJson<String>(json['operationId']),
+      entityTableName: serializer.fromJson<String>(json['entityTableName']),
+      recordId: serializer.fromJson<String>(json['recordId']),
+      operation: serializer.fromJson<String>(json['operation']),
+      expectedServerVersion: serializer.fromJson<int?>(
+        json['expectedServerVersion'],
+      ),
+      payload: serializer.fromJson<String>(json['payload']),
+      state: serializer.fromJson<String>(json['state']),
+      attemptCount: serializer.fromJson<int>(json['attemptCount']),
+      nextAttemptAt: serializer.fromJson<DateTime?>(json['nextAttemptAt']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'operationId': serializer.toJson<String>(operationId),
+      'entityTableName': serializer.toJson<String>(entityTableName),
+      'recordId': serializer.toJson<String>(recordId),
+      'operation': serializer.toJson<String>(operation),
+      'expectedServerVersion': serializer.toJson<int?>(expectedServerVersion),
+      'payload': serializer.toJson<String>(payload),
+      'state': serializer.toJson<String>(state),
+      'attemptCount': serializer.toJson<int>(attemptCount),
+      'nextAttemptAt': serializer.toJson<DateTime?>(nextAttemptAt),
+      'lastError': serializer.toJson<String?>(lastError),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  SyncLogRow copyWith({
+    String? operationId,
+    String? entityTableName,
+    String? recordId,
+    String? operation,
+    Value<int?> expectedServerVersion = const Value.absent(),
+    String? payload,
+    String? state,
+    int? attemptCount,
+    Value<DateTime?> nextAttemptAt = const Value.absent(),
+    Value<String?> lastError = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => SyncLogRow(
+    operationId: operationId ?? this.operationId,
+    entityTableName: entityTableName ?? this.entityTableName,
+    recordId: recordId ?? this.recordId,
+    operation: operation ?? this.operation,
+    expectedServerVersion: expectedServerVersion.present
+        ? expectedServerVersion.value
+        : this.expectedServerVersion,
+    payload: payload ?? this.payload,
+    state: state ?? this.state,
+    attemptCount: attemptCount ?? this.attemptCount,
+    nextAttemptAt: nextAttemptAt.present
+        ? nextAttemptAt.value
+        : this.nextAttemptAt,
+    lastError: lastError.present ? lastError.value : this.lastError,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SyncLogRow copyWithCompanion(SyncLogCompanion data) {
+    return SyncLogRow(
+      operationId: data.operationId.present
+          ? data.operationId.value
+          : this.operationId,
+      entityTableName: data.entityTableName.present
+          ? data.entityTableName.value
+          : this.entityTableName,
+      recordId: data.recordId.present ? data.recordId.value : this.recordId,
+      operation: data.operation.present ? data.operation.value : this.operation,
+      expectedServerVersion: data.expectedServerVersion.present
+          ? data.expectedServerVersion.value
+          : this.expectedServerVersion,
+      payload: data.payload.present ? data.payload.value : this.payload,
+      state: data.state.present ? data.state.value : this.state,
+      attemptCount: data.attemptCount.present
+          ? data.attemptCount.value
+          : this.attemptCount,
+      nextAttemptAt: data.nextAttemptAt.present
+          ? data.nextAttemptAt.value
+          : this.nextAttemptAt,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncLogRow(')
+          ..write('operationId: $operationId, ')
+          ..write('entityTableName: $entityTableName, ')
+          ..write('recordId: $recordId, ')
+          ..write('operation: $operation, ')
+          ..write('expectedServerVersion: $expectedServerVersion, ')
+          ..write('payload: $payload, ')
+          ..write('state: $state, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    operationId,
+    entityTableName,
+    recordId,
+    operation,
+    expectedServerVersion,
+    payload,
+    state,
+    attemptCount,
+    nextAttemptAt,
+    lastError,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncLogRow &&
+          other.operationId == this.operationId &&
+          other.entityTableName == this.entityTableName &&
+          other.recordId == this.recordId &&
+          other.operation == this.operation &&
+          other.expectedServerVersion == this.expectedServerVersion &&
+          other.payload == this.payload &&
+          other.state == this.state &&
+          other.attemptCount == this.attemptCount &&
+          other.nextAttemptAt == this.nextAttemptAt &&
+          other.lastError == this.lastError &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
+  final Value<String> operationId;
+  final Value<String> entityTableName;
+  final Value<String> recordId;
+  final Value<String> operation;
+  final Value<int?> expectedServerVersion;
+  final Value<String> payload;
+  final Value<String> state;
+  final Value<int> attemptCount;
+  final Value<DateTime?> nextAttemptAt;
+  final Value<String?> lastError;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const SyncLogCompanion({
+    this.operationId = const Value.absent(),
+    this.entityTableName = const Value.absent(),
+    this.recordId = const Value.absent(),
+    this.operation = const Value.absent(),
+    this.expectedServerVersion = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.state = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncLogCompanion.insert({
+    required String operationId,
+    required String entityTableName,
+    required String recordId,
+    required String operation,
+    this.expectedServerVersion = const Value.absent(),
+    required String payload,
+    this.state = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.nextAttemptAt = const Value.absent(),
+    this.lastError = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : operationId = Value(operationId),
+       entityTableName = Value(entityTableName),
+       recordId = Value(recordId),
+       operation = Value(operation),
+       payload = Value(payload),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<SyncLogRow> custom({
+    Expression<String>? operationId,
+    Expression<String>? entityTableName,
+    Expression<String>? recordId,
+    Expression<String>? operation,
+    Expression<int>? expectedServerVersion,
+    Expression<String>? payload,
+    Expression<String>? state,
+    Expression<int>? attemptCount,
+    Expression<String>? nextAttemptAt,
+    Expression<String>? lastError,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (operationId != null) 'operation_id': operationId,
+      if (entityTableName != null) 'table_name': entityTableName,
+      if (recordId != null) 'record_id': recordId,
+      if (operation != null) 'operation': operation,
+      if (expectedServerVersion != null)
+        'expected_server_version': expectedServerVersion,
+      if (payload != null) 'payload': payload,
+      if (state != null) 'state': state,
+      if (attemptCount != null) 'attempt_count': attemptCount,
+      if (nextAttemptAt != null) 'next_attempt_at': nextAttemptAt,
+      if (lastError != null) 'last_error': lastError,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncLogCompanion copyWith({
+    Value<String>? operationId,
+    Value<String>? entityTableName,
+    Value<String>? recordId,
+    Value<String>? operation,
+    Value<int?>? expectedServerVersion,
+    Value<String>? payload,
+    Value<String>? state,
+    Value<int>? attemptCount,
+    Value<DateTime?>? nextAttemptAt,
+    Value<String?>? lastError,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return SyncLogCompanion(
+      operationId: operationId ?? this.operationId,
+      entityTableName: entityTableName ?? this.entityTableName,
+      recordId: recordId ?? this.recordId,
+      operation: operation ?? this.operation,
+      expectedServerVersion:
+          expectedServerVersion ?? this.expectedServerVersion,
+      payload: payload ?? this.payload,
+      state: state ?? this.state,
+      attemptCount: attemptCount ?? this.attemptCount,
+      nextAttemptAt: nextAttemptAt ?? this.nextAttemptAt,
+      lastError: lastError ?? this.lastError,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (operationId.present) {
+      map['operation_id'] = Variable<String>(operationId.value);
+    }
+    if (entityTableName.present) {
+      map['table_name'] = Variable<String>(entityTableName.value);
+    }
+    if (recordId.present) {
+      map['record_id'] = Variable<String>(recordId.value);
+    }
+    if (operation.present) {
+      map['operation'] = Variable<String>(operation.value);
+    }
+    if (expectedServerVersion.present) {
+      map['expected_server_version'] = Variable<int>(
+        expectedServerVersion.value,
+      );
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(state.value);
+    }
+    if (attemptCount.present) {
+      map['attempt_count'] = Variable<int>(attemptCount.value);
+    }
+    if (nextAttemptAt.present) {
+      map['next_attempt_at'] = Variable<String>(
+        $SyncLogTable.$converternextAttemptAt.toSql(nextAttemptAt.value),
+      );
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $SyncLogTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $SyncLogTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncLogCompanion(')
+          ..write('operationId: $operationId, ')
+          ..write('entityTableName: $entityTableName, ')
+          ..write('recordId: $recordId, ')
+          ..write('operation: $operation, ')
+          ..write('expectedServerVersion: $expectedServerVersion, ')
+          ..write('payload: $payload, ')
+          ..write('state: $state, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('nextAttemptAt: $nextAttemptAt, ')
+          ..write('lastError: $lastError, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncConflictsTable extends SyncConflicts
+    with TableInfo<$SyncConflictsTable, SyncConflictRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncConflictsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _operationIdMeta = const VerificationMeta(
+    'operationId',
+  );
+  @override
+  late final GeneratedColumn<String> operationId = GeneratedColumn<String>(
+    'operation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityTableNameMeta = const VerificationMeta(
+    'entityTableName',
+  );
+  @override
+  late final GeneratedColumn<String> entityTableName = GeneratedColumn<String>(
+    'table_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _recordIdMeta = const VerificationMeta(
+    'recordId',
+  );
+  @override
+  late final GeneratedColumn<String> recordId = GeneratedColumn<String>(
+    'record_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _expectedServerVersionMeta =
+      const VerificationMeta('expectedServerVersion');
+  @override
+  late final GeneratedColumn<int> expectedServerVersion = GeneratedColumn<int>(
+    'expected_server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _actualServerVersionMeta =
+      const VerificationMeta('actualServerVersion');
+  @override
+  late final GeneratedColumn<int> actualServerVersion = GeneratedColumn<int>(
+    'actual_server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _localSnapshotMeta = const VerificationMeta(
+    'localSnapshot',
+  );
+  @override
+  late final GeneratedColumn<String> localSnapshot = GeneratedColumn<String>(
+    'local_snapshot',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _remoteSnapshotMeta = const VerificationMeta(
+    'remoteSnapshot',
+  );
+  @override
+  late final GeneratedColumn<String> remoteSnapshot = GeneratedColumn<String>(
+    'remote_snapshot',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SyncConflictsTable.$convertercreatedAt);
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    operationId,
+    entityTableName,
+    recordId,
+    expectedServerVersion,
+    actualServerVersion,
+    localSnapshot,
+    remoteSnapshot,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_conflicts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncConflictRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('operation_id')) {
+      context.handle(
+        _operationIdMeta,
+        operationId.isAcceptableOrUnknown(
+          data['operation_id']!,
+          _operationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_operationIdMeta);
+    }
+    if (data.containsKey('table_name')) {
+      context.handle(
+        _entityTableNameMeta,
+        entityTableName.isAcceptableOrUnknown(
+          data['table_name']!,
+          _entityTableNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTableNameMeta);
+    }
+    if (data.containsKey('record_id')) {
+      context.handle(
+        _recordIdMeta,
+        recordId.isAcceptableOrUnknown(data['record_id']!, _recordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_recordIdMeta);
+    }
+    if (data.containsKey('expected_server_version')) {
+      context.handle(
+        _expectedServerVersionMeta,
+        expectedServerVersion.isAcceptableOrUnknown(
+          data['expected_server_version']!,
+          _expectedServerVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('actual_server_version')) {
+      context.handle(
+        _actualServerVersionMeta,
+        actualServerVersion.isAcceptableOrUnknown(
+          data['actual_server_version']!,
+          _actualServerVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('local_snapshot')) {
+      context.handle(
+        _localSnapshotMeta,
+        localSnapshot.isAcceptableOrUnknown(
+          data['local_snapshot']!,
+          _localSnapshotMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_localSnapshotMeta);
+    }
+    if (data.containsKey('remote_snapshot')) {
+      context.handle(
+        _remoteSnapshotMeta,
+        remoteSnapshot.isAcceptableOrUnknown(
+          data['remote_snapshot']!,
+          _remoteSnapshotMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_remoteSnapshotMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncConflictRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncConflictRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      operationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}operation_id'],
+      )!,
+      entityTableName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}table_name'],
+      )!,
+      recordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}record_id'],
+      )!,
+      expectedServerVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}expected_server_version'],
+      ),
+      actualServerVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}actual_server_version'],
+      ),
+      localSnapshot: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_snapshot'],
+      )!,
+      remoteSnapshot: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}remote_snapshot'],
+      )!,
+      createdAt: $SyncConflictsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $SyncConflictsTable createAlias(String alias) {
+    return $SyncConflictsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+}
+
+class SyncConflictRow extends DataClass implements Insertable<SyncConflictRow> {
+  final String id;
+  final String operationId;
+  final String entityTableName;
+  final String recordId;
+  final int? expectedServerVersion;
+  final int? actualServerVersion;
+  final String localSnapshot;
+  final String remoteSnapshot;
+  final DateTime createdAt;
+  const SyncConflictRow({
+    required this.id,
+    required this.operationId,
+    required this.entityTableName,
+    required this.recordId,
+    this.expectedServerVersion,
+    this.actualServerVersion,
+    required this.localSnapshot,
+    required this.remoteSnapshot,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['operation_id'] = Variable<String>(operationId);
+    map['table_name'] = Variable<String>(entityTableName);
+    map['record_id'] = Variable<String>(recordId);
+    if (!nullToAbsent || expectedServerVersion != null) {
+      map['expected_server_version'] = Variable<int>(expectedServerVersion);
+    }
+    if (!nullToAbsent || actualServerVersion != null) {
+      map['actual_server_version'] = Variable<int>(actualServerVersion);
+    }
+    map['local_snapshot'] = Variable<String>(localSnapshot);
+    map['remote_snapshot'] = Variable<String>(remoteSnapshot);
+    {
+      map['created_at'] = Variable<String>(
+        $SyncConflictsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    return map;
+  }
+
+  SyncConflictsCompanion toCompanion(bool nullToAbsent) {
+    return SyncConflictsCompanion(
+      id: Value(id),
+      operationId: Value(operationId),
+      entityTableName: Value(entityTableName),
+      recordId: Value(recordId),
+      expectedServerVersion: expectedServerVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(expectedServerVersion),
+      actualServerVersion: actualServerVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(actualServerVersion),
+      localSnapshot: Value(localSnapshot),
+      remoteSnapshot: Value(remoteSnapshot),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SyncConflictRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncConflictRow(
+      id: serializer.fromJson<String>(json['id']),
+      operationId: serializer.fromJson<String>(json['operationId']),
+      entityTableName: serializer.fromJson<String>(json['entityTableName']),
+      recordId: serializer.fromJson<String>(json['recordId']),
+      expectedServerVersion: serializer.fromJson<int?>(
+        json['expectedServerVersion'],
+      ),
+      actualServerVersion: serializer.fromJson<int?>(
+        json['actualServerVersion'],
+      ),
+      localSnapshot: serializer.fromJson<String>(json['localSnapshot']),
+      remoteSnapshot: serializer.fromJson<String>(json['remoteSnapshot']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'operationId': serializer.toJson<String>(operationId),
+      'entityTableName': serializer.toJson<String>(entityTableName),
+      'recordId': serializer.toJson<String>(recordId),
+      'expectedServerVersion': serializer.toJson<int?>(expectedServerVersion),
+      'actualServerVersion': serializer.toJson<int?>(actualServerVersion),
+      'localSnapshot': serializer.toJson<String>(localSnapshot),
+      'remoteSnapshot': serializer.toJson<String>(remoteSnapshot),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  SyncConflictRow copyWith({
+    String? id,
+    String? operationId,
+    String? entityTableName,
+    String? recordId,
+    Value<int?> expectedServerVersion = const Value.absent(),
+    Value<int?> actualServerVersion = const Value.absent(),
+    String? localSnapshot,
+    String? remoteSnapshot,
+    DateTime? createdAt,
+  }) => SyncConflictRow(
+    id: id ?? this.id,
+    operationId: operationId ?? this.operationId,
+    entityTableName: entityTableName ?? this.entityTableName,
+    recordId: recordId ?? this.recordId,
+    expectedServerVersion: expectedServerVersion.present
+        ? expectedServerVersion.value
+        : this.expectedServerVersion,
+    actualServerVersion: actualServerVersion.present
+        ? actualServerVersion.value
+        : this.actualServerVersion,
+    localSnapshot: localSnapshot ?? this.localSnapshot,
+    remoteSnapshot: remoteSnapshot ?? this.remoteSnapshot,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  SyncConflictRow copyWithCompanion(SyncConflictsCompanion data) {
+    return SyncConflictRow(
+      id: data.id.present ? data.id.value : this.id,
+      operationId: data.operationId.present
+          ? data.operationId.value
+          : this.operationId,
+      entityTableName: data.entityTableName.present
+          ? data.entityTableName.value
+          : this.entityTableName,
+      recordId: data.recordId.present ? data.recordId.value : this.recordId,
+      expectedServerVersion: data.expectedServerVersion.present
+          ? data.expectedServerVersion.value
+          : this.expectedServerVersion,
+      actualServerVersion: data.actualServerVersion.present
+          ? data.actualServerVersion.value
+          : this.actualServerVersion,
+      localSnapshot: data.localSnapshot.present
+          ? data.localSnapshot.value
+          : this.localSnapshot,
+      remoteSnapshot: data.remoteSnapshot.present
+          ? data.remoteSnapshot.value
+          : this.remoteSnapshot,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncConflictRow(')
+          ..write('id: $id, ')
+          ..write('operationId: $operationId, ')
+          ..write('entityTableName: $entityTableName, ')
+          ..write('recordId: $recordId, ')
+          ..write('expectedServerVersion: $expectedServerVersion, ')
+          ..write('actualServerVersion: $actualServerVersion, ')
+          ..write('localSnapshot: $localSnapshot, ')
+          ..write('remoteSnapshot: $remoteSnapshot, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    operationId,
+    entityTableName,
+    recordId,
+    expectedServerVersion,
+    actualServerVersion,
+    localSnapshot,
+    remoteSnapshot,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncConflictRow &&
+          other.id == this.id &&
+          other.operationId == this.operationId &&
+          other.entityTableName == this.entityTableName &&
+          other.recordId == this.recordId &&
+          other.expectedServerVersion == this.expectedServerVersion &&
+          other.actualServerVersion == this.actualServerVersion &&
+          other.localSnapshot == this.localSnapshot &&
+          other.remoteSnapshot == this.remoteSnapshot &&
+          other.createdAt == this.createdAt);
+}
+
+class SyncConflictsCompanion extends UpdateCompanion<SyncConflictRow> {
+  final Value<String> id;
+  final Value<String> operationId;
+  final Value<String> entityTableName;
+  final Value<String> recordId;
+  final Value<int?> expectedServerVersion;
+  final Value<int?> actualServerVersion;
+  final Value<String> localSnapshot;
+  final Value<String> remoteSnapshot;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const SyncConflictsCompanion({
+    this.id = const Value.absent(),
+    this.operationId = const Value.absent(),
+    this.entityTableName = const Value.absent(),
+    this.recordId = const Value.absent(),
+    this.expectedServerVersion = const Value.absent(),
+    this.actualServerVersion = const Value.absent(),
+    this.localSnapshot = const Value.absent(),
+    this.remoteSnapshot = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncConflictsCompanion.insert({
+    required String id,
+    required String operationId,
+    required String entityTableName,
+    required String recordId,
+    this.expectedServerVersion = const Value.absent(),
+    this.actualServerVersion = const Value.absent(),
+    required String localSnapshot,
+    required String remoteSnapshot,
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       operationId = Value(operationId),
+       entityTableName = Value(entityTableName),
+       recordId = Value(recordId),
+       localSnapshot = Value(localSnapshot),
+       remoteSnapshot = Value(remoteSnapshot),
+       createdAt = Value(createdAt);
+  static Insertable<SyncConflictRow> custom({
+    Expression<String>? id,
+    Expression<String>? operationId,
+    Expression<String>? entityTableName,
+    Expression<String>? recordId,
+    Expression<int>? expectedServerVersion,
+    Expression<int>? actualServerVersion,
+    Expression<String>? localSnapshot,
+    Expression<String>? remoteSnapshot,
+    Expression<String>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (operationId != null) 'operation_id': operationId,
+      if (entityTableName != null) 'table_name': entityTableName,
+      if (recordId != null) 'record_id': recordId,
+      if (expectedServerVersion != null)
+        'expected_server_version': expectedServerVersion,
+      if (actualServerVersion != null)
+        'actual_server_version': actualServerVersion,
+      if (localSnapshot != null) 'local_snapshot': localSnapshot,
+      if (remoteSnapshot != null) 'remote_snapshot': remoteSnapshot,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncConflictsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? operationId,
+    Value<String>? entityTableName,
+    Value<String>? recordId,
+    Value<int?>? expectedServerVersion,
+    Value<int?>? actualServerVersion,
+    Value<String>? localSnapshot,
+    Value<String>? remoteSnapshot,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return SyncConflictsCompanion(
+      id: id ?? this.id,
+      operationId: operationId ?? this.operationId,
+      entityTableName: entityTableName ?? this.entityTableName,
+      recordId: recordId ?? this.recordId,
+      expectedServerVersion:
+          expectedServerVersion ?? this.expectedServerVersion,
+      actualServerVersion: actualServerVersion ?? this.actualServerVersion,
+      localSnapshot: localSnapshot ?? this.localSnapshot,
+      remoteSnapshot: remoteSnapshot ?? this.remoteSnapshot,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (operationId.present) {
+      map['operation_id'] = Variable<String>(operationId.value);
+    }
+    if (entityTableName.present) {
+      map['table_name'] = Variable<String>(entityTableName.value);
+    }
+    if (recordId.present) {
+      map['record_id'] = Variable<String>(recordId.value);
+    }
+    if (expectedServerVersion.present) {
+      map['expected_server_version'] = Variable<int>(
+        expectedServerVersion.value,
+      );
+    }
+    if (actualServerVersion.present) {
+      map['actual_server_version'] = Variable<int>(actualServerVersion.value);
+    }
+    if (localSnapshot.present) {
+      map['local_snapshot'] = Variable<String>(localSnapshot.value);
+    }
+    if (remoteSnapshot.present) {
+      map['remote_snapshot'] = Variable<String>(remoteSnapshot.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $SyncConflictsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncConflictsCompanion(')
+          ..write('id: $id, ')
+          ..write('operationId: $operationId, ')
+          ..write('entityTableName: $entityTableName, ')
+          ..write('recordId: $recordId, ')
+          ..write('expectedServerVersion: $expectedServerVersion, ')
+          ..write('actualServerVersion: $actualServerVersion, ')
+          ..write('localSnapshot: $localSnapshot, ')
+          ..write('remoteSnapshot: $remoteSnapshot, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncStateTable extends SyncState
+    with TableInfo<$SyncStateTable, SyncStateRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _accountIdMeta = const VerificationMeta(
+    'accountId',
+  );
+  @override
+  late final GeneratedColumn<String> accountId = GeneratedColumn<String>(
+    'account_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastChangeIdMeta = const VerificationMeta(
+    'lastChangeId',
+  );
+  @override
+  late final GeneratedColumn<int> lastChangeId = GeneratedColumn<int>(
+    'last_change_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($SyncStateTable.$converterupdatedAt);
+  @override
+  List<GeneratedColumn> get $columns => [accountId, lastChangeId, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_state';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncStateRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('account_id')) {
+      context.handle(
+        _accountIdMeta,
+        accountId.isAcceptableOrUnknown(data['account_id']!, _accountIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_accountIdMeta);
+    }
+    if (data.containsKey('last_change_id')) {
+      context.handle(
+        _lastChangeIdMeta,
+        lastChangeId.isAcceptableOrUnknown(
+          data['last_change_id']!,
+          _lastChangeIdMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {accountId};
+  @override
+  SyncStateRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncStateRow(
+      accountId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}account_id'],
+      )!,
+      lastChangeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_change_id'],
+      )!,
+      updatedAt: $SyncStateTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+    );
+  }
+
+  @override
+  $SyncStateTable createAlias(String alias) {
+    return $SyncStateTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+}
+
+class SyncStateRow extends DataClass implements Insertable<SyncStateRow> {
+  final String accountId;
+  final int lastChangeId;
+  final DateTime updatedAt;
+  const SyncStateRow({
+    required this.accountId,
+    required this.lastChangeId,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['account_id'] = Variable<String>(accountId);
+    map['last_change_id'] = Variable<int>(lastChangeId);
+    {
+      map['updated_at'] = Variable<String>(
+        $SyncStateTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    return map;
+  }
+
+  SyncStateCompanion toCompanion(bool nullToAbsent) {
+    return SyncStateCompanion(
+      accountId: Value(accountId),
+      lastChangeId: Value(lastChangeId),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SyncStateRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncStateRow(
+      accountId: serializer.fromJson<String>(json['accountId']),
+      lastChangeId: serializer.fromJson<int>(json['lastChangeId']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'accountId': serializer.toJson<String>(accountId),
+      'lastChangeId': serializer.toJson<int>(lastChangeId),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  SyncStateRow copyWith({
+    String? accountId,
+    int? lastChangeId,
+    DateTime? updatedAt,
+  }) => SyncStateRow(
+    accountId: accountId ?? this.accountId,
+    lastChangeId: lastChangeId ?? this.lastChangeId,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  SyncStateRow copyWithCompanion(SyncStateCompanion data) {
+    return SyncStateRow(
+      accountId: data.accountId.present ? data.accountId.value : this.accountId,
+      lastChangeId: data.lastChangeId.present
+          ? data.lastChangeId.value
+          : this.lastChangeId,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStateRow(')
+          ..write('accountId: $accountId, ')
+          ..write('lastChangeId: $lastChangeId, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(accountId, lastChangeId, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncStateRow &&
+          other.accountId == this.accountId &&
+          other.lastChangeId == this.lastChangeId &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SyncStateCompanion extends UpdateCompanion<SyncStateRow> {
+  final Value<String> accountId;
+  final Value<int> lastChangeId;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const SyncStateCompanion({
+    this.accountId = const Value.absent(),
+    this.lastChangeId = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncStateCompanion.insert({
+    required String accountId,
+    this.lastChangeId = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : accountId = Value(accountId),
+       updatedAt = Value(updatedAt);
+  static Insertable<SyncStateRow> custom({
+    Expression<String>? accountId,
+    Expression<int>? lastChangeId,
+    Expression<String>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (accountId != null) 'account_id': accountId,
+      if (lastChangeId != null) 'last_change_id': lastChangeId,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncStateCompanion copyWith({
+    Value<String>? accountId,
+    Value<int>? lastChangeId,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return SyncStateCompanion(
+      accountId: accountId ?? this.accountId,
+      lastChangeId: lastChangeId ?? this.lastChangeId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (accountId.present) {
+      map['account_id'] = Variable<String>(accountId.value);
+    }
+    if (lastChangeId.present) {
+      map['last_change_id'] = Variable<int>(lastChangeId.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $SyncStateTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStateCompanion(')
+          ..write('accountId: $accountId, ')
+          ..write('lastChangeId: $lastChangeId, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -8523,6 +10699,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $TimerSessionsTable timerSessions = $TimerSessionsTable(this);
+  late final $SyncLogTable syncLog = $SyncLogTable(this);
+  late final $SyncConflictsTable syncConflicts = $SyncConflictsTable(this);
+  late final $SyncStateTable syncState = $SyncStateTable(this);
   late final TaskDao taskDao = TaskDao(this as AppDatabase);
   late final CategoryDao categoryDao = CategoryDao(this as AppDatabase);
   late final SubtaskDao subtaskDao = SubtaskDao(this as AppDatabase);
@@ -8534,6 +10713,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final ReviewDao reviewDao = ReviewDao(this as AppDatabase);
   late final StatsDao statsDao = StatsDao(this as AppDatabase);
   late final TimerDao timerDao = TimerDao(this as AppDatabase);
+  late final SyncDao syncDao = SyncDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -8551,6 +10731,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     weeklyReviews,
     dailyStatsCache,
     timerSessions,
+    syncLog,
+    syncConflicts,
+    syncState,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -8642,6 +10825,7 @@ typedef $$CategoriesTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$CategoriesTableUpdateCompanionBuilder =
@@ -8656,6 +10840,7 @@ typedef $$CategoriesTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -8784,6 +10969,11 @@ class $$CategoriesTableFilterComposer
 
   ColumnFilters<int> get revision => $composableBuilder(
     column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8921,6 +11111,11 @@ class $$CategoriesTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CategoriesTableAnnotationComposer
@@ -8963,6 +11158,11 @@ class $$CategoriesTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 
   Expression<T> recurringRulesRefs<T extends Object>(
     Expression<T> Function($$RecurringRulesTableAnnotationComposer a) f,
@@ -9082,6 +11282,7 @@ class $$CategoriesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CategoriesCompanion(
                 id: id,
@@ -9094,6 +11295,7 @@ class $$CategoriesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -9108,6 +11310,7 @@ class $$CategoriesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CategoriesCompanion.insert(
                 id: id,
@@ -9120,6 +11323,7 @@ class $$CategoriesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -9255,6 +11459,7 @@ typedef $$RecurringRulesTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$RecurringRulesTableUpdateCompanionBuilder =
@@ -9277,6 +11482,7 @@ typedef $$RecurringRulesTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -9427,6 +11633,11 @@ class $$RecurringRulesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$CategoriesTableFilterComposer get categoryId {
     final $$CategoriesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -9570,6 +11781,11 @@ class $$RecurringRulesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CategoriesTableOrderingComposer get categoryId {
     final $$CategoriesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -9663,6 +11879,11 @@ class $$RecurringRulesTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 
   $$CategoriesTableAnnotationComposer get categoryId {
     final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
@@ -9761,6 +11982,7 @@ class $$RecurringRulesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringRulesCompanion(
                 id: id,
@@ -9781,6 +12003,7 @@ class $$RecurringRulesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -9803,6 +12026,7 @@ class $$RecurringRulesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => RecurringRulesCompanion.insert(
                 id: id,
@@ -9823,6 +12047,7 @@ class $$RecurringRulesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -9939,6 +12164,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$TasksTableUpdateCompanionBuilder =
@@ -9965,6 +12191,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -10199,6 +12426,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<int> get revision => $composableBuilder(
     column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10469,6 +12701,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CategoriesTableOrderingComposer get categoryId {
     final $$CategoriesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -10634,6 +12871,11 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 
   $$CategoriesTableAnnotationComposer get categoryId {
     final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
@@ -10861,6 +13103,7 @@ class $$TasksTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion(
                 id: id,
@@ -10885,6 +13128,7 @@ class $$TasksTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -10911,6 +13155,7 @@ class $$TasksTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion.insert(
                 id: id,
@@ -10935,6 +13180,7 @@ class $$TasksTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -11277,6 +13523,7 @@ typedef $$SubtasksTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$SubtasksTableUpdateCompanionBuilder =
@@ -11291,6 +13538,7 @@ typedef $$SubtasksTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -11374,6 +13622,11 @@ class $$SubtasksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$TasksTableFilterComposer get taskId {
     final $$TasksTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -11452,6 +13705,11 @@ class $$SubtasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$TasksTableOrderingComposer get taskId {
     final $$TasksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -11516,6 +13774,11 @@ class $$SubtasksTableAnnotationComposer
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
 
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
   $$TasksTableAnnotationComposer get taskId {
     final $$TasksTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -11578,6 +13841,7 @@ class $$SubtasksTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SubtasksCompanion(
                 id: id,
@@ -11590,6 +13854,7 @@ class $$SubtasksTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -11604,6 +13869,7 @@ class $$SubtasksTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SubtasksCompanion.insert(
                 id: id,
@@ -11616,6 +13882,7 @@ class $$SubtasksTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -11694,6 +13961,7 @@ typedef $$TagsTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$TagsTableUpdateCompanionBuilder =
@@ -11705,6 +13973,7 @@ typedef $$TagsTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -11777,6 +14046,11 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> taskTagsRefs(
     Expression<bool> Function($$TaskTagsTableFilterComposer f) f,
   ) {
@@ -11845,6 +14119,11 @@ class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TagsTableAnnotationComposer
@@ -11878,6 +14157,11 @@ class $$TagsTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 
   Expression<T> taskTagsRefs<T extends Object>(
     Expression<T> Function($$TaskTagsTableAnnotationComposer a) f,
@@ -11940,6 +14224,7 @@ class $$TagsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion(
                 id: id,
@@ -11949,6 +14234,7 @@ class $$TagsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -11960,6 +14246,7 @@ class $$TagsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion.insert(
                 id: id,
@@ -11969,6 +14256,7 @@ class $$TagsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -12027,6 +14315,7 @@ typedef $$TaskTagsTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$TaskTagsTableUpdateCompanionBuilder =
@@ -12038,6 +14327,7 @@ typedef $$TaskTagsTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -12115,6 +14405,11 @@ class $$TaskTagsTableFilterComposer
 
   ColumnFilters<int> get revision => $composableBuilder(
     column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12199,6 +14494,11 @@ class $$TaskTagsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$TasksTableOrderingComposer get taskId {
     final $$TasksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -12271,6 +14571,11 @@ class $$TaskTagsTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 
   $$TasksTableAnnotationComposer get taskId {
     final $$TasksTableAnnotationComposer composer = $composerBuilder(
@@ -12354,6 +14659,7 @@ class $$TaskTagsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TaskTagsCompanion(
                 taskId: taskId,
@@ -12363,6 +14669,7 @@ class $$TaskTagsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -12374,6 +14681,7 @@ class $$TaskTagsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TaskTagsCompanion.insert(
                 taskId: taskId,
@@ -12383,6 +14691,7 @@ class $$TaskTagsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -12479,6 +14788,7 @@ typedef $$TaskTemplatesTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$TaskTemplatesTableUpdateCompanionBuilder =
@@ -12495,6 +14805,7 @@ typedef $$TaskTemplatesTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -12594,6 +14905,11 @@ class $$TaskTemplatesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$CategoriesTableFilterComposer get categoryId {
     final $$CategoriesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -12682,6 +14998,11 @@ class $$TaskTemplatesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$CategoriesTableOrderingComposer get categoryId {
     final $$CategoriesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -12754,6 +15075,11 @@ class $$TaskTemplatesTableAnnotationComposer
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
 
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
   $$CategoriesTableAnnotationComposer get categoryId {
     final $$CategoriesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -12818,6 +15144,7 @@ class $$TaskTemplatesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TaskTemplatesCompanion(
                 id: id,
@@ -12832,6 +15159,7 @@ class $$TaskTemplatesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -12848,6 +15176,7 @@ class $$TaskTemplatesTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TaskTemplatesCompanion.insert(
                 id: id,
@@ -12862,6 +15191,7 @@ class $$TaskTemplatesTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -12946,6 +15276,7 @@ typedef $$DailyReviewsTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$DailyReviewsTableUpdateCompanionBuilder =
@@ -12963,6 +15294,7 @@ typedef $$DailyReviewsTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -13042,6 +15374,11 @@ class $$DailyReviewsTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DailyReviewsTableOrderingComposer
@@ -13117,6 +15454,11 @@ class $$DailyReviewsTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DailyReviewsTableAnnotationComposer
@@ -13178,6 +15520,11 @@ class $$DailyReviewsTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 }
 
 class $$DailyReviewsTableTableManager
@@ -13224,6 +15571,7 @@ class $$DailyReviewsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DailyReviewsCompanion(
                 id: id,
@@ -13239,6 +15587,7 @@ class $$DailyReviewsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -13256,6 +15605,7 @@ class $$DailyReviewsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DailyReviewsCompanion.insert(
                 id: id,
@@ -13271,6 +15621,7 @@ class $$DailyReviewsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -13312,6 +15663,7 @@ typedef $$WeeklyReviewsTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$WeeklyReviewsTableUpdateCompanionBuilder =
@@ -13328,6 +15680,7 @@ typedef $$WeeklyReviewsTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -13402,6 +15755,11 @@ class $$WeeklyReviewsTableFilterComposer
     column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$WeeklyReviewsTableOrderingComposer
@@ -13472,6 +15830,11 @@ class $$WeeklyReviewsTableOrderingComposer
     column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$WeeklyReviewsTableAnnotationComposer
@@ -13532,6 +15895,11 @@ class $$WeeklyReviewsTableAnnotationComposer
 
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
 }
 
 class $$WeeklyReviewsTableTableManager
@@ -13577,6 +15945,7 @@ class $$WeeklyReviewsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WeeklyReviewsCompanion(
                 id: id,
@@ -13591,6 +15960,7 @@ class $$WeeklyReviewsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -13607,6 +15977,7 @@ class $$WeeklyReviewsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WeeklyReviewsCompanion.insert(
                 id: id,
@@ -13621,6 +15992,7 @@ class $$WeeklyReviewsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -14111,6 +16483,7 @@ typedef $$TimerSessionsTableCreateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 typedef $$TimerSessionsTableUpdateCompanionBuilder =
@@ -14125,6 +16498,7 @@ typedef $$TimerSessionsTableUpdateCompanionBuilder =
       Value<DateTime?> deletedAt,
       Value<int> syncStatus,
       Value<int> revision,
+      Value<int?> serverVersion,
       Value<int> rowid,
     });
 
@@ -14215,6 +16589,11 @@ class $$TimerSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$TasksTableFilterComposer get taskId {
     final $$TasksTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -14293,6 +16672,11 @@ class $$TimerSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$TasksTableOrderingComposer get taskId {
     final $$TasksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -14357,6 +16741,11 @@ class $$TimerSessionsTableAnnotationComposer
   GeneratedColumn<int> get revision =>
       $composableBuilder(column: $table.revision, builder: (column) => column);
 
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
   $$TasksTableAnnotationComposer get taskId {
     final $$TasksTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -14419,6 +16808,7 @@ class $$TimerSessionsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimerSessionsCompanion(
                 id: id,
@@ -14431,6 +16821,7 @@ class $$TimerSessionsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -14445,6 +16836,7 @@ class $$TimerSessionsTableTableManager
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> syncStatus = const Value.absent(),
                 Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TimerSessionsCompanion.insert(
                 id: id,
@@ -14457,6 +16849,7 @@ class $$TimerSessionsTableTableManager
                 deletedAt: deletedAt,
                 syncStatus: syncStatus,
                 revision: revision,
+                serverVersion: serverVersion,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -14526,6 +16919,804 @@ typedef $$TimerSessionsTableProcessedTableManager =
       TimerSessionRow,
       PrefetchHooks Function({bool taskId})
     >;
+typedef $$SyncLogTableCreateCompanionBuilder =
+    SyncLogCompanion Function({
+      required String operationId,
+      required String entityTableName,
+      required String recordId,
+      required String operation,
+      Value<int?> expectedServerVersion,
+      required String payload,
+      Value<String> state,
+      Value<int> attemptCount,
+      Value<DateTime?> nextAttemptAt,
+      Value<String?> lastError,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$SyncLogTableUpdateCompanionBuilder =
+    SyncLogCompanion Function({
+      Value<String> operationId,
+      Value<String> entityTableName,
+      Value<String> recordId,
+      Value<String> operation,
+      Value<int?> expectedServerVersion,
+      Value<String> payload,
+      Value<String> state,
+      Value<int> attemptCount,
+      Value<DateTime?> nextAttemptAt,
+      Value<String?> lastError,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$SyncLogTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncLogTable> {
+  $$SyncLogTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recordId => $composableBuilder(
+    column: $table.recordId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get operation => $composableBuilder(
+    column: $table.operation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String>
+  get nextAttemptAt => $composableBuilder(
+    column: $table.nextAttemptAt,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+}
+
+class $$SyncLogTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncLogTable> {
+  $$SyncLogTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recordId => $composableBuilder(
+    column: $table.recordId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get operation => $composableBuilder(
+    column: $table.operation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get nextAttemptAt => $composableBuilder(
+    column: $table.nextAttemptAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncLogTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncLogTable> {
+  $$SyncLogTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recordId =>
+      $composableBuilder(column: $table.recordId, builder: (column) => column);
+
+  GeneratedColumn<String> get operation =>
+      $composableBuilder(column: $table.operation, builder: (column) => column);
+
+  GeneratedColumn<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+
+  GeneratedColumn<String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get nextAttemptAt =>
+      $composableBuilder(
+        column: $table.nextAttemptAt,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SyncLogTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncLogTable,
+          SyncLogRow,
+          $$SyncLogTableFilterComposer,
+          $$SyncLogTableOrderingComposer,
+          $$SyncLogTableAnnotationComposer,
+          $$SyncLogTableCreateCompanionBuilder,
+          $$SyncLogTableUpdateCompanionBuilder,
+          (
+            SyncLogRow,
+            BaseReferences<_$AppDatabase, $SyncLogTable, SyncLogRow>,
+          ),
+          SyncLogRow,
+          PrefetchHooks Function()
+        > {
+  $$SyncLogTableTableManager(_$AppDatabase db, $SyncLogTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncLogTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncLogTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncLogTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> operationId = const Value.absent(),
+                Value<String> entityTableName = const Value.absent(),
+                Value<String> recordId = const Value.absent(),
+                Value<String> operation = const Value.absent(),
+                Value<int?> expectedServerVersion = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<DateTime?> nextAttemptAt = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncLogCompanion(
+                operationId: operationId,
+                entityTableName: entityTableName,
+                recordId: recordId,
+                operation: operation,
+                expectedServerVersion: expectedServerVersion,
+                payload: payload,
+                state: state,
+                attemptCount: attemptCount,
+                nextAttemptAt: nextAttemptAt,
+                lastError: lastError,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String operationId,
+                required String entityTableName,
+                required String recordId,
+                required String operation,
+                Value<int?> expectedServerVersion = const Value.absent(),
+                required String payload,
+                Value<String> state = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<DateTime?> nextAttemptAt = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncLogCompanion.insert(
+                operationId: operationId,
+                entityTableName: entityTableName,
+                recordId: recordId,
+                operation: operation,
+                expectedServerVersion: expectedServerVersion,
+                payload: payload,
+                state: state,
+                attemptCount: attemptCount,
+                nextAttemptAt: nextAttemptAt,
+                lastError: lastError,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncLogTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncLogTable,
+      SyncLogRow,
+      $$SyncLogTableFilterComposer,
+      $$SyncLogTableOrderingComposer,
+      $$SyncLogTableAnnotationComposer,
+      $$SyncLogTableCreateCompanionBuilder,
+      $$SyncLogTableUpdateCompanionBuilder,
+      (SyncLogRow, BaseReferences<_$AppDatabase, $SyncLogTable, SyncLogRow>),
+      SyncLogRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SyncConflictsTableCreateCompanionBuilder =
+    SyncConflictsCompanion Function({
+      required String id,
+      required String operationId,
+      required String entityTableName,
+      required String recordId,
+      Value<int?> expectedServerVersion,
+      Value<int?> actualServerVersion,
+      required String localSnapshot,
+      required String remoteSnapshot,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$SyncConflictsTableUpdateCompanionBuilder =
+    SyncConflictsCompanion Function({
+      Value<String> id,
+      Value<String> operationId,
+      Value<String> entityTableName,
+      Value<String> recordId,
+      Value<int?> expectedServerVersion,
+      Value<int?> actualServerVersion,
+      Value<String> localSnapshot,
+      Value<String> remoteSnapshot,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$SyncConflictsTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncConflictsTable> {
+  $$SyncConflictsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recordId => $composableBuilder(
+    column: $table.recordId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get actualServerVersion => $composableBuilder(
+    column: $table.actualServerVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localSnapshot => $composableBuilder(
+    column: $table.localSnapshot,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get remoteSnapshot => $composableBuilder(
+    column: $table.remoteSnapshot,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+}
+
+class $$SyncConflictsTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncConflictsTable> {
+  $$SyncConflictsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recordId => $composableBuilder(
+    column: $table.recordId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get actualServerVersion => $composableBuilder(
+    column: $table.actualServerVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localSnapshot => $composableBuilder(
+    column: $table.localSnapshot,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get remoteSnapshot => $composableBuilder(
+    column: $table.remoteSnapshot,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncConflictsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncConflictsTable> {
+  $$SyncConflictsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get operationId => $composableBuilder(
+    column: $table.operationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityTableName => $composableBuilder(
+    column: $table.entityTableName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recordId =>
+      $composableBuilder(column: $table.recordId, builder: (column) => column);
+
+  GeneratedColumn<int> get expectedServerVersion => $composableBuilder(
+    column: $table.expectedServerVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get actualServerVersion => $composableBuilder(
+    column: $table.actualServerVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get localSnapshot => $composableBuilder(
+    column: $table.localSnapshot,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get remoteSnapshot => $composableBuilder(
+    column: $table.remoteSnapshot,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$SyncConflictsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncConflictsTable,
+          SyncConflictRow,
+          $$SyncConflictsTableFilterComposer,
+          $$SyncConflictsTableOrderingComposer,
+          $$SyncConflictsTableAnnotationComposer,
+          $$SyncConflictsTableCreateCompanionBuilder,
+          $$SyncConflictsTableUpdateCompanionBuilder,
+          (
+            SyncConflictRow,
+            BaseReferences<_$AppDatabase, $SyncConflictsTable, SyncConflictRow>,
+          ),
+          SyncConflictRow,
+          PrefetchHooks Function()
+        > {
+  $$SyncConflictsTableTableManager(_$AppDatabase db, $SyncConflictsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncConflictsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncConflictsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncConflictsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> operationId = const Value.absent(),
+                Value<String> entityTableName = const Value.absent(),
+                Value<String> recordId = const Value.absent(),
+                Value<int?> expectedServerVersion = const Value.absent(),
+                Value<int?> actualServerVersion = const Value.absent(),
+                Value<String> localSnapshot = const Value.absent(),
+                Value<String> remoteSnapshot = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncConflictsCompanion(
+                id: id,
+                operationId: operationId,
+                entityTableName: entityTableName,
+                recordId: recordId,
+                expectedServerVersion: expectedServerVersion,
+                actualServerVersion: actualServerVersion,
+                localSnapshot: localSnapshot,
+                remoteSnapshot: remoteSnapshot,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String operationId,
+                required String entityTableName,
+                required String recordId,
+                Value<int?> expectedServerVersion = const Value.absent(),
+                Value<int?> actualServerVersion = const Value.absent(),
+                required String localSnapshot,
+                required String remoteSnapshot,
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncConflictsCompanion.insert(
+                id: id,
+                operationId: operationId,
+                entityTableName: entityTableName,
+                recordId: recordId,
+                expectedServerVersion: expectedServerVersion,
+                actualServerVersion: actualServerVersion,
+                localSnapshot: localSnapshot,
+                remoteSnapshot: remoteSnapshot,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncConflictsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncConflictsTable,
+      SyncConflictRow,
+      $$SyncConflictsTableFilterComposer,
+      $$SyncConflictsTableOrderingComposer,
+      $$SyncConflictsTableAnnotationComposer,
+      $$SyncConflictsTableCreateCompanionBuilder,
+      $$SyncConflictsTableUpdateCompanionBuilder,
+      (
+        SyncConflictRow,
+        BaseReferences<_$AppDatabase, $SyncConflictsTable, SyncConflictRow>,
+      ),
+      SyncConflictRow,
+      PrefetchHooks Function()
+    >;
+typedef $$SyncStateTableCreateCompanionBuilder =
+    SyncStateCompanion Function({
+      required String accountId,
+      Value<int> lastChangeId,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$SyncStateTableUpdateCompanionBuilder =
+    SyncStateCompanion Function({
+      Value<String> accountId,
+      Value<int> lastChangeId,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$SyncStateTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get accountId => $composableBuilder(
+    column: $table.accountId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastChangeId => $composableBuilder(
+    column: $table.lastChangeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+}
+
+class $$SyncStateTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get accountId => $composableBuilder(
+    column: $table.accountId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastChangeId => $composableBuilder(
+    column: $table.lastChangeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncStateTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get accountId =>
+      $composableBuilder(column: $table.accountId, builder: (column) => column);
+
+  GeneratedColumn<int> get lastChangeId => $composableBuilder(
+    column: $table.lastChangeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SyncStateTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncStateTable,
+          SyncStateRow,
+          $$SyncStateTableFilterComposer,
+          $$SyncStateTableOrderingComposer,
+          $$SyncStateTableAnnotationComposer,
+          $$SyncStateTableCreateCompanionBuilder,
+          $$SyncStateTableUpdateCompanionBuilder,
+          (
+            SyncStateRow,
+            BaseReferences<_$AppDatabase, $SyncStateTable, SyncStateRow>,
+          ),
+          SyncStateRow,
+          PrefetchHooks Function()
+        > {
+  $$SyncStateTableTableManager(_$AppDatabase db, $SyncStateTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> accountId = const Value.absent(),
+                Value<int> lastChangeId = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStateCompanion(
+                accountId: accountId,
+                lastChangeId: lastChangeId,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String accountId,
+                Value<int> lastChangeId = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStateCompanion.insert(
+                accountId: accountId,
+                lastChangeId: lastChangeId,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncStateTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncStateTable,
+      SyncStateRow,
+      $$SyncStateTableFilterComposer,
+      $$SyncStateTableOrderingComposer,
+      $$SyncStateTableAnnotationComposer,
+      $$SyncStateTableCreateCompanionBuilder,
+      $$SyncStateTableUpdateCompanionBuilder,
+      (
+        SyncStateRow,
+        BaseReferences<_$AppDatabase, $SyncStateTable, SyncStateRow>,
+      ),
+      SyncStateRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -14553,4 +17744,10 @@ class $AppDatabaseManager {
       $$DailyStatsCacheTableTableManager(_db, _db.dailyStatsCache);
   $$TimerSessionsTableTableManager get timerSessions =>
       $$TimerSessionsTableTableManager(_db, _db.timerSessions);
+  $$SyncLogTableTableManager get syncLog =>
+      $$SyncLogTableTableManager(_db, _db.syncLog);
+  $$SyncConflictsTableTableManager get syncConflicts =>
+      $$SyncConflictsTableTableManager(_db, _db.syncConflicts);
+  $$SyncStateTableTableManager get syncState =>
+      $$SyncStateTableTableManager(_db, _db.syncState);
 }

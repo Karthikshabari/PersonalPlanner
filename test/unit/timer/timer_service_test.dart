@@ -28,18 +28,20 @@ void main() {
     await db.close();
   });
 
-  Future<Task> seedTask(String title,
-      {TaskStatus status = TaskStatus.planned}) =>
-      tasks.insertTask(Task(
-        id: '',
-        title: title,
-        status: status,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ));
+  Future<Task> seedTask(
+    String title, {
+    TaskStatus status = TaskStatus.planned,
+  }) => tasks.insertTask(
+    Task(
+      id: '',
+      title: title,
+      status: status,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ),
+  );
 
-  test('start creates one running session and auto-sets In Progress',
-      () async {
+  test('start creates one running session and auto-sets In Progress', () async {
     final task = await seedTask('Alpha');
     await timer.start(task.id);
 
@@ -51,8 +53,7 @@ void main() {
     expect(reloaded!.status, TaskStatus.inProgress);
   });
 
-  test('pause finalizes the session; resume creates a NEW session',
-      () async {
+  test('pause finalizes the session; resume creates a NEW session', () async {
     final task = await seedTask('Alpha');
     await timer.start(task.id);
     await timer.pause();
@@ -70,6 +71,19 @@ void main() {
     expect(rows.where((s) => s.endedAt == null), hasLength(1));
   });
 
+  test('pauseAt charges the persisted occurrence timestamp', () async {
+    final task = await seedTask('Recovered');
+    await timer.start(task.id);
+    final running = await db.timerDao.getActiveTimerForTask(task.id);
+    final occurredAt = running!.startedAt.add(const Duration(seconds: 90));
+
+    await timer.pauseAt(occurredAt);
+
+    final finished = (await db.timerDao.getSessionsForTask(task.id)).single;
+    expect(finished.endedAt, occurredAt);
+    expect(finished.durationSec, 90);
+  });
+
   test('starting B auto-pauses A — only one active timer globally', () async {
     final a = await seedTask('A');
     final b = await seedTask('B');
@@ -78,19 +92,21 @@ void main() {
 
     final aSessions = await db.timerDao.getSessionsForTask(a.id);
     final bRunning = await db.timerDao.getActiveTimerForTask(b.id);
-    expect(aSessions.single.endedAt, isNotNull,
-        reason: "A's session must be paused when B starts");
+    expect(
+      aSessions.single.endedAt,
+      isNotNull,
+      reason: "A's session must be paused when B starts",
+    );
     expect(bRunning, isNotNull);
 
     // No other open session exists.
-    final open = await (db.select(db.timerSessions)
-          ..where((s) => s.endedAt.isNull()))
-        .get();
+    final open = await (db.select(
+      db.timerSessions,
+    )..where((s) => s.endedAt.isNull())).get();
     expect(open.map((s) => s.taskId), [b.id]);
   });
 
-  test('start is idempotent while already running for the same task',
-      () async {
+  test('start is idempotent while already running for the same task', () async {
     final task = await seedTask('Alpha');
     await timer.start(task.id);
     await timer.start(task.id);
@@ -111,16 +127,21 @@ void main() {
     var n = 0;
     Future<void> addSession(int seconds) {
       n++;
-      return db.into(db.timerSessions).insert(TimerSessionsCompanion.insert(
-            id: 'seed-$n',
-            taskId: task.id,
-            startedAt: now,
-            endedAt: Value(now.add(Duration(seconds: seconds))),
-            durationSec: Value(seconds),
-            createdAt: now,
-            updatedAt: now,
-          ));
+      return db
+          .into(db.timerSessions)
+          .insert(
+            TimerSessionsCompanion.insert(
+              id: 'seed-$n',
+              taskId: task.id,
+              startedAt: now,
+              endedAt: Value(now.add(Duration(seconds: seconds))),
+              durationSec: Value(seconds),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
     }
+
     await addSession(90); // 1.5 min
     await addSession(60); // 1 min
 
@@ -134,27 +155,35 @@ void main() {
   test('manual duration adjustment survives later finished sessions', () async {
     final task = await seedTask('Adjusted');
     final now = DateTime.now().toUtc();
-    await db.into(db.timerSessions).insert(TimerSessionsCompanion.insert(
-          id: 'first-session',
-          taskId: task.id,
-          startedAt: now,
-          endedAt: Value(now.add(const Duration(seconds: 120))),
-          durationSec: const Value(120),
-          createdAt: now,
-          updatedAt: now,
-        ));
+    await db
+        .into(db.timerSessions)
+        .insert(
+          TimerSessionsCompanion.insert(
+            id: 'first-session',
+            taskId: task.id,
+            startedAt: now,
+            endedAt: Value(now.add(const Duration(seconds: 120))),
+            durationSec: const Value(120),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
 
     await timer.syncActualDuration(task.id);
     await timer.setManualActual(task.id, 10);
-    await db.into(db.timerSessions).insert(TimerSessionsCompanion.insert(
-          id: 'second-session',
-          taskId: task.id,
-          startedAt: now,
-          endedAt: Value(now.add(const Duration(minutes: 1))),
-          durationSec: const Value(60),
-          createdAt: now,
-          updatedAt: now,
-        ));
+    await db
+        .into(db.timerSessions)
+        .insert(
+          TimerSessionsCompanion.insert(
+            id: 'second-session',
+            taskId: task.id,
+            startedAt: now,
+            endedAt: Value(now.add(const Duration(minutes: 1))),
+            durationSec: const Value(60),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
     await timer.syncActualDuration(task.id);
 
     final reloaded = await tasks.getTaskById(task.id);
@@ -162,18 +191,20 @@ void main() {
     expect(reloaded.actualDurationMin, 11);
   });
 
-  test('watchActiveTimer exposes the running session with its task title',
-      () async {
-    final task = await seedTask('Watched');
-    await timer.start(task.id);
+  test(
+    'watchActiveTimer exposes the running session with its task title',
+    () async {
+      final task = await seedTask('Watched');
+      await timer.start(task.id);
 
-    final active = await db.timerDao.watchActiveTimerWithTask().first;
-    expect(active, isNotNull);
-    expect(active!.session.taskId, task.id);
-    expect(active.taskTitle, 'Watched');
+      final active = await db.timerDao.watchActiveTimerWithTask().first;
+      expect(active, isNotNull);
+      expect(active!.session.taskId, task.id);
+      expect(active.taskTitle, 'Watched');
 
-    await timer.pause();
-    final afterPause = await db.timerDao.watchActiveTimerWithTask().first;
-    expect(afterPause, isNull);
-  });
+      await timer.pause();
+      final afterPause = await db.timerDao.watchActiveTimerWithTask().first;
+      expect(afterPause, isNull);
+    },
+  );
 }

@@ -5,7 +5,9 @@ import '../../../../core/models/category.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/category_providers.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 
 /// Predefined color palette for new categories.
 const _palette = [
@@ -27,16 +29,18 @@ class CategoriesScreen extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesProvider);
     final repo = ref.read(categoryRepositoryProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Categories')),
+      appBar: AppBar(
+        title: const Text('Categories'),
+        actions: const [SyncStatusAction()],
+      ),
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add-category'),
         onPressed: () => _showEditDialog(context, ref, null),
         child: const Icon(Icons.add),
       ),
       body: categoriesAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => ErrorPanel(message: friendlyErrorMessage(e)),
         data: (categories) => ReorderableListView.builder(
           padding: const EdgeInsets.all(AppSpacing.lg),
           itemCount: categories.length,
@@ -64,8 +68,10 @@ class CategoriesScreen extends ConsumerWidget {
                   ),
                 ),
                 title: Text(category.name),
-                subtitle: Text(category.colorHex,
-                    style: Theme.of(context).textTheme.bodySmall),
+                subtitle: Text(
+                  category.colorHex,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -76,23 +82,22 @@ class CategoriesScreen extends ConsumerWidget {
                         size: 20,
                         color: category.isFocus
                             ? AppColors.primary
-                            : AppColors.textSecondaryDark,
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       onPressed: () => repo.updateCategory(
-                          category.copyWith(isFocus: !category.isFocus)),
+                        category.copyWith(isFocus: !category.isFocus),
+                      ),
                     ),
                     IconButton(
                       tooltip: 'Edit',
                       key: ValueKey('edit-category-${category.name}'),
                       icon: const Icon(Icons.edit_outlined, size: 18),
-                      onPressed: () =>
-                          _showEditDialog(context, ref, category),
+                      onPressed: () => _showEditDialog(context, ref, category),
                     ),
                     IconButton(
                       key: ValueKey('delete-category-${category.name}'),
                       icon: const Icon(Icons.delete_outline, size: 18),
-                      onPressed: () =>
-                          _confirmDelete(context, ref, category),
+                      onPressed: () => _confirmDelete(context, ref, category),
                     ),
                   ],
                 ),
@@ -105,7 +110,10 @@ class CategoriesScreen extends ConsumerWidget {
   }
 
   Future<void> _showEditDialog(
-      BuildContext context, WidgetRef ref, Category? existing) async {
+    BuildContext context,
+    WidgetRef ref,
+    Category? existing,
+  ) async {
     final nameController = TextEditingController(text: existing?.name ?? '');
     var selectedColor = existing?.colorHex ?? _palette.first;
     final repo = ref.read(categoryRepositoryProvider);
@@ -139,7 +147,12 @@ class CategoriesScreen extends ConsumerWidget {
                           color: AppColors.parseHex(_palette[i]),
                           shape: BoxShape.circle,
                           border: selectedColor == _palette[i]
-                              ? Border.all(color: Colors.white, width: 2)
+                              ? Border.all(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimary,
+                                  width: 2,
+                                )
                               : null,
                         ),
                       ),
@@ -159,18 +172,19 @@ class CategoriesScreen extends ConsumerWidget {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
                 if (existing == null) {
-                  await repo.insertCategory(Category(
-                    id: '',
-                    name: name,
-                    colorHex: selectedColor,
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  ));
+                  await repo.insertCategory(
+                    Category(
+                      id: '',
+                      name: name,
+                      colorHex: selectedColor,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ),
+                  );
                 } else {
-                  await repo.updateCategory(existing.copyWith(
-                    name: name,
-                    colorHex: selectedColor,
-                  ));
+                  await repo.updateCategory(
+                    existing.copyWith(name: name, colorHex: selectedColor),
+                  );
                 }
                 if (dialogContext.mounted) Navigator.of(dialogContext).pop();
               },
@@ -183,14 +197,18 @@ class CategoriesScreen extends ConsumerWidget {
   }
 
   Future<void> _confirmDelete(
-      BuildContext context, WidgetRef ref, Category category) async {
+    BuildContext context,
+    WidgetRef ref,
+    Category category,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete category?'),
         content: Text(
-            '"${category.name}" will be removed. Tasks in this category will '
-            'keep their data but lose the category.'),
+          '"${category.name}" will be removed. Tasks in this category will '
+          'keep their data but lose the category.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

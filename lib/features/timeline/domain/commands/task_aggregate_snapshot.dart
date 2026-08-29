@@ -23,12 +23,12 @@ class TaskAggregateSnapshot {
   ) async {
     final task = await db.taskDao.getTaskById(taskId);
     if (task == null) return null;
-    final subtasks = await (db.select(db.subtasks)
-          ..where((row) => row.taskId.equals(taskId)))
-        .get();
-    final links = await (db.select(db.taskTags)
-          ..where((row) => row.taskId.equals(taskId)))
-        .get();
+    final subtasks = await (db.select(
+      db.subtasks,
+    )..where((row) => row.taskId.equals(taskId))).get();
+    final links = await (db.select(
+      db.taskTags,
+    )..where((row) => row.taskId.equals(taskId))).get();
     return TaskAggregateSnapshot(
       task: task,
       subtasks: subtasks,
@@ -80,52 +80,74 @@ class TaskAggregateSnapshot {
     } else {
       await repository.updateTask(
         TaskRepository.fromRow(task).copyWith(deletedAt: null),
+        allowStatusTransition: true,
       );
     }
 
     for (final snapshot in subtasks.where((row) => row.deletedAt == null)) {
       final current = await db.subtaskDao.getSubtaskById(snapshot.id);
       if (current == null) {
-        await db.into(db.subtasks).insert(snapshot.toCompanion(true).copyWith(
-              updatedAt: Value(now),
-              deletedAt: const Value(null),
-              syncStatus: const Value(1),
-              revision: const Value(1),
-            ));
+        await db
+            .into(db.subtasks)
+            .insert(
+              snapshot
+                  .toCompanion(false)
+                  .copyWith(
+                    updatedAt: Value(now),
+                    deletedAt: const Value(null),
+                    syncStatus: const Value(1),
+                    revision: const Value(1),
+                    serverVersion: const Value.absent(),
+                  ),
+            );
       } else {
-        await db.subtaskDao.updateSubtask(snapshot.copyWith(
-          updatedAt: now,
-          deletedAt: const Value(null),
-          syncStatus: 1,
-          revision: current.revision + 1,
-        ));
+        await db.subtaskDao.updateSubtask(
+          snapshot.copyWith(
+            updatedAt: now,
+            deletedAt: const Value(null),
+            syncStatus: 1,
+            revision: current.revision + 1,
+          ),
+        );
       }
     }
 
     for (final snapshot in taskTags.where((row) => row.deletedAt == null)) {
-      final current = await (db.select(db.taskTags)
-            ..where((row) =>
-                row.taskId.equals(snapshot.taskId) &
-                row.tagId.equals(snapshot.tagId)))
-          .getSingleOrNull();
+      final current =
+          await (db.select(db.taskTags)..where(
+                (row) =>
+                    row.taskId.equals(snapshot.taskId) &
+                    row.tagId.equals(snapshot.tagId),
+              ))
+              .getSingleOrNull();
       if (current == null) {
-        await db.into(db.taskTags).insert(snapshot.toCompanion(true).copyWith(
-              updatedAt: Value(now),
-              deletedAt: const Value(null),
-              syncStatus: const Value(1),
-              revision: const Value(1),
-            ));
+        await db
+            .into(db.taskTags)
+            .insert(
+              snapshot
+                  .toCompanion(false)
+                  .copyWith(
+                    updatedAt: Value(now),
+                    deletedAt: const Value(null),
+                    syncStatus: const Value(1),
+                    revision: const Value(1),
+                    serverVersion: const Value.absent(),
+                  ),
+            );
       } else {
-        await (db.update(db.taskTags)
-              ..where((row) =>
+        await (db.update(db.taskTags)..where(
+              (row) =>
                   row.taskId.equals(snapshot.taskId) &
-                  row.tagId.equals(snapshot.tagId)))
-            .write(TaskTagsCompanion(
-          updatedAt: Value(now),
-          deletedAt: const Value(null),
-          syncStatus: const Value(1),
-          revision: Value(current.revision + 1),
-        ));
+                  row.tagId.equals(snapshot.tagId),
+            ))
+            .write(
+              TaskTagsCompanion(
+                updatedAt: Value(now),
+                deletedAt: const Value(null),
+                syncStatus: const Value(1),
+                revision: Value(current.revision + 1),
+              ),
+            );
       }
     }
   }

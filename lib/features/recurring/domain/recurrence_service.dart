@@ -6,6 +6,7 @@ import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/recurring_rule.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/planner_time_zone.dart';
 import '../../timeline/data/task_repository.dart';
 import '../data/recurring_repository.dart';
 import 'rrule_utils.dart';
@@ -28,8 +29,7 @@ class RecurrenceService {
     final dayStart = startOfDay(date);
     final dateIso = isoDateString(dayStart);
     final dayStartUtcIso = dayStart.toUtc().toIso8601String();
-    final nextDayUtcIso =
-        dayStart.add(const Duration(days: 1)).toUtc().toIso8601String();
+    final nextDayUtcIso = addDays(dayStart, 1).toUtc().toIso8601String();
 
     var created = 0;
     for (final rule in await _rules.getActiveRules()) {
@@ -44,7 +44,10 @@ class RecurrenceService {
       }
       final inserted = await _db.transaction(() async {
         final existing = await _db.recurringRuleDao.getInstancesForDay(
-            rule.id, dayStartUtcIso, nextDayUtcIso);
+          rule.id,
+          dayStartUtcIso,
+          nextDayUtcIso,
+        );
         if (existing.isNotEmpty) return false;
         await _createInstance(rule, dayStart);
         return true;
@@ -61,17 +64,20 @@ class RecurrenceService {
     DateTime boundary,
   ) async {
     final boundaryIso = startOfDay(boundary).toUtc().toIso8601String();
-    final rows = await (_db.select(_db.tasks)
-          ..where((task) =>
-              task.recurringRuleId.equals(rule.id) &
-              task.deletedAt.isNull() &
-              task.startTime.isBiggerOrEqualValue(boundaryIso)))
-        .get();
+    final rows =
+        await (_db.select(_db.tasks)..where(
+              (task) =>
+                  task.recurringRuleId.equals(rule.id) &
+                  task.deletedAt.isNull() &
+                  task.startTime.isBiggerOrEqualValue(boundaryIso),
+            ))
+            .get();
     final activeTagIds = <String>{};
     for (final tagId in rule.tags) {
-      final tag = await (_db.select(_db.tags)
-            ..where((tag) => tag.id.equals(tagId) & tag.deletedAt.isNull()))
-          .getSingleOrNull();
+      final tag =
+          await (_db.select(_db.tags)
+                ..where((tag) => tag.id.equals(tagId) & tag.deletedAt.isNull()))
+              .getSingleOrNull();
       if (tag != null) activeTagIds.add(tagId);
     }
     for (final row in rows) {
@@ -82,7 +88,13 @@ class RecurrenceService {
       final current = TaskRepository.fromRow(row);
       final day = startOfDay(current.startTime!);
       final (hour, minute) = _parseStartTimeOfDay(rule.startTimeOfDay);
-      final start = DateTime(day.year, day.month, day.day, hour, minute);
+      final start = PlannerTimeZone.calendarDate(
+        day.year,
+        day.month,
+        day.day,
+        hour: hour,
+        minute: minute,
+      );
       final updated = current.copyWith(
         title: rule.taskTitle,
         description: rule.taskDescription,
@@ -105,12 +117,14 @@ class RecurrenceService {
     String? keepTaskId,
   }) async {
     final boundaryIso = startOfDay(boundary).toUtc().toIso8601String();
-    final rows = await (_db.select(_db.tasks)
-          ..where((task) =>
-              task.recurringRuleId.equals(ruleId) &
-              task.deletedAt.isNull() &
-              task.startTime.isBiggerOrEqualValue(boundaryIso)))
-        .get();
+    final rows =
+        await (_db.select(_db.tasks)..where(
+              (task) =>
+                  task.recurringRuleId.equals(ruleId) &
+                  task.deletedAt.isNull() &
+                  task.startTime.isBiggerOrEqualValue(boundaryIso),
+            ))
+            .get();
     for (final row in rows) {
       if (row.id == keepTaskId) continue;
       final status = TaskStatus.fromDb(row.status);
@@ -121,10 +135,11 @@ class RecurrenceService {
   }
 
   Future<void> _replaceTags(String taskId, Set<String> tagIds) async {
-    final current = await (_db.select(_db.taskTags)
-          ..where((link) =>
-              link.taskId.equals(taskId) & link.deletedAt.isNull()))
-        .get();
+    final current =
+        await (_db.select(_db.taskTags)..where(
+              (link) => link.taskId.equals(taskId) & link.deletedAt.isNull(),
+            ))
+            .get();
     final currentIds = current.map((link) => link.tagId).toSet();
     for (final tagId in currentIds.difference(tagIds)) {
       await _db.tagDao.unlinkTaskTag(taskId, tagId);
@@ -136,29 +151,37 @@ class RecurrenceService {
 
   Future<Task> _createInstance(RecurringRule rule, DateTime dayStart) async {
     final (hour, minute) = _parseStartTimeOfDay(rule.startTimeOfDay);
-    final startTime = DateTime(
-        dayStart.year, dayStart.month, dayStart.day, hour, minute);
+    final startTime = PlannerTimeZone.calendarDate(
+      dayStart.year,
+      dayStart.month,
+      dayStart.day,
+      hour: hour,
+      minute: minute,
+    );
     final now = DateTime.now();
-    final instance = await _tasks.insertTask(Task(
-      id: '',
-      title: rule.taskTitle,
-      description: rule.taskDescription,
-      startTime: startTime,
-      endTime: startTime.add(Duration(minutes: rule.durationMin)),
-      estimatedDurationMin: rule.durationMin,
-      categoryId: rule.categoryId,
-      priority: Priority.fromDb(rule.priority),
-      status: TaskStatus.planned,
-      isInbox: false,
-      recurringRuleId: rule.id,
-      createdAt: now,
-      updatedAt: now,
-    ));
+    final instance = await _tasks.insertTask(
+      Task(
+        id: '',
+        title: rule.taskTitle,
+        description: rule.taskDescription,
+        startTime: startTime,
+        endTime: startTime.add(Duration(minutes: rule.durationMin)),
+        estimatedDurationMin: rule.durationMin,
+        categoryId: rule.categoryId,
+        priority: Priority.fromDb(rule.priority),
+        status: TaskStatus.planned,
+        isInbox: false,
+        recurringRuleId: rule.id,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
     // Attach the rule's tags (only those that still exist).
     for (final tagId in rule.tags) {
-      final tag = await (_db.select(_db.tags)
-            ..where((t) => t.id.equals(tagId) & t.deletedAt.isNull()))
-          .getSingleOrNull();
+      final tag =
+          await (_db.select(_db.tags)
+                ..where((t) => t.id.equals(tagId) & t.deletedAt.isNull()))
+              .getSingleOrNull();
       if (tag != null) {
         await _db.tagDao.linkTaskTag(instance.id, tagId, now);
       }

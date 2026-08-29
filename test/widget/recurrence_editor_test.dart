@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,11 +16,12 @@ void main() {
     // Place the block at the current hour so the auto-scrolled timeline
     // keeps it on screen.
     final now = DateTime.now();
+    final hour = now.hour >= 22 ? 20 : now.hour;
     return Task(
       id: '',
       title: title,
-      startTime: DateTime(now.year, now.month, now.day, now.hour),
-      endTime: DateTime(now.year, now.month, now.day, now.hour + 1),
+      startTime: DateTime(now.year, now.month, now.day, hour),
+      endTime: DateTime(now.year, now.month, now.day, hour + 1),
       estimatedDurationMin: 60,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -42,8 +44,11 @@ void main() {
   }
 
   Future<void> openEditor(
-      WidgetTester tester, ProviderContainer container, Task inserted) async {
-    await tester.tap(find.text(inserted.title));
+    WidgetTester tester,
+    ProviderContainer container,
+    Task inserted,
+  ) async {
+    await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
     await settle(tester);
     expect(container.read(selectedTaskIdProvider), inserted.id);
     expect(find.text('Edit Task'), findsOneWidget);
@@ -66,15 +71,17 @@ void main() {
           rect.bottom <= viewport.bottom - margin) {
         return;
       }
-      final dy =
-          rect.center.dy > viewport.center.dy ? -100.0 : 100.0;
+      final dy = rect.center.dy > viewport.center.dy ? -100.0 : 100.0;
       await tester.drag(editorScrollable, Offset(0, dy));
     }
     fail('target never became visible: $target');
   }
 
   Future<void> chooseDropdownItem(
-      WidgetTester tester, Key fieldKey, String label) async {
+    WidgetTester tester,
+    Key fieldKey,
+    String label,
+  ) async {
     await bringIntoView(tester, find.byKey(fieldKey));
     await tester.tap(find.byKey(fieldKey));
     await settle(tester);
@@ -89,8 +96,9 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('picking Daily creates a rule and links the instance',
-      (tester) async {
+  testWidgets('picking Daily creates a rule and links the instance', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final inserted = await runDb(
       tester,
@@ -104,17 +112,24 @@ void main() {
 
     // No rule yet: saving without touching Repeat must not create one.
     await saveTask(tester);
-    var rules = await runDb(tester,
-        () => container.read(recurringRepositoryProvider).getActiveRules());
+    var rules = await runDb(
+      tester,
+      () => container.read(recurringRepositoryProvider).getActiveRules(),
+    );
     expect(rules, isEmpty);
 
     // Pick "Daily".
     await chooseDropdownItem(
-        tester, const ValueKey('recurrence-picker'), 'Daily');
+      tester,
+      const ValueKey('recurrence-picker'),
+      'Daily',
+    );
     await saveTask(tester);
 
-    rules = await runDb(tester,
-        () => container.read(recurringRepositoryProvider).getActiveRules());
+    rules = await runDb(
+      tester,
+      () => container.read(recurringRepositoryProvider).getActiveRules(),
+    );
     expect(rules, hasLength(1));
     expect(rules.single.rrule, 'FREQ=DAILY');
     expect(rules.single.taskTitle, 'Recur me');
@@ -131,8 +146,9 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('saving an existing recurring instance asks for scope',
-      (tester) async {
+  testWidgets('saving an existing recurring instance asks for scope', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final inserted = await runDb(
@@ -141,12 +157,8 @@ void main() {
           .read(taskRepositoryProvider)
           .insertTask(taskOnViewedDay('Series')),
     );
-    await runDb(
-      tester,
-      () => rulesRepo.createRule(dailyRuleFor(inserted)),
-    );
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
+    await runDb(tester, () => rulesRepo.createRule(dailyRuleFor(inserted)));
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
       () => container
@@ -176,15 +188,18 @@ void main() {
       () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
     );
     expect(saved!.title, 'Renamed series');
-    final updatedRule =
-        await runDb(tester, () => rulesRepo.getRuleById(rule.id));
+    final updatedRule = await runDb(
+      tester,
+      () => rulesRepo.getRuleById(rule.id),
+    );
     // Template fields follow the edit ("this and all future").
     expect(updatedRule!.taskTitle, 'Renamed series');
     await teardownApp(tester, container);
   });
 
-  testWidgets('"this occurrence only" leaves the rule untouched',
-      (tester) async {
+  testWidgets('"this occurrence only" leaves the rule untouched', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final inserted = await runDb(
@@ -193,12 +208,8 @@ void main() {
           .read(taskRepositoryProvider)
           .insertTask(taskOnViewedDay('Keep rule')),
     );
-    await runDb(
-      tester,
-      () => rulesRepo.createRule(dailyRuleFor(inserted)),
-    );
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
+    await runDb(tester, () => rulesRepo.createRule(dailyRuleFor(inserted)));
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
       () => container
@@ -222,54 +233,59 @@ void main() {
       () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
     );
     expect(saved!.title, 'Only this one');
-    final untouched =
-        await runDb(tester, () => rulesRepo.getRuleById(rule.id));
+    final untouched = await runDb(tester, () => rulesRepo.getRuleById(rule.id));
     expect(untouched!.taskTitle, 'Keep rule');
     await teardownApp(tester, container);
   });
 
-  testWidgets('cancelled recurrence edit writes nothing and keeps end semantics',
-      (tester) async {
-    final container = await buildTestContainer(tester);
-    final rulesRepo = container.read(recurringRepositoryProvider);
-    final inserted = await runDb(
-      tester,
-      () => container
-          .read(taskRepositoryProvider)
-          .insertTask(taskOnViewedDay('Cancel recurrence')),
-    );
-    final createdRule = dailyRuleFor(inserted).copyWith(
-      rrule: 'FREQ=DAILY;COUNT=4',
-    );
-    await runDb(tester, () => rulesRepo.createRule(createdRule));
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
-    await runDb(
-      tester,
-      () => container
-          .read(taskRepositoryProvider)
-          .updateTask(inserted.copyWith(recurringRuleId: rule.id)),
-    );
-    await pumpApp(tester, container, surface: const Size(1400, 1000));
+  testWidgets(
+    'cancelled recurrence edit writes nothing and keeps end semantics',
+    (tester) async {
+      final container = await buildTestContainer(tester);
+      final rulesRepo = container.read(recurringRepositoryProvider);
+      final inserted = await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .insertTask(taskOnViewedDay('Cancel recurrence')),
+      );
+      final createdRule = dailyRuleFor(inserted)
+          .copyWith(rrule: 'FREQ=DAILY;COUNT=4');
+      await runDb(tester, () => rulesRepo.createRule(createdRule));
+      final rule = (await runDb(
+        tester,
+        () => rulesRepo.getActiveRules(),
+      )).single;
+      await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .updateTask(inserted.copyWith(recurringRuleId: rule.id)),
+      );
+      await pumpApp(tester, container, surface: const Size(1400, 1000));
 
-    await openEditor(tester, container, inserted);
-    await saveTask(tester);
-    await tester.tap(find.text('Cancel').last);
-    await settle(tester);
+      await openEditor(tester, container, inserted);
+      await saveTask(tester);
+      await tester.tap(find.text('Cancel').last);
+      await settle(tester);
 
-    final unchangedTask = await runDb(
-      tester,
-      () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
-    );
-    final unchangedRule =
-        await runDb(tester, () => rulesRepo.getRuleById(rule.id));
-    expect(unchangedTask!.title, 'Cancel recurrence');
-    expect(unchangedRule!.rrule, 'FREQ=DAILY;COUNT=4');
-    await finish(tester, container);
-  });
+      final unchangedTask = await runDb(
+        tester,
+        () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
+      );
+      final unchangedRule = await runDb(
+        tester,
+        () => rulesRepo.getRuleById(rule.id),
+      );
+      expect(unchangedTask!.title, 'Cancel recurrence');
+      expect(unchangedRule!.rrule, 'FREQ=DAILY;COUNT=4');
+      await finish(tester, container);
+    },
+  );
 
-  testWidgets('unchanged all-future recurrence edit preserves COUNT',
-      (tester) async {
+  testWidgets('unchanged all-future recurrence edit preserves COUNT', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final inserted = await runDb(
@@ -281,11 +297,10 @@ void main() {
     await runDb(
       tester,
       () => rulesRepo.createRule(
-            dailyRuleFor(inserted).copyWith(rrule: 'FREQ=DAILY;COUNT=4'),
-          ),
+        dailyRuleFor(inserted).copyWith(rrule: 'FREQ=DAILY;COUNT=4'),
+      ),
     );
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
       () => container
@@ -299,14 +314,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('scope-all-future')));
     await settle(tester);
 
-    final unchangedRule =
-        await runDb(tester, () => rulesRepo.getRuleById(rule.id));
+    final unchangedRule = await runDb(
+      tester,
+      () => rulesRepo.getRuleById(rule.id),
+    );
     expect(unchangedRule!.rrule, 'FREQ=DAILY;COUNT=4');
     await finish(tester, container);
   });
 
-  testWidgets('Never + "this occurrence only" detaches just the task',
-      (tester) async {
+  testWidgets('Never + "this occurrence only" detaches just the task', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final inserted = await runDb(
@@ -316,8 +334,7 @@ void main() {
           .insertTask(taskOnViewedDay('Detach me')),
     );
     await runDb(tester, () => rulesRepo.createRule(dailyRuleFor(inserted)));
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
       () => container
@@ -328,7 +345,10 @@ void main() {
 
     await openEditor(tester, container, inserted);
     await chooseDropdownItem(
-        tester, const ValueKey('recurrence-picker'), 'Never');
+      tester,
+      const ValueKey('recurrence-picker'),
+      'Never',
+    );
     await saveTask(tester);
 
     expect(find.text('This occurrence only'), findsOneWidget);
@@ -348,6 +368,7 @@ void main() {
   });
 
   testWidgets('delete offers single vs all-future scope', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final tasksRepo = container.read(taskRepositoryProvider);
@@ -355,20 +376,15 @@ void main() {
       tester,
       () => tasksRepo.insertTask(taskOnViewedDay('Delete me')),
     );
+    await runDb(tester, () => rulesRepo.createRule(dailyRuleFor(inserted)));
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
-      () => rulesRepo.createRule(dailyRuleFor(inserted)),
-    );
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
-    await runDb(
-      tester,
-      () =>
-          tasksRepo.updateTask(inserted.copyWith(recurringRuleId: rule.id)),
+      () => tasksRepo.updateTask(inserted.copyWith(recurringRuleId: rule.id)),
     );
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
-    await tester.tap(find.text('Delete me'));
+    await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
     await settle(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
     await settle(tester);
@@ -381,23 +397,27 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('scope-all-future')));
     await settle(tester);
 
-    final deleted =
-        await runDb(tester, () => tasksRepo.getTaskById(inserted.id));
+    final deleted = await runDb(
+      tester,
+      () => tasksRepo.getTaskById(inserted.id),
+    );
     expect(deleted!.deletedAt, isNotNull);
-    final ended = await runDb(
-        tester, () => rulesRepo.getRuleById(rule.id));
+    final ended = await runDb(tester, () => rulesRepo.getRuleById(rule.id));
     expect(ended!.isActive, isFalse);
-    final expectedEnd =
-        DateTime(inserted.startTime!.year, inserted.startTime!.month,
-                inserted.startTime!.day)
-            .subtract(const Duration(days: 1));
+    final expectedEnd = DateTime(
+      inserted.startTime!.year,
+      inserted.startTime!.month,
+      inserted.startTime!.day,
+    ).subtract(const Duration(days: 1));
     expect(ended.endDate, expectedEnd);
     expect(find.text('Recurring series ended'), findsOneWidget);
-    await teardownApp(tester, container);
+    await finish(tester, container);
   });
 
-  testWidgets('delete "this occurrence only" soft-deletes and adds exception',
-      (tester) async {
+  testWidgets('delete "this occurrence only" soft-deletes and adds exception', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await buildTestContainer(tester);
     final rulesRepo = container.read(recurringRepositoryProvider);
     final tasksRepo = container.read(taskRepositoryProvider);
@@ -405,20 +425,15 @@ void main() {
       tester,
       () => tasksRepo.insertTask(taskOnViewedDay('Skip once')),
     );
+    await runDb(tester, () => rulesRepo.createRule(dailyRuleFor(inserted)));
+    final rule = (await runDb(tester, () => rulesRepo.getActiveRules())).single;
     await runDb(
       tester,
-      () => rulesRepo.createRule(dailyRuleFor(inserted)),
-    );
-    final rule =
-        (await runDb(tester, () => rulesRepo.getActiveRules())).single;
-    await runDb(
-      tester,
-      () =>
-          tasksRepo.updateTask(inserted.copyWith(recurringRuleId: rule.id)),
+      () => tasksRepo.updateTask(inserted.copyWith(recurringRuleId: rule.id)),
     );
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
-    await tester.tap(find.text('Skip once'));
+    await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
     await settle(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
     await settle(tester);
@@ -427,8 +442,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('scope-this-occurrence')));
     await settle(tester);
 
-    final deleted =
-        await runDb(tester, () => tasksRepo.getTaskById(inserted.id));
+    final deleted = await runDb(
+      tester,
+      () => tasksRepo.getTaskById(inserted.id),
+    );
     expect(deleted!.deletedAt, isNotNull);
     final kept = await runDb(tester, () => rulesRepo.getRuleById(rule.id));
     // The series stays alive; this date can never re-materialize.
@@ -438,9 +455,10 @@ void main() {
     expect(
       kept.exceptions,
       contains(
-          '${start.year.toString().padLeft(4, '0')}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}'),
+        '${start.year.toString().padLeft(4, '0')}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}',
+      ),
     );
     expect(find.text('Occurrence deleted'), findsOneWidget);
-    await teardownApp(tester, container);
+    await finish(tester, container);
   });
 }

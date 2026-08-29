@@ -10,10 +10,12 @@ import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/duration_utils.dart';
+import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../timeline/presentation/providers/day_tasks_provider.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../providers/review_providers.dart';
 import '../widgets/day_summary_timeline.dart';
 import '../widgets/rating_picker.dart';
@@ -29,10 +31,14 @@ class DailyReviewScreen extends ConsumerWidget {
     final categoriesAsync = ref.watch(categoriesProvider);
     final statsAsync = ref.watch(dailyStatsProvider(date));
 
-    final tasks =
-        tasksAsync.maybeWhen(data: (t) => t, orElse: () => const <Task>[]);
+    final tasks = tasksAsync.maybeWhen(
+      data: (t) => t,
+      orElse: () => const <Task>[],
+    );
     final categories = categoriesAsync.maybeWhen(
-        data: (c) => c, orElse: () => const <Category>[]);
+      data: (c) => c,
+      orElse: () => const <Category>[],
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -44,6 +50,7 @@ class DailyReviewScreen extends ConsumerWidget {
             icon: const Icon(Icons.calendar_view_week_outlined),
             onPressed: () => context.go('/review/weekly'),
           ),
+          const SyncStatusAction(),
         ],
       ),
       body: ListView(
@@ -57,11 +64,16 @@ class DailyReviewScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Today's blocks",
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    "Today's blocks",
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: AppSpacing.sm),
                   DaySummaryTimeline(
-                      tasks: tasks, categories: categories, date: date),
+                    tasks: tasks,
+                    categories: categories,
+                    date: date,
+                  ),
                 ],
               ),
             ),
@@ -84,8 +96,7 @@ class DailyReviewScreen extends ConsumerWidget {
           key: const ValueKey('review-prev-day'),
           tooltip: 'Previous day',
           icon: const Icon(Icons.chevron_left),
-          onPressed: () =>
-              notifier.state = date.subtract(const Duration(days: 1)),
+          onPressed: () => notifier.state = addDays(date, -1),
         ),
         Text(
           DateFormat('EEE, MMM d, yyyy').format(date),
@@ -95,13 +106,13 @@ class DailyReviewScreen extends ConsumerWidget {
           key: const ValueKey('review-next-day'),
           tooltip: 'Next day',
           icon: const Icon(Icons.chevron_right),
-          onPressed: () => notifier.state = date.add(const Duration(days: 1)),
+          onPressed: () => notifier.state = addDays(date, 1),
         ),
         const SizedBox(width: AppSpacing.sm),
         OutlinedButton(
           onPressed: () {
             final now = DateTime.now();
-            notifier.state = DateTime(now.year, now.month, now.day);
+            notifier.state = startOfDay(now);
           },
           child: const Text('Today'),
         ),
@@ -123,8 +134,10 @@ class _StatsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Auto-computed stats',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Auto-computed stats',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: AppSpacing.sm),
             statsAsync.maybeWhen(
               data: (stats) {
@@ -151,14 +164,24 @@ class _StatsCard extends StatelessWidget {
                       spacing: AppSpacing.xl,
                       runSpacing: AppSpacing.sm,
                       children: [
-                        _stat(context, 'Completion rate',
-                            rate == null ? '—' : '${rate.round()}%'),
+                        _stat(
+                          context,
+                          'Completion rate',
+                          rate == null ? '—' : '${rate.round()}%',
+                        ),
                         const SizedBox(width: AppSpacing.xl),
-                        _stat(context, 'Planned',
-                            Duration(minutes: stats.plannedDurationMin).shortLabel),
+                        _stat(
+                          context,
+                          'Planned',
+                          Duration(minutes: stats.plannedDurationMin)
+                              .shortLabel,
+                        ),
                         const SizedBox(width: AppSpacing.xl),
-                        _stat(context, 'Actual',
-                            Duration(minutes: stats.actualDurationMin).shortLabel),
+                        _stat(
+                          context,
+                          'Actual',
+                          Duration(minutes: stats.actualDurationMin).shortLabel,
+                        ),
                       ],
                     ),
                     if (breakdown.isNotEmpty) ...[
@@ -185,21 +208,21 @@ class _StatsCard extends StatelessWidget {
   }
 
   int _countFor(DailyStats stats, TaskStatus status) => switch (status) {
-        TaskStatus.completed => stats.completedTasks,
-        TaskStatus.planned => stats.plannedTasks,
-        TaskStatus.inProgress => stats.inProgressTasks,
-        TaskStatus.skipped => stats.skippedTasks,
-        TaskStatus.cancelled => stats.cancelledTasks,
-        TaskStatus.rescheduled => stats.rescheduledTasks,
-      };
+    TaskStatus.completed => stats.completedTasks,
+    TaskStatus.planned => stats.plannedTasks,
+    TaskStatus.inProgress => stats.inProgressTasks,
+    TaskStatus.skipped => stats.skippedTasks,
+    TaskStatus.cancelled => stats.cancelledTasks,
+    TaskStatus.rescheduled => stats.rescheduledTasks,
+  };
 
   Widget _stat(BuildContext context, String label, String value) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(value, style: Theme.of(context).textTheme.titleLarge),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(value, style: Theme.of(context).textTheme.titleLarge),
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 }
 
 class _DailyReviewForm extends ConsumerStatefulWidget {
@@ -232,8 +255,9 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
   }
 
   Future<void> _hydrate() async {
-    final existing =
-        await ref.read(reviewRepositoryProvider).getReviewForDate(widget.date);
+    final existing = await ref
+        .read(reviewRepositoryProvider)
+        .getReviewForDate(widget.date);
     if (!mounted || existing == null) return;
     setState(() {
       _apply(existing);
@@ -251,21 +275,22 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
 
   Future<void> _save() async {
     final repo = ref.read(reviewRepositoryProvider);
-    await repo.saveDailyReview(DailyReview(
-      id: '',
-      date: widget.date,
-      reflection:
-          _reflectionController.text.trim().isEmpty
-              ? null
-              : _reflectionController.text.trim(),
-      energyLevel: _energy,
-      productivityRating: _productivity,
-      planningAccuracyRating: _accuracy,
-      wins: _wins,
-      improvements: _improvements,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ));
+    await repo.saveDailyReview(
+      DailyReview(
+        id: '',
+        date: widget.date,
+        reflection: _reflectionController.text.trim().isEmpty
+            ? null
+            : _reflectionController.text.trim(),
+        energyLevel: _energy,
+        productivityRating: _productivity,
+        planningAccuracyRating: _accuracy,
+        wins: _wins,
+        improvements: _improvements,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     // Refresh the cached aggregates so analytics and reviews stay in sync
     // (planner.md Chunk 5 #9 trigger).
     await ref.read(dailyStatsServiceProvider).computeAndCache(widget.date);

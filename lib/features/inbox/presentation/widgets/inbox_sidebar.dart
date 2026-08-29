@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/inbox_item.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../providers/inbox_provider.dart';
 import 'inbox_quick_add.dart';
@@ -29,7 +28,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
     return Container(
       key: const ValueKey('inbox-sidebar'),
       decoration: BoxDecoration(
-        color: AppColors.surfaceDark,
+        color: Theme.of(context).colorScheme.surface,
         border: Border(
             top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
@@ -42,7 +41,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
               children: [
                 const SizedBox(width: AppSpacing.md),
                 Icon(Icons.inbox_outlined,
-                    size: 16, color: AppColors.textSecondaryDark),
+                    size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
                   'Inbox (${items.length})',

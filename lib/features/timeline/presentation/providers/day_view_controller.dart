@@ -22,8 +22,13 @@ import '../widgets/conflict_resolution_dialog.dart';
 import '../../domain/commands/change_status_command.dart';
 import '../../domain/commands/delete_task_command.dart';
 import '../../domain/commands/duplicate_task_command.dart';
+import '../../domain/commands/resize_task_command.dart';
+import '../../domain/commands/scheduling_command.dart';
 import '../../domain/conflict_resolver.dart';
+import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
+import '../providers/grid_settings_provider.dart';
+import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/undo_stack_provider.dart';
 
@@ -62,7 +67,9 @@ abstract final class TimelineActions {
       actualDurationMin: item.isOverdue ? null : item.task.actualDurationMin,
       status: item.isOverdue ? TaskStatus.planned : item.task.status,
       recurringRuleId: item.task.recurringRuleId,
-      rescheduledFromId: item.isOverdue ? item.task.id : item.task.rescheduledFromId,
+      rescheduledFromId: item.isOverdue
+          ? item.task.id
+          : item.task.rescheduledFromId,
       rescheduledToId: null,
       missedAt: null,
     );
@@ -93,17 +100,21 @@ abstract final class TimelineActions {
             maxCascadeDepth: AppConstants.maxCascadeDepth,
           );
     final byId = {for (final task in dayTasks) task.id: task};
-    await ref.read(undoStackProvider.notifier).execute(BatchCommand([
-      command,
-      for (final shift in plan.shifts)
-        if (byId[shift.taskId] != null)
-          MoveTaskCommand(
-            repository: tasksRepo,
-            original: byId[shift.taskId]!,
-            newStart: shift.newStart,
-            newEnd: shift.newEnd,
-          ),
-    ]));
+    await ref
+        .read(undoStackProvider.notifier)
+        .execute(
+          BatchCommand([
+            command,
+            for (final shift in plan.shifts)
+              if (byId[shift.taskId] != null)
+                MoveTaskCommand(
+                  repository: tasksRepo,
+                  original: byId[shift.taskId]!,
+                  newStart: shift.newStart,
+                  newEnd: shift.newEnd,
+                ),
+          ]),
+        );
     return true;
   }
 
@@ -166,7 +177,8 @@ abstract final class TimelineActions {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Delete task?',
-      message: '"${task.title}" will be removed from the timeline.\n'
+      message:
+          '"${task.title}" will be removed from the timeline.\n'
           'You can undo this with Ctrl+Z.',
       confirmLabel: 'Delete',
     );
@@ -198,12 +210,11 @@ abstract final class TimelineActions {
           if (scope == RecurrenceScope.thisOccurrence) {
             await rulesRepo.addException(ruleId, boundary);
           } else {
-            await rulesRepo.setEndDate(
-              ruleId,
-              boundary.subtract(const Duration(days: 1)),
-            );
+            await rulesRepo.setEndDate(ruleId, addDays(boundary, -1));
             await rulesRepo.deactivateRule(ruleId);
-            await ref.read(recurrenceServiceProvider).deleteMaterializedFuture(
+            await ref
+                .read(recurrenceServiceProvider)
+                .deleteMaterializedFuture(
                   ruleId,
                   boundary,
                   keepTaskId: task.id,
@@ -234,13 +245,146 @@ abstract final class TimelineActions {
   }
 
   static Future<void> setStatus(WidgetRef ref, Task task, TaskStatus status) {
-    return ref.read(undoStackProvider.notifier).execute(
+    return ref
+        .read(undoStackProvider.notifier)
+        .execute(
           ChangeStatusCommand(
             repository: ref.read(taskRepositoryProvider),
             taskId: task.id,
             newStatus: status,
           ),
         );
+  }
+
+  /// Moves a selected task by one configured grid interval. The same conflict
+  /// dialog and command history used by pointer dragging are used here too.
+  static Future<bool> moveByGrid(
+    BuildContext context,
+    WidgetRef ref,
+    Task task,
+    int direction,
+  ) async {
+    final start = task.startTime;
+    final end = task.endTime;
+    if (start == null || end == null) return false;
+    final grid =
+        ref.read(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
+    final duration = end.difference(start).inMinutes;
+    final dayStart = startOfDay(start);
+    final maxStart = minutesPerDay - duration;
+    final originalMinutes = minutesSinceMidnight(start);
+    final newMinutes = (originalMinutes + direction * grid)
+        .clamp(0, maxStart > 0 ? maxStart : 0)
+        .toInt();
+    if (newMinutes == originalMinutes) return false;
+    final newStart = dayStart.add(Duration(minutes: newMinutes));
+    final newEnd = newStart.add(Duration(minutes: duration));
+    return _commitConflictAware(
+      context,
+      ref,
+      MoveTaskCommand(
+        repository: ref.read(taskRepositoryProvider),
+        original: task,
+        newStart: newStart,
+        newEnd: newEnd,
+      ),
+      task.copyWith(startTime: newStart, endTime: newEnd),
+    );
+  }
+
+  /// Resizes a selected task by one configured grid interval through the
+  /// existing [ResizeTaskCommand] and conflict-resolution path.
+  static Future<bool> resizeByGrid(
+    BuildContext context,
+    WidgetRef ref,
+    Task task,
+    int direction,
+  ) async {
+    final start = task.startTime;
+    final end = task.endTime;
+    if (start == null || end == null) return false;
+    final grid =
+        ref.read(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
+    final originalDuration = end.difference(start).inMinutes;
+    final maxDuration = minutesPerDay - minutesSinceMidnight(start);
+    final newDuration = snapDuration(
+      originalDuration + direction * grid,
+      grid,
+    ).clamp(grid, maxDuration > 0 ? maxDuration : grid).toInt();
+    if (newDuration == originalDuration) return false;
+    final newEnd = start.add(Duration(minutes: newDuration));
+    return _commitConflictAware(
+      context,
+      ref,
+      ResizeTaskCommand(
+        repository: ref.read(taskRepositoryProvider),
+        original: task,
+        newEnd: newEnd,
+      ),
+      task.copyWith(endTime: newEnd),
+    );
+  }
+
+  static Future<bool> _commitConflictAware(
+    BuildContext context,
+    WidgetRef ref,
+    SchedulingCommand primary,
+    Task hypothetical,
+  ) async {
+    final tasks = ref.read(dayTasksProvider).value ?? const <Task>[];
+    final conflicts = ConflictDetector.detect(hypothetical, tasks);
+    final history = ref.read(undoStackProvider.notifier);
+    ref.read(keepOverlapIdsProvider.notifier).state = const <String>{};
+    if (conflicts.isEmpty) {
+      await history.execute(primary);
+      return true;
+    }
+    if (!context.mounted) return false;
+    final choice = await showConflictResolutionDialog(
+      context,
+      droppedTask: hypothetical,
+      conflicts: conflicts,
+    );
+    if (choice == null) return false;
+    if (choice == ConflictResolution.keepOverlap) {
+      await history.execute(primary);
+      ref.read(keepOverlapIdsProvider.notifier).state = {
+        hypothetical.id,
+        for (final conflict in conflicts) conflict.id,
+      };
+      return true;
+    }
+    final plan = choice == ConflictResolution.shiftAllFollowing
+        ? ConflictResolver.planShiftAllFollowing(
+            moved: hypothetical,
+            dayTasks: tasks,
+          )
+        : ConflictResolver.planShiftOnlyOverlapping(
+            moved: hypothetical,
+            dayTasks: tasks,
+            maxCascadeDepth: AppConstants.maxCascadeDepth,
+          );
+    final byId = {for (final item in tasks) item.id: item};
+    await history.execute(
+      BatchCommand([
+        primary,
+        for (final shift in plan.shifts)
+          if (byId[shift.taskId] != null)
+            MoveTaskCommand(
+              repository: ref.read(taskRepositoryProvider),
+              original: byId[shift.taskId]!,
+              newStart: shift.newStart,
+              newEnd: shift.newEnd,
+            ),
+      ]),
+    );
+    if (plan.keepOverlapIds.isNotEmpty) {
+      ref.read(keepOverlapIdsProvider.notifier).state = {
+        ...plan.keepOverlapIds,
+        hypothetical.id,
+      };
+    }
+    return true;
   }
 }
 

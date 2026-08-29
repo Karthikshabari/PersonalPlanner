@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +16,7 @@ import '../../../recurring/providers/recurring_providers.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../../../../features/review/providers/review_providers.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 
 /// Seven-day overview (planner.md Chunk 5 #7): one Mon–Sun column per day,
 /// compact title-only blocks color-coded by category. Tapping a column opens
@@ -24,79 +24,62 @@ import '../../../../features/review/providers/review_providers.dart';
 class WeekViewScreen extends ConsumerWidget {
   const WeekViewScreen({super.key});
 
-  static bool _isEditingText() {
-    final ctx = FocusManager.instance.primaryFocus?.context;
-    return ctx != null && ctx.widget is EditableText;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final weekStart = ref.watch(selectedWeekStartProvider);
-    final days =
-        List.generate(7, (i) => weekStart.add(Duration(days: i)));
+    final days = List.generate(7, (i) => addDays(weekStart, i));
 
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyW): () {
-          if (_isEditingText()) return;
-          context.go('/day');
-        },
-        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
-          if (_isEditingText()) return;
-          context.go('/review');
-        },
-      },
-      child: Focus(
-        autofocus: true,
-        child: Scaffold(
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildHeader(context, ref, weekStart),
-              const Divider(height: 1),
-              Expanded(
-                child: LayoutBuilder(builder: (context, constraints) {
-                  final isDesktop = isDesktopWidth(constraints.maxWidth);
-                  final columns = [
-                    for (final day in days) _WeekDayColumn(date: day),
-                  ];
-                  final grid = Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (var i = 0; i < columns.length; i++) ...[
-                          if (isDesktop)
-                            Expanded(child: columns[i])
-                          else
-                            SizedBox(width: 180, child: columns[i]),
-                          if (i < columns.length - 1)
-                            const VerticalDivider(width: 1),
-                        ],
-                      ]);
-                  // Give the shared vertical viewport a finite child height;
-                  // otherwise the Row's stretch axis becomes infinite and
-                  // each day column receives invalid constraints.
-                  final gridHeight =
-                      24 * 60 * AppConstants.pixelsPerMinute + 64;
-                  final horizontallyScrollable = isDesktop
-                      ? grid
-                      : SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(width: 7 * 180, child: grid),
-                        );
-                  return SingleChildScrollView(
-                    child: SizedBox(height: gridHeight, child: horizontallyScrollable),
-                  );
-                }),
-              ),
-            ],
+    return Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildHeader(context, ref, weekStart),
+          const Divider(height: 1),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isDesktop = isDesktopWidth(constraints.maxWidth);
+                final columns = [
+                  for (final day in days) _WeekDayColumn(date: day),
+                ];
+                final grid = Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < columns.length; i++) ...[
+                      if (isDesktop)
+                        Expanded(child: columns[i])
+                      else
+                        SizedBox(width: 180, child: columns[i]),
+                      if (i < columns.length - 1)
+                        const VerticalDivider(width: 1),
+                    ],
+                  ],
+                );
+                // Give the shared vertical viewport a finite child height;
+                // otherwise the Row's stretch axis becomes infinite and
+                // each day column receives invalid constraints.
+                final gridHeight = 24 * 60 * AppConstants.pixelsPerMinute + 64;
+                final horizontallyScrollable = isDesktop
+                    ? grid
+                    : SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(width: 7 * 180, child: grid),
+                      );
+                return SingleChildScrollView(
+                  child: SizedBox(
+                    height: gridHeight,
+                    child: horizontallyScrollable,
+                  ),
+                );
+              },
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildHeader(
-      BuildContext context, WidgetRef ref, DateTime weekStart) {
+  Widget _buildHeader(BuildContext context, WidgetRef ref, DateTime weekStart) {
     final notifier = ref.read(selectedWeekStartProvider.notifier);
     final fmt = DateFormat('MMM d');
     return Padding(
@@ -114,19 +97,17 @@ class WeekViewScreen extends ConsumerWidget {
             key: const ValueKey('weekview-prev'),
             tooltip: 'Previous week',
             icon: const Icon(Icons.chevron_left),
-            onPressed: () =>
-                notifier.state = weekStart.subtract(const Duration(days: 7)),
+            onPressed: () => notifier.state = addDays(weekStart, -7),
           ),
           Text(
-            '${fmt.format(weekStart)} – ${DateFormat('MMM d, yyyy').format(weekStart.add(const Duration(days: 6)))}',
+            '${fmt.format(weekStart)} – ${DateFormat('MMM d, yyyy').format(addDays(weekStart, 6))}',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           IconButton(
             key: const ValueKey('weekview-next'),
             tooltip: 'Next week',
             icon: const Icon(Icons.chevron_right),
-            onPressed: () =>
-                notifier.state = weekStart.add(const Duration(days: 7)),
+            onPressed: () => notifier.state = addDays(weekStart, 7),
           ),
           const SizedBox(width: AppSpacing.sm),
           OutlinedButton(
@@ -145,6 +126,7 @@ class WeekViewScreen extends ConsumerWidget {
               if (selection.contains('day')) context.go('/day');
             },
           ),
+          const SyncStatusAction(),
         ],
       ),
     );
@@ -164,10 +146,14 @@ class _WeekDayColumn extends ConsumerWidget {
     final tasksAsync = ref.watch(dayTasksForDateProvider(date));
     final categoriesAsync = ref.watch(categoriesProvider);
 
-    final tasks =
-        tasksAsync.maybeWhen(data: (t) => t, orElse: () => const <Task>[]);
+    final tasks = tasksAsync.maybeWhen(
+      data: (t) => t,
+      orElse: () => const <Task>[],
+    );
     final categories = categoriesAsync.maybeWhen(
-        data: (c) => c, orElse: () => const <Category>[]);
+      data: (c) => c,
+      orElse: () => const <Category>[],
+    );
 
     Category? categoryFor(Task task) {
       for (final c in categories) {
@@ -176,8 +162,9 @@ class _WeekDayColumn extends ConsumerWidget {
       return null;
     }
 
-    final completed =
-        tasks.where((t) => t.status == TaskStatus.completed).length;
+    final completed = tasks
+        .where((t) => t.status == TaskStatus.completed)
+        .length;
     final isToday = isSameDay(date, DateTime.now());
     final totalHeight = 24 * 60 * AppConstants.pixelsPerMinute;
 
@@ -214,10 +201,9 @@ class _WeekDayColumn extends ConsumerWidget {
                     DateFormat('EEE d').format(date),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(color: AppColors.textSecondaryDark),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
                 if (tasks.isNotEmpty) ...[
@@ -226,9 +212,9 @@ class _WeekDayColumn extends ConsumerWidget {
                     '$completed/${tasks.length}',
                     key: ValueKey('day-count-${isoDateString(date)}'),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ],
               ],
@@ -256,8 +242,9 @@ class _WeekDayColumn extends ConsumerWidget {
   }
 
   Widget _buildBlock(BuildContext context, Task task, Category? category) {
-    final startMinutes =
-        task.startTime == null ? 0 : minutesSinceMidnight(task.startTime!);
+    final startMinutes = task.startTime == null
+        ? 0
+        : minutesSinceMidnight(task.startTime!);
     final durationMinutes =
         task.scheduledDuration?.inMinutes.toDouble() ?? 60.0;
     final height = durationMinutes * AppConstants.pixelsPerMinute;

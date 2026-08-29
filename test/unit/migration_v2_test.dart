@@ -19,7 +19,7 @@ void main() {
 
   tearDown(() => directory.deleteSync(recursive: true));
 
-  test('v1 snapshot upgrades to v6 without losing foundation rows', () async {
+  test('v1 snapshot upgrades to v7 without losing foundation rows', () async {
     MigrationSchema.create(dbFile, 1);
     final db = AppDatabase(NativeDatabase(dbFile));
     try {
@@ -28,9 +28,10 @@ void main() {
       expect(await db.select(db.subtasks).get(), isEmpty);
       expect(await db.select(db.tags).get(), isEmpty);
       expect(
-        (await db.customSelect('PRAGMA user_version').getSingle())
-            .read<int>('user_version'),
-        6,
+        (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
+          'user_version',
+        ),
+        7,
       );
       expect(
         (await db.select(db.tasks).get()).single.manualDurationAdjustmentMin,

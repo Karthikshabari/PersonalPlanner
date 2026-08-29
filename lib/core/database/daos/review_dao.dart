@@ -35,11 +35,33 @@ class ReviewDao extends DatabaseAccessor<AppDatabase> with _$ReviewDaoMixin {
   Future<DailyReviewRow?> getDailyReviewById(String id) =>
       (select(dailyReviews)..where((r) => r.id.equals(id))).getSingleOrNull();
 
+  Future<List<DailyReviewRow>> getDailyReviewsBetween(
+    String startIsoInclusive,
+    String endIsoExclusive,
+  ) {
+    return (select(dailyReviews)
+          ..where(
+            (r) =>
+                r.date.isBiggerOrEqualValue(startIsoInclusive) &
+                r.date.isSmallerThanValue(endIsoExclusive) &
+                r.deletedAt.isNull(),
+          )
+          ..orderBy([(r) => OrderingTerm.asc(r.date)]))
+        .get();
+  }
+
   Future<void> insertDailyReview(DailyReviewsCompanion entry) =>
       into(dailyReviews).insert(entry);
 
-  Future<bool> updateDailyReview(DailyReviewRow row) =>
-      update(dailyReviews).replace(row);
+  Future<bool> updateDailyReview(DailyReviewRow row) async {
+    final count =
+        await (update(
+          dailyReviews,
+        )..where((review) => review.id.equals(row.id))).write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   /// Soft-deletes by id; the row keeps its unique [DailyReviews.date].
   Future<int> softDeleteDailyReview(String id, DateTime deletedAt) =>
@@ -63,16 +85,16 @@ class ReviewDao extends DatabaseAccessor<AppDatabase> with _$ReviewDaoMixin {
   // ---------------------------------------------------------------
 
   Stream<WeeklyReviewRow?> watchWeeklyReviewForWeek(String weekStartIso) {
-    return (select(weeklyReviews)
-          ..where((r) =>
-              r.weekStartDate.equals(weekStartIso) & r.deletedAt.isNull()))
+    return (select(weeklyReviews)..where(
+          (r) => r.weekStartDate.equals(weekStartIso) & r.deletedAt.isNull(),
+        ))
         .watchSingleOrNull();
   }
 
   Future<WeeklyReviewRow?> getWeeklyReviewByWeekStart(String weekStartIso) =>
-      (select(weeklyReviews)
-            ..where((r) =>
-                r.weekStartDate.equals(weekStartIso) & r.deletedAt.isNull()))
+      (select(weeklyReviews)..where(
+            (r) => r.weekStartDate.equals(weekStartIso) & r.deletedAt.isNull(),
+          ))
           .getSingleOrNull();
 
   Future<WeeklyReviewRow?> getAnyWeeklyReviewByWeekStart(String weekStartIso) =>
@@ -88,8 +110,15 @@ class ReviewDao extends DatabaseAccessor<AppDatabase> with _$ReviewDaoMixin {
   Future<void> insertWeeklyReview(WeeklyReviewsCompanion entry) =>
       into(weeklyReviews).insert(entry);
 
-  Future<bool> updateWeeklyReview(WeeklyReviewRow row) =>
-      update(weeklyReviews).replace(row);
+  Future<bool> updateWeeklyReview(WeeklyReviewRow row) async {
+    final count =
+        await (update(
+          weeklyReviews,
+        )..where((review) => review.id.equals(row.id))).write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   Future<int> softDeleteWeeklyReview(String id, DateTime deletedAt) =>
       _softDeleteWeekly(id, deletedAt);

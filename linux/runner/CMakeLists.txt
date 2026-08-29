@@ -12,6 +12,9 @@ add_executable(${BINARY_NAME}
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
 )
 
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/personal_planner.svg"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/data")
+
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})

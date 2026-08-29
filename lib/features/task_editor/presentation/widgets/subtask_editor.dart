@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/subtask.dart';
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../data/subtask_repository.dart';
 import '../../providers/subtask_providers.dart';
 
@@ -32,18 +32,24 @@ class _SubtaskEditorState extends ConsumerState<SubtaskEditor> {
   Future<void> _add(String title) async {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return;
-    await _repo.insertSubtask(Subtask(
-      id: '',
-      taskId: widget.taskId,
-      title: trimmed,
-      sortOrder: 1 << 20,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ));
+    await _repo.insertSubtask(
+      Subtask(
+        id: '',
+        taskId: widget.taskId,
+        title: trimmed,
+        sortOrder: 1 << 20,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     _newSubtaskController.clear();
   }
 
-  Future<void> _onReorder(List<Subtask> subtasks, int oldIndex, int newIndex) async {
+  Future<void> _onReorder(
+    List<Subtask> subtasks,
+    int oldIndex,
+    int newIndex,
+  ) async {
     final ids = subtasks.map((s) => s.id).toList();
     final moved = ids.removeAt(oldIndex);
     ids.insert(newIndex, moved);
@@ -55,7 +61,8 @@ class _SubtaskEditorState extends ConsumerState<SubtaskEditor> {
     final subtasksAsync = ref.watch(subtasksForTaskProvider(widget.taskId));
     return subtasksAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) =>
+          ErrorPanel(message: friendlyErrorMessage(e), compact: true),
       data: (subtasks) {
         final input = TextField(
           key: const ValueKey('subtask-input'),
@@ -103,8 +110,11 @@ class _SubtaskEditorState extends ConsumerState<SubtaskEditor> {
                     children: [
                       ReorderableDragStartListener(
                         index: index,
-                        child: const Icon(Icons.drag_handle,
-                            size: 18, color: AppColors.textSecondaryDark),
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       IconButton(
                         key: ValueKey('subtask-delete-${subtask.id}'),

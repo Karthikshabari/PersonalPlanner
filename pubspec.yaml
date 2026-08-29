@@ -31,14 +31,23 @@ dependencies:
 
   # Utilities
   uuid: ^4.5.1
+  crypto: ^3.0.7
   intl: ^0.20.0
   path_provider: ^2.1.5
+  file_picker: ^12.1.2
   path: ^1.9.1
   rrule: ^0.2.18
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.1
   flutter_timezone: ^5.1.0
   flutter_foreground_task: ^11.0.1
+  fl_chart: ^0.69.0
+  supabase_flutter: ^2.17.2
+  flutter_secure_storage: ^11.0.0
+  connectivity_plus: ^7.3.1
+  screen_retriever: ^0.2.2
+  window_manager: ^0.5.1
+  stack_trace: ^1.12.1
 
 dev_dependencies:
   flutter_test:

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,7 @@ void main() {
   late Task beta;
 
   Future<void> setUpScaffolding(WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     container = await buildTestContainer(tester);
     appRouter.go('/day');
     await pumpApp(tester, container, surface: const Size(1400, 1000));
@@ -27,15 +29,16 @@ void main() {
     // viewport (anchor = now − 90 min).
     var hour = now.hour;
     if (hour >= 22) hour = 20;
-    Future<Task> insertAt(int startHour, String title) =>
-        tasks.insertTask(Task(
-          id: '',
-          title: title,
-          startTime: DateTime(now.year, now.month, now.day, startHour),
-          endTime: DateTime(now.year, now.month, now.day, startHour + 1),
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ));
+    Future<Task> insertAt(int startHour, String title) => tasks.insertTask(
+      Task(
+        id: '',
+        title: title,
+        startTime: DateTime(now.year, now.month, now.day, startHour),
+        endTime: DateTime(now.year, now.month, now.day, startHour + 1),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
     alpha = await runDb(tester, () => insertAt(hour, 'Alpha'));
     beta = await runDb(tester, () => insertAt(hour + 1, 'Beta'));
     // Let the day-tasks stream deliver the seeded rows before interacting.
@@ -43,8 +46,10 @@ void main() {
   }
 
   Future<void> selectTask(WidgetTester tester, Task task) async {
-    await tester.tap(find.byKey(ValueKey('task-block-${task.id}')),
-        warnIfMissed: false);
+    await tester.tap(
+      find.byKey(ValueKey('task-block-${task.id}')),
+      warnIfMissed: false,
+    );
     await settle(tester);
   }
 
@@ -54,13 +59,16 @@ void main() {
   TimerRepository timerRepoOf(ProviderContainer c) =>
       c.read(timerRepositoryProvider);
 
-  testWidgets('start shows ticking chip + overlay and auto-sets In Progress',
-      (tester) async {
+  testWidgets('start shows ticking chip + overlay and auto-sets In Progress', (
+    tester,
+  ) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
 
     expect(find.byKey(const ValueKey('timer-overlay')), findsNothing);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
@@ -73,12 +81,13 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pump();
     expect(find.text('00:00:02'), findsWidgets);
-    expect(
-        find.byKey(const ValueKey('overlay-timer-elapsed')), findsOneWidget);
+    expect(find.byKey(const ValueKey('overlay-timer-elapsed')), findsOneWidget);
 
     // Auto-status: planned → in progress (Chunk 6 #11).
     final reloaded = await runDb(
-        tester, () => tasksRepoOf(container).getTaskById(alpha.id));
+      tester,
+      () => tasksRepoOf(container).getTaskById(alpha.id),
+    );
     expect(reloaded!.status, TaskStatus.inProgress);
 
     // Tear down the running timer the way a user would so no periodic
@@ -88,11 +97,14 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('pause then resume creates two separate sessions',
-      (tester) async {
+  testWidgets('pause then resume creates two separate sessions', (
+    tester,
+  ) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
@@ -105,8 +117,10 @@ void main() {
     await settle(tester);
     expect(find.byKey(const ValueKey('timer-overlay')), findsOneWidget);
 
-    final sessions = await runDb(tester,
-        () => timerRepoOf(container).getSessionsForTask(alpha.id));
+    final sessions = await runDb(
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(alpha.id),
+    );
     expect(sessions, hasLength(2));
     expect(sessions.where((s) => s.endedAt == null), hasLength(1));
 
@@ -119,20 +133,28 @@ void main() {
   testWidgets('starting B auto-pauses A', (tester) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
     // Switch selection to Beta and start there.
     await selectTask(tester, beta);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
-    final aSessions =
-        await runDb(tester, () => timerRepoOf(container).getSessionsForTask(alpha.id));
-    final bSessions =
-        await runDb(tester, () => timerRepoOf(container).getSessionsForTask(beta.id));
+    final aSessions = await runDb(
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(alpha.id),
+    );
+    final bSessions = await runDb(
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(beta.id),
+    );
     expect(aSessions.single.endedAt, isNotNull);
     expect(bSessions.where((s) => s.endedAt == null), hasLength(1));
 
@@ -143,11 +165,14 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('stop prompts "Mark as Completed?" — Yes completes the task',
-      (tester) async {
+  testWidgets('stop prompts "Mark as Completed?" — Yes completes the task', (
+    tester,
+  ) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
@@ -159,7 +184,9 @@ void main() {
 
     expect(find.byKey(const ValueKey('timer-overlay')), findsNothing);
     final reloaded = await runDb(
-        tester, () => tasksRepoOf(container).getTaskById(alpha.id));
+      tester,
+      () => tasksRepoOf(container).getTaskById(alpha.id),
+    );
     expect(reloaded!.status, TaskStatus.completed);
     await finish(tester, container);
   });
@@ -167,7 +194,9 @@ void main() {
   testWidgets('stop prompt "No" keeps the task In Progress', (tester) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
@@ -177,7 +206,9 @@ void main() {
     await settle(tester);
 
     final reloaded = await runDb(
-        tester, () => tasksRepoOf(container).getTaskById(alpha.id));
+      tester,
+      () => tasksRepoOf(container).getTaskById(alpha.id),
+    );
     expect(reloaded!.status, TaskStatus.inProgress);
     await finish(tester, container);
   });
@@ -185,7 +216,9 @@ void main() {
   testWidgets('deleting the timed task finalizes its session', (tester) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
-    await tester.ensureVisible(find.byKey(const ValueKey('timer-start-button')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('timer-start-button')),
+    );
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
     expect(find.byKey(const ValueKey('timer-overlay')), findsOneWidget);
@@ -200,7 +233,9 @@ void main() {
     // Overlay disappears and the session is finalized, not orphaned.
     expect(find.byKey(const ValueKey('timer-overlay')), findsNothing);
     final sessions = await runDb(
-        tester, () => timerRepoOf(container).getSessionsForTask(alpha.id));
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(alpha.id),
+    );
     expect(sessions.single.endedAt, isNotNull);
 
     // Undo restores the task with its tracked time intact.
@@ -208,13 +243,16 @@ void main() {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.keyZ);
     await settle(tester);
     final restored = await runDb(
-        tester, () => tasksRepoOf(container).getTaskById(alpha.id));
+      tester,
+      () => tasksRepoOf(container).getTaskById(alpha.id),
+    );
     expect(restored!.deletedAt, isNull);
     await finish(tester, container);
   });
 
-  testWidgets('actual duration is manually editable in the editor',
-      (tester) async {
+  testWidgets('actual duration is manually editable in the editor', (
+    tester,
+  ) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
 
@@ -226,7 +264,9 @@ void main() {
     await settle(tester);
 
     final reloaded = await runDb(
-        tester, () => tasksRepoOf(container).getTaskById(alpha.id));
+      tester,
+      () => tasksRepoOf(container).getTaskById(alpha.id),
+    );
     expect(reloaded!.actualDurationMin, 45);
     await finish(tester, container);
   });

@@ -107,7 +107,10 @@ class DaySummaryTimeline extends StatelessWidget {
       height: height - 2,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.surfaceVariantDark.withValues(alpha: 0.92),
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.92),
           borderRadius: BorderRadius.circular(6),
           border: Border(
             left: BorderSide(color: accent, width: 3),

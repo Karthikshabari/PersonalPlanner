@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rrule/rrule.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/utils/date_utils.dart';
 import '../../../recurring/domain/rrule_utils.dart';
 
 /// Dialog for building a custom RRULE: frequency, interval, weekday
@@ -17,7 +18,8 @@ Future<CustomRecurrenceConfig?> showCustomRecurrenceDialog(
     context: context,
     builder: (_) => _CustomRecurrenceDialog(
       anchorDate: anchorDate,
-      initial: initial ?? const CustomRecurrenceConfig(frequency: Frequency.weekly),
+      initial:
+          initial ?? const CustomRecurrenceConfig(frequency: Frequency.weekly),
     ),
   );
 }
@@ -43,7 +45,15 @@ class _CustomRecurrenceDialogState
   late Set<int> _weekDays;
   DateTime? _endDate;
   final _intervalController = TextEditingController();
-  static const _weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  static const _weekdayLabels = [
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
+  ];
   static const _weekdayValues = [
     DateTime.monday,
     DateTime.tuesday,
@@ -71,11 +81,11 @@ class _CustomRecurrenceDialogState
   }
 
   CustomRecurrenceConfig get _config => CustomRecurrenceConfig(
-        frequency: _frequency,
-        interval: _interval.clamp(1, 365),
-        byWeekDays: _frequency == Frequency.weekly ? _weekDays : {},
-        endDate: _endDate,
-      );
+    frequency: _frequency,
+    interval: _interval.clamp(1, 365),
+    byWeekDays: _frequency == Frequency.weekly ? _weekDays : {},
+    endDate: _endDate,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -93,12 +103,21 @@ class _CustomRecurrenceDialogState
                 initialValue: _frequency,
                 decoration: const InputDecoration(labelText: 'Repeats'),
                 items: const [
-                  DropdownMenuItem(value: Frequency.daily, child: Text('Daily')),
-                  DropdownMenuItem(value: Frequency.weekly, child: Text('Weekly')),
                   DropdownMenuItem(
-                      value: Frequency.monthly, child: Text('Monthly')),
+                    value: Frequency.daily,
+                    child: Text('Daily'),
+                  ),
+                  DropdownMenuItem(
+                    value: Frequency.weekly,
+                    child: Text('Weekly'),
+                  ),
+                  DropdownMenuItem(
+                    value: Frequency.monthly,
+                    child: Text('Monthly'),
+                  ),
                 ],
-                onChanged: (f) => setState(() => _frequency = f ?? Frequency.daily),
+                onChanged: (f) =>
+                    setState(() => _frequency = f ?? Frequency.daily),
               ),
               const SizedBox(height: AppSpacing.md),
               Row(
@@ -151,16 +170,18 @@ class _CustomRecurrenceDialogState
                     child: OutlinedButton.icon(
                       key: const ValueKey('recurrence-end-date'),
                       icon: const Icon(Icons.event_outlined, size: 16),
-                      label: Text(_endDate == null
-                          ? 'No end date'
-                          : 'Until ${_endDate!.month}/${_endDate!.day}/${_endDate!.year}'),
+                      label: Text(
+                        _endDate == null
+                            ? 'No end date'
+                            : 'Until ${_endDate!.month}/${_endDate!.day}/${_endDate!.year}',
+                      ),
                       onPressed: () async {
                         final picked = await showDatePicker(
                           context: context,
                           initialDate:
-                              _endDate ?? widget.anchorDate.add(const Duration(days: 30)),
+                              _endDate ?? addDays(widget.anchorDate, 30),
                           firstDate: widget.anchorDate,
-                          lastDate: widget.anchorDate.add(const Duration(days: 3650)),
+                          lastDate: addDays(widget.anchorDate, 3650),
                         );
                         if (picked != null) setState(() => _endDate = picked);
                       },
@@ -184,8 +205,11 @@ class _CustomRecurrenceDialogState
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.preview_outlined,
-                          size: 16, color: Colors.white54),
+                      Icon(
+                        Icons.preview_outlined,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: AppSpacing.xs),
                       Expanded(child: Text(text)),
                     ],

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
+import '../../../../core/utils/date_utils.dart';
 import 'selected_date_provider.dart';
 
 final dayTasksProvider = StreamProvider.autoDispose<List<Task>>((ref) {
@@ -13,8 +14,8 @@ final dayTasksProvider = StreamProvider.autoDispose<List<Task>>((ref) {
 /// Tasks for an explicit date, independent of [selectedDateProvider] — used
 /// by surfaces that show other days (Week View columns, Daily Review
 /// mini-timeline).
-final dayTasksForDateProvider =
-    StreamProvider.autoDispose.family<List<Task>, DateTime>((ref, date) {
-  final normalized = DateTime(date.year, date.month, date.day);
-  return ref.watch(taskRepositoryProvider).watchTasksForDay(normalized);
-});
+final dayTasksForDateProvider = StreamProvider.autoDispose
+    .family<List<Task>, DateTime>((ref, date) {
+      final normalized = startOfDay(date);
+      return ref.watch(taskRepositoryProvider).watchTasksForDay(normalized);
+    });

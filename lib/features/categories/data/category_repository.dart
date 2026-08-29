@@ -32,9 +32,12 @@ class CategoryRepository {
     if (row == null) {
       throw StateError('Category ${effective.id} not found');
     }
-    await _dao.updateCategory(
-      _toRow(effective, syncStatus: 1, revision: row.revision + 1),
-    );
+    await _db.transaction(() async {
+      await _dao.updateCategory(
+        _toRow(effective, syncStatus: 1, revision: row.revision + 1),
+      );
+      await _db.statsDao.invalidateAll();
+    });
     return effective;
   }
 
@@ -75,6 +78,7 @@ class CategoryRepository {
         ],
         updates: {_db.categories},
       );
+      await _db.statsDao.invalidateAll();
     });
   }
 

@@ -15,16 +15,23 @@ abstract final class TimerActions {
   /// Starts (or resumes) the timer for [task]; auto-pauses any other
   /// running session first.
   static Future<void> start(
-      BuildContext context, WidgetRef ref, Task task) async {
+    BuildContext context,
+    WidgetRef ref,
+    Task task,
+  ) async {
     final service = ref.read(timerServiceProvider);
     await service.start(task.id);
-    final foregroundStarted =
-        await AndroidForegroundTimer().start(taskTitle: task.title);
+    final foregroundStarted = await AndroidForegroundTimer().start(
+      taskTitle: task.title,
+    );
     if (AndroidForegroundTimer.supported && !foregroundStarted) {
       await service.pause();
+      await AndroidForegroundTimer().stop();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Background timer support failed to start')),
+          const SnackBar(
+            content: Text('Background timer support failed to start'),
+          ),
         );
       }
     }
@@ -37,7 +44,10 @@ abstract final class TimerActions {
 
   /// Stops the running session and asks whether the task should be marked
   /// completed. Returns true when a session was actually stopped.
-  static Future<bool> stopWithPrompt(BuildContext context, WidgetRef ref) async {
+  static Future<bool> stopWithPrompt(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final active = ref.read(activeTimerProvider).value;
     if (active == null) return false;
     await ref.read(timerServiceProvider).stop();
@@ -70,7 +80,8 @@ abstract final class TimerActions {
         final refreshed = await repo.getTaskById(task.id) ?? task;
         if (refreshed.status != TaskStatus.completed) {
           await repo.updateTask(
-              refreshed.copyWith(status: TaskStatus.completed));
+            refreshed.copyWith(status: TaskStatus.completed),
+          );
         }
       }
     }

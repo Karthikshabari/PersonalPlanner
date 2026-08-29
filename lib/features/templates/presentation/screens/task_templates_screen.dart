@@ -6,6 +6,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../providers/template_providers.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../widgets/template_form_dialog.dart';
 
 /// Settings → Task Templates (planner.md Chunk 4 #11): list, create, edit
@@ -18,12 +19,19 @@ class TaskTemplatesScreen extends ConsumerWidget {
     final templatesAsync = ref.watch(templatesProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final templates = templatesAsync.maybeWhen(
-        data: (t) => t, orElse: () => const []);
+      data: (t) => t,
+      orElse: () => const [],
+    );
     final categories = categoriesAsync.maybeWhen(
-        data: (c) => c, orElse: () => const []);
+      data: (c) => c,
+      orElse: () => const [],
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Task Templates')),
+      appBar: AppBar(
+        title: const Text('Task Templates'),
+        actions: const [SyncStatusAction()],
+      ),
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add-template-fab'),
         onPressed: () => showTemplateFormDialog(context, ref),
@@ -31,8 +39,10 @@ class TaskTemplatesScreen extends ConsumerWidget {
       ),
       body: templates.isEmpty
           ? const Center(
-              child: Text('No templates yet.\nCreate one with + or save a '
-                  'task as template from the editor.'),
+              child: Text(
+                'No templates yet.\nCreate one with + or save a '
+                'task as template from the editor.',
+              ),
             )
           : ListView.builder(
               padding: const EdgeInsets.all(AppSpacing.lg),
@@ -51,8 +61,11 @@ class TaskTemplatesScreen extends ConsumerWidget {
                             width: 12,
                             height: 12,
                             decoration: BoxDecoration(
-                              color: Color(int.parse(
-                                  category.colorHex.replaceFirst('#', '0xFF'))),
+                              color: Color(
+                                int.parse(
+                                  category.colorHex.replaceFirst('#', '0xFF'),
+                                ),
+                              ),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -68,9 +81,11 @@ class TaskTemplatesScreen extends ConsumerWidget {
                         IconButton(
                           icon: const Icon(Icons.edit_outlined),
                           tooltip: 'Edit',
-                          onPressed: () =>
-                              showTemplateFormDialog(context, ref,
-                                  existing: template),
+                          onPressed: () => showTemplateFormDialog(
+                            context,
+                            ref,
+                            existing: template,
+                          ),
                         ),
                         IconButton(
                           key: ValueKey('delete-template-${template.id}'),

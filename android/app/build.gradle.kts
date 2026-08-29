@@ -1,12 +1,25 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val signingPropertiesFile = rootProject.file("key.properties")
+val signingProperties = Properties()
+if (signingPropertiesFile.exists()) {
+    FileInputStream(signingPropertiesFile).use { signingProperties.load(it) }
+}
+val hasProductionSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { signingProperties.containsKey(it) }
+
 android {
     namespace = "com.personalplanner.personal_planner"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage 11 requires API 37; the app remains compatible
+    // with the existing minSdk and target SDK values below.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -33,9 +46,18 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Production signing is deliberately external to source control.
+            // Without key.properties this remains unsigned instead of silently
+            // producing a release signed by the debug keystore.
+            if (hasProductionSigning) {
+                signingConfigs.create("production") {
+                    keyAlias = signingProperties["keyAlias"] as String
+                    keyPassword = signingProperties["keyPassword"] as String
+                    storeFile = file(signingProperties["storeFile"] as String)
+                    storePassword = signingProperties["storePassword"] as String
+                }
+                signingConfig = signingConfigs.getByName("production")
+            }
         }
     }
 }

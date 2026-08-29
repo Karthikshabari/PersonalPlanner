@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../timeline/presentation/providers/day_view_controller.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
@@ -41,21 +42,34 @@ class InboxTaskTile extends ConsumerWidget {
 
   Future<void> _schedule(BuildContext context, WidgetRef ref) async {
     final initialDate = item.task.startTime ?? DateTime.now();
+    final initialLocal = PlannerTimeZone.toPlannerLocal(initialDate);
     final date = await showDatePicker(
       context: context,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
-      initialDate: DateTime(initialDate.year, initialDate.month, initialDate.day),
+      initialDate: PlannerTimeZone.calendarDate(
+        initialLocal.year,
+        initialLocal.month,
+        initialLocal.day,
+      ),
     );
     if (date == null || !context.mounted) return;
     final time = await showTimePicker(
       context: context,
       initialTime: item.task.startTime == null
           ? const TimeOfDay(hour: 9, minute: 0)
-          : TimeOfDay.fromDateTime(item.task.startTime!),
+          : TimeOfDay.fromDateTime(
+              PlannerTimeZone.toPlannerLocal(item.task.startTime!),
+            ),
     );
     if (time == null || !context.mounted) return;
-    final start = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final start = PlannerTimeZone.calendarDate(
+      date.year,
+      date.month,
+      date.day,
+      hour: time.hour,
+      minute: time.minute,
+    );
     final duration = item.task.scheduledDuration?.inMinutes ?? 60;
     final end = start.add(Duration(minutes: duration));
     if (!isSameDay(start, end)) {
@@ -88,7 +102,9 @@ class InboxTaskTile extends ConsumerWidget {
       leading: Icon(
         item.isOverdue ? Icons.history : Icons.inbox_outlined,
         size: 18,
-        color: item.isOverdue ? AppColors.warning : AppColors.textSecondaryDark,
+        color: item.isOverdue
+            ? AppColors.warning
+            : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       title: Text(
         task.title,
@@ -99,7 +115,10 @@ class InboxTaskTile extends ConsumerWidget {
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
         child: item.isOverdue
-            ? Align(alignment: Alignment.centerLeft, child: OverdueBadge(item: item))
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: OverdueBadge(item: item),
+              )
             : null,
       ),
       trailing: PopupMenuButton<String>(
@@ -129,14 +148,15 @@ class InboxTaskTile extends ConsumerWidget {
         borderRadius: BorderRadius.circular(8),
         child: Container(
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
           decoration: BoxDecoration(
-            color: AppColors.surfaceDark,
+            color: Theme.of(context).colorScheme.surface,
             border: Border.all(color: AppColors.warning),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Text(task.title,
-              style: const TextStyle(fontSize: 12)),
+          child: Text(task.title, style: const TextStyle(fontSize: 12)),
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.4, child: tile),

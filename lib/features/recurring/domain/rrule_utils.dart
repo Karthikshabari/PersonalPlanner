@@ -1,6 +1,7 @@
 import 'package:rrule/rrule.dart';
 
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/planner_time_zone.dart';
 
 /// Which entry of the recurrence dropdown is selected.
 enum RepeatPreset { never, daily, weekdays, weekly, monthly, custom }
@@ -9,8 +10,10 @@ enum RepeatPreset { never, daily, weekdays, weekly, monthly, custom }
 class CustomRecurrenceConfig {
   final Frequency frequency;
   final int interval;
+
   /// Weekdays (DateTime.monday..sunday) for weekly rules; empty otherwise.
   final Set<int> byWeekDays;
+
   /// Optional inclusive last date (`null` = never ends).
   final DateTime? endDate;
 
@@ -41,16 +44,23 @@ abstract final class RruleUtils {
   static RecurrenceRule parse(String rrule) =>
       // The package's decoder expects a full iCalendar property line.
       RecurrenceRule.fromString(
-          rrule.toUpperCase().startsWith('RRULE:') ? rrule : 'RRULE:$rrule');
+        rrule.toUpperCase().startsWith('RRULE:') ? rrule : 'RRULE:$rrule',
+      );
 
-  static String encode(RecurrenceRule rule) =>
-      rule.toString().replaceFirst(RegExp(r'^RRULE:', caseSensitive: false), '');
+  static String encode(RecurrenceRule rule) => rule.toString().replaceFirst(
+    RegExp(r'^RRULE:', caseSensitive: false),
+    '',
+  );
 
   /// True when the rule produces an occurrence on [date]'s calendar day.
   ///
   /// The package requires UTC DateTimes but ignores the time zone — local
   /// wall-clock values are passed with `isUtc: true`.
-  static bool occursOnDate(String rrule, DateTime ruleStartDate, DateTime date) {
+  static bool occursOnDate(
+    String rrule,
+    DateTime ruleStartDate,
+    DateTime date,
+  ) {
     final dayStart = startOfDay(date);
     // Occurrences cannot precede DTSTART; also guards the package's
     // `after >= start` assertion.
@@ -58,12 +68,12 @@ abstract final class RruleUtils {
     try {
       final rule = parse(rrule);
       final start = _wallClockUtc(startOfDay(ruleStartDate));
-      final dayEnd = _wallClockUtc(dayStart.add(const Duration(days: 1)));
+      final dayEnd = _wallClockUtc(addDays(dayStart, 1));
       // Lower bound of the queried window; `after` is exclusive and must
       // stay >= DTSTART, so it is omitted entirely when the window begins
       // at or before DTSTART.
-      final windowStart =
-          _wallClockUtc(dayStart).subtract(const Duration(microseconds: 1));
+      final windowStart = _wallClockUtc(dayStart)
+          .subtract(const Duration(microseconds: 1));
       final after = windowStart.isAfter(start) ? windowStart : null;
       return rule
           .getAllInstances(start: start, after: after, before: dayEnd)
@@ -75,50 +85,64 @@ abstract final class RruleUtils {
     }
   }
 
-  static String? presetToRrule(RepeatPreset preset, DateTime anchorDate) =>
-      switch (preset) {
-        RepeatPreset.never => null,
-        RepeatPreset.daily => 'FREQ=DAILY',
-        RepeatPreset.weekdays => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-        RepeatPreset.weekly =>
-          'FREQ=WEEKLY;BYDAY=${_weekdayCodes[anchorDate.weekday]}',
-        RepeatPreset.monthly => 'FREQ=MONTHLY;BYMONTHDAY=${anchorDate.day}',
-        RepeatPreset.custom => null,
-      };
+  static String? presetToRrule(
+    RepeatPreset preset,
+    DateTime anchorDate,
+  ) => switch (preset) {
+    RepeatPreset.never => null,
+    RepeatPreset.daily => 'FREQ=DAILY',
+    RepeatPreset.weekdays => 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    RepeatPreset.weekly =>
+      'FREQ=WEEKLY;BYDAY=${_weekdayCodes[PlannerTimeZone.toPlannerLocal(anchorDate).weekday]}',
+    RepeatPreset.monthly =>
+      'FREQ=MONTHLY;BYMONTHDAY=${PlannerTimeZone.toPlannerLocal(anchorDate).day}',
+    RepeatPreset.custom => null,
+  };
 
-  static String configToRrule(CustomRecurrenceConfig config, DateTime anchorDate) {
-    final buffer = StringBuffer('FREQ=${switch (config.frequency) {
-      Frequency.daily => 'DAILY',
-      Frequency.weekly => 'WEEKLY',
-      Frequency.monthly => 'MONTHLY',
-      _ => 'DAILY',
-    }}');
+  static String configToRrule(
+    CustomRecurrenceConfig config,
+    DateTime anchorDate,
+  ) {
+    final localAnchor = PlannerTimeZone.toPlannerLocal(anchorDate);
+    final buffer = StringBuffer(
+      'FREQ=${switch (config.frequency) {
+        Frequency.daily => 'DAILY',
+        Frequency.weekly => 'WEEKLY',
+        Frequency.monthly => 'MONTHLY',
+        _ => 'DAILY',
+      }}',
+    );
     if (config.interval > 1) buffer.write(';INTERVAL=${config.interval}');
     if (config.frequency == Frequency.weekly) {
-      final days = (config.byWeekDays.isEmpty
-              ? {anchorDate.weekday}
-              : config.byWeekDays)
-          .map((d) => _weekdayCodes[d])
-          .whereType<String>()
-          .toList()
-        ..sort();
+      final days =
+          (config.byWeekDays.isEmpty
+                  ? {localAnchor.weekday}
+                  : config.byWeekDays)
+              .map((d) => _weekdayCodes[d])
+              .whereType<String>()
+              .toList()
+            ..sort();
       if (days.isNotEmpty) buffer.write(';BYDAY=${days.join(',')}');
     }
     if (config.frequency == Frequency.monthly && config.byWeekDays.isNotEmpty) {
       // nth-weekday support is out of scope for v1; fall back to the
       // anchor date's day of month.
-      buffer.write(';BYMONTHDAY=${anchorDate.day}');
+      buffer.write(';BYMONTHDAY=${localAnchor.day}');
     }
     if (config.endDate != null) {
-      buffer.write(';UNTIL=${isoDateString(startOfDay(config.endDate!)).replaceAll('-', '')}');
+      buffer.write(
+        ';UNTIL=${isoDateString(startOfDay(config.endDate!)).replaceAll('-', '')}',
+      );
     }
     return buffer.toString();
   }
 
   /// Maps an RRULE string back to a dropdown preset where possible.
   static RepeatPreset detectPreset(String rrule) {
-    final normalized =
-        rrule.toUpperCase().replaceAll(RegExp(r'\s'), '').split(';');
+    final normalized = rrule
+        .toUpperCase()
+        .replaceAll(RegExp(r'\s'), '')
+        .split(';');
     String freq = '';
     List<String> byDay = [];
     String? byMonthDay;
@@ -185,7 +209,11 @@ abstract final class RruleUtils {
     }
   }
 
-  static DateTime _wallClockUtc(DateTime local) =>
-      DateTime(local.year, local.month, local.day, local.hour, local.minute)
-          .copyWith(isUtc: true);
+  static DateTime _wallClockUtc(DateTime local) => DateTime(
+    local.year,
+    local.month,
+    local.day,
+    local.hour,
+    local.minute,
+  ).copyWith(isUtc: true);
 }
