@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/inbox_provider.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../widgets/inbox_quick_add.dart';
 import '../widgets/inbox_task_tile.dart';
 
@@ -13,7 +15,10 @@ class InboxScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final itemsAsync = ref.watch(inboxProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Inbox')),
+      appBar: AppBar(
+        title: const Text('Inbox'),
+        actions: const [SyncStatusAction()],
+      ),
       body: Column(
         children: [
           const InboxQuickAdd(),
@@ -21,7 +26,7 @@ class InboxScreen extends ConsumerWidget {
           Expanded(
             child: itemsAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => ErrorPanel(message: friendlyErrorMessage(e)),
               data: (items) => items.isEmpty
                   ? const Center(child: Text('No inbox items'))
                   : ListView.builder(

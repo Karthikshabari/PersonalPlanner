@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 
 import 'sqlite_setup.dart';
 
@@ -21,6 +22,7 @@ Future<ProviderContainer> buildTestContainer(
       overrides: [appDatabaseProvider.overrideWithValue(database)],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
+    await database.syncDao.setSetting(onboardingCompletedKey, 'true');
   });
   return container;
 }
@@ -78,10 +80,7 @@ Future<void> teardownApp(
 /// frames so Riverpod's ProviderScheduler flushes pending autoDispose
 /// disposals — cancelling periodic streams (e.g. timer tickers) before
 /// Flutter's pending-timer invariant runs.
-Future<void> finish(
-  WidgetTester tester,
-  ProviderContainer container,
-) async {
+Future<void> finish(WidgetTester tester, ProviderContainer container) async {
   debugDefaultTargetPlatformOverride = null;
   await teardownApp(tester, container);
 }

@@ -39,6 +39,9 @@ class ChangeStatusCommand implements SchedulingCommand {
     if (before == null) return;
     final current = await repository.getTaskById(taskId);
     if (current == null) return;
-    await repository.updateTask(current.copyWith(status: before.status));
+    await repository.updateTask(
+      current.copyWith(status: before.status),
+      allowStatusTransition: true,
+    );
   }
 }

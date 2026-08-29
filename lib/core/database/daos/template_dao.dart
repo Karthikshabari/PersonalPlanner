@@ -18,18 +18,23 @@ class TemplateDao extends DatabaseAccessor<AppDatabase>
   }
 
   Future<List<TaskTemplateRow>> getActiveTemplates() =>
-      (select(taskTemplates)..where((t) => t.deletedAt.isNull()))
-          .get();
+      (select(taskTemplates)..where((t) => t.deletedAt.isNull())).get();
 
   Future<TaskTemplateRow?> getTemplateById(String id) =>
-      (select(taskTemplates)..where((t) => t.id.equals(id)))
-          .getSingleOrNull();
+      (select(taskTemplates)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   Future<void> insertTemplate(TaskTemplatesCompanion entry) =>
       into(taskTemplates).insert(entry);
 
-  Future<bool> updateTemplate(TaskTemplateRow row) =>
-      update(taskTemplates).replace(row);
+  Future<bool> updateTemplate(TaskTemplateRow row) async {
+    final count =
+        await (update(
+          taskTemplates,
+        )..where((template) => template.id.equals(row.id))).write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   Future<int> softDeleteTemplate(String id, DateTime deletedAt) async {
     final current = await getTemplateById(id);

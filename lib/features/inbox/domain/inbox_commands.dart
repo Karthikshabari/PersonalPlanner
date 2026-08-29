@@ -32,7 +32,8 @@ class ScheduleInboxItemCommand implements SchedulingCommand {
   Future<void> undo() async {
     final before = _before;
     if (before == null) return;
-    await TaskRepository(repository.database).updateTask(before);
+    await TaskRepository(repository.database)
+        .updateTask(before, allowStatusTransition: true);
   }
 }
 
@@ -86,12 +87,16 @@ class RescheduleOverdueCommand implements SchedulingCommand {
     final snapshot = _successorSnapshot;
     if (before == null || snapshot == null) return;
     await snapshot.softDelete(repository.database);
-    final current = await TaskRepository(repository.database).getTaskById(originalId);
+    final current = await TaskRepository(repository.database)
+        .getTaskById(originalId);
     if (current != null) {
-      await TaskRepository(repository.database).updateTask(current.copyWith(
-        status: before.status,
-        rescheduledToId: before.rescheduledToId,
-      ));
+      await TaskRepository(repository.database).updateTask(
+        current.copyWith(
+          status: before.status,
+          rescheduledToId: before.rescheduledToId,
+        ),
+        allowStatusTransition: true,
+      );
     }
   }
 }

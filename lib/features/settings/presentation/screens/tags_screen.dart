@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/tag.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../../task_editor/providers/tag_providers.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 
 class TagsScreen extends ConsumerWidget {
   const TagsScreen({super.key});
@@ -12,7 +14,10 @@ class TagsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tags = ref.watch(tagsProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Tags')),
+      appBar: AppBar(
+        title: const Text('Tags'),
+        actions: const [SyncStatusAction()],
+      ),
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add-tag'),
         onPressed: () => _showTagDialog(context, ref),
@@ -20,7 +25,7 @@ class TagsScreen extends ConsumerWidget {
       ),
       body: tags.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(child: Text('Error: $error')),
+        error: (error, _) => ErrorPanel(message: friendlyErrorMessage(error)),
         data: (items) => ListView.separated(
           padding: const EdgeInsets.all(AppSpacing.lg),
           itemCount: items.length,
@@ -85,12 +90,14 @@ class TagsScreen extends ConsumerWidget {
               if (name.isEmpty) return;
               final repo = ref.read(tagRepositoryProvider);
               if (existing == null) {
-                await repo.insertTag(Tag(
-                  id: '',
-                  name: name,
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                ));
+                await repo.insertTag(
+                  Tag(
+                    id: '',
+                    name: name,
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                  ),
+                );
               } else {
                 await repo.updateTag(existing.copyWith(name: name));
               }

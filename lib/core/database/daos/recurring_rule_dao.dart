@@ -20,18 +20,23 @@ class RecurringRuleDao extends DatabaseAccessor<AppDatabase>
   }
 
   Future<List<RecurringRuleRow>> getActiveRules() =>
-      (select(recurringRules)..where((r) => r.deletedAt.isNull()))
-          .get();
+      (select(recurringRules)..where((r) => r.deletedAt.isNull())).get();
 
   Future<RecurringRuleRow?> getRuleById(String id) =>
-      (select(recurringRules)..where((r) => r.id.equals(id)))
-          .getSingleOrNull();
+      (select(recurringRules)..where((r) => r.id.equals(id))).getSingleOrNull();
 
   Future<void> insertRule(RecurringRulesCompanion entry) =>
       into(recurringRules).insert(entry);
 
-  Future<bool> updateRule(RecurringRuleRow row) =>
-      update(recurringRules).replace(row);
+  Future<bool> updateRule(RecurringRuleRow row) async {
+    final count =
+        await (update(
+          recurringRules,
+        )..where((rule) => rule.id.equals(row.id))).write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   Future<int> softDeleteRule(String id, DateTime deletedAt) async {
     final current = await getRuleById(id);
@@ -49,13 +54,18 @@ class RecurringRuleDao extends DatabaseAccessor<AppDatabase>
 
   /// Tasks materialized from a rule on one specific day (local calendar day,
   /// stored as UTC ISO timestamps — same convention as TaskDao).
-  Future<List<TaskRow>> getInstancesForDay(String ruleId, String dayStartUtcIso, String nextDayStartUtcIso) {
-    return (select(db.tasks)
-          ..where((t) =>
+  Future<List<TaskRow>> getInstancesForDay(
+    String ruleId,
+    String dayStartUtcIso,
+    String nextDayStartUtcIso,
+  ) {
+    return (select(db.tasks)..where(
+          (t) =>
               t.recurringRuleId.equals(ruleId) &
               t.deletedAt.isNull() &
               t.startTime.isBiggerOrEqualValue(dayStartUtcIso) &
-              t.startTime.isSmallerThanValue(nextDayStartUtcIso)))
+              t.startTime.isSmallerThanValue(nextDayStartUtcIso),
+        ))
         .get();
   }
 }

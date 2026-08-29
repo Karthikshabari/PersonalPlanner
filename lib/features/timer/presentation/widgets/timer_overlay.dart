@@ -16,14 +16,14 @@ class TimerOverlay extends ConsumerWidget {
     final active = ref.watch(activeTimerProvider).value;
     if (active == null) return const SizedBox.shrink();
 
-    final elapsed = formatTimerClock(
-        ref.watch(activeTimerElapsedProvider(active.session.taskId)).value ??
-            0);
+    final elapsedSeconds =
+        ref.watch(activeTimerElapsedProvider(active.session.taskId)).value ?? 0;
+    final elapsed = formatTimerClock(elapsedSeconds);
 
     return Card(
       key: const ValueKey('timer-overlay'),
       elevation: 6,
-      color: AppColors.surfaceVariantDark,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -33,7 +33,16 @@ class TimerOverlay extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.timer_outlined, size: 16, color: AppColors.inProgress),
+            AnimatedScale(
+              scale: elapsedSeconds.isEven ? 1.05 : 1,
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeInOut,
+              child: const Icon(
+                Icons.timer_outlined,
+                size: 16,
+                color: AppColors.inProgress,
+              ),
+            ),
             const SizedBox(width: AppSpacing.sm),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 180),
@@ -41,9 +50,7 @@ class TimerOverlay extends ConsumerWidget {
                 active.taskTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
+                style: Theme.of(context).textTheme.bodyMedium
                     ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),

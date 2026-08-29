@@ -2,7 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/features/recurring/domain/rrule_utils.dart';
 import 'package:rrule/rrule.dart';
 
+import '../../helpers/sqlite_setup.dart';
+
 void main() {
+  setupSqliteForTests();
+
   group('RruleUtils.presetToRrule', () {
     // Aug 26 2026 is a Wednesday.
     final anchor = DateTime(2026, 8, 26);

@@ -12,60 +12,88 @@ import '../helpers/sqlite_setup.dart';
 void main() {
   setupSqliteForTests();
 
-  test('every exact v1-v5 snapshot upgrades to v6 with valid data intact',
-      () async {
-    final directory = Directory.systemTemp.createTempSync('planner_migration_v6');
-    try {
-      for (var version = 1; version <= 5; version++) {
-        final file = File('${directory.path}/v$version.sqlite3');
-        MigrationSchema.create(file, version);
-        final db = AppDatabase(NativeDatabase(file));
-        try {
-          expect(
-            (await db.customSelect('PRAGMA user_version').getSingle())
-                .read<int>('user_version'),
-            6,
-            reason: 'v$version did not reach schema v6',
-          );
-          expect((await db.select(db.tasks).get()).single.title, 'Legacy task');
-          expect((await db.select(db.categories).get()).single.name, 'Work');
-          expect((await db.select(db.appSettings).get()).single.value, 'dark');
-          if (version >= 2) {
+  test(
+    'every exact v1-v5 snapshot upgrades to v7 with valid data intact',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'planner_migration_v6',
+      );
+      try {
+        for (var version = 1; version <= 5; version++) {
+          final file = File('${directory.path}/v$version.sqlite3');
+          MigrationSchema.create(file, version);
+          final db = AppDatabase(NativeDatabase(file));
+          try {
             expect(
-              (await db.select(db.taskTags).get()).single.updatedAt.toUtc(),
-              DateTime.parse(MigrationSchema.timestamp),
+              (await db.customSelect('PRAGMA user_version').getSingle())
+                  .read<int>('user_version'),
+              7,
+              reason: 'v$version did not reach schema v7',
             );
+            expect(
+              (await db.select(db.tasks).get()).single.title,
+              'Legacy task',
+            );
+            expect((await db.select(db.categories).get()).single.name, 'Work');
+            expect(
+              (await db.select(db.appSettings).get()).single.value,
+              'dark',
+            );
+            if (version >= 2) {
+              expect(
+                (await db.select(db.taskTags).get()).single.updatedAt.toUtc(),
+                DateTime.parse(MigrationSchema.timestamp),
+              );
+            }
+            if (version >= 3) {
+              expect(
+                (await db.select(db.recurringRules).get()).single.id,
+                'rule-1',
+              );
+              expect(
+                (await db.select(db.taskTemplates).get()).single.id,
+                'template-1',
+              );
+            }
+            if (version >= 4) {
+              expect(
+                (await db.select(db.dailyReviews).get()).single.id,
+                'daily-1',
+              );
+              expect(
+                (await db.select(db.weeklyReviews).get()).single.id,
+                'weekly-1',
+              );
+              expect(
+                (await db.select(db.dailyStatsCache).get()).single.totalTasks,
+                1,
+              );
+            }
+            if (version >= 5) {
+              expect(
+                (await db.select(db.timerSessions).get()).single.durationSec,
+                30,
+              );
+            }
+          } finally {
+            await db.close();
           }
-          if (version >= 3) {
-            expect((await db.select(db.recurringRules).get()).single.id, 'rule-1');
-            expect((await db.select(db.taskTemplates).get()).single.id,
-                'template-1');
-          }
-          if (version >= 4) {
-            expect((await db.select(db.dailyReviews).get()).single.id, 'daily-1');
-            expect((await db.select(db.weeklyReviews).get()).single.id, 'weekly-1');
-            expect((await db.select(db.dailyStatsCache).get()).single.totalTasks, 1);
-          }
-          if (version >= 5) {
-            expect((await db.select(db.timerSessions).get()).single.durationSec, 30);
-          }
-        } finally {
-          await db.close();
         }
+      } finally {
+        directory.deleteSync(recursive: true);
       }
-    } finally {
-      directory.deleteSync(recursive: true);
-    }
-  });
+    },
+  );
 
-  test('v6 creates and enforces foreign keys, checks, partial indexes, and FTS',
-      () async {
+  test('v6 creates and enforces foreign keys, checks, partial indexes, and FTS', () async {
     final db = AppDatabase(NativeDatabase.memory());
     try {
       final tableSql = <String, String>{};
-      final tables = await db.customSelect(
-        "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index', 'trigger')",
-      ).get();
+      final tables = await db
+          .customSelect(
+            "SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'index', 'trigger')",
+          )
+          .get();
       for (final row in tables) {
         final name = row.read<String>('name');
         final sql = row.read<String?>('sql');
@@ -84,9 +112,11 @@ void main() {
       expect(tableSql['tasks_fts_update'], contains('AFTER UPDATE'));
       expect(tableSql['tasks_fts_delete'], contains('AFTER DELETE'));
 
-      final indexes = await db.customSelect(
-        "SELECT name, sql FROM sqlite_master WHERE type = 'index'",
-      ).get();
+      final indexes = await db
+          .customSelect(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'index'",
+          )
+          .get();
       final indexSql = <String, String>{
         for (final row in indexes)
           row.read<String>('name'): row.read<String?>('sql') ?? '',
@@ -103,9 +133,9 @@ void main() {
       expect(indexSql['idx_timer_one_active'], contains('ended_at IS NULL'));
       expect(indexSql['idx_timer_one_active'], contains('deleted_at IS NULL'));
 
-      final taskForeignKeys = await db.customSelect(
-        'PRAGMA foreign_key_list(tasks)',
-      ).get();
+      final taskForeignKeys = await db
+          .customSelect('PRAGMA foreign_key_list(tasks)')
+          .get();
       expect(
         taskForeignKeys.map((row) => row.read<String>('table')),
         containsAll(<String>['categories', 'recurring_rules', 'tasks']),
@@ -121,24 +151,30 @@ void main() {
         }
       }
 
-      await expectFailure(() => db.customStatement('''
+      await expectFailure(
+        () => db.customStatement('''
         INSERT INTO tasks
           (id, title, created_at, updated_at, priority)
         VALUES ('invalid-priority', 'Invalid', '${MigrationSchema.timestamp}',
           '${MigrationSchema.timestamp}', 5)
-      '''));
-      await expectFailure(() => db.customStatement('''
+      '''),
+      );
+      await expectFailure(
+        () => db.customStatement('''
         INSERT INTO timer_sessions
           (id, task_id, started_at, created_at, updated_at)
         VALUES ('orphan-timer', 'missing-task', '${MigrationSchema.timestamp}',
           '${MigrationSchema.timestamp}', '${MigrationSchema.timestamp}')
-      '''));
+      '''),
+      );
 
       Future<int> match(String query) async {
-        final row = await db.customSelect(
-          'SELECT count(*) AS count FROM tasks_fts WHERE tasks_fts MATCH ?',
-          variables: [Variable<String>(query)],
-        ).getSingle();
+        final row = await db
+            .customSelect(
+              'SELECT count(*) AS count FROM tasks_fts WHERE tasks_fts MATCH ?',
+              variables: [Variable<String>(query)],
+            )
+            .getSingle();
         return row.read<int>('count');
       }
 
@@ -178,32 +214,40 @@ void main() {
     }
   });
 
-  test('v6 rejects unsafe duplicate active identities with an actionable error',
-      () async {
-    final directory = Directory.systemTemp.createTempSync('planner_migration_v6_reject');
-    final file = File('${directory.path}/duplicate.sqlite3');
-    try {
-      MigrationSchema.create(file, 2);
-      final legacy = sqlite3.open(file.path);
-      legacy.execute('''
+  test(
+    'v6 rejects unsafe duplicate active identities with an actionable error',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'planner_migration_v6_reject',
+      );
+      final file = File('${directory.path}/duplicate.sqlite3');
+      try {
+        MigrationSchema.create(file, 2);
+        final legacy = sqlite3.open(file.path);
+        legacy.execute('''
         INSERT INTO tags (id, name, created_at, updated_at)
         VALUES ('tag-duplicate', 'legacy', '${MigrationSchema.timestamp}',
           '${MigrationSchema.timestamp}')
       ''');
-      legacy.dispose();
+        legacy.dispose();
 
-      final db = AppDatabase(NativeDatabase(file));
-      try {
-        await expectLater(
-          db.select(db.tasks).get(),
-          throwsA(predicate((error) =>
-              error.toString().contains('duplicate active tag names'))),
-        );
+        final db = AppDatabase(NativeDatabase(file));
+        try {
+          await expectLater(
+            db.select(db.tasks).get(),
+            throwsA(
+              predicate(
+                (error) =>
+                    error.toString().contains('duplicate active tag names'),
+              ),
+            ),
+          );
+        } finally {
+          await db.close();
+        }
       } finally {
-        await db.close();
+        directory.deleteSync(recursive: true);
       }
-    } finally {
-      directory.deleteSync(recursive: true);
-    }
-  });
+    },
+  );
 }

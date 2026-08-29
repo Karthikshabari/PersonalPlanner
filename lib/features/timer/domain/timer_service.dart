@@ -25,32 +25,35 @@ class TimerService {
           targetRow.deletedAt != null ||
           (TaskStatus.fromDb(targetRow.status) != TaskStatus.planned &&
               TaskStatus.fromDb(targetRow.status) != TaskStatus.inProgress)) {
-        throw StateError('Only an active planned or in-progress task can start a timer');
+        throw StateError(
+          'Only an active planned or in-progress task can start a timer',
+        );
       }
       final existing = await _db.timerDao.getActiveTimerForTask(taskId);
       if (existing != null) return; // already running for this task
 
       // Single active timer globally: finalize whoever else was running.
-      final others = await (_db.select(_db.timerSessions)
-            ..where((s) => s.endedAt.isNull() & s.deletedAt.isNull()))
-          .get();
+      final others = await (_db.select(
+        _db.timerSessions,
+      )..where((s) => s.endedAt.isNull() & s.deletedAt.isNull())).get();
       for (final other in others) {
         await _finalize(other, now);
         await _syncActualDurationInTransaction(other.taskId);
       }
-      await _db.timerDao.insertSession(TimerSessionsCompanion.insert(
-        id: generateUuidV7(),
-        taskId: taskId,
-        startedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      ));
+      await _db.timerDao.insertSession(
+        TimerSessionsCompanion.insert(
+          id: generateUuidV7(),
+          taskId: taskId,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
 
       if (TaskStatus.fromDb(targetRow.status) == TaskStatus.planned) {
         await TaskRepository(_db).updateTask(
-          TaskRepository.fromRow(targetRow).copyWith(
-            status: TaskStatus.inProgress,
-          ),
+          TaskRepository.fromRow(targetRow)
+              .copyWith(status: TaskStatus.inProgress),
         );
       }
     });
@@ -58,12 +61,18 @@ class TimerService {
 
   /// Ends the running session, computing its duration, and refreshes the
   /// task's `actual_duration_min` from all sessions (planner.md Chunk 6 #5).
-  Future<void> pause() async {
-    final now = DateTime.now();
-    final running = await _runningSession();
-    if (running == null) return;
+  Future<void> pause() => pauseAt(DateTime.now());
+
+  /// Finalizes at the time an external action actually occurred. This keeps
+  /// process-death recovery from charging the user for restart delay.
+  Future<void> pauseAt(DateTime occurredAt) async {
     await _db.transaction(() async {
-      await _finalize(running, now);
+      final running = await _runningSession();
+      if (running == null) return;
+      final endedAt = occurredAt.isBefore(running.startedAt)
+          ? running.startedAt
+          : occurredAt;
+      await _finalize(running, endedAt);
       await _syncActualDurationInTransaction(running.taskId);
     });
   }
@@ -74,6 +83,8 @@ class TimerService {
   /// Ends the current session and finalizes its duration. The "Mark as
   /// Completed?" decision belongs to the caller (planner.md Chunk 6 #12).
   Future<void> stop() => pause();
+
+  Future<void> stopAt(DateTime occurredAt) => pauseAt(occurredAt);
 
   Future<void> syncActualDuration(String taskId) async {
     await _db.transaction(() => _syncActualDurationInTransaction(taskId));
@@ -99,7 +110,11 @@ class TimerService {
   /// from completed timer minutes, so later sessions retain the adjustment.
   Future<void> setManualActual(String taskId, int actualMinutes) async {
     if (actualMinutes < 0) {
-      throw ArgumentError.value(actualMinutes, 'actualMinutes', 'must not be negative');
+      throw ArgumentError.value(
+        actualMinutes,
+        'actualMinutes',
+        'must not be negative',
+      );
     }
     await _db.transaction(() async {
       final task = await _db.taskDao.getTaskById(taskId);
@@ -118,20 +133,25 @@ class TimerService {
   }
 
   Future<TimerSessionRow?> _runningSession() async {
-    final rows = await (_db.select(_db.timerSessions)
-          ..where((s) => s.endedAt.isNull() & s.deletedAt.isNull())
-          ..limit(1))
-        .get();
+    final rows =
+        await (_db.select(_db.timerSessions)
+              ..where((s) => s.endedAt.isNull() & s.deletedAt.isNull())
+              ..limit(1))
+            .get();
     return rows.isEmpty ? null : rows.first;
   }
 
   Future<void> _finalize(TimerSessionRow session, DateTime endedAt) async {
-    final durationSec =
-        endedAt.difference(session.startedAt).inSeconds.clamp(0, 24 * 3600);
-    await _db.timerDao.updateSession(session.copyWith(
-      endedAt: Value(endedAt),
-      durationSec: durationSec,
-      updatedAt: endedAt,
-    ));
+    final durationSec = endedAt
+        .difference(session.startedAt)
+        .inSeconds
+        .clamp(0, 24 * 3600);
+    await _db.timerDao.updateSession(
+      session.copyWith(
+        endedAt: Value(endedAt),
+        durationSec: durationSec,
+        updatedAt: endedAt,
+      ),
+    );
   }
 }

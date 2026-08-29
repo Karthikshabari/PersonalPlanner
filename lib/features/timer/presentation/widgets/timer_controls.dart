@@ -77,7 +77,8 @@ class TimerControls extends ConsumerWidget {
             Row(
               children: [
                 Icon(Icons.timer_off_outlined,
-                    size: 14, color: AppColors.textSecondaryDark),
+                    size: 14,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(

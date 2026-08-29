@@ -22,15 +22,17 @@ class ResizableHandle extends StatefulWidget {
     required this.onResizeCancel,
   });
 
+  static bool get isTouchPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  static const double touchTargetHeight = 48;
+
   @override
   State<ResizableHandle> createState() => _ResizableHandleState();
 }
 
 class _ResizableHandleState extends State<ResizableHandle> {
-  static bool get _isTouchPlatform =>
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
-
   bool _active = false;
   double _accumulatedDy = 0;
 
@@ -39,7 +41,7 @@ class _ResizableHandleState extends State<ResizableHandle> {
     return GestureDetector(
       key: const ValueKey('resize-handle'),
       behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: _isTouchPlatform
+      onVerticalDragStart: ResizableHandle.isTouchPlatform
           ? null
           : (_) {
               if (_active) return;
@@ -47,28 +49,28 @@ class _ResizableHandleState extends State<ResizableHandle> {
               _accumulatedDy = 0;
               widget.onResizeStart();
             },
-      onVerticalDragUpdate: _isTouchPlatform
+      onVerticalDragUpdate: ResizableHandle.isTouchPlatform
           ? null
           : (details) {
               if (!_active) return;
               _accumulatedDy += details.delta.dy;
               widget.onResizeUpdate(_accumulatedDy);
             },
-      onVerticalDragEnd: _isTouchPlatform
+      onVerticalDragEnd: ResizableHandle.isTouchPlatform
           ? null
           : (_) {
               if (!_active) return;
               _active = false;
               widget.onResizeEnd();
             },
-      onVerticalDragCancel: _isTouchPlatform
+      onVerticalDragCancel: ResizableHandle.isTouchPlatform
           ? null
           : () {
               if (!_active) return;
               _active = false;
               widget.onResizeCancel();
             },
-      onLongPressStart: _isTouchPlatform
+      onLongPressStart: ResizableHandle.isTouchPlatform
           ? (details) {
               if (_active) return;
               _active = true;
@@ -76,16 +78,22 @@ class _ResizableHandleState extends State<ResizableHandle> {
               widget.onResizeStart();
             }
           : null,
-      onLongPressMoveUpdate: _isTouchPlatform
+      onLongPressMoveUpdate: ResizableHandle.isTouchPlatform
           ? (details) {
               if (!_active) return;
               _accumulatedDy = details.offsetFromOrigin.dy;
               widget.onResizeUpdate(_accumulatedDy);
             }
           : null,
-      onLongPressEnd:
-          _isTouchPlatform ? (details) { if (_active) { _active = false; widget.onResizeEnd(); } } : null,
-      onLongPressCancel: _isTouchPlatform
+      onLongPressEnd: ResizableHandle.isTouchPlatform
+          ? (details) {
+              if (_active) {
+                _active = false;
+                widget.onResizeEnd();
+              }
+            }
+          : null,
+      onLongPressCancel: ResizableHandle.isTouchPlatform
           ? () {
               if (_active) {
                 _active = false;
@@ -95,19 +103,23 @@ class _ResizableHandleState extends State<ResizableHandle> {
           : null,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpDown,
-        child: SizedBox(
-          height: AppConstants.resizeHandleHeight.toDouble(),
-          width: double.infinity,
-          child: Center(
-            child: Container(
-              width: 28,
-              height: 3,
-              decoration: BoxDecoration(
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(2),
+        child: Semantics(
+          label: 'Resize task',
+          button: true,
+          child: SizedBox(
+            height: ResizableHandle.isTouchPlatform
+                ? ResizableHandle.touchTargetHeight
+                : AppConstants.resizeHandleHeight.toDouble(),
+            width: double.infinity,
+            child: Center(
+              child: Container(
+                width: 28,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant
+                      .withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
           ),

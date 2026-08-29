@@ -3,32 +3,30 @@ import 'package:go_router/go_router.dart';
 
 import '../layout/adaptive_layout.dart';
 
+typedef _Destination = (String, IconData, IconData, String);
+
 class AdaptiveShell extends StatelessWidget {
   final Widget child;
 
   const AdaptiveShell({super.key, required this.child});
 
-  static const _destinations = [
+  static const _desktopDestinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
+    ('/week', Icons.view_week_outlined, Icons.view_week, 'Week'),
     ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
-    (
-      '/inbox',
-      Icons.inbox_outlined,
-      Icons.inbox,
-      'Inbox'
-    ),
-    (
-      '/categories',
-      Icons.label_outline,
-      Icons.label,
-      'Categories'
-    ),
-    (
-      '/settings',
-      Icons.settings_outlined,
-      Icons.settings,
-      'Settings'
-    ),
+    ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
+    ('/search', Icons.search_outlined, Icons.search, 'Search'),
+    ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
+    ('/categories', Icons.label_outline, Icons.label, 'Categories'),
+    ('/settings', Icons.settings_outlined, Icons.settings, 'Settings'),
+  ];
+
+  static const _mobileDestinations = [
+    ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
+    ('/week', Icons.view_week_outlined, Icons.view_week, 'Week'),
+    ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
+    ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
+    ('/search', Icons.search_outlined, Icons.search, 'Search'),
   ];
 
   @override
@@ -55,22 +53,23 @@ class AdaptiveShell extends StatelessWidget {
     );
   }
 
-  int _selectedIndex(BuildContext context) {
+  int? _selectedIndex(BuildContext context, List<_Destination> destinations) {
     final location = GoRouterState.of(context).uri.path;
-    for (var i = 0; i < _destinations.length; i++) {
-      if (location.startsWith(_destinations[i].$1)) return i;
+    for (var i = 0; i < destinations.length; i++) {
+      if (location.startsWith(destinations[i].$1)) return i;
     }
-    return 0;
+    return null;
   }
 
   Widget _buildRail(BuildContext context) {
-    final index = _selectedIndex(context);
+    final destinations = _desktopDestinations;
+    final index = _selectedIndex(context, destinations) ?? 0;
     return NavigationRail(
       selectedIndex: index,
-      onDestinationSelected: (i) => context.go(_destinations[i].$1),
+      onDestinationSelected: (i) => context.go(destinations[i].$1),
       labelType: NavigationRailLabelType.all,
       destinations: [
-        for (final d in _destinations)
+        for (final d in destinations)
           NavigationRailDestination(
             icon: Icon(d.$2),
             selectedIcon: Icon(d.$3),
@@ -80,13 +79,15 @@ class AdaptiveShell extends StatelessWidget {
     );
   }
 
-  Widget _buildBottomBar(BuildContext context) {
-    final index = _selectedIndex(context);
+  Widget? _buildBottomBar(BuildContext context) {
+    final destinations = _mobileDestinations;
+    final index = _selectedIndex(context, destinations);
+    if (index == null) return null;
     return NavigationBar(
       selectedIndex: index,
-      onDestinationSelected: (i) => context.go(_destinations[i].$1),
+      onDestinationSelected: (i) => context.go(destinations[i].$1),
       destinations: [
-        for (final d in _destinations)
+        for (final d in destinations)
           NavigationDestination(
             icon: Icon(d.$2),
             selectedIcon: Icon(d.$3),

@@ -36,6 +36,40 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.kotlin/
 
 # Linux desktop ephemeral build output
 /linux/flutter/ephemeral/
+
+# Test and coverage output
+/coverage/
+
+# Release-gate reports contain machine-local logs and are not source artifacts.
+/artifacts/release-gate/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+/supabase.local.json
+
+# Local SQLite runtime files
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Supabase CLI local state (migrations/config remain version-controlled)
+/supabase/.branches/
+/supabase/.temp/
+# Android production signing material is machine-local and must never be
+# committed or included in build artifacts.
+android/key.properties
+android/*.jks
+android/*.keystore
+android/*.p12
+android/*.pem

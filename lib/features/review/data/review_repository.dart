@@ -27,8 +27,7 @@ class ReviewRepository {
     final existing = await _dao.getAnyDailyReviewByDate(dateIso);
     final now = DateTime.now();
     final effective = review.copyWith(
-      id: existing?.id ??
-          (review.id.isEmpty ? generateUuidV7() : review.id),
+      id: existing?.id ?? (review.id.isEmpty ? generateUuidV7() : review.id),
       date: startOfDay(review.date),
       energyLevel: _clampRating(review.energyLevel),
       productivityRating: _clampRating(review.productivityRating),
@@ -37,13 +36,16 @@ class ReviewRepository {
       createdAt: existing?.createdAt ?? now,
       deletedAt: null,
     );
-    if (existing == null) {
-      await _dao.insertDailyReview(_toCompanion(effective));
-    } else {
-      await _dao.updateDailyReview(
-        _toRow(effective, syncStatus: 1, revision: existing.revision + 1),
-      );
-    }
+    await _db.transaction(() async {
+      if (existing == null) {
+        await _dao.insertDailyReview(_toCompanion(effective));
+      } else {
+        await _dao.updateDailyReview(
+          _toRow(effective, syncStatus: 1, revision: existing.revision + 1),
+        );
+      }
+      await _db.statsDao.invalidateForDate(dateIso);
+    });
     return effective;
   }
 
@@ -52,12 +54,32 @@ class ReviewRepository {
       .map((row) => row == null ? null : fromRow(row));
 
   Future<DailyReview?> getReviewForDate(DateTime date) async {
-    final row = await _dao.getDailyReviewByDate(isoDateString(startOfDay(date)));
+    final row = await _dao.getDailyReviewByDate(
+      isoDateString(startOfDay(date)),
+    );
     return row == null ? null : fromRow(row);
   }
 
-  Future<void> deleteDailyReview(String id) =>
-      _dao.softDeleteDailyReview(id, DateTime.now());
+  Future<List<DailyReview>> getDailyReviewsBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final rows = await _dao.getDailyReviewsBetween(
+      isoDateString(startOfDay(start)),
+      isoDateString(startOfDay(end)),
+    );
+    return rows.map(ReviewRepository.fromRow).toList(growable: false);
+  }
+
+  Future<void> deleteDailyReview(String id) async {
+    final current = await _dao.getDailyReviewById(id);
+    await _db.transaction(() async {
+      await _dao.softDeleteDailyReview(id, DateTime.now());
+      if (current != null) {
+        await _db.statsDao.invalidateForDate(current.date);
+      }
+    });
+  }
 
   // ---------------------------------------------------------------
   // Weekly reviews
@@ -70,8 +92,7 @@ class ReviewRepository {
     final existing = await _dao.getAnyWeeklyReviewByWeekStart(weekIso);
     final now = DateTime.now();
     final effective = review.copyWith(
-      id: existing?.id ??
-          (review.id.isEmpty ? generateUuidV7() : review.id),
+      id: existing?.id ?? (review.id.isEmpty ? generateUuidV7() : review.id),
       weekStartDate: startOfWeek(review.weekStartDate),
       overallRating: _clampRating(review.overallRating),
       updatedAt: now,
@@ -82,8 +103,7 @@ class ReviewRepository {
       await _dao.insertWeeklyReview(_toWeeklyCompanion(effective));
     } else {
       await _dao.updateWeeklyReview(
-        _toWeeklyRow(effective,
-            syncStatus: 1, revision: existing.revision + 1),
+        _toWeeklyRow(effective, syncStatus: 1, revision: existing.revision + 1),
       );
     }
     return effective;
@@ -94,8 +114,9 @@ class ReviewRepository {
       .map((row) => row == null ? null : fromWeeklyRow(row));
 
   Future<WeeklyReview?> getWeeklyReviewForWeek(DateTime weekStart) async {
-    final row = await _dao
-        .getWeeklyReviewByWeekStart(isoDateString(startOfWeek(weekStart)));
+    final row = await _dao.getWeeklyReviewByWeekStart(
+      isoDateString(startOfWeek(weekStart)),
+    );
     return row == null ? null : fromWeeklyRow(row);
   }
 
@@ -112,18 +133,18 @@ class ReviewRepository {
   // ---------------------------------------------------------------
 
   static DailyReview fromRow(DailyReviewRow row) => DailyReview(
-        id: row.id,
-        date: parseIsoDate(row.date),
-        reflection: row.reflection,
-        energyLevel: row.energyLevel,
-        productivityRating: row.productivityRating,
-        planningAccuracyRating: row.planningAccuracyRating,
-        wins: JsonListUtils.decode(row.winsJson),
-        improvements: JsonListUtils.decode(row.improvementsJson),
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    date: parseIsoDate(row.date),
+    reflection: row.reflection,
+    energyLevel: row.energyLevel,
+    productivityRating: row.productivityRating,
+    planningAccuracyRating: row.planningAccuracyRating,
+    wins: JsonListUtils.decode(row.winsJson),
+    improvements: JsonListUtils.decode(row.improvementsJson),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 
   static DailyReviewsCompanion _toCompanion(DailyReview r) =>
       DailyReviewsCompanion.insert(
@@ -134,9 +155,9 @@ class ReviewRepository {
         productivityRating: Value(r.productivityRating),
         planningAccuracyRating: Value(r.planningAccuracyRating),
         winsJson: Value(r.wins.isEmpty ? null : JsonListUtils.encode(r.wins)),
-        improvementsJson: Value(r.improvements.isEmpty
-            ? null
-            : JsonListUtils.encode(r.improvements)),
+        improvementsJson: Value(
+          r.improvements.isEmpty ? null : JsonListUtils.encode(r.improvements),
+        ),
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         deletedAt: Value(r.deletedAt),
@@ -148,36 +169,36 @@ class ReviewRepository {
     DailyReview r, {
     required int syncStatus,
     required int revision,
-  }) =>
-      DailyReviewRow(
-        id: r.id,
-        date: isoDateString(r.date),
-        reflection: r.reflection,
-        energyLevel: r.energyLevel,
-        productivityRating: r.productivityRating,
-        planningAccuracyRating: r.planningAccuracyRating,
-        winsJson: r.wins.isEmpty ? null : JsonListUtils.encode(r.wins),
-        improvementsJson:
-            r.improvements.isEmpty ? null : JsonListUtils.encode(r.improvements),
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-        deletedAt: r.deletedAt,
-        syncStatus: syncStatus,
-        revision: revision,
-      );
+  }) => DailyReviewRow(
+    id: r.id,
+    date: isoDateString(r.date),
+    reflection: r.reflection,
+    energyLevel: r.energyLevel,
+    productivityRating: r.productivityRating,
+    planningAccuracyRating: r.planningAccuracyRating,
+    winsJson: r.wins.isEmpty ? null : JsonListUtils.encode(r.wins),
+    improvementsJson: r.improvements.isEmpty
+        ? null
+        : JsonListUtils.encode(r.improvements),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    deletedAt: r.deletedAt,
+    syncStatus: syncStatus,
+    revision: revision,
+  );
 
   static WeeklyReview fromWeeklyRow(WeeklyReviewRow row) => WeeklyReview(
-        id: row.id,
-        weekStartDate: parseIsoDate(row.weekStartDate),
-        reflection: row.reflection,
-        overallRating: row.overallRating,
-        goalsMet: JsonListUtils.decode(row.goalsMetJson),
-        goalsMissed: JsonListUtils.decode(row.goalsMissedJson),
-        nextWeekFocus: JsonListUtils.decode(row.nextWeekFocusJson),
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    weekStartDate: parseIsoDate(row.weekStartDate),
+    reflection: row.reflection,
+    overallRating: row.overallRating,
+    goalsMet: JsonListUtils.decode(row.goalsMetJson),
+    goalsMissed: JsonListUtils.decode(row.goalsMissedJson),
+    nextWeekFocus: JsonListUtils.decode(row.nextWeekFocusJson),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 
   static WeeklyReviewsCompanion _toWeeklyCompanion(WeeklyReview r) =>
       WeeklyReviewsCompanion.insert(
@@ -185,13 +206,17 @@ class ReviewRepository {
         weekStartDate: isoDateString(r.weekStartDate),
         reflection: Value(r.reflection),
         overallRating: Value(r.overallRating),
-        goalsMetJson:
-            Value(r.goalsMet.isEmpty ? null : JsonListUtils.encode(r.goalsMet)),
+        goalsMetJson: Value(
+          r.goalsMet.isEmpty ? null : JsonListUtils.encode(r.goalsMet),
+        ),
         goalsMissedJson: Value(
-            r.goalsMissed.isEmpty ? null : JsonListUtils.encode(r.goalsMissed)),
-        nextWeekFocusJson: Value(r.nextWeekFocus.isEmpty
-            ? null
-            : JsonListUtils.encode(r.nextWeekFocus)),
+          r.goalsMissed.isEmpty ? null : JsonListUtils.encode(r.goalsMissed),
+        ),
+        nextWeekFocusJson: Value(
+          r.nextWeekFocus.isEmpty
+              ? null
+              : JsonListUtils.encode(r.nextWeekFocus),
+        ),
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         deletedAt: Value(r.deletedAt),
@@ -203,23 +228,22 @@ class ReviewRepository {
     WeeklyReview r, {
     required int syncStatus,
     required int revision,
-  }) =>
-      WeeklyReviewRow(
-        id: r.id,
-        weekStartDate: isoDateString(r.weekStartDate),
-        reflection: r.reflection,
-        overallRating: r.overallRating,
-        goalsMetJson:
-            r.goalsMet.isEmpty ? null : JsonListUtils.encode(r.goalsMet),
-        goalsMissedJson:
-            r.goalsMissed.isEmpty ? null : JsonListUtils.encode(r.goalsMissed),
-        nextWeekFocusJson: r.nextWeekFocus.isEmpty
-            ? null
-            : JsonListUtils.encode(r.nextWeekFocus),
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-        deletedAt: r.deletedAt,
-        syncStatus: syncStatus,
-        revision: revision,
-      );
+  }) => WeeklyReviewRow(
+    id: r.id,
+    weekStartDate: isoDateString(r.weekStartDate),
+    reflection: r.reflection,
+    overallRating: r.overallRating,
+    goalsMetJson: r.goalsMet.isEmpty ? null : JsonListUtils.encode(r.goalsMet),
+    goalsMissedJson: r.goalsMissed.isEmpty
+        ? null
+        : JsonListUtils.encode(r.goalsMissed),
+    nextWeekFocusJson: r.nextWeekFocus.isEmpty
+        ? null
+        : JsonListUtils.encode(r.nextWeekFocus),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    deletedAt: r.deletedAt,
+    syncStatus: syncStatus,
+    revision: revision,
+  );
 }

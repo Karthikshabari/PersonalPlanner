@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../providers/notification_settings_providers.dart';
+import '../../../sync/presentation/widgets/sync_status_action.dart';
 
 /// Settings → Notifications (planner.md Chunk 6 #14): enable/disable the
 /// daily review reminder and pick its time. Stored in `app_settings`.
@@ -14,13 +15,18 @@ class NotificationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final enabled = ref.watch(reviewReminderEnabledProvider).value ?? true;
     final minutes =
-        ref.watch(reviewReminderMinutesProvider).value ?? defaultReminderMinutes;
-    final timeLabel = DateFormat('HH:mm').format(
-        DateTime(2026, 1, 1, minutes ~/ 60, minutes % 60));
-    final nativeScheduling =
-        ref.watch(notificationServiceProvider).schedulingSupported;
+        ref.watch(reviewReminderMinutesProvider).value ??
+        defaultReminderMinutes;
+    final timeLabel = DateFormat('HH:mm')
+        .format(DateTime(2026, 1, 1, minutes ~/ 60, minutes % 60));
+    final nativeScheduling = ref
+        .watch(notificationServiceProvider)
+        .schedulingSupported;
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        actions: const [SyncStatusAction()],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
@@ -43,13 +49,17 @@ class NotificationsScreen extends ConsumerWidget {
               enabled: enabled,
               leading: const Icon(Icons.schedule_outlined),
               title: const Text('Reminder time'),
-              trailing: Text(timeLabel,
-                  style: Theme.of(context).textTheme.titleMedium),
+              trailing: Text(
+                timeLabel,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               onTap: () async {
                 final picked = await showTimePicker(
                   context: context,
-                  initialTime:
-                      TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
+                  initialTime: TimeOfDay(
+                    hour: minutes ~/ 60,
+                    minute: minutes % 60,
+                  ),
                 );
                 if (picked != null) {
                   await ref

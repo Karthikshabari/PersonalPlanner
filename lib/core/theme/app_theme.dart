@@ -33,7 +33,6 @@ abstract final class AppTheme {
     required Color textSecondary,
     required TextTheme textTheme,
   }) {
-    final isDark = brightness == Brightness.dark;
     final colorScheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
       brightness: brightness,
@@ -107,15 +106,14 @@ abstract final class AppTheme {
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: isDark ? surfaceVariant : AppColors.surfaceDark,
-        contentTextStyle: TextStyle(color: textPrimary),
+        backgroundColor: colorScheme.inverseSurface,
+        contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
         behavior: SnackBarBehavior.floating,
       ),
       timePickerTheme: TimePickerThemeData(

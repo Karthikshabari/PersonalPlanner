@@ -15,7 +15,7 @@ class DailyStatsService {
 
   /// Computes the aggregates for [date] from live data.
   Future<DailyStats> computeForDate(DateTime date) =>
-      _computeRange(startOfDay(date), startOfDay(date).add(const Duration(days: 1)));
+      _computeRange(startOfDay(date), addDays(startOfDay(date), 1));
 
   /// Computes aggregates over [start, end) (used for weekly totals).
   Future<DailyStats> computeRange(DateTime start, DateTime end) =>
@@ -26,33 +26,68 @@ class DailyStatsService {
   Future<DailyStats> computeAndCache(DateTime date) async {
     final stats = await computeForDate(date);
     final dayIso = isoDateString(startOfDay(date));
-    await _db.statsDao.upsertStats(DailyStatsCacheCompanion.insert(
-      date: dayIso,
-      totalTasks: Value(stats.totalTasks),
-      completedTasks: Value(stats.completedTasks),
-      plannedTasks: Value(stats.plannedTasks),
-      inProgressTasks: Value(stats.inProgressTasks),
-      missedTasks: Value(stats.missedTasks),
-      skippedTasks: Value(stats.skippedTasks),
-      cancelledTasks: Value(stats.cancelledTasks),
-      rescheduledTasks: Value(stats.rescheduledTasks),
-      plannedDurationMin: Value(stats.plannedDurationMin),
-      actualDurationMin: Value(stats.actualDurationMin),
-      focusDurationMin: Value(stats.focusDurationMin),
-      energyLevel: Value(stats.energyLevel),
-      productivityRating: Value(stats.productivityRating),
-      planningAccuracyPct: Value(stats.planningAccuracyPct),
-      computedAt: stats.computedAt,
-    ));
+    await _db.statsDao.upsertStats(
+      DailyStatsCacheCompanion.insert(
+        date: dayIso,
+        totalTasks: Value(stats.totalTasks),
+        completedTasks: Value(stats.completedTasks),
+        plannedTasks: Value(stats.plannedTasks),
+        inProgressTasks: Value(stats.inProgressTasks),
+        missedTasks: Value(stats.missedTasks),
+        skippedTasks: Value(stats.skippedTasks),
+        cancelledTasks: Value(stats.cancelledTasks),
+        rescheduledTasks: Value(stats.rescheduledTasks),
+        plannedDurationMin: Value(stats.plannedDurationMin),
+        actualDurationMin: Value(stats.actualDurationMin),
+        focusDurationMin: Value(stats.focusDurationMin),
+        energyLevel: Value(stats.energyLevel),
+        productivityRating: Value(stats.productivityRating),
+        planningAccuracyPct: Value(stats.planningAccuracyPct),
+        computedAt: stats.computedAt,
+      ),
+    );
     return stats;
   }
 
-  Future<DailyStats> _computeRange(DateTime startInclusive,
-      DateTime endExclusive) async {
-    final tasks = await _db.taskDao.getTasksBetween(startInclusive, endExclusive);
-    final categories = await _db.categoryDao.getActiveCategories();
+  Future<DailyStats> _computeRange(
+    DateTime startInclusive,
+    DateTime endExclusive,
+  ) async {
+    final tasks = await _db.taskDao.getTasksBetween(
+      startInclusive,
+      endExclusive,
+    );
+    // Keep deleted categories available for historical focus-minute
+    // attribution; the category is still user-owned history.
+    final categories = await (_db.select(_db.categories)).get();
     final focusIds = {for (final c in categories) c.id: c.isFocus};
     final now = DateTime.now();
+
+    final sessions =
+        await (_db.select(_db.timerSessions)..where(
+              (session) =>
+                  session.deletedAt.isNull() &
+                  session.endedAt.isNotNull() &
+                  session.startedAt.isSmallerThanValue(
+                    endExclusive.toUtc().toIso8601String(),
+                  ) &
+                  session.endedAt.isBiggerThanValue(
+                    startInclusive.toUtc().toIso8601String(),
+                  ),
+            ))
+            .get();
+    final sessionsByTask = <String, List<TimerSessionRow>>{};
+    for (final session in sessions) {
+      sessionsByTask.putIfAbsent(session.taskId, () => []).add(session);
+    }
+    final tasksStartingInRange = tasks
+        .where(
+          (task) =>
+              task.startTime != null &&
+              !task.startTime!.isBefore(startInclusive) &&
+              task.startTime!.isBefore(endExclusive),
+        )
+        .toList(growable: false);
 
     var plannedMin = 0;
     var actualMin = 0;
@@ -64,48 +99,94 @@ class DailyStatsService {
     var skipped = 0;
     var cancelled = 0;
     var rescheduled = 0;
-    final accuracyRatios = <double>[];
-
     for (final t in tasks) {
-      switch (TaskStatus.fromDb(t.status)) {
-        case TaskStatus.completed:
-          completed++;
-        case TaskStatus.skipped:
-          skipped++;
-        case TaskStatus.cancelled:
-          cancelled++;
-        case TaskStatus.rescheduled:
-          rescheduled++;
-        case TaskStatus.planned:
-          planned++;
-          if (t.endTime != null && t.endTime!.isBefore(now)) missed++;
-        case TaskStatus.inProgress:
-          inProgress++;
-          // "Missed" matches the inbox overdue semantics: the end time has
-          // passed while the task was never finished.
-          if (t.endTime != null && t.endTime!.isBefore(now)) missed++;
+      final startsInRange =
+          t.startTime != null &&
+          !t.startTime!.isBefore(startInclusive) &&
+          t.startTime!.isBefore(endExclusive);
+      if (startsInRange) {
+        switch (TaskStatus.fromDb(t.status)) {
+          case TaskStatus.completed:
+            completed++;
+          case TaskStatus.skipped:
+            skipped++;
+          case TaskStatus.cancelled:
+            cancelled++;
+          case TaskStatus.rescheduled:
+            rescheduled++;
+          case TaskStatus.planned:
+            planned++;
+            if (t.endTime != null && t.endTime!.isBefore(now)) missed++;
+          case TaskStatus.inProgress:
+            inProgress++;
+            // "Missed" matches the inbox overdue semantics: the end time has
+            // passed while the task was never finished.
+            if (t.endTime != null && t.endTime!.isBefore(now)) missed++;
+        }
       }
       if (t.startTime != null && t.endTime != null) {
-        final minutes = t.endTime!.difference(t.startTime!).inMinutes;
+        final overlapStart = t.startTime!.isAfter(startInclusive)
+            ? t.startTime!
+            : startInclusive;
+        final overlapEnd = t.endTime!.isBefore(endExclusive)
+            ? t.endTime!
+            : endExclusive;
+        final minutes = overlapEnd.isAfter(overlapStart)
+            ? overlapEnd.difference(overlapStart).inMinutes
+            : 0;
         plannedMin += minutes;
-        final isFocus =
-            t.categoryId != null && focusIds[t.categoryId!] == true;
+        final isFocus = t.categoryId != null && focusIds[t.categoryId!] == true;
         if (isFocus) focusMin += minutes;
       }
-      actualMin += t.actualDurationMin ?? 0;
-      if (t.actualDurationMin != null &&
-          t.estimatedDurationMin != null &&
-          t.estimatedDurationMin! > 0) {
-        accuracyRatios.add(t.actualDurationMin! / t.estimatedDurationMin!);
+      if (startsInRange) {
+        final taskSessions = sessionsByTask[t.id] ?? const <TimerSessionRow>[];
+        final completedSeconds = taskSessions.fold<int>(0, (sum, session) {
+          final endedAt = session.endedAt ?? now;
+          final overlapStart = session.startedAt.isAfter(startInclusive)
+              ? session.startedAt
+              : startInclusive;
+          final overlapEnd = endedAt.isBefore(endExclusive)
+              ? endedAt
+              : endExclusive;
+          if (!overlapEnd.isAfter(overlapStart)) return sum;
+          return sum + overlapEnd.difference(overlapStart).inSeconds;
+        });
+        final allCompletedSeconds = taskSessions.fold<int>(
+          0,
+          (sum, session) => sum + session.durationSec,
+        );
+        final recordedMinutes =
+            t.actualDurationMin ??
+            allCompletedSeconds ~/ Duration.secondsPerMinute +
+                t.manualDurationAdjustmentMin;
+        final inferredAdjustment =
+            recordedMinutes - allCompletedSeconds ~/ Duration.secondsPerMinute;
+        actualMin +=
+            completedSeconds ~/ Duration.secondsPerMinute + inferredAdjustment;
+      } else {
+        final taskSessions = sessionsByTask[t.id] ?? const <TimerSessionRow>[];
+        for (final session in taskSessions) {
+          final endedAt = session.endedAt ?? now;
+          final overlapStart = session.startedAt.isAfter(startInclusive)
+              ? session.startedAt
+              : startInclusive;
+          final overlapEnd = endedAt.isBefore(endExclusive)
+              ? endedAt
+              : endExclusive;
+          if (overlapEnd.isAfter(overlapStart)) {
+            actualMin += overlapEnd.difference(overlapStart).inMinutes;
+          }
+        }
       }
     }
 
-    final review =
-        await _db.reviewDao.getDailyReviewByDate(isoDateString(startInclusive));
+    final review = await _db.reviewDao.getDailyReviewByDate(
+      isoDateString(startInclusive),
+    );
 
     return DailyStats(
       date: startInclusive,
-      totalTasks: tasks.length,
+      totalTasks: tasksStartingInRange.length,
       completedTasks: completed,
       plannedTasks: planned,
       inProgressTasks: inProgress,
@@ -118,11 +199,33 @@ class DailyStatsService {
       focusDurationMin: focusMin,
       energyLevel: review?.energyLevel,
       productivityRating: review?.productivityRating,
-      planningAccuracyPct: accuracyRatios.isEmpty
-          ? null
-          : accuracyRatios.average * 100,
+      planningAccuracyPct: DailyStatsCalculator.planningAccuracyPct(
+        tasksStartingInRange,
+        estimatedDurationMin: (task) => task.estimatedDurationMin,
+        actualDurationMin: (task) => task.actualDurationMin,
+      ),
       computedAt: DateTime.now(),
     );
+  }
+}
+
+/// Pure task-level statistics shared by daily review and analytics. Keeping
+/// this formula in one place prevents range analytics from drifting from the
+/// existing DailyStats semantics.
+abstract final class DailyStatsCalculator {
+  static double? planningAccuracyPct<T>(
+    Iterable<T> tasks, {
+    required int? Function(T task) estimatedDurationMin,
+    required int? Function(T task) actualDurationMin,
+  }) {
+    final ratios = <double>[];
+    for (final task in tasks) {
+      final estimated = estimatedDurationMin(task);
+      final actual = actualDurationMin(task);
+      if (estimated == null || estimated <= 0 || actual == null) continue;
+      ratios.add(actual / estimated);
+    }
+    return ratios.isEmpty ? null : ratios.average * 100;
   }
 }
 

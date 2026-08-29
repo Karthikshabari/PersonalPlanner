@@ -60,13 +60,11 @@ class _DraggableTaskBlockState extends State<DraggableTaskBlock> {
       behavior: HitTestBehavior.deferToChild,
       onSecondaryTapUp: _isTouchPlatform
           ? null
-          : (details) =>
-              widget.onContextMenuRequested(details.globalPosition),
+          : (details) => widget.onContextMenuRequested(details.globalPosition),
       // Desktop: immediate click + drag.
       onVerticalDragStart: _isTouchPlatform
           ? null
           : (_) {
-              debugPrint('DTB VDRAG START');
               _reset();
               widget.onDragStart();
               _dragActivated = true;

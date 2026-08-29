@@ -29,19 +29,27 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
   Future<void> insertTag(TagsCompanion entry) =>
       into(tags).insert(entry, mode: InsertMode.insertOrIgnore);
 
-  Future<bool> updateTag(TagRow row) => update(tags).replace(row);
+  Future<bool> updateTag(TagRow row) async {
+    final count = await (update(tags)..where((tag) => tag.id.equals(row.id)))
+        .write(
+          row.toCompanion(false).copyWith(serverVersion: const Value.absent()),
+        );
+    return count > 0;
+  }
 
   Future<void> softDeleteTag(String id, DateTime deletedAt) {
     final now = deletedAt.toUtc();
     return transaction(() async {
       final current = await getTagById(id);
       if (current == null || current.deletedAt != null) return;
-      await updateTag(current.copyWith(
-        deletedAt: Value(now),
-        updatedAt: now,
-        syncStatus: 1,
-        revision: current.revision + 1,
-      ));
+      await updateTag(
+        current.copyWith(
+          deletedAt: Value(now),
+          updatedAt: now,
+          syncStatus: 1,
+          revision: current.revision + 1,
+        ),
+      );
       // Detach the tag from every task.
       await customUpdate(
         'UPDATE task_tags SET deleted_at = ?, updated_at = ?, '
@@ -58,60 +66,72 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
   }
 
   Stream<List<TagRow>> watchTagsForTask(String taskId) {
-    final query = select(tags).join([
-      innerJoin(taskTags, taskTags.tagId.equalsExp(tags.id)),
-    ])
-      ..where(tags.deletedAt.isNull() &
-          taskTags.deletedAt.isNull() &
-          taskTags.taskId.equals(taskId))
-      ..orderBy([OrderingTerm.asc(tags.name)]);
+    final query =
+        select(tags)
+            .join([innerJoin(taskTags, taskTags.tagId.equalsExp(tags.id))])
+          ..where(
+            tags.deletedAt.isNull() &
+                taskTags.deletedAt.isNull() &
+                taskTags.taskId.equals(taskId),
+          )
+          ..orderBy([OrderingTerm.asc(tags.name)]);
     return query.watch().map(
-        (rows) => rows.map((r) => r.readTable(tags)).toList());
+      (rows) => rows.map((r) => r.readTable(tags)).toList(),
+    );
   }
 
   Future<void> linkTaskTag(String taskId, String tagId, DateTime createdAt) {
     final now = createdAt.toUtc();
     return transaction(() async {
-      final existing = await (select(taskTags)
-            ..where((tt) =>
-                tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
-          .getSingleOrNull();
+      final existing =
+          await (select(taskTags)..where(
+                (tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId),
+              ))
+              .getSingleOrNull();
       if (existing == null) {
-        await into(taskTags).insert(TaskTagsCompanion.insert(
-          taskId: taskId,
-          tagId: tagId,
-          createdAt: now,
-          updatedAt: now,
-          syncStatus: const Value(1),
-          revision: const Value(1),
-        ));
+        await into(taskTags).insert(
+          TaskTagsCompanion.insert(
+            taskId: taskId,
+            tagId: tagId,
+            createdAt: now,
+            updatedAt: now,
+            syncStatus: const Value(1),
+            revision: const Value(1),
+          ),
+        );
       } else if (existing.deletedAt != null) {
-        await (update(taskTags)
-              ..where((tt) =>
-                  tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
-            .write(TaskTagsCompanion(
-          updatedAt: Value(now),
-          deletedAt: const Value(null),
-          syncStatus: const Value(1),
-          revision: Value(existing.revision + 1),
-        ));
+        await (update(
+              taskTags,
+            )..where((tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
+            .write(
+              TaskTagsCompanion(
+                updatedAt: Value(now),
+                deletedAt: const Value(null),
+                syncStatus: const Value(1),
+                revision: Value(existing.revision + 1),
+              ),
+            );
       }
     });
   }
 
   Future<int> unlinkTaskTag(String taskId, String tagId) async {
-    final existing = await (select(taskTags)
-          ..where((tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
-        .getSingleOrNull();
+    final existing =
+        await (select(
+              taskTags,
+            )..where((tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
+            .getSingleOrNull();
     if (existing == null || existing.deletedAt != null) return 0;
     final now = DateTime.now().toUtc();
-    return (update(taskTags)
-          ..where((tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId)))
-        .write(TaskTagsCompanion(
-      updatedAt: Value(now),
-      deletedAt: Value(now),
-      syncStatus: const Value(1),
-      revision: Value(existing.revision + 1),
-    ));
+    return (update(
+      taskTags,
+    )..where((tt) => tt.taskId.equals(taskId) & tt.tagId.equals(tagId))).write(
+      TaskTagsCompanion(
+        updatedAt: Value(now),
+        deletedAt: Value(now),
+        syncStatus: const Value(1),
+        revision: Value(existing.revision + 1),
+      ),
+    );
   }
 }

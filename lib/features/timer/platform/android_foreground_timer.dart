@@ -17,7 +17,9 @@ class AndroidForegroundTimer {
 
   /// Set by the app shell; invoked on the main isolate when the user taps a
   /// notification button.
-  static void Function(String action)? onButtonAction;
+  static Future<void> Function(PendingForegroundTimerAction action)?
+  onButtonAction;
+  static Future<void>? _activeButtonAction;
 
   static bool get supported => Platform.isAndroid;
 
@@ -48,8 +50,37 @@ class AndroidForegroundTimer {
 
   void _onTaskData(dynamic data) {
     if (data is Map && data['timerAction'] is String) {
-      onButtonAction?.call(data['timerAction'] as String);
+      final occurredAtMs = data['occurredAtMs'] as int?;
+      final action = PendingForegroundTimerAction(
+        action: data['timerAction'] as String,
+        occurredAt: occurredAtMs == null
+            ? DateTime.now().toUtc()
+            : DateTime.fromMillisecondsSinceEpoch(occurredAtMs, isUtc: true),
+      );
+      final callback = onButtonAction;
+      if (callback == null || _activeButtonAction != null) return;
+      final running = callback(action);
+      _activeButtonAction = running;
+      unawaited(
+        running.then<void>(
+          (_) {
+            if (identical(_activeButtonAction, running)) {
+              _activeButtonAction = null;
+            }
+          },
+          onError: (Object _, StackTrace _) {
+            if (identical(_activeButtonAction, running)) {
+              _activeButtonAction = null;
+            }
+          },
+        ),
+      );
     }
+  }
+
+  static Future<void> detachButtonHandler() async {
+    onButtonAction = null;
+    await _activeButtonAction;
   }
 
   Future<bool> start({required String taskTitle}) async {
@@ -66,6 +97,9 @@ class AndroidForegroundTimer {
         serviceTypes: [ForegroundServiceTypes.specialUse],
         notificationTitle: 'Timer running',
         notificationText: taskTitle,
+        notificationIcon: const NotificationIcon(
+          metaDataName: 'personal_planner_timer_icon',
+        ),
         notificationButtons: const [
           NotificationButton(id: pauseButtonId, text: 'Pause'),
           NotificationButton(id: stopButtonId, text: 'Stop'),
@@ -101,14 +135,34 @@ class AndroidForegroundTimer {
     await FlutterForegroundTask.removeData(key: _pendingActionAtKey);
   }
 
-  static Future<String?> takePendingAction() async {
+  static Future<PendingForegroundTimerAction?> takePendingAction() async {
     if (!supported) return null;
-    final action = await FlutterForegroundTask.getData<String>(key: _pendingActionKey);
+    final action = await FlutterForegroundTask.getData<String>(
+      key: _pendingActionKey,
+    );
     if (action == null) return null;
+    final occurredAtMs = await FlutterForegroundTask.getData<int>(
+      key: _pendingActionAtKey,
+    );
     await FlutterForegroundTask.removeData(key: _pendingActionKey);
     await FlutterForegroundTask.removeData(key: _pendingActionAtKey);
-    return action;
+    return PendingForegroundTimerAction(
+      action: action,
+      occurredAt: occurredAtMs == null
+          ? DateTime.now().toUtc()
+          : DateTime.fromMillisecondsSinceEpoch(occurredAtMs, isUtc: true),
+    );
   }
+}
+
+class PendingForegroundTimerAction {
+  final String action;
+  final DateTime occurredAt;
+
+  const PendingForegroundTimerAction({
+    required this.action,
+    required this.occurredAt,
+  });
 }
 
 /// Entry point of the background isolate that owns the notification.
@@ -120,11 +174,16 @@ void foregroundTimerCallback() {
 class _ForegroundTimerHandler extends TaskHandler {
   DateTime? _startedAt;
   String _title = 'Timer running';
+  bool _actionInProgress = false;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    final startedMs = await FlutterForegroundTask.getData<int>(key: 'timer_started_at_ms');
-    final title = await FlutterForegroundTask.getData<String>(key: 'timer_title');
+    final startedMs = await FlutterForegroundTask.getData<int>(
+      key: 'timer_started_at_ms',
+    );
+    final title = await FlutterForegroundTask.getData<String>(
+      key: 'timer_title',
+    );
     _startedAt = startedMs == null
         ? timestamp
         : DateTime.fromMillisecondsSinceEpoch(startedMs, isUtc: true).toLocal();
@@ -142,15 +201,35 @@ class _ForegroundTimerHandler extends TaskHandler {
 
   @override
   void onNotificationButtonPressed(String id) {
-    unawaited(FlutterForegroundTask.saveData(
+    if (_actionInProgress) return;
+    _actionInProgress = true;
+    unawaited(
+      _handleButton(id).then<void>(
+        (_) {
+          _actionInProgress = false;
+        },
+        onError: (Object _, StackTrace _) {
+          _actionInProgress = false;
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleButton(String id) async {
+    final occurredAtMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+    await FlutterForegroundTask.saveData(
       key: 'timer_pending_action',
       value: id,
-    ));
-    unawaited(FlutterForegroundTask.saveData(
+    );
+    await FlutterForegroundTask.saveData(
       key: 'timer_pending_action_at_ms',
-      value: DateTime.now().toUtc().millisecondsSinceEpoch,
-    ));
-    FlutterForegroundTask.sendDataToMain({'timerAction': id});
+      value: occurredAtMs,
+    );
+    await FlutterForegroundTask.stopService();
+    FlutterForegroundTask.sendDataToMain({
+      'timerAction': id,
+      'occurredAtMs': occurredAtMs,
+    });
   }
 
   Future<void> _updateNotification(DateTime timestamp) async {
@@ -161,7 +240,8 @@ class _ForegroundTimerHandler extends TaskHandler {
     final s = elapsed % 60;
     await FlutterForegroundTask.updateService(
       notificationTitle: 'Timer running',
-      notificationText: '$_title  ${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
+      notificationText:
+          '$_title  ${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}',
     );
   }
 }

@@ -9,7 +9,14 @@ final subtaskRepositoryProvider = Provider<SubtaskRepository>((ref) {
 });
 
 /// Stream of a task's subtasks ordered by sort order.
-final subtasksForTaskProvider =
-    StreamProvider.autoDispose.family<List<Subtask>, String>((ref, taskId) {
-  return ref.watch(subtaskRepositoryProvider).watchSubtasksForTask(taskId);
+final subtasksForTaskProvider = StreamProvider.autoDispose
+    .family<List<Subtask>, String>((ref, taskId) {
+      return ref.watch(subtaskRepositoryProvider).watchSubtasksForTask(taskId);
+    });
+
+/// One grouped query for timeline subtask badges.
+final subtaskCountsProvider = StreamProvider.autoDispose<Map<String, String>>((
+  ref,
+) {
+  return ref.watch(subtaskRepositoryProvider).watchSubtaskCounts();
 });

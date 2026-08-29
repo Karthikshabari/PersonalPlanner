@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/features/timeline/domain/commands/batch_command.dart';
@@ -27,8 +28,7 @@ void main() {
 
   final day = DateTime(2026, 7, 23);
 
-  Task newTask(String title, DateTime start, DateTime end,
-          {String id = ''}) =>
+  Task newTask(String title, DateTime start, DateTime end, {String id = ''}) =>
       Task(
         id: id,
         title: title,
@@ -39,41 +39,46 @@ void main() {
       );
 
   group('CreateTaskCommand', () {
-    test('execute inserts; undo tombstones so redo restores the aggregate', () async {
-      final command = CreateTaskCommand(
-        repo,
-        newTask(
-          'Created',
-          day.add(const Duration(hours: 9)),
-          day.add(const Duration(hours: 10)),
-          id: 'create-test-id',
-        ),
-      );
-      await command.execute();
-      var fetched = await repo.getTaskById('create-test-id');
-      expect(fetched, isNotNull);
-      expect(fetched!.title, 'Created');
+    test(
+      'execute inserts; undo tombstones so redo restores the aggregate',
+      () async {
+        final command = CreateTaskCommand(
+          repo,
+          newTask(
+            'Created',
+            day.add(const Duration(hours: 9)),
+            day.add(const Duration(hours: 10)),
+            id: 'create-test-id',
+          ),
+        );
+        await command.execute();
+        var fetched = await repo.getTaskById('create-test-id');
+        expect(fetched, isNotNull);
+        expect(fetched!.title, 'Created');
 
-      await command.undo();
-      fetched = await repo.getTaskById('create-test-id');
-      expect(fetched, isNotNull);
-      expect(fetched!.deletedAt, isNotNull);
+        await command.undo();
+        fetched = await repo.getTaskById('create-test-id');
+        expect(fetched, isNotNull);
+        expect(fetched!.deletedAt, isNotNull);
 
-      // Redo restores the same id without a conflict.
-      await command.execute();
-      fetched = await repo.getTaskById('create-test-id');
-      expect(fetched!.title, 'Created');
-      expect(fetched.deletedAt, isNull);
-    });
+        // Redo restores the same id without a conflict.
+        await command.execute();
+        fetched = await repo.getTaskById('create-test-id');
+        expect(fetched!.title, 'Created');
+        expect(fetched.deletedAt, isNull);
+      },
+    );
   });
 
   group('MoveTaskCommand', () {
     test('execute moves to new slot; undo restores original', () async {
-      final inserted = await repo.insertTask(newTask(
-        'Movable',
-        day.add(const Duration(hours: 8)),
-        day.add(const Duration(hours: 9)),
-      ));
+      final inserted = await repo.insertTask(
+        newTask(
+          'Movable',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
       final newStart = day.add(const Duration(hours: 14));
       final newEnd = day.add(const Duration(hours: 15));
       final command = MoveTaskCommand(
@@ -102,11 +107,13 @@ void main() {
 
   group('ResizeTaskCommand', () {
     test('execute extends end_time; undo restores it', () async {
-      final inserted = await repo.insertTask(newTask(
-        'Resizable',
-        day.add(const Duration(hours: 8)),
-        day.add(const Duration(hours: 9)),
-      ));
+      final inserted = await repo.insertTask(
+        newTask(
+          'Resizable',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
       final newEnd = day.add(const Duration(hours: 11));
       final command = ResizeTaskCommand(
         repository: repo,
@@ -127,11 +134,13 @@ void main() {
 
   group('DeleteTaskCommand', () {
     test('execute soft-deletes; undo restores from snapshot', () async {
-      final inserted = await repo.insertTask(newTask(
-        'Deletable',
-        day.add(const Duration(hours: 8)),
-        day.add(const Duration(hours: 9)),
-      ));
+      final inserted = await repo.insertTask(
+        newTask(
+          'Deletable',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
       final command = DeleteTaskCommand(repository: repo, original: inserted);
 
       await command.execute();
@@ -149,18 +158,37 @@ void main() {
     });
   });
 
+  test('repository rejects illegal status transitions', () async {
+    final inserted = await repo.insertTask(
+      newTask('Terminal status', day, day.add(const Duration(hours: 1))),
+    );
+    await repo.updateTask(inserted.copyWith(status: TaskStatus.completed));
+
+    await expectLater(
+      repo.updateTask(
+        (await repo.getTaskById(inserted.id))!
+            .copyWith(status: TaskStatus.inProgress),
+      ),
+      throwsStateError,
+    );
+  });
+
   group('BatchCommand with real commands', () {
     test('move + shift batch undoes everything in reverse', () async {
-      final a = await repo.insertTask(newTask(
-        'A',
-        day.add(const Duration(hours: 8)),
-        day.add(const Duration(hours: 9)),
-      ));
-      final b = await repo.insertTask(newTask(
-        'B',
-        day.add(const Duration(hours: 9)),
-        day.add(const Duration(hours: 10)),
-      ));
+      final a = await repo.insertTask(
+        newTask(
+          'A',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
+      final b = await repo.insertTask(
+        newTask(
+          'B',
+          day.add(const Duration(hours: 9)),
+          day.add(const Duration(hours: 10)),
+        ),
+      );
 
       // Move A onto B's slot and shift B one hour later.
       final moveA = MoveTaskCommand(
