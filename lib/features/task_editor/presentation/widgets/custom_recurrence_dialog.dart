@@ -90,10 +90,14 @@ class _CustomRecurrenceDialogState
   @override
   Widget build(BuildContext context) {
     final rruleString = RruleUtils.configToRrule(_config, widget.anchorDate);
+    final dialogWidth = (MediaQuery.sizeOf(context).width - 48)
+        .clamp(280.0, 420.0)
+        .toDouble();
     return AlertDialog(
+      icon: Icon(Icons.repeat, color: Theme.of(context).colorScheme.primary),
       title: const Text('Custom recurrence'),
       content: SizedBox(
-        width: 420,
+        width: dialogWidth,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

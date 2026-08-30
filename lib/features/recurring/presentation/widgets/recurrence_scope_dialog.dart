@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme_tokens.dart';
+
 /// Which scope of a recurring series an action applies to.
 enum RecurrenceScope { thisOccurrence, allFuture }
 
@@ -16,6 +18,7 @@ Future<RecurrenceScope?> showRecurrenceScopeDialog(
   return showDialog<RecurrenceScope>(
     context: context,
     builder: (context) => AlertDialog(
+      icon: Icon(Icons.repeat, color: AppThemeTokens.of(context).info),
       title: Text(title),
       content: Text(message),
       actions: [

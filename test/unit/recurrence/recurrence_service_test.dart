@@ -10,6 +10,7 @@ import 'package:personal_planner/features/recurring/data/recurring_repository.da
 import 'package:personal_planner/features/recurring/domain/recurrence_service.dart';
 import 'package:personal_planner/features/templates/data/template_repository.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
+import 'package:personal_planner/core/utils/uuid.dart';
 
 import '../../helpers/sqlite_setup.dart';
 
@@ -44,21 +45,19 @@ void main() {
     String rrule = 'FREQ=DAILY',
     DateTime? startDate,
     String title = 'Standup',
-  }) =>
-      RecurringRule(
-        id: '',
-        rrule: rrule,
-        taskTitle: title,
-        durationMin: 30,
-        startTimeOfDay: '09:00',
-        startDate: startDate ?? DateTime(2026, 8, 1),
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+  }) => RecurringRule(
+    id: '',
+    rrule: rrule,
+    taskTitle: title,
+    durationMin: 30,
+    startTimeOfDay: '09:00',
+    startDate: startDate ?? DateTime(2026, 8, 1),
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now(),
+  );
 
   group('RecurrenceService.materializeForDate', () {
-    test('daily rule materializes once per day and never duplicates',
-        () async {
+    test('daily rule materializes once per day and never duplicates', () async {
       await rules.createRule(dailyRule());
 
       final monday = DateTime(2026, 8, 24);
@@ -72,16 +71,25 @@ void main() {
       expect(instance.title, 'Standup');
       expect(instance.startTime!.hour, 9);
       expect(instance.startTime!.minute, 0);
-      expect(instance.endTime!.difference(instance.startTime!),
-          const Duration(minutes: 30));
+      expect(
+        instance.endTime!.difference(instance.startTime!),
+        const Duration(minutes: 30),
+      );
       expect(instance.estimatedDurationMin, 30);
       expect(instance.status, TaskStatus.planned);
       expect(instance.isInbox, false);
+      expect(
+        instance.id,
+        generateDeterministicUuid(
+          'recurring-occurrence:${(await rules.getActiveRules()).single.id}:2026-08-24',
+        ),
+      );
     });
 
     test('weekdays rule skips weekend days', () async {
       await rules.createRule(
-          dailyRule(rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'));
+        dailyRule(rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'),
+      );
 
       // Aug 22 2026 = Saturday, Aug 23 = Sunday, Aug 24 = Monday.
       expect(await recurrence.materializeForDate(DateTime(2026, 8, 22)), 0);
@@ -98,7 +106,9 @@ void main() {
     });
 
     test('interval=2 weekly respects the interval', () async {
-      await rules.createRule(dailyRule(rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO'));
+      await rules.createRule(
+        dailyRule(rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO'),
+      );
       // DTSTART Aug 1 2026 (Sat) anchors the fortnight at the week of
       // Jul 27 → Mondays Aug 10, Aug 24, Sep 7 … (Aug 17 belongs to the
       // skipped week).
@@ -144,36 +154,43 @@ void main() {
       await rules.deleteRule(deleted.id);
 
       expect(await recurrence.materializeForDate(DateTime(2026, 8, 24)), 1);
-      final dayTasks = await tasks.watchTasksForDay(DateTime(2026, 8, 24)).first;
+      final dayTasks = await tasks
+          .watchTasksForDay(DateTime(2026, 8, 24))
+          .first;
       expect(dayTasks.single.title, active.taskTitle);
       expect(dayTasks.single.title, 'Active');
     });
 
-    test('materialized instances carry category, priority and tags',
-        () async {
+    test('materialized instances carry category, priority and tags', () async {
       final category = await workCategory();
       // Create a tag directly to link from the rule.
-      await db.into(db.tags).insert(TagsCompanion.insert(
-            id: 'tag-1',
-            name: 'focus',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          ));
+      await db
+          .into(db.tags)
+          .insert(
+            TagsCompanion.insert(
+              id: 'tag-1',
+              name: 'focus',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            ),
+          );
 
-      await rules.createRule(dailyRule().copyWith(
-        categoryId: category.id,
-        priority: 3,
-        tags: ['tag-1'],
-      ));
+      await rules.createRule(
+        dailyRule().copyWith(
+          categoryId: category.id,
+          priority: 3,
+          tags: ['tag-1'],
+        ),
+      );
 
       expect(await recurrence.materializeForDate(DateTime(2026, 8, 24)), 1);
       final instance =
           (await tasks.watchTasksForDay(DateTime(2026, 8, 24)).first).single;
       expect(instance.categoryId, category.id);
       expect(instance.priority.dbValue, 3);
-      final linkedRows = await (db.select(db.taskTags)
-            ..where((tt) => tt.taskId.equals(instance.id)))
-          .get();
+      final linkedRows = await (db.select(
+        db.taskTags,
+      )..where((tt) => tt.taskId.equals(instance.id))).get();
       expect(linkedRows.map((r) => r.tagId), ['tag-1']);
     });
   });
@@ -188,8 +205,10 @@ void main() {
       expect(stored!.exceptions, ['2026-08-24']);
 
       await rules.setEndDate(rule.id, DateTime(2026, 12, 31));
-      expect((await rules.getRuleById(rule.id))!.endDate,
-          DateTime(2026, 12, 31));
+      expect(
+        (await rules.getRuleById(rule.id))!.endDate,
+        DateTime(2026, 12, 31),
+      );
     });
   });
 
@@ -207,8 +226,9 @@ void main() {
 
       await rules.deactivateRule(created.id);
       await pumpEventQueue();
-      final lastActive =
-          watched.last.where((r) => r.isActive && r.deletedAt == null);
+      final lastActive = watched.last.where(
+        (r) => r.isActive && r.deletedAt == null,
+      );
       expect(lastActive, isEmpty);
 
       await sub.cancel();
@@ -217,16 +237,18 @@ void main() {
 
   group('TemplateRepository CRUD', () {
     test('insert, watchAllTemplates, update, delete', () async {
-      final template = await templates.insertTemplate(TaskTemplate(
-        id: '',
-        name: 'Deep Work',
-        description: '90 minutes of focus',
-        durationMin: 90,
-        priority: 2,
-        tags: const ['tag-1'],
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ));
+      final template = await templates.insertTemplate(
+        TaskTemplate(
+          id: '',
+          name: 'Deep Work',
+          description: '90 minutes of focus',
+          durationMin: 90,
+          priority: 2,
+          tags: const ['tag-1'],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
 
       final all = await templates.getAllTemplates();
       expect(all.single.name, 'Deep Work');

@@ -14,8 +14,15 @@ class TagRepository {
 
   Future<Tag> insertTag(Tag tag) async {
     final now = DateTime.now();
+    final normalizedName = tag.name.trim();
+    if (normalizedName.isEmpty) {
+      throw ArgumentError.value(tag.name, 'name', 'must not be blank');
+    }
     final effective = tag.copyWith(
-      id: tag.id.isEmpty ? generateUuidV7() : tag.id,
+      id: tag.id.isEmpty
+          ? generateDeterministicUuid('tag:$normalizedName')
+          : tag.id,
+      name: normalizedName,
       createdAt: now,
       updatedAt: now,
     );
@@ -41,10 +48,38 @@ class TagRepository {
   /// Finds or creates the tag with [name] and returns its id.
   Future<Tag> getOrCreateByName(String name) async {
     final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be blank');
+    }
     final existing = await _dao.getTagByName(trimmed);
-    if (existing != null && existing.deletedAt == null) return _fromRow(existing);
+    if (existing != null && existing.deletedAt == null) {
+      return _fromRow(existing);
+    }
+    final deterministicId = generateDeterministicUuid('tag:$trimmed');
+    final deterministic = await _dao.getTagById(deterministicId);
+    if (deterministic != null) {
+      if (deterministic.deletedAt != null) {
+        final now = DateTime.now();
+        await _dao.updateTag(
+          deterministic.copyWith(
+            name: trimmed,
+            updatedAt: now,
+            deletedAt: const Value(null),
+            syncStatus: 1,
+            revision: deterministic.revision + 1,
+          ),
+        );
+      }
+      return _fromRow(await _dao.getTagById(deterministicId) ?? deterministic);
+    }
     return insertTag(
-        Tag(id: '', name: trimmed, createdAt: DateTime.now(), updatedAt: DateTime.now()));
+      Tag(
+        id: deterministicId,
+        name: trimmed,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
   }
 
   Future<void> deleteTag(String id) => _dao.softDeleteTag(id, DateTime.now());
@@ -57,7 +92,9 @@ class TagRepository {
     final name = tag.name.trim();
     if (name.isEmpty) throw ArgumentError('Tag name must not be blank');
     final sameName = await _dao.getTagByName(name);
-    if (sameName != null && sameName.deletedAt == null && sameName.id != tag.id) {
+    if (sameName != null &&
+        sameName.deletedAt == null &&
+        sameName.id != tag.id) {
       throw StateError('A tag named "$name" already exists');
     }
     final updated = row.copyWith(
@@ -77,13 +114,18 @@ class TagRepository {
       _dao.watchTagsForTask(taskId).map((rows) => rows.map(_fromRow).toList());
 
   Future<List<Tag>> getTagsForTask(String taskId) async {
-    final rows = await (_db.select(_db.tags).join([
-      innerJoin(_db.taskTags, _db.taskTags.tagId.equalsExp(_db.tags.id)),
-    ])
-          ..where(_db.tags.deletedAt.isNull() &
-              _db.taskTags.deletedAt.isNull() &
-              _db.taskTags.taskId.equals(taskId)))
-        .get();
+    final rows =
+        await (_db.select(_db.tags).join([
+              innerJoin(
+                _db.taskTags,
+                _db.taskTags.tagId.equalsExp(_db.tags.id),
+              ),
+            ])..where(
+              _db.tags.deletedAt.isNull() &
+                  _db.taskTags.deletedAt.isNull() &
+                  _db.taskTags.taskId.equals(taskId),
+            ))
+            .get();
     return rows.map((r) => _fromRow(r.readTable(_db.tags))).toList();
   }
 
@@ -96,18 +138,20 @@ class TagRepository {
   /// Reconciles a staged editor selection in one database transaction.
   Future<void> replaceTagsForTask(String taskId, Set<String> tagIds) async {
     await _db.transaction(() async {
-      final current = await (_db.select(_db.taskTags)
-            ..where((link) =>
-                link.taskId.equals(taskId) & link.deletedAt.isNull()))
-          .get();
+      final current =
+          await (_db.select(_db.taskTags)..where(
+                (link) => link.taskId.equals(taskId) & link.deletedAt.isNull(),
+              ))
+              .get();
       final currentIds = current.map((link) => link.tagId).toSet();
       for (final tagId in currentIds.difference(tagIds)) {
         await _dao.unlinkTaskTag(taskId, tagId);
       }
       for (final tagId in tagIds.difference(currentIds)) {
-        final tag = await (_db.select(_db.tags)
-              ..where((t) => t.id.equals(tagId) & t.deletedAt.isNull()))
-            .getSingleOrNull();
+        final tag =
+            await (_db.select(_db.tags)
+                  ..where((t) => t.id.equals(tagId) & t.deletedAt.isNull()))
+                .getSingleOrNull();
         if (tag != null) {
           await _dao.linkTaskTag(taskId, tagId, DateTime.now());
         }
@@ -116,20 +160,20 @@ class TagRepository {
   }
 
   static Tag _fromRow(TagRow row) => Tag(
-        id: row.id,
-        name: row.name,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 
   static TagsCompanion _toCompanion(Tag t) => TagsCompanion.insert(
-        id: t.id,
-        name: t.name,
-        createdAt: t.createdAt,
-        updatedAt: t.updatedAt,
-        deletedAt: Value(t.deletedAt),
-        syncStatus: const Value(1),
-        revision: const Value(1),
-      );
+    id: t.id,
+    name: t.name,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    deletedAt: Value(t.deletedAt),
+    syncStatus: const Value(1),
+    revision: const Value(1),
+  );
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../layout/adaptive_layout.dart';
+import '../theme/app_spacing.dart';
+import '../theme/app_theme_tokens.dart';
 
 typedef _Destination = (String, IconData, IconData, String);
 
@@ -64,10 +66,42 @@ class AdaptiveShell extends StatelessWidget {
   Widget _buildRail(BuildContext context) {
     final destinations = _desktopDestinations;
     final index = _selectedIndex(context, destinations) ?? 0;
+    final tokens = AppThemeTokens.of(context);
     return NavigationRail(
       selectedIndex: index,
       onDestinationSelected: (i) => context.go(destinations[i].$1),
       labelType: NavigationRailLabelType.all,
+      leading: Padding(
+        padding: const EdgeInsets.only(
+          top: AppSpacing.md,
+          bottom: AppSpacing.lg,
+        ),
+        child: Tooltip(
+          message: 'Personal Planner',
+          child: Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: tokens.selected,
+              borderRadius: BorderRadius.circular(tokens.radiusMedium),
+              border: Border.all(color: tokens.outline),
+            ),
+            child: Icon(
+              Icons.auto_awesome_outlined,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+      ),
+      trailing: Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Text(
+          'PLAN',
+          style: Theme.of(context).textTheme.labelSmall
+              ?.copyWith(color: tokens.textMuted, letterSpacing: 1.6),
+        ),
+      ),
       destinations: [
         for (final d in destinations)
           NavigationRailDestination(
@@ -84,6 +118,7 @@ class AdaptiveShell extends StatelessWidget {
     final index = _selectedIndex(context, destinations);
     if (index == null) return null;
     return NavigationBar(
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       selectedIndex: index,
       onDestinationSelected: (i) => context.go(destinations[i].$1),
       destinations: [

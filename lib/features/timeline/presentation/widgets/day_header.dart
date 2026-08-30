@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -21,14 +22,23 @@ class DayHeader extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < AppConstants.desktopBreakpoint;
-        return Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? AppSpacing.sm : AppSpacing.lg,
-            vertical: AppSpacing.xs,
+        final tokens = AppThemeTokens.of(context);
+        return Container(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            border: Border(
+              bottom: BorderSide(color: tokens.outline.withValues(alpha: 0.7)),
+            ),
           ),
-          child: compact
-              ? _buildCompactHeader(context, notifier, selectedDate, label)
-              : _buildDesktopHeader(context, notifier, selectedDate, label),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? AppSpacing.sm : AppSpacing.lg,
+              vertical: compact ? AppSpacing.xs : AppSpacing.sm,
+            ),
+            child: compact
+                ? _buildCompactHeader(context, notifier, selectedDate, label)
+                : _buildDesktopHeader(context, notifier, selectedDate, label),
+          ),
         );
       },
     );
@@ -47,7 +57,19 @@ class DayHeader extends ConsumerWidget {
           icon: const Icon(Icons.chevron_left),
           onPressed: () => notifier.state = addDays(selectedDate, -1),
         ),
-        Text(label, style: Theme.of(context).textTheme.titleLarge),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'DAY PLAN',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: AppThemeTokens.of(context).textMuted,
+                letterSpacing: 1.4,
+              ),
+            ),
+            Text(label, style: Theme.of(context).textTheme.titleLarge),
+          ],
+        ),
         IconButton(
           tooltip: 'Next day',
           icon: const Icon(Icons.chevron_right),
@@ -121,7 +143,7 @@ class DayHeader extends ConsumerWidget {
               key: const ValueKey('day-settings-action'),
               tooltip: 'Settings',
               icon: const Icon(Icons.settings_outlined),
-              onPressed: () => context.go('/settings'),
+              onPressed: () => context.push('/settings'),
             ),
             const SyncStatusAction(),
           ],

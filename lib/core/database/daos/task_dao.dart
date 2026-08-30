@@ -14,7 +14,10 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   /// conflict planning) rely on start_time ordering.
   Stream<List<TaskRow>> watchTasksForDay(DateTime day) =>
       (select(tasks)
-            ..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day)))
+            ..where((t) {
+              final (dayStart, dayEnd) = _dayBounds(day);
+              return _dayFilter(t, dayStart, dayEnd: dayEnd);
+            })
             ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
           .watch();
 
@@ -22,7 +25,10 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   /// (planner.md Chunk 5 #9).
   Future<List<TaskRow>> getTasksForDay(DateTime day) =>
       (select(tasks)
-            ..where((t) => _dayFilter(t, day, dayEnd: _nextDay(day)))
+            ..where((t) {
+              final (dayStart, dayEnd) = _dayBounds(day);
+              return _dayFilter(t, dayStart, dayEnd: dayEnd);
+            })
             ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
           .get();
 
@@ -82,7 +88,10 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
       t.startTime.isSmallerThanValue(_iso(dayEnd)) &
       t.endTime.isBiggerThanValue(_iso(dayStart));
 
-  DateTime _nextDay(DateTime day) => addDays(day, 1);
+  (DateTime start, DateTime end) _dayBounds(DateTime day) {
+    final start = startOfDay(day);
+    return (start, addDays(start, 1));
+  }
 
   Future<TaskRow?> getTaskById(String id) =>
       (select(tasks)..where((t) => t.id.equals(id))).getSingleOrNull();

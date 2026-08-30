@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/inbox_provider.dart';
 
 /// Type a title, press Enter → inbox item created (planner.md Chunk 3 #13).
@@ -43,12 +44,21 @@ Future<void> showInboxQuickAddDialog(
   );
   controller.dispose();
   if (title != null && title.trim().isNotEmpty) {
-    await ref.read(inboxRepositoryProvider).addToInbox(title.trim());
+    try {
+      await ref.read(inboxRepositoryProvider).addToInbox(title.trim());
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+      }
+    }
   }
 }
 
 class _InboxQuickAddState extends ConsumerState<InboxQuickAdd> {
   final _controller = TextEditingController();
+  bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -58,23 +68,39 @@ class _InboxQuickAddState extends ConsumerState<InboxQuickAdd> {
 
   Future<void> _add(String value) async {
     final trimmed = value.trim();
-    if (trimmed.isEmpty) return;
-    await ref.read(inboxRepositoryProvider).addToInbox(trimmed);
-    _controller.clear();
+    if (trimmed.isEmpty || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(inboxRepositoryProvider).addToInbox(trimmed);
+      _controller.clear();
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.sm),
-      child: TextField(
-        key: const ValueKey('inbox-quick-add'),
-        controller: _controller,
-        decoration: const InputDecoration(
-          hintText: 'Capture an idea…',
-          prefixIcon: Icon(Icons.add),
-        ),
-        onSubmitted: _add,
+      child: Column(
+        children: [
+          if (_error != null) ErrorPanel(message: _error!, compact: true),
+          TextField(
+            key: const ValueKey('inbox-quick-add'),
+            controller: _controller,
+            enabled: !_busy,
+            decoration: const InputDecoration(
+              hintText: 'Capture an idea…',
+              prefixIcon: Icon(Icons.add),
+            ),
+            onSubmitted: _add,
+          ),
+        ],
       ),
     );
   }

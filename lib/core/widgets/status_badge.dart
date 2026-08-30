@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/enums/task_status.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_theme_tokens.dart';
 
 class StatusBadge extends StatelessWidget {
   final TaskStatus status;
@@ -18,7 +18,15 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = AppColors.statusColor(status.dbValue);
+    final tokens = AppThemeTokens.of(context);
+    final color = switch (status) {
+      TaskStatus.completed => tokens.success,
+      TaskStatus.skipped => tokens.offline,
+      TaskStatus.cancelled => tokens.textMuted,
+      TaskStatus.rescheduled => tokens.warning,
+      TaskStatus.inProgress => tokens.pending,
+      TaskStatus.planned => tokens.info,
+    };
     return Semantics(
       button: onTap != null,
       label: 'Status: ${status.label}',
@@ -31,7 +39,7 @@ class StatusBadge extends StatelessWidget {
           curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm,
-            vertical: 2,
+            vertical: 3,
           ),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.18),

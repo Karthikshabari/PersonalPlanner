@@ -5,6 +5,7 @@ import '../../../core/database/daos/task_dao.dart';
 import '../../../core/models/enums/priority.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
+import '../../../core/utils/acyclic_links.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/uuid.dart';
 
@@ -22,13 +23,14 @@ class TaskRepository {
 
   Future<Task> insertTask(Task task) async {
     final now = DateTime.now();
-    final effective = task.copyWith(
+    final effective = _normalizeScheduling(task).copyWith(
       id: task.id.isEmpty ? generateUuidV7() : task.id,
       createdAt: task.createdAt,
       updatedAt: now,
     );
     _validate(effective);
     await _db.transaction(() async {
+      await _validateHistoryLinks(effective);
       await _dao.insertTask(_toCompanion(effective));
       await _invalidateStatsForIntervals([
         (effective.startTime, effective.endTime),
@@ -43,7 +45,7 @@ class TaskRepository {
     bool allowStatusTransition = false,
   }) async {
     final now = DateTime.now();
-    final effective = task.copyWith(updatedAt: now);
+    final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
     final row = await _dao.getTaskById(effective.id);
     if (row == null) {
       throw StateError('Task ${effective.id} not found');
@@ -59,6 +61,7 @@ class TaskRepository {
     }
     _validate(effective);
     await _db.transaction(() async {
+      await _validateHistoryLinks(effective);
       await _dao.updateTask(
         _toRow(effective, syncStatus: 1, revision: row.revision + 1),
       );
@@ -232,6 +235,47 @@ class TaskRepository {
         !task.endTime!.isAfter(task.startTime!)) {
       throw ArgumentError('endTime must be later than startTime');
     }
+  }
+
+  /// Applies the Inbox invariant at the repository boundary. A scheduled
+  /// task is never left marked as Inbox, and an Inbox task never retains stale
+  /// schedule values from an earlier edit.
+  static Task _normalizeScheduling(Task task) {
+    if (task.isInbox) {
+      return task.copyWith(startTime: null, endTime: null);
+    }
+    if (task.startTime != null || task.endTime != null) {
+      return task.copyWith(isInbox: false);
+    }
+    return task;
+  }
+
+  /// History links form a single directed successor chain. Check the
+  /// complete proposed graph in the same SQLite transaction so self-links,
+  /// direct cycles, and longer remote/local cycles cannot be committed.
+  Future<void> _validateHistoryLinks(Task proposed) async {
+    final rows = await (_db.select(_db.tasks)).get();
+    final graph = <String, Set<String>>{
+      for (final row in rows) row.id: <String>{},
+    };
+    for (final row in rows) {
+      if (row.rescheduledToId != null) {
+        graph[row.id]!.add(row.rescheduledToId!);
+      }
+      if (row.rescheduledFromId != null) {
+        graph.putIfAbsent(row.rescheduledFromId!, () => <String>{}).add(row.id);
+      }
+    }
+    graph[proposed.id] = <String>{};
+    if (proposed.rescheduledToId != null) {
+      graph[proposed.id]!.add(proposed.rescheduledToId!);
+    }
+    if (proposed.rescheduledFromId != null) {
+      graph
+          .putIfAbsent(proposed.rescheduledFromId!, () => <String>{})
+          .add(proposed.id);
+    }
+    validateAcyclicLinks(graph);
   }
 
   static TaskRow _toRow(Task t, {int syncStatus = 0, int revision = 1}) =>

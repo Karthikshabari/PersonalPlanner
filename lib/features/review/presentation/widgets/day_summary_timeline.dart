@@ -4,7 +4,9 @@ import '../../../../core/models/category.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/status_badge.dart';
 
 /// Read-only miniature timeline for the Daily Review screen: every block of
@@ -43,7 +45,8 @@ class DaySummaryTimeline extends StatelessWidget {
         child: Center(child: Text('No blocks scheduled this day.')),
       );
     }
-    final lineColor = Theme.of(context).dividerColor;
+    final tokens = AppThemeTokens.of(context);
+    final lineColor = tokens.outline;
     return SizedBox(
       key: const ValueKey('review-mini-timeline'),
       height: 320,
@@ -65,17 +68,20 @@ class DaySummaryTimeline extends StatelessWidget {
                         width: 36,
                         child: Text(
                           '${hour.toString().padLeft(2, '0')}:00',
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                         ),
                       ),
                       Expanded(
                         child: Divider(
-                            height: 1, thickness: 0.5, color: lineColor),
+                          height: 1,
+                          thickness: 0.5,
+                          color: lineColor,
+                        ),
                       ),
                     ],
                   ),
@@ -89,11 +95,23 @@ class DaySummaryTimeline extends StatelessWidget {
   }
 
   Widget _buildBlock(BuildContext context, Task task) {
-    final startMinutes = task.startTime == null
-        ? 0
-        : minutesSinceMidnight(task.startTime!);
-    final durationMinutes =
-        task.scheduledDuration?.inMinutes.toDouble() ?? 60.0;
+    final tokens = AppThemeTokens.of(context);
+    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(date);
+    final originalStart = task.startTime;
+    final originalEnd = task.endTime;
+    final clippedStart =
+        originalStart == null || originalStart.isBefore(dayStart)
+        ? dayStart
+        : originalStart;
+    final clippedEnd = originalEnd == null || originalEnd.isAfter(dayEnd)
+        ? dayEnd
+        : originalEnd;
+    if (!clippedEnd.isAfter(clippedStart)) return const SizedBox.shrink();
+    final startMinutes = minutesSinceMidnight(clippedStart);
+    final durationMinutes = clippedEnd
+        .difference(clippedStart)
+        .inMinutes
+        .toDouble();
     final height = (durationMinutes * pixelsPerMinute).clamp(22.0, 200.0);
     final category = _categoryFor(task);
     final accent = category == null
@@ -107,14 +125,9 @@ class DaySummaryTimeline extends StatelessWidget {
       height: height - 2,
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context)
-              .colorScheme
-              .surfaceContainerHighest
-              .withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(6),
-          border: Border(
-            left: BorderSide(color: accent, width: 3),
-          ),
+          color: tokens.surfaceRaised,
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+          border: Border(left: BorderSide(color: accent, width: 3)),
         ),
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm,
@@ -127,9 +140,7 @@ class DaySummaryTimeline extends StatelessWidget {
                 task.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
+                style: Theme.of(context).textTheme.bodySmall
                     ?.copyWith(fontWeight: FontWeight.w600),
               ),
             ),

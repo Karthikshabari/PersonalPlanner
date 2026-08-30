@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/duration_utils.dart';
 import '../../domain/conflict_resolver.dart';
 
@@ -18,9 +19,15 @@ Future<ConflictResolution?> showConflictResolutionDialog(
     context: context,
     barrierDismissible: false,
     builder: (context) => AlertDialog(
+      icon: Icon(
+        Icons.warning_amber_rounded,
+        color: AppThemeTokens.of(context).warning,
+      ),
       title: const Text('Resolve conflict'),
       content: SizedBox(
-        width: 380,
+        width: (MediaQuery.sizeOf(context).width - 48)
+            .clamp(280.0, 380.0)
+            .toDouble(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,8 +62,8 @@ Future<ConflictResolution?> showConflictResolutionDialog(
                   '• ${conflict.title} — '
                   '${_durationLabel(conflict)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             if (conflicts.length > 3)
@@ -65,8 +72,8 @@ Future<ConflictResolution?> showConflictResolutionDialog(
                 child: Text(
                   '• and ${conflicts.length - 3} more…',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
           ],
@@ -78,15 +85,17 @@ Future<ConflictResolution?> showConflictResolutionDialog(
           children: [
             FilledButton(
               key: const ValueKey('conflict-shift-all'),
-              onPressed: () => Navigator.of(context)
-                  .pop(ConflictResolution.shiftAllFollowing),
+              onPressed: () =>
+                  Navigator.of(context)
+                      .pop(ConflictResolution.shiftAllFollowing),
               child: const Text('Shift All Following'),
             ),
             const SizedBox(height: AppSpacing.sm),
             OutlinedButton(
               key: const ValueKey('conflict-shift-overlapping'),
-              onPressed: () => Navigator.of(context)
-                  .pop(ConflictResolution.shiftOnlyOverlapping),
+              onPressed: () =>
+                  Navigator.of(context)
+                      .pop(ConflictResolution.shiftOnlyOverlapping),
               child: const Text('Shift Only Overlapping'),
             ),
             const SizedBox(height: AppSpacing.sm),

@@ -1,5 +1,7 @@
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import 'conflict_detector.dart';
 import 'snap_to_grid.dart';
 
@@ -49,7 +51,9 @@ abstract final class ConflictResolver {
     required List<Task> dayTasks,
   }) {
     final conflicts = ConflictDetector.detect(moved, dayTasks);
-    if (conflicts.isEmpty || _spanOf(moved) == null) return const ResolutionPlan();
+    if (conflicts.isEmpty || _spanOf(moved) == null) {
+      return const ResolutionPlan();
+    }
     final first = conflicts.first;
     final movedEnd = moved.endTime!;
     final overlapDuration = movedEnd.difference(first.startTime!);
@@ -161,7 +165,12 @@ abstract final class ConflictResolver {
         for (final entry in starts.entries) {
           final otherId = entry.key;
           if (otherId == victimId || otherId == pair.pusher) continue;
-          if (_intervalsOverlap(newStart, newEnd, starts[otherId]!, ends[otherId]!)) {
+          if (_intervalsOverlap(
+            newStart,
+            newEnd,
+            starts[otherId]!,
+            ends[otherId]!,
+          )) {
             nextWork.add((pusher: victimId, victim: otherId));
           }
         }
@@ -169,7 +178,10 @@ abstract final class ConflictResolver {
       worklist = nextWork;
     }
 
-    return ResolutionPlan(shifts: shifts.values.toList(), keepOverlapIds: keepIds);
+    return ResolutionPlan(
+      shifts: shifts.values.toList(),
+      keepOverlapIds: keepIds,
+    );
   }
 
   /// Finds the next slot (minute-of-day on the viewed day) at/after
@@ -179,6 +191,7 @@ abstract final class ConflictResolver {
     required int durationMinutes,
     required List<Task> dayTasks,
     required int searchFromMinutes,
+    DateTime? day,
   }) {
     if (durationMinutes <= 0 ||
         durationMinutes > minutesPerDay ||
@@ -187,10 +200,27 @@ abstract final class ConflictResolver {
     }
     var cursor = searchFromMinutes;
     final active = _sortedActive(dayTasks)
-        .map((t) => (
+        .map((t) {
+          if (day == null) {
+            return (
               start: t.startTime!.hour * 60 + t.startTime!.minute,
               end: t.endTime!.hour * 60 + t.endTime!.minute,
-            ))
+            );
+          }
+          final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(day);
+          if (!t.endTime!.isAfter(dayStart) || !t.startTime!.isBefore(dayEnd)) {
+            return null;
+          }
+          final start = t.startTime!.isBefore(dayStart)
+              ? dayStart
+              : t.startTime!;
+          final end = t.endTime!.isAfter(dayEnd) ? dayEnd : t.endTime!;
+          return (
+            start: minutesSinceMidnight(start),
+            end: end == dayEnd ? minutesPerDay : minutesSinceMidnight(end),
+          );
+        })
+        .whereType<({int start, int end})>()
         .toList();
     var progressed = true;
     while (progressed) {
@@ -208,19 +238,25 @@ abstract final class ConflictResolver {
 
   static ({DateTime start, DateTime end})? _spanOf(Task t) =>
       t.startTime != null && t.endTime != null
-          ? (start: t.startTime!, end: t.endTime!)
-          : null;
+      ? (start: t.startTime!, end: t.endTime!)
+      : null;
 
-  static bool _intervalsOverlap(DateTime aStart, DateTime aEnd,
-          DateTime bStart, DateTime bEnd) =>
-      aStart.isBefore(bEnd) && aEnd.isAfter(bStart);
+  static bool _intervalsOverlap(
+    DateTime aStart,
+    DateTime aEnd,
+    DateTime bStart,
+    DateTime bEnd,
+  ) => aStart.isBefore(bEnd) && aEnd.isAfter(bStart);
 
-  static List<Task> _sortedActive(List<Task> dayTasks) => dayTasks
-      .where((t) =>
-          t.startTime != null &&
-          t.endTime != null &&
-          t.status != TaskStatus.cancelled &&
-          t.status != TaskStatus.rescheduled)
-      .toList()
-    ..sort((a, b) => a.startTime!.compareTo(b.startTime!));
+  static List<Task> _sortedActive(List<Task> dayTasks) =>
+      dayTasks
+          .where(
+            (t) =>
+                t.startTime != null &&
+                t.endTime != null &&
+                t.status != TaskStatus.cancelled &&
+                t.status != TaskStatus.rescheduled,
+          )
+          .toList()
+        ..sort((a, b) => a.startTime!.compareTo(b.startTime!));
 }

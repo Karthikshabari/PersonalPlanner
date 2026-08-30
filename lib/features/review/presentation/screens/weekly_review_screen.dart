@@ -6,9 +6,13 @@ import 'package:intl/intl.dart';
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/models/weekly_review.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/utils/duration_utils.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/app_surface.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../widgets/rating_picker.dart';
@@ -21,6 +25,7 @@ class WeeklyReviewScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final weekStart = ref.watch(selectedWeekStartProvider);
     final statsAsync = ref.watch(weeklyStatsProvider(weekStart));
+    final tokens = AppThemeTokens.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -30,22 +35,35 @@ class WeeklyReviewScreen extends ConsumerWidget {
             key: const ValueKey('open-daily-review'),
             tooltip: 'Daily review',
             icon: const Icon(Icons.calendar_view_day_outlined),
-            onPressed: () => context.go('/review'),
+            onPressed: () {
+              if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+                context.go('/review');
+              } else {
+                context.push('/review');
+              }
+            },
           ),
           const SyncStatusAction(),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        children: [
-          _buildWeekNav(context, ref, weekStart),
-          _AggregateStatsCard(statsAsync: statsAsync),
-          const SizedBox(height: AppSpacing.md),
-          _WeeklyReviewForm(
-            key: ValueKey('weekly-form-$weekStart'),
-            weekStart: weekStart,
+      body: ColoredBox(
+        color: tokens.canvas,
+        child: LayoutBuilder(
+          builder: (context, constraints) => ListView(
+            padding: EdgeInsets.all(
+              constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
+            ),
+            children: [
+              _buildWeekNav(context, ref, weekStart),
+              _AggregateStatsCard(statsAsync: statsAsync),
+              const SizedBox(height: AppSpacing.md),
+              _WeeklyReviewForm(
+                key: ValueKey('weekly-form-$weekStart'),
+                weekStart: weekStart,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -97,56 +115,55 @@ class _AggregateStatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('This week', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.sm),
-            statsAsync.maybeWhen(
-              data: (stats) {
-                final rate = stats.completionRatePct;
-                return Wrap(
-                  spacing: AppSpacing.xl,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    _stat(
-                      context,
-                      'Completion rate',
-                      rate == null ? '—' : '${rate.round()}%',
-                    ),
-                    _stat(
-                      context,
-                      'Completed',
-                      '${stats.completedTasks}/${stats.totalTasks} tasks',
-                    ),
-                    _stat(context, 'Planned', '${stats.plannedTasks}'),
-                    _stat(context, 'In progress', '${stats.inProgressTasks}'),
-                    _stat(
-                      context,
-                      'Planned time',
-                      Duration(minutes: stats.plannedDurationMin).shortLabel,
-                    ),
-                    _stat(
-                      context,
-                      'Actual',
-                      Duration(minutes: stats.actualDurationMin).shortLabel,
-                    ),
-                    _stat(
-                      context,
-                      'Focus',
-                      Duration(minutes: stats.focusDurationMin).shortLabel,
-                    ),
-                    _stat(context, 'Missed', '${stats.missedTasks}'),
-                  ],
-                );
-              },
-              orElse: () => const Text('Computing…'),
-            ),
-          ],
-        ),
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('This week', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          statsAsync.when(
+            data: (stats) {
+              final rate = stats.completionRatePct;
+              return Wrap(
+                spacing: AppSpacing.xl,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  _stat(
+                    context,
+                    'Completion rate',
+                    rate == null ? '—' : '${rate.round()}%',
+                  ),
+                  _stat(
+                    context,
+                    'Completed',
+                    '${stats.completedTasks}/${stats.totalTasks} tasks',
+                  ),
+                  _stat(context, 'Planned', '${stats.plannedTasks}'),
+                  _stat(context, 'In progress', '${stats.inProgressTasks}'),
+                  _stat(
+                    context,
+                    'Planned time',
+                    Duration(minutes: stats.plannedDurationMin).shortLabel,
+                  ),
+                  _stat(
+                    context,
+                    'Actual',
+                    Duration(minutes: stats.actualDurationMin).shortLabel,
+                  ),
+                  _stat(
+                    context,
+                    'Focus',
+                    Duration(minutes: stats.focusDurationMin).shortLabel,
+                  ),
+                  _stat(context, 'Missed', '${stats.missedTasks}'),
+                ],
+              );
+            },
+            loading: () => const CircularProgressIndicator(),
+            error: (error, _) =>
+                ErrorPanel(message: friendlyErrorMessage(error), compact: true),
+          ),
+        ],
       ),
     );
   }
@@ -175,6 +192,8 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
   List<String> _goalsMet = [];
   List<String> _goalsMissed = [];
   List<String> _nextFocus = [];
+  bool _saving = false;
+  String? _error;
 
   @override
   void initState() {
@@ -189,92 +208,116 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
   }
 
   Future<void> _hydrate() async {
-    final existing = await ref
-        .read(reviewRepositoryProvider)
-        .getWeeklyReviewForWeek(widget.weekStart);
-    if (!mounted || existing == null) return;
-    setState(() {
-      _reflectionController.text = existing.reflection ?? '';
-      _overall = existing.overallRating;
-      _goalsMet = [...existing.goalsMet];
-      _goalsMissed = [...existing.goalsMissed];
-      _nextFocus = [...existing.nextWeekFocus];
-    });
+    try {
+      final existing = await ref
+          .read(reviewRepositoryProvider)
+          .getWeeklyReviewForWeek(widget.weekStart);
+      if (!mounted || existing == null) return;
+      setState(() {
+        _reflectionController.text = existing.reflection ?? '';
+        _overall = existing.overallRating;
+        _goalsMet = [...existing.goalsMet];
+        _goalsMissed = [...existing.goalsMissed];
+        _nextFocus = [...existing.nextWeekFocus];
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyErrorMessage(error));
+    }
   }
 
   Future<void> _save() async {
-    final repo = ref.read(reviewRepositoryProvider);
-    await repo.saveWeeklyReview(
-      WeeklyReview(
-        id: '',
-        weekStartDate: widget.weekStart,
-        reflection: _reflectionController.text.trim().isEmpty
-            ? null
-            : _reflectionController.text.trim(),
-        overallRating: _overall,
-        goalsMet: _goalsMet,
-        goalsMissed: _goalsMissed,
-        nextWeekFocus: _nextFocus,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      ),
-    );
-    if (!mounted) return;
-    showAppToast(context, 'Weekly review saved');
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final repo = ref.read(reviewRepositoryProvider);
+      await repo.saveWeeklyReview(
+        WeeklyReview(
+          id: '',
+          weekStartDate: widget.weekStart,
+          reflection: _reflectionController.text.trim().isEmpty
+              ? null
+              : _reflectionController.text.trim(),
+          overallRating: _overall,
+          goalsMet: _goalsMet,
+          goalsMissed: _goalsMissed,
+          nextWeekFocus: _nextFocus,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _saving = false);
+      showAppToast(context, 'Weekly review saved');
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = friendlyErrorMessage(error);
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Review', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.sm),
-            TextField(
-              key: const ValueKey('weekly-reflection'),
-              controller: _reflectionController,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                hintText: 'How did the week go?',
-                labelText: 'Reflection',
-              ),
+    return AppSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Review', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.sm),
+          if (_error != null)
+            ErrorPanel(message: _error!, onRetry: _hydrate, compact: true),
+          TextField(
+            key: const ValueKey('weekly-reflection'),
+            controller: _reflectionController,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'How did the week go?',
+              labelText: 'Reflection',
             ),
-            const SizedBox(height: AppSpacing.sm),
-            RatingPicker(
-              label: 'Overall rating',
-              value: _overall,
-              onChanged: (v) => setState(() => _overall = v),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            StringListEditor(
-              key: const ValueKey('weekly-goals-met'),
-              label: 'Goals met',
-              items: _goalsMet,
-              onChanged: (items) => setState(() => _goalsMet = items),
-            ),
-            StringListEditor(
-              key: const ValueKey('weekly-goals-missed'),
-              label: 'Goals missed',
-              items: _goalsMissed,
-              onChanged: (items) => setState(() => _goalsMissed = items),
-            ),
-            StringListEditor(
-              key: const ValueKey('weekly-next-focus'),
-              label: 'Next week focus',
-              items: _nextFocus,
-              onChanged: (items) => setState(() => _nextFocus = items),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            FilledButton(
-              key: const ValueKey('weekly-save'),
-              onPressed: _save,
-              child: const Text('Save review'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          RatingPicker(
+            label: 'Overall rating',
+            value: _overall,
+            onChanged: (v) => setState(() => _overall = v),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          StringListEditor(
+            key: const ValueKey('weekly-goals-met'),
+            label: 'Goals met',
+            items: _goalsMet,
+            onChanged: (items) => setState(() => _goalsMet = items),
+          ),
+          StringListEditor(
+            key: const ValueKey('weekly-goals-missed'),
+            label: 'Goals missed',
+            items: _goalsMissed,
+            onChanged: (items) => setState(() => _goalsMissed = items),
+          ),
+          StringListEditor(
+            key: const ValueKey('weekly-next-focus'),
+            label: 'Next week focus',
+            items: _nextFocus,
+            onChanged: (items) => setState(() => _nextFocus = items),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          FilledButton(
+            key: const ValueKey('weekly-save'),
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Save review'),
+          ),
+        ],
       ),
     );
   }

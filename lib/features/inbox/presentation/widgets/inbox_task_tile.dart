@@ -4,10 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/layout/adaptive_layout.dart';
-import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../timeline/presentation/providers/day_view_controller.dart';
@@ -72,12 +71,6 @@ class InboxTaskTile extends ConsumerWidget {
     );
     final duration = item.task.scheduledDuration?.inMinutes ?? 60;
     final end = start.add(Duration(minutes: duration));
-    if (!isSameDay(start, end)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task must end before midnight')),
-      );
-      return;
-    }
     final scheduled = await TimelineActions.scheduleInboxItem(
       context,
       ref,
@@ -95,22 +88,33 @@ class InboxTaskTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final task = item.task;
+    final tokens = AppThemeTokens.of(context);
     final tile = ListTile(
       key: ValueKey('inbox-item-${task.id}'),
       dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       visualDensity: VisualDensity.compact,
-      leading: Icon(
-        item.isOverdue ? Icons.history : Icons.inbox_outlined,
-        size: 18,
-        color: item.isOverdue
-            ? AppColors.warning
-            : Theme.of(context).colorScheme.onSurfaceVariant,
+      leading: Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: (item.isOverdue ? tokens.warning : tokens.info).withValues(
+            alpha: 0.14,
+          ),
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+        ),
+        child: Icon(
+          item.isOverdue ? Icons.history : Icons.inbox_outlined,
+          size: 17,
+          color: item.isOverdue ? tokens.warning : tokens.info,
+        ),
       ),
       title: Text(
         task.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13),
+        style: Theme.of(context).textTheme.labelLarge,
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
@@ -145,18 +149,18 @@ class InboxTaskTile extends ConsumerWidget {
       data: item,
       feedback: Material(
         elevation: 4,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(tokens.radiusSmall),
         child: Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md,
             vertical: AppSpacing.sm,
           ),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            border: Border.all(color: AppColors.warning),
-            borderRadius: BorderRadius.circular(8),
+            color: tokens.surfaceRaised,
+            border: Border.all(color: tokens.warning),
+            borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
-          child: Text(task.title, style: const TextStyle(fontSize: 12)),
+          child: Text(task.title, style: Theme.of(context).textTheme.bodySmall),
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.4, child: tile),

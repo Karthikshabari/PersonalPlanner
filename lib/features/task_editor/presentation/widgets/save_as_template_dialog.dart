@@ -57,12 +57,10 @@ Future<void> saveAsTemplate(
 
   var effectiveTagIds = draft.tagIds?.toList() ?? <String>[];
   if (draft.tagIds == null && draft.sourceTaskId != null) {
-    try {
-      final tags = await ref
-          .read(tagRepositoryProvider)
-          .getTagsForTask(draft.sourceTaskId!);
-      effectiveTagIds = tags.map((t) => t.id).toList();
-    } catch (_) {}
+    final tags = await ref
+        .read(tagRepositoryProvider)
+        .getTagsForTask(draft.sourceTaskId!);
+    effectiveTagIds = tags.map((t) => t.id).toList();
   }
 
   await ref

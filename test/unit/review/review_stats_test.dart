@@ -14,6 +14,7 @@ import 'package:personal_planner/features/review/data/review_repository.dart';
 import 'package:personal_planner/features/review/domain/daily_stats_service.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/features/timer/data/timer_repository.dart';
+import 'package:personal_planner/core/utils/uuid.dart';
 
 import '../../helpers/sqlite_setup.dart';
 
@@ -75,6 +76,10 @@ void main() {
 
       final loaded = await reviews.getReviewForDate(day);
       expect(loaded!.id, saved.id);
+      expect(
+        saved.id,
+        generateDeterministicUuid('daily-review:${isoDateString(day)}'),
+      );
       expect(loaded.reflection, 'First pass');
       expect(loaded.wins, ['Shipped chunk']);
       expect(loaded.createdAt, saved.createdAt);
@@ -147,6 +152,10 @@ void main() {
       );
       final loaded = await reviews.getWeeklyReviewForWeek(monday);
       expect(loaded!.id, saved.id);
+      expect(
+        saved.id,
+        generateDeterministicUuid('weekly-review:${isoDateString(monday)}'),
+      );
       expect(loaded.goalsMet, ['Plan daily']);
 
       final updated = await reviews.saveWeeklyReview(
@@ -405,6 +414,37 @@ void main() {
           firstStats.plannedDurationMin + secondStats.plannedDurationMin,
           90,
         );
+      },
+    );
+
+    test(
+      'completed sessions count even when their task is unscheduled or deleted',
+      () async {
+        final task = await tasks.insertTask(
+          Task(
+            id: '',
+            title: 'Unscheduled tracked work',
+            createdAt: day,
+            updatedAt: day,
+          ),
+        );
+        final startedAt = day.add(const Duration(hours: 10));
+        await TimerRepository(db).insertSession(
+          TimerSession(
+            id: '',
+            taskId: task.id,
+            startedAt: startedAt,
+            endedAt: startedAt.add(const Duration(minutes: 30)),
+            durationSec: 30 * 60,
+            createdAt: day,
+            updatedAt: day,
+          ),
+        );
+        await tasks.deleteTask(task.id);
+
+        final stats = await statsService.computeForDate(day);
+        expect(stats.totalTasks, 0);
+        expect(stats.actualDurationMin, 30);
       },
     );
   });

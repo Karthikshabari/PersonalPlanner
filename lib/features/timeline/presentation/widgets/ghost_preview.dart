@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/duration_utils.dart';
 
 /// Translucent preview of a task block shown at the live drop position
@@ -29,6 +30,7 @@ class GhostPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tokens = AppThemeTokens.of(context);
     return Positioned(
       top: topPx,
       left: left,
@@ -39,8 +41,8 @@ class GhostPreview extends StatelessWidget {
           opacity: 0.55,
           child: Container(
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(8),
+              color: tokens.selected.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(tokens.radiusSmall),
               border: Border.all(color: accentColor, width: 1.5),
               boxShadow: [
                 BoxShadow(
@@ -62,9 +64,7 @@ class GhostPreview extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
+                  style: Theme.of(context).textTheme.titleSmall
                       ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 Flexible(

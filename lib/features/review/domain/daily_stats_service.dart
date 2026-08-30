@@ -76,9 +76,19 @@ class DailyStatsService {
                   ),
             ))
             .get();
-    final sessionsByTask = <String, List<TimerSessionRow>>{};
-    for (final session in sessions) {
-      sessionsByTask.putIfAbsent(session.taskId, () => []).add(session);
+    final allCompletedSessions =
+        await (_db.select(_db.timerSessions)..where(
+              (session) =>
+                  session.deletedAt.isNull() & session.endedAt.isNotNull(),
+            ))
+            .get();
+    final totalSessionSecondsByTask = <String, int>{};
+    for (final session in allCompletedSessions) {
+      totalSessionSecondsByTask.update(
+        session.taskId,
+        (seconds) => seconds + session.durationSec,
+        ifAbsent: () => session.durationSec,
+      );
     }
     final tasksStartingInRange = tasks
         .where(
@@ -138,47 +148,47 @@ class DailyStatsService {
         final isFocus = t.categoryId != null && focusIds[t.categoryId!] == true;
         if (isFocus) focusMin += minutes;
       }
-      if (startsInRange) {
-        final taskSessions = sessionsByTask[t.id] ?? const <TimerSessionRow>[];
-        final completedSeconds = taskSessions.fold<int>(0, (sum, session) {
-          final endedAt = session.endedAt ?? now;
-          final overlapStart = session.startedAt.isAfter(startInclusive)
-              ? session.startedAt
-              : startInclusive;
-          final overlapEnd = endedAt.isBefore(endExclusive)
-              ? endedAt
-              : endExclusive;
-          if (!overlapEnd.isAfter(overlapStart)) return sum;
-          return sum + overlapEnd.difference(overlapStart).inSeconds;
-        });
-        final allCompletedSeconds = taskSessions.fold<int>(
-          0,
-          (sum, session) => sum + session.durationSec,
-        );
-        final recordedMinutes =
-            t.actualDurationMin ??
-            allCompletedSeconds ~/ Duration.secondsPerMinute +
-                t.manualDurationAdjustmentMin;
-        final inferredAdjustment =
-            recordedMinutes - allCompletedSeconds ~/ Duration.secondsPerMinute;
-        actualMin +=
-            completedSeconds ~/ Duration.secondsPerMinute + inferredAdjustment;
-      } else {
-        final taskSessions = sessionsByTask[t.id] ?? const <TimerSessionRow>[];
-        for (final session in taskSessions) {
-          final endedAt = session.endedAt ?? now;
-          final overlapStart = session.startedAt.isAfter(startInclusive)
-              ? session.startedAt
-              : startInclusive;
-          final overlapEnd = endedAt.isBefore(endExclusive)
-              ? endedAt
-              : endExclusive;
-          if (overlapEnd.isAfter(overlapStart)) {
-            actualMin += overlapEnd.difference(overlapStart).inMinutes;
-          }
-        }
+    }
+
+    // Tracked time belongs to the planner-local date of the session, not the
+    // task's scheduled date. A session crossing midnight is split by its
+    // intersection with this range; manual task adjustments remain attached
+    // to the task's local start date. Sessions whose task was deleted or is
+    // otherwise unavailable still contribute their measured duration.
+    var trackedSeconds = 0;
+    var manualAdjustmentMin = 0;
+    for (final session in sessions) {
+      final endedAt = session.endedAt!;
+      final overlapStart = session.startedAt.isAfter(startInclusive)
+          ? session.startedAt
+          : startInclusive;
+      final overlapEnd = endedAt.isBefore(endExclusive)
+          ? endedAt
+          : endExclusive;
+      if (!overlapEnd.isAfter(overlapStart)) continue;
+      trackedSeconds += overlapEnd.difference(overlapStart).inSeconds;
+    }
+    final adjustedTaskIds = <String>{};
+    for (final task in tasksStartingInRange) {
+      if (adjustedTaskIds.add(task.id)) {
+        final sessionMinutes =
+            (totalSessionSecondsByTask[task.id] ?? 0) ~/
+            Duration.secondsPerMinute;
+        // `actual_duration_min` predates the explicit adjustment column. For
+        // those legacy rows, retain the displayed manual value when there are
+        // no sessions (or infer the old delta when sessions exist).
+        final adjustment = task.manualDurationAdjustmentMin != 0
+            ? task.manualDurationAdjustmentMin
+            : task.actualDurationMin == null
+            ? 0
+            : task.actualDurationMin! - sessionMinutes;
+        manualAdjustmentMin += adjustment;
       }
     }
+    actualMin =
+        (trackedSeconds ~/ Duration.secondsPerMinute + manualAdjustmentMin)
+            .clamp(0, 1 << 31)
+            .toInt();
 
     final review = await _db.reviewDao.getDailyReviewByDate(
       isoDateString(startInclusive),

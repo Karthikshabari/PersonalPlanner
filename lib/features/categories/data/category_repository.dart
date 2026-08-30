@@ -8,6 +8,19 @@ import '../../../core/utils/uuid.dart';
 class CategoryRepository {
   static const String _defaultsSeededKey = 'default_categories_seeded';
 
+  /// Stable logical identities for the built-in categories. These values are
+  /// derived from a fixed application namespace, not generated per database,
+  /// so two offline clients converge on the same rows.
+  static const defaultCategoryKeys = <String>[
+    'work',
+    'personal',
+    'health',
+    'learning',
+  ];
+
+  static String defaultCategoryId(String key) =>
+      generateDeterministicUuid('default-category:$key');
+
   final AppDatabase _db;
 
   CategoryRepository(this._db);
@@ -87,16 +100,18 @@ class CategoryRepository {
     final now = DateTime.now();
     await _db.transaction(() async {
       for (var i = 0; i < orderedIds.length; i++) {
-        await (_db.update(_db.categories)
-              ..where((c) => c.id.equals(orderedIds[i])))
-            .write(CategoriesCompanion(
-              sortOrder: Value(i),
-              updatedAt: Value(now),
-              syncStatus: const Value(1),
-              revision: Value(
-                (await _dao.getCategoryById(orderedIds[i]))!.revision + 1,
-              ),
-            ));
+        await (_db.update(
+          _db.categories,
+        )..where((c) => c.id.equals(orderedIds[i]))).write(
+          CategoriesCompanion(
+            sortOrder: Value(i),
+            updatedAt: Value(now),
+            syncStatus: const Value(1),
+            revision: Value(
+              (await _dao.getCategoryById(orderedIds[i]))!.revision + 1,
+            ),
+          ),
+        );
       }
     });
   }
@@ -114,53 +129,133 @@ class CategoryRepository {
 
   Future<void> seedDefaultsIfEmpty() async {
     await _db.transaction(() async {
-      final marker = await (_db.select(_db.appSettings)
-            ..where((s) => s.key.equals(_defaultsSeededKey)))
-          .getSingleOrNull();
-      if (marker != null) return;
+      final marker = await (_db.select(
+        _db.appSettings,
+      )..where((s) => s.key.equals(_defaultsSeededKey))).getSingleOrNull();
+      const defaults = [
+        (key: 'work', name: 'Work', color: '#4285F4'),
+        (key: 'personal', name: 'Personal', color: '#34A853'),
+        (key: 'health', name: 'Health', color: '#EA4335'),
+        (key: 'learning', name: 'Learning', color: '#FBBC04'),
+      ];
+      final now = DateTime.now();
+      for (var i = 0; i < defaults.length; i++) {
+        final definition = defaults[i];
+        final stableId = defaultCategoryId(definition.key);
+        final stable = await _dao.getCategoryById(stableId);
+        if (stable != null) continue;
 
-      final anyCategory = await (_db.select(_db.categories)..limit(1)).get();
-      if (anyCategory.isEmpty) {
-        final now = DateTime.now();
-        const defaults = [
-          ('Work', '#4285F4'),
-          ('Personal', '#34A853'),
-          ('Health', '#EA4335'),
-          ('Learning', '#FBBC04'),
-        ];
-        for (var i = 0; i < defaults.length; i++) {
-          await _dao.insertCategory(CategoriesCompanion.insert(
-            id: generateUuidV7(),
-            name: defaults[i].$1,
-            colorHex: defaults[i].$2,
+        // Databases created before stable identities used random UUIDs. Only
+        // reconcile a legacy row when the old seed marker proves that it was
+        // application-created. A user category with the same name/color is
+        // otherwise left untouched and the canonical built-in is added.
+        if (marker != null) {
+          final legacy =
+              await (_db.select(_db.categories)..where(
+                    (category) =>
+                        category.name.equals(definition.name) &
+                        category.colorHex.equals(definition.color) &
+                        category.deletedAt.isNull(),
+                  ))
+                  .get();
+          if (legacy.length == 1 && legacy.single.id != stableId) {
+            await _reconcileLegacyCategory(legacy.single, stableId);
+            continue;
+          }
+        }
+
+        await _dao.insertCategory(
+          CategoriesCompanion.insert(
+            id: stableId,
+            name: definition.name,
+            colorHex: definition.color,
             sortOrder: Value(i),
             isFocus: const Value(false),
             createdAt: now,
             updatedAt: now,
             syncStatus: const Value(1),
             revision: const Value(1),
-          ));
-        }
+          ),
+        );
       }
-      await _db.into(_db.appSettings).insertOnConflictUpdate(
-            AppSettingsCompanion.insert(
-              key: _defaultsSeededKey,
-              value: 'true',
-            ),
+      await _db
+          .into(_db.appSettings)
+          .insertOnConflictUpdate(
+            AppSettingsCompanion.insert(key: _defaultsSeededKey, value: 'true'),
           );
     });
   }
 
+  Future<void> _reconcileLegacyCategory(
+    CategoryRow legacy,
+    String stableId,
+  ) async {
+    final now = DateTime.now();
+    await _db.customUpdate(
+      'UPDATE tasks SET category_id = ?, updated_at = ?, sync_status = 1, '
+      'revision = revision + 1 WHERE category_id = ?',
+      variables: [
+        Variable<String>(stableId),
+        Variable<String>(now.toIso8601String()),
+        Variable<String>(legacy.id),
+      ],
+      updates: {_db.tasks},
+    );
+    await _db.customUpdate(
+      'UPDATE recurring_rules SET category_id = ?, updated_at = ?, '
+      'sync_status = 1, revision = revision + 1 WHERE category_id = ?',
+      variables: [
+        Variable<String>(stableId),
+        Variable<String>(now.toIso8601String()),
+        Variable<String>(legacy.id),
+      ],
+      updates: {_db.recurringRules},
+    );
+    await _db.customUpdate(
+      'UPDATE task_templates SET category_id = ?, updated_at = ?, '
+      'sync_status = 1, revision = revision + 1 WHERE category_id = ?',
+      variables: [
+        Variable<String>(stableId),
+        Variable<String>(now.toIso8601String()),
+        Variable<String>(legacy.id),
+      ],
+      updates: {_db.taskTemplates},
+    );
+    await _db.customUpdate(
+      'UPDATE categories SET deleted_at = ?, updated_at = ?, sync_status = 1, '
+      'revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
+      variables: [
+        Variable<String>(now.toIso8601String()),
+        Variable<String>(now.toIso8601String()),
+        Variable<String>(legacy.id),
+      ],
+      updates: {_db.categories},
+    );
+    await _dao.insertCategory(
+      CategoriesCompanion.insert(
+        id: stableId,
+        name: legacy.name,
+        colorHex: legacy.colorHex,
+        sortOrder: Value(legacy.sortOrder),
+        isFocus: Value(legacy.isFocus),
+        createdAt: legacy.createdAt,
+        updatedAt: now,
+        syncStatus: const Value(1),
+        revision: const Value(1),
+      ),
+    );
+  }
+
   static Category _fromRow(CategoryRow row) => Category(
-        id: row.id,
-        name: row.name,
-        colorHex: row.colorHex,
-        sortOrder: row.sortOrder,
-        isFocus: row.isFocus,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        deletedAt: row.deletedAt,
-      );
+    id: row.id,
+    name: row.name,
+    colorHex: row.colorHex,
+    sortOrder: row.sortOrder,
+    isFocus: row.isFocus,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
+  );
 
   static CategoriesCompanion _toCompanion(Category c) =>
       CategoriesCompanion.insert(
@@ -176,17 +271,20 @@ class CategoryRepository {
         revision: const Value(1),
       );
 
-  static CategoryRow _toRow(Category c, {int syncStatus = 0, int revision = 1}) =>
-      CategoryRow(
-        id: c.id,
-        name: c.name,
-        colorHex: c.colorHex,
-        sortOrder: c.sortOrder,
-        isFocus: c.isFocus,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
-        deletedAt: c.deletedAt,
-        syncStatus: syncStatus,
-        revision: revision,
-      );
+  static CategoryRow _toRow(
+    Category c, {
+    int syncStatus = 0,
+    int revision = 1,
+  }) => CategoryRow(
+    id: c.id,
+    name: c.name,
+    colorHex: c.colorHex,
+    sortOrder: c.sortOrder,
+    isFocus: c.isFocus,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    deletedAt: c.deletedAt,
+    syncStatus: syncStatus,
+    revision: revision,
+  );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 
 /// Bottom-edge drag handle for resizing a task block. Uses vertical drag on
 /// desktop (click + drag) and long-press + drag on touch platforms.
@@ -38,6 +39,7 @@ class _ResizableHandleState extends State<ResizableHandle> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
     return GestureDetector(
       key: const ValueKey('resize-handle'),
       behavior: HitTestBehavior.opaque,
@@ -116,9 +118,8 @@ class _ResizableHandleState extends State<ResizableHandle> {
                 width: 28,
                 height: 3,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant
-                      .withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(2),
+                  color: tokens.focus.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
                 ),
               ),
             ),

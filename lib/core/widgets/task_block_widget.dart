@@ -5,7 +5,9 @@ import '../models/category.dart';
 import '../models/task.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
+import '../theme/app_theme_tokens.dart';
 import '../utils/duration_utils.dart';
+import 'error_panel.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
 import '../../features/timer/providers/timer_providers.dart';
 import 'status_badge.dart';
@@ -40,6 +42,7 @@ class TaskBlockWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tokens = AppThemeTokens.of(context);
     final categoryColor = category == null
         ? null
         : AppColors.parseHex(category!.colorHex);
@@ -48,24 +51,40 @@ class TaskBlockWidget extends ConsumerWidget {
     final subtasksAsync = groupedSubtaskCount == null
         ? ref.watch(subtasksForTaskProvider(task.id))
         : null;
+    final subtaskLookupError = subtasksAsync?.hasError == true;
+    final subtaskLookupLoading =
+        subtasksAsync != null && !subtasksAsync.hasValue;
     final renderedSubtaskCount = groupedSubtaskCount == null
-        ? subtasksAsync?.maybeWhen(
-            data: (subtasks) => subtasks.isEmpty
-                ? null
-                : '${subtasks.where((s) => s.isCompleted).length}/${subtasks.length}',
-            orElse: () => null,
-          )
+        ? subtasksAsync?.hasValue == true
+              ? (() {
+                  final subtasks = subtasksAsync!.requireValue;
+                  return subtasks.isEmpty
+                      ? null
+                      : '${subtasks.where((s) => s.isCompleted).length}/${subtasks.length}';
+                })()
+              : null
         : groupedSubtaskCount!.isEmpty
         ? null
         : groupedSubtaskCount;
     // Live timer display (Chunk 6 #7): ticks every second while THIS block's
     // timer runs. The tick stream is only listened to when relevant.
-    final activeTimer = ref.watch(activeTimerProvider).value;
+    final activeTimerAsync = ref.watch(activeTimerProvider);
+    final activeTimer = activeTimerAsync.hasValue
+        ? activeTimerAsync.requireValue
+        : null;
     final isTimingHere = activeTimer?.session.taskId == task.id;
-    final timerLabel = isTimingHere
-        ? formatTimerClock(
-            ref.watch(activeTimerElapsedProvider(task.id)).value ?? 0,
-          )
+    final elapsedAsync = isTimingHere
+        ? ref.watch(activeTimerElapsedProvider(task.id))
+        : null;
+    final timerLabel = isTimingHere && elapsedAsync?.hasValue == true
+        ? formatTimerClock(elapsedAsync!.requireValue)
+        : null;
+    final lookupError = activeTimerAsync.hasError
+        ? friendlyErrorMessage(activeTimerAsync.error!)
+        : elapsedAsync?.hasError == true
+        ? friendlyErrorMessage(elapsedAsync!.error!)
+        : subtaskLookupError
+        ? friendlyErrorMessage(subtasksAsync!.error!)
         : null;
     return Semantics(
       button: onTap != null,
@@ -78,50 +97,52 @@ class TaskBlockWidget extends ConsumerWidget {
           borderRadius: BorderRadius.circular(8),
           child: Container(
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.92,
-              ),
+              color: selected
+                  ? Color.alphaBlend(tokens.selected, tokens.surfaceRaised)
+                  : tokens.surfaceRaised,
               // A non-uniform Border cannot have a borderRadius (paint-time
               // crash), so overlap blocks use square corners.
-              borderRadius: hasOverlap ? null : BorderRadius.circular(8),
+              borderRadius: hasOverlap || selected
+                  ? null
+                  : BorderRadius.circular(tokens.radiusSmall),
               border: hasOverlap
                   ? Border(
                       left: BorderSide(
                         color: categoryColor ?? AppColors.primary,
                         width: 4,
                       ),
-                      top: const BorderSide(
-                        color: AppColors.warning,
-                        width: 1.5,
-                      ),
-                      right: const BorderSide(
-                        color: AppColors.warning,
-                        width: 1.5,
-                      ),
-                      bottom: const BorderSide(
-                        color: AppColors.warning,
-                        width: 1.5,
-                      ),
+                      top: BorderSide(color: tokens.warning, width: 1.5),
+                      right: BorderSide(color: tokens.warning, width: 1.5),
+                      bottom: BorderSide(color: tokens.warning, width: 1.5),
                     )
                   : Border(
                       left: BorderSide(
                         color: categoryColor ?? AppColors.primary,
                         width: 4,
                       ),
+                      top: selected
+                          ? BorderSide(color: tokens.focus, width: 1.5)
+                          : BorderSide.none,
+                      right: selected
+                          ? BorderSide(color: tokens.focus, width: 1.5)
+                          : BorderSide.none,
+                      bottom: selected
+                          ? BorderSide(color: tokens.focus, width: 1.5)
+                          : BorderSide.none,
                     ),
               boxShadow: [
                 BoxShadow(
                   color: selected
-                      ? colorScheme.primary
-                      : colorScheme.shadow.withValues(alpha: 0.3),
-                  blurRadius: selected ? 0 : 4,
-                  spreadRadius: selected ? 1.5 : 0,
+                      ? tokens.focus.withValues(alpha: 0.38)
+                      : colorScheme.shadow.withValues(alpha: 0.24),
+                  blurRadius: selected ? 8 : 4,
+                  spreadRadius: selected ? 1 : 0,
                 ),
               ],
             ),
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.xs,
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
             ),
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -199,7 +220,7 @@ class TaskBlockWidget extends ConsumerWidget {
                         child: Icon(
                           Icons.warning_amber_rounded,
                           size: 13,
-                          color: AppColors.warning,
+                          color: tokens.warning,
                         ),
                       ),
                     // Recurring-series marker (Chunk 4 #14): small ↻ in the
@@ -226,7 +247,7 @@ class TaskBlockWidget extends ConsumerWidget {
                             Icon(
                               Icons.timer_outlined,
                               size: 10,
-                              color: AppColors.inProgress,
+                              color: tokens.pending,
                             ),
                             const SizedBox(width: 2),
                             Text(
@@ -234,7 +255,7 @@ class TaskBlockWidget extends ConsumerWidget {
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.inProgress,
+                                color: tokens.pending,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
@@ -254,6 +275,29 @@ class TaskBlockWidget extends ConsumerWidget {
                             fontSize: 9,
                             color: colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    if (subtaskLookupLoading && !subtaskLookupError)
+                      const Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: SizedBox(
+                          width: 10,
+                          height: 10,
+                          child: CircularProgressIndicator(strokeWidth: 1.5),
+                        ),
+                      ),
+                    if (lookupError != null)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Tooltip(
+                          message: lookupError,
+                          child: Icon(
+                            Icons.error_outline,
+                            size: 12,
+                            color: colorScheme.error,
                           ),
                         ),
                       ),

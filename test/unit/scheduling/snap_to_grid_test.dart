@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/timeline/domain/snap_to_grid.dart';
 
 void main() {
+  setUp(() => PlannerTimeZone.initialize(identifier: 'Asia/Kolkata'));
+
   group('snapToGrid', () {
     test('snaps to nearest 60-minute boundary', () {
       final t = DateTime(2026, 7, 23, 10, 47);

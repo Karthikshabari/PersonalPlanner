@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/inbox_item.dart';
 import '../data/inbox_repository.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/utils/planner_time_zone.dart';
 
 final inboxRepositoryProvider = Provider<InboxRepository>((ref) {
   return InboxRepository(ref.watch(appDatabaseProvider));
@@ -34,12 +35,13 @@ Stream<DateTime> _minuteClock() {
 
     emitNow();
     final now = DateTime.now();
-    final nextMinute = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      now.hour,
-      now.minute + 1,
+    final local = PlannerTimeZone.toPlannerLocal(now);
+    final nextMinute = PlannerTimeZone.calendarDate(
+      local.year,
+      local.month,
+      local.day,
+      hour: local.hour,
+      minute: local.minute + 1,
     );
     first = Timer(nextMinute.difference(now), () {
       emitNow();
@@ -53,14 +55,21 @@ Stream<DateTime> _minuteClock() {
   });
 }
 
-final overdueStampProvider = FutureProvider.autoDispose
-    .family<int, DateTime>((ref, asOf) {
+final overdueStampProvider = FutureProvider.autoDispose.family<int, DateTime>((
+  ref,
+  asOf,
+) {
   return ref.watch(inboxRepositoryProvider).stampOverdue(asOf);
 });
 
 final inboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
   final repo = ref.watch(inboxRepositoryProvider);
-  final asOf = ref.watch(inboxClockProvider).value ?? DateTime.now();
+  final clock = ref.watch(inboxClockProvider);
+  if (clock.hasError) {
+    return Stream<List<InboxItem>>.error(clock.error!, clock.stackTrace);
+  }
+  if (!clock.hasValue) return const Stream<List<InboxItem>>.empty();
+  final asOf = clock.requireValue;
   final stamp = ref.watch(overdueStampProvider(asOf));
   if (stamp.hasError) {
     return Stream<List<InboxItem>>.error(stamp.error!, stamp.stackTrace);
