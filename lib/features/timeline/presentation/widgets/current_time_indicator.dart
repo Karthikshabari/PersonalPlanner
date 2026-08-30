@@ -2,8 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 
 class CurrentTimeIndicator extends StatefulWidget {
   final double pixelsPerMinute;
@@ -34,6 +35,8 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final local = PlannerTimeZone.toPlannerLocal(_now);
     final top = minutesSinceMidnight(_now) * widget.pixelsPerMinute;
     return Positioned(
       left: 0,
@@ -46,25 +49,20 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
-                color: AppColors.currentTimeIndicator,
-                borderRadius: BorderRadius.circular(4),
+                color: tokens.info,
+                borderRadius: BorderRadius.circular(tokens.radiusSmall),
               ),
               child: Text(
-                '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}',
+                '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}',
                 style: TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.w700,
-                  color: Theme.of(context).colorScheme.onPrimary,
+                  color: tokens.surfaceRaised,
                 ),
               ),
             ),
             const SizedBox(width: 4),
-            const Expanded(
-              child: Divider(
-                color: AppColors.currentTimeIndicator,
-                thickness: 1.5,
-              ),
-            ),
+            Expanded(child: Divider(color: tokens.info, thickness: 1.5)),
           ],
         ),
       ),

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/inbox_item.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/inbox_provider.dart';
 import 'inbox_quick_add.dart';
 import 'inbox_task_tile.dart';
@@ -22,37 +24,51 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(inboxProvider);
-    final items =
-        itemsAsync.maybeWhen(data: (i) => i, orElse: () => const <InboxItem>[]);
+    final items = itemsAsync.value ?? const <InboxItem>[];
+    final tokens = AppThemeTokens.of(context);
 
     return Container(
       key: const ValueKey('inbox-sidebar'),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-            top: BorderSide(color: Theme.of(context).dividerColor)),
+        color: tokens.surfaceSubtle,
+        border: Border(top: BorderSide(color: tokens.outline)),
       ),
-      height: _expanded ? 180 : 40,
+      height: _expanded ? 176 : 44,
       child: Column(
         children: [
-          SizedBox(
-            height: 40,
+          Container(
+            height: 44,
+            color: tokens.surface,
             child: Row(
               children: [
                 const SizedBox(width: AppSpacing.md),
-                Icon(Icons.inbox_outlined,
-                    size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: tokens.selected,
+                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                  ),
+                  child: Icon(
+                    Icons.inbox_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
                 const SizedBox(width: AppSpacing.sm),
                 Text(
-                  'Inbox (${items.length})',
-                  style: Theme.of(context).textTheme.labelLarge,
+                  itemsAsync.hasValue ? 'Inbox (${items.length})' : 'Inbox',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
                 const Spacer(),
                 IconButton(
                   key: const ValueKey('inbox-collapse'),
-                  icon: Icon(_expanded
-                      ? Icons.keyboard_arrow_down
-                      : Icons.keyboard_arrow_up),
+                  icon: Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up,
+                  ),
                   onPressed: () => setState(() => _expanded = !_expanded),
                 ),
               ],
@@ -64,13 +80,25 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
                 children: [
                   const InboxQuickAdd(),
                   Expanded(
-                    child: items.isEmpty
-                        ? const Center(
-                            child: Text('No inbox items',
-                                style: TextStyle(fontSize: 12)))
+                    child: itemsAsync.hasError
+                        ? ErrorPanel(
+                            message: friendlyErrorMessage(itemsAsync.error!),
+                            onRetry: () => ref.invalidate(inboxProvider),
+                            compact: true,
+                          )
+                        : !itemsAsync.hasValue
+                        ? const Center(child: CircularProgressIndicator())
+                        : items.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No inbox items',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          )
                         : ListView.builder(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.md,
+                            ),
                             itemCount: items.length,
                             itemBuilder: (context, index) =>
                                 InboxTaskTile(item: items[index]),

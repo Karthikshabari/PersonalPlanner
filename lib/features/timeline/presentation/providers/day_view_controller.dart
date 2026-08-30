@@ -7,6 +7,7 @@ import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
@@ -132,19 +133,31 @@ abstract final class TimelineActions {
     final history = ref.read(undoStackProvider.notifier);
     final tasks = ref.read(dayTasksProvider).value ?? const <Task>[];
     final durationMin = task.scheduledDuration!.inMinutes;
-    final originalStartMin = minutesSinceMidnight(task.startTime!);
+    final day = ref.read(selectedDateProvider);
+    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(day);
+    final searchFrom = task.endTime!.isAfter(dayEnd)
+        ? minutesPerDay
+        : task.endTime!.isBefore(dayStart)
+        ? 0
+        : minutesSinceMidnight(task.endTime!);
 
     final slot = ConflictResolver.findNextAvailableSlot(
       durationMinutes: durationMin,
       dayTasks: tasks,
-      searchFromMinutes: originalStartMin + durationMin,
+      searchFromMinutes: searchFrom,
+      day: day,
     );
     if (slot == null) {
       showAppToast(context, 'No room left on this day for the copy');
       return;
     }
-    final day = ref.read(selectedDateProvider);
-    final start = day.add(Duration(minutes: slot));
+    final localDay = PlannerTimeZone.toPlannerLocal(day);
+    final start = PlannerTimeZone.calendarDate(
+      localDay.year,
+      localDay.month,
+      localDay.day,
+      minute: slot,
+    );
     final end = start.add(Duration(minutes: durationMin));
     await history.execute(
       DuplicateTaskCommand(
@@ -270,14 +283,18 @@ abstract final class TimelineActions {
     final grid =
         ref.read(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
     final duration = end.difference(start).inMinutes;
-    final dayStart = startOfDay(start);
-    final maxStart = minutesPerDay - duration;
     final originalMinutes = minutesSinceMidnight(start);
     final newMinutes = (originalMinutes + direction * grid)
-        .clamp(0, maxStart > 0 ? maxStart : 0)
+        .clamp(0, minutesPerDay - grid)
         .toInt();
     if (newMinutes == originalMinutes) return false;
-    final newStart = dayStart.add(Duration(minutes: newMinutes));
+    final local = PlannerTimeZone.toPlannerLocal(start);
+    final newStart = PlannerTimeZone.calendarDate(
+      local.year,
+      local.month,
+      local.day,
+      minute: newMinutes,
+    );
     final newEnd = newStart.add(Duration(minutes: duration));
     return _commitConflictAware(
       context,
@@ -306,11 +323,10 @@ abstract final class TimelineActions {
     final grid =
         ref.read(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
     final originalDuration = end.difference(start).inMinutes;
-    final maxDuration = minutesPerDay - minutesSinceMidnight(start);
     final newDuration = snapDuration(
       originalDuration + direction * grid,
       grid,
-    ).clamp(grid, maxDuration > 0 ? maxDuration : grid).toInt();
+    ).clamp(grid, 10000).toInt();
     if (newDuration == originalDuration) return false;
     final newEnd = start.add(Duration(minutes: newDuration));
     return _commitConflictAware(

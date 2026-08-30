@@ -7,9 +7,7 @@ abstract final class ConflictDetector {
   /// Returns the day tasks that overlap [task], excluding itself and
   /// cancelled/rescheduled blocks, sorted by start time.
   static List<Task> detect(Task task, List<Task> dayTasks) {
-    return dayTasks
-        .where((other) => overlaps(task, other))
-        .toList()
+    return dayTasks.where((other) => overlaps(task, other)).toList()
       ..sort((a, b) => a.startTime!.compareTo(b.startTime!));
   }
 
@@ -34,7 +32,9 @@ abstract final class ConflictDetector {
     for (var i = 0; i < dayTasks.length; i++) {
       for (var j = i + 1; j < dayTasks.length; j++) {
         if (overlaps(dayTasks[i], dayTasks[j])) {
-          ids..add(dayTasks[i].id)..add(dayTasks[j].id);
+          ids
+            ..add(dayTasks[i].id)
+            ..add(dayTasks[j].id);
         }
       }
     }
@@ -46,16 +46,19 @@ abstract final class ConflictDetector {
   /// at lane zero.
   static Map<String, int> overlapLanes(List<Task> dayTasks) {
     final scheduled = dayTasks
-        .where((task) =>
-            task.startTime != null &&
-            task.endTime != null &&
-            !_isInactive(task))
+        .where(
+          (task) =>
+              task.startTime != null &&
+              task.endTime != null &&
+              !_isInactive(task),
+        )
         .toList();
     final remaining = {for (final task in scheduled) task.id: task};
     final result = <String, int>{};
     while (remaining.isNotEmpty) {
-      final seed = remaining.values
-          .reduce((a, b) => _compareStart(a, b) <= 0 ? a : b);
+      final seed = remaining.values.reduce(
+        (a, b) => _compareStart(a, b) <= 0 ? a : b,
+      );
       final component = <Task>[seed];
       remaining.remove(seed.id);
       for (var index = 0; index < component.length; index++) {
@@ -73,7 +76,7 @@ abstract final class ConflictDetector {
       for (final task in component) {
         var lane = 0;
         while (lane < laneEnd.length &&
-            !task.startTime!.isAfter(laneEnd[lane])) {
+            task.startTime!.isBefore(laneEnd[lane])) {
           lane++;
         }
         if (lane == laneEnd.length) {

@@ -209,7 +209,7 @@ abstract final class RruleUtils {
     }
   }
 
-  static DateTime _wallClockUtc(DateTime local) => DateTime(
+  static DateTime _wallClockUtc(DateTime local) => DateTime.utc(
     local.year,
     local.month,
     local.day,

@@ -9,12 +9,26 @@ import 'package:go_router/go_router.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/theme/theme_mode_provider.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../analytics/providers/analytics_providers.dart';
+import '../../../categories/providers/category_providers.dart';
+import '../../../inbox/providers/inbox_provider.dart';
+import '../../../onboarding/providers/onboarding_provider.dart';
+import '../../../recurring/providers/recurring_providers.dart';
+import '../../../review/providers/review_providers.dart';
+import '../../providers/notification_settings_providers.dart';
 import '../../data/backup_service.dart';
+import '../../../task_editor/providers/subtask_providers.dart';
+import '../../../task_editor/providers/tag_providers.dart';
+import '../../../templates/providers/template_providers.dart';
+import '../../../timeline/presentation/providers/day_tasks_provider.dart';
+import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../../timeline/presentation/providers/grid_settings_provider.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 
@@ -30,181 +44,232 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String? _backupMessage;
   String? _backupError;
 
+  void _openSecondary(BuildContext context, String location) {
+    if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+      context.go(location);
+    } else {
+      context.push(location);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final gridAsync = ref.watch(gridIntervalProvider);
-    final gridInterval = gridAsync.value ?? AppConstants.defaultGridMinutes;
-    final themeMode = ref.watch(themeModeProvider).value ?? ThemeMode.dark;
+    final themeAsync = ref.watch(themeModeProvider);
+    if (gridAsync.hasError || themeAsync.hasError) {
+      final error = gridAsync.hasError ? gridAsync.error! : themeAsync.error!;
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Settings'),
+          actions: const [SyncStatusAction()],
+        ),
+        body: ErrorPanel(
+          message: friendlyErrorMessage(error),
+          onRetry: () {
+            ref.invalidate(gridIntervalProvider);
+            ref.invalidate(themeModeProvider);
+          },
+        ),
+      );
+    }
+    if (!gridAsync.hasValue || !themeAsync.hasValue) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final gridInterval = gridAsync.requireValue;
+    final themeMode = themeAsync.requireValue;
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
         title: const Text('Settings'),
         actions: const [SyncStatusAction()],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('Categories'),
-              subtitle: const Text('Manage categories and colors'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/categories'),
-            ),
+      body: LayoutBuilder(
+        builder: (context, constraints) => ListView(
+          padding: EdgeInsets.all(
+            constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl,
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: ListTile(
-              key: const ValueKey('tags-tile'),
-              leading: const Icon(Icons.sell_outlined),
-              title: const Text('Tags'),
-              subtitle: const Text('Manage task tags'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/settings/tags'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: ListTile(
-              key: const ValueKey('templates-tile'),
-              leading: const Icon(Icons.bookmark_border_outlined),
-              title: const Text('Task Templates'),
-              subtitle: const Text('Reusable task presets'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/templates'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: ListTile(
-              key: const ValueKey('notifications-tile'),
-              leading: const Icon(Icons.notifications_outlined),
-              title: const Text('Notifications'),
-              subtitle: const Text('Daily review reminder'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/settings/notifications'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: ListTile(
-              key: const ValueKey('sync-tile'),
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('Sync'),
-              subtitle: const Text('Account, offline mode and sync status'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => context.go('/settings/sync'),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.grid_on_outlined),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Text(
-                          'Timeline grid interval',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    'Snap spacing for drag, resize and quick create',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: DropdownButton<int>(
-                      key: const ValueKey('grid-interval-dropdown'),
-                      value: gridInterval,
-                      items: [
-                        for (final minutes in AppConstants.gridOptions)
-                          DropdownMenuItem(
-                            value: minutes,
-                            child: Text('$minutes min'),
-                          ),
-                      ],
-                      onChanged: (minutes) {
-                        if (minutes == null) return;
-                        ref
-                            .read(gridIntervalProvider.notifier)
-                            .setInterval(minutes);
-                      },
-                    ),
-                  ),
-                ],
+          children: [
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.label_outline),
+                title: const Text('Categories'),
+                subtitle: const Text('Manage categories and colors'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/categories'),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  const Icon(Icons.brightness_6_outlined),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Appearance',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'System, light or dark',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  DropdownButton<ThemeMode>(
-                    key: const ValueKey('theme-mode-dropdown'),
-                    value: themeMode,
-                    items: [
-                      for (final mode in ThemeMode.values)
-                        DropdownMenuItem(
-                          value: mode,
-                          child: Text(_themeModeLabel(mode)),
-                        ),
-                    ],
-                    onChanged: (mode) {
-                      if (mode != null) {
-                        ref.read(themeModeProvider.notifier).setMode(mode);
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          _buildBackupCard(context),
-          if (_backupMessage != null || _backupError != null) ...[
             const SizedBox(height: AppSpacing.sm),
-            if (_backupError != null)
-              ErrorPanel(message: _backupError!, compact: true)
-            else
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.check_circle_outline),
-                  title: Text(_backupMessage!),
+            Card(
+              child: ListTile(
+                key: const ValueKey('tags-tile'),
+                leading: const Icon(Icons.sell_outlined),
+                title: const Text('Tags'),
+                subtitle: const Text('Manage task tags'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/settings/tags'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: ListTile(
+                key: const ValueKey('templates-tile'),
+                leading: const Icon(Icons.bookmark_border_outlined),
+                title: const Text('Task Templates'),
+                subtitle: const Text('Reusable task presets'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/templates'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: ListTile(
+                key: const ValueKey('notifications-tile'),
+                leading: const Icon(Icons.notifications_outlined),
+                title: const Text('Notifications'),
+                subtitle: const Text('Daily review reminder'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/settings/notifications'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: ListTile(
+                key: const ValueKey('sync-tile'),
+                leading: const Icon(Icons.cloud_outlined),
+                title: const Text('Sync'),
+                subtitle: const Text('Account, offline mode and sync status'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/settings/sync'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.grid_on_outlined),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'Timeline grid interval',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Snap spacing for drag, resize and quick create',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: DropdownButton<int>(
+                        key: const ValueKey('grid-interval-dropdown'),
+                        value: gridInterval,
+                        items: [
+                          for (final minutes in AppConstants.gridOptions)
+                            DropdownMenuItem(
+                              value: minutes,
+                              child: Text('$minutes min'),
+                            ),
+                        ],
+                        onChanged: (minutes) {
+                          if (minutes == null) return;
+                          _runPreferenceChange(
+                            () => ref
+                                .read(gridIntervalProvider.notifier)
+                                .setInterval(minutes),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    const Icon(Icons.brightness_6_outlined),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Appearance',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            'System, light or dark',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    DropdownButton<ThemeMode>(
+                      key: const ValueKey('theme-mode-dropdown'),
+                      value: themeMode,
+                      items: [
+                        for (final mode in ThemeMode.values)
+                          DropdownMenuItem(
+                            value: mode,
+                            child: Text(_themeModeLabel(mode)),
+                          ),
+                      ],
+                      onChanged: (mode) {
+                        if (mode != null) {
+                          _runPreferenceChange(
+                            () => ref
+                                .read(themeModeProvider.notifier)
+                                .setMode(mode),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _buildBackupCard(context),
+            if (_backupMessage != null || _backupError != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              if (_backupError != null)
+                ErrorPanel(message: _backupError!, compact: true)
+              else
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.check_circle_outline),
+                    title: Text(_backupMessage!),
+                  ),
+                ),
+            ],
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _runPreferenceChange(Future<void> Function() operation) async {
+    try {
+      await operation();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+      }
+    }
   }
 
   Widget _buildBackupCard(BuildContext context) => Card(
@@ -361,14 +426,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (!mounted || selected == null) return;
     await _importBackup(
-      utf8.decode(await selected.readAsBytes()),
+      selected,
       replace: choice.replace,
       ownershipConfirmed: choice.ownershipConfirmed,
     );
   }
 
   Future<void> _importBackup(
-    String source, {
+    PlatformFile selected, {
     required bool replace,
     required bool ownershipConfirmed,
   }) async {
@@ -378,6 +443,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _backupMessage = null;
     });
     try {
+      final source = utf8.decode(
+        await selected.readAsBytes(),
+        allowMalformed: false,
+      );
       final service = BackupService(ref.read(appDatabaseProvider));
       if (replace) {
         final preImport = await service.exportJson();
@@ -400,12 +469,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           confirmed: true,
           ownershipConfirmed: ownershipConfirmed,
         );
+        _invalidatePortableProviders();
         if (mounted) setState(() => _backupMessage = 'Backup restored.');
       } else {
         final result = await service.importJson(
           source,
           ownershipConfirmed: ownershipConfirmed,
         );
+        _invalidatePortableProviders();
         if (mounted) {
           setState(
             () => _backupMessage = result.hasConflicts
@@ -419,6 +490,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _backupBusy = false);
     }
+  }
+
+  void _invalidatePortableProviders() {
+    ref.invalidate(analyticsSnapshotProvider);
+    ref.invalidate(categoriesProvider);
+    ref.invalidate(inboxClockProvider);
+    ref.invalidate(inboxProvider);
+    ref.invalidate(onboardingCompletedProvider);
+    ref.invalidate(recurringRuleProvider);
+    ref.invalidate(dayMaterializationProvider);
+    ref.invalidate(dailyReviewProvider);
+    ref.invalidate(weeklyReviewProvider);
+    ref.invalidate(dailyStatsProvider);
+    ref.invalidate(weeklyStatsProvider);
+    ref.invalidate(tagsProvider);
+    ref.invalidate(tagsForTaskProvider);
+    ref.invalidate(subtasksForTaskProvider);
+    ref.invalidate(subtaskCountsProvider);
+    ref.invalidate(templatesProvider);
+    ref.invalidate(dayTasksProvider);
+    ref.invalidate(dayTasksForDateProvider);
+    ref.invalidate(selectedTaskByIdProvider);
+    ref.invalidate(gridIntervalProvider);
+    ref.invalidate(themeModeProvider);
+    ref.invalidate(reviewReminderEnabledProvider);
+    ref.invalidate(reviewReminderMinutesProvider);
   }
 
   static String _themeModeLabel(ThemeMode mode) => switch (mode) {

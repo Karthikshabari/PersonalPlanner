@@ -84,6 +84,27 @@ void main() {
     expect(finished.durationSec, 90);
   });
 
+  test('pauseAt preserves sessions longer than 24 hours', () async {
+    final task = await seedTask('Long running');
+    final startedAt = DateTime.utc(2026, 1, 1, 9);
+    await db
+        .into(db.timerSessions)
+        .insert(
+          TimerSessionsCompanion.insert(
+            id: 'long-session',
+            taskId: task.id,
+            startedAt: startedAt,
+            createdAt: startedAt,
+            updatedAt: startedAt,
+          ),
+        );
+
+    await timer.pauseAt(startedAt.add(const Duration(hours: 48)));
+
+    final finished = (await db.timerDao.getSessionsForTask(task.id)).single;
+    expect(finished.durationSec, const Duration(hours: 48).inSeconds);
+  });
+
   test('starting B auto-pauses A — only one active timer globally', () async {
     final a = await seedTask('A');
     final b = await seedTask('B');

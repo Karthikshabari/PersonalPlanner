@@ -145,7 +145,7 @@ class TimerService {
     final durationSec = endedAt
         .difference(session.startedAt)
         .inSeconds
-        .clamp(0, 24 * 3600);
+        .clamp(0, 1 << 31);
     await _db.timerDao.updateSession(
       session.copyWith(
         endedAt: Value(endedAt),

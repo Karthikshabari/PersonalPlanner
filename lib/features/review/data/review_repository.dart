@@ -27,7 +27,11 @@ class ReviewRepository {
     final existing = await _dao.getAnyDailyReviewByDate(dateIso);
     final now = DateTime.now();
     final effective = review.copyWith(
-      id: existing?.id ?? (review.id.isEmpty ? generateUuidV7() : review.id),
+      id:
+          existing?.id ??
+          (review.id.isEmpty
+              ? generateDeterministicUuid('daily-review:$dateIso')
+              : review.id),
       date: startOfDay(review.date),
       energyLevel: _clampRating(review.energyLevel),
       productivityRating: _clampRating(review.productivityRating),
@@ -92,7 +96,11 @@ class ReviewRepository {
     final existing = await _dao.getAnyWeeklyReviewByWeekStart(weekIso);
     final now = DateTime.now();
     final effective = review.copyWith(
-      id: existing?.id ?? (review.id.isEmpty ? generateUuidV7() : review.id),
+      id:
+          existing?.id ??
+          (review.id.isEmpty
+              ? generateDeterministicUuid('weekly-review:$weekIso')
+              : review.id),
       weekStartDate: startOfWeek(review.weekStartDate),
       overallRating: _clampRating(review.overallRating),
       updatedAt: now,

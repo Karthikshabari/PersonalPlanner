@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 
 class TaskQuickCreate extends StatefulWidget {
   final int slotMinutes;
@@ -47,29 +48,50 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
         child: TapRegion(
           onTapOutside: (_) => widget.onCancel(),
           child: Material(
-            elevation: 6,
-            borderRadius: BorderRadius.circular(8),
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            elevation: 2,
+            borderRadius: BorderRadius.circular(
+              AppThemeTokens.of(context).radiusSmall,
+            ),
+            color: AppThemeTokens.of(context).surfaceRaised,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.xs,
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.sm,
+                AppSpacing.xs,
+                AppSpacing.xs,
+                AppSpacing.xs,
               ),
-              child: TextField(
-                key: const ValueKey('quick-create-input'),
-                controller: _controller,
-                autofocus: true,
-                style: Theme.of(context).textTheme.bodyMedium,
-                decoration: InputDecoration(
-                  hintText: 'Task title…',
-                  isDense: true,
-                  filled: false,
-                  border: InputBorder.none,
-                ),
-                onSubmitted: (value) {
-                  final trimmed = value.trim();
-                  if (trimmed.isNotEmpty) widget.onSubmit(trimmed);
-                },
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.add_task,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('quick-create-input'),
+                      controller: _controller,
+                      autofocus: true,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      decoration: const InputDecoration(
+                        hintText: 'Task title…',
+                        isDense: true,
+                        filled: false,
+                        border: InputBorder.none,
+                      ),
+                      onSubmitted: (value) {
+                        final trimmed = value.trim();
+                        if (trimmed.isNotEmpty) widget.onSubmit(trimmed);
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cancel quick create',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: widget.onCancel,
+                  ),
+                ],
               ),
             ),
           ),

@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/task.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../providers/timer_providers.dart';
 import '../../platform/android_foreground_timer.dart';
 import '../timer_actions.dart';
@@ -17,10 +18,23 @@ class TimerControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final active = ref.watch(activeTimerProvider).value;
+    final tokens = AppThemeTokens.of(context);
+    final activeAsync = ref.watch(activeTimerProvider);
+    if (activeAsync.hasError) {
+      return ErrorPanel(
+        message: friendlyErrorMessage(activeAsync.error!),
+        onRetry: () => ref.invalidate(activeTimerProvider),
+        compact: true,
+      );
+    }
+    if (!activeAsync.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final active = activeAsync.requireValue;
     final isHere = active?.session.taskId == task.id;
-    final elapsed =
-        formatTimerClock(ref.watch(activeTimerElapsedProvider(task.id)).value ?? 0);
+    final elapsedAsync = isHere
+        ? ref.watch(activeTimerElapsedProvider(task.id))
+        : const AsyncValue<int>.data(0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -33,23 +47,32 @@ class TimerControls extends ConsumerWidget {
           ),
         const SizedBox(height: AppSpacing.sm),
         if (isHere) ...[
-          Row(
-            children: [
-              Icon(Icons.timer_outlined,
-                  size: 14, color: AppColors.inProgress),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                key: const ValueKey('editor-timer-elapsed'),
-                elapsed,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.inProgress,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+          if (elapsedAsync.hasError)
+            ErrorPanel(
+              message: friendlyErrorMessage(elapsedAsync.error!),
+              onRetry: () =>
+                  ref.invalidate(activeTimerElapsedProvider(task.id)),
+              compact: true,
+            )
+          else if (!elapsedAsync.hasValue)
+            const Center(child: CircularProgressIndicator())
+          else
+            Row(
+              children: [
+                Icon(Icons.timer_outlined, size: 14, color: tokens.pending),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  key: const ValueKey('editor-timer-elapsed'),
+                  formatTimerClock(elapsedAsync.requireValue),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.pending,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
@@ -58,7 +81,10 @@ class TimerControls extends ConsumerWidget {
                   key: const ValueKey('timer-pause-button'),
                   icon: const Icon(Icons.pause, size: 16),
                   label: const Text('Pause'),
-                  onPressed: () => TimerActions.pause(context, ref),
+                  onPressed: () => _runTimerAction(
+                    context,
+                    () => TimerActions.pause(context, ref),
+                  ),
                 ),
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -67,7 +93,10 @@ class TimerControls extends ConsumerWidget {
                   key: const ValueKey('timer-stop-button'),
                   icon: const Icon(Icons.stop, size: 16),
                   label: const Text('Stop'),
-                  onPressed: () => TimerActions.stopWithPrompt(context, ref),
+                  onPressed: () => _runTimerAction(
+                    context,
+                    () => TimerActions.stopWithPrompt(context, ref),
+                  ),
                 ),
               ),
             ],
@@ -76,9 +105,11 @@ class TimerControls extends ConsumerWidget {
           if (active != null)
             Row(
               children: [
-                Icon(Icons.timer_off_outlined,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+                Icon(
+                  Icons.timer_off_outlined,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 const SizedBox(width: AppSpacing.xs),
                 Expanded(
                   child: Text(
@@ -95,7 +126,10 @@ class TimerControls extends ConsumerWidget {
             key: const ValueKey('timer-start-button'),
             icon: const Icon(Icons.play_arrow, size: 16),
             label: Text(active == null ? 'Start timer' : 'Switch timer'),
-            onPressed: () => TimerActions.start(context, ref, task),
+            onPressed: () => _runTimerAction(
+              context,
+              () => TimerActions.start(context, ref, task),
+            ),
           ),
         ],
         if (task.actualDurationMin != null && !isHere)
@@ -108,5 +142,19 @@ class TimerControls extends ConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+Future<void> _runTimerAction(
+  BuildContext context,
+  Future<Object?> Function() action,
+) async {
+  try {
+    await action();
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
   }
 }

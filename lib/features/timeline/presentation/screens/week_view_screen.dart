@@ -10,7 +10,10 @@ import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../providers/day_tasks_provider.dart';
@@ -29,12 +32,13 @@ class WeekViewScreen extends ConsumerWidget {
     final weekStart = ref.watch(selectedWeekStartProvider);
     final days = List.generate(7, (i) => addDays(weekStart, i));
 
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(context, ref, weekStart),
-          const Divider(height: 1),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -65,10 +69,13 @@ class WeekViewScreen extends ConsumerWidget {
                         scrollDirection: Axis.horizontal,
                         child: SizedBox(width: 7 * 180, child: grid),
                       );
-                return SingleChildScrollView(
-                  child: SizedBox(
-                    height: gridHeight,
-                    child: horizontallyScrollable,
+                return ColoredBox(
+                  color: tokens.canvas,
+                  child: SingleChildScrollView(
+                    child: SizedBox(
+                      height: gridHeight,
+                      child: horizontallyScrollable,
+                    ),
                   ),
                 );
               },
@@ -82,51 +89,66 @@ class WeekViewScreen extends ConsumerWidget {
   Widget _buildHeader(BuildContext context, WidgetRef ref, DateTime weekStart) {
     final notifier = ref.read(selectedWeekStartProvider.notifier);
     final fmt = DateFormat('MMM d');
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.lg,
-        vertical: AppSpacing.sm,
+    final tokens = AppThemeTokens.of(context);
+    return Container(
+      color: tokens.surface,
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.sm,
+        AppSpacing.lg,
+        AppSpacing.md,
       ),
-      child: Wrap(
-        alignment: WrapAlignment.start,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: AppSpacing.xs,
-        runSpacing: AppSpacing.xs,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          IconButton(
-            key: const ValueKey('weekview-prev'),
-            tooltip: 'Previous week',
-            icon: const Icon(Icons.chevron_left),
-            onPressed: () => notifier.state = addDays(weekStart, -7),
-          ),
           Text(
-            '${fmt.format(weekStart)} – ${DateFormat('MMM d, yyyy').format(addDays(weekStart, 6))}',
-            style: Theme.of(context).textTheme.titleLarge,
+            'WEEK OVERVIEW',
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: tokens.textMuted, letterSpacing: 1.4),
           ),
-          IconButton(
-            key: const ValueKey('weekview-next'),
-            tooltip: 'Next week',
-            icon: const Icon(Icons.chevron_right),
-            onPressed: () => notifier.state = addDays(weekStart, 7),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          OutlinedButton(
-            key: const ValueKey('weekview-this-week'),
-            onPressed: () => notifier.state = startOfWeek(DateTime.now()),
-            child: const Text('This Week'),
-          ),
-          SegmentedButton<String>(
-            key: const ValueKey('day-week-switcher'),
-            segments: const [
-              ButtonSegment(value: 'day', label: Text('Day')),
-              ButtonSegment(value: 'week', label: Text('Week')),
+          const SizedBox(height: AppSpacing.xs),
+          Wrap(
+            alignment: WrapAlignment.start,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              IconButton(
+                key: const ValueKey('weekview-prev'),
+                tooltip: 'Previous week',
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () => notifier.state = addDays(weekStart, -7),
+              ),
+              Text(
+                '${fmt.format(weekStart)} – ${DateFormat('MMM d, yyyy').format(addDays(weekStart, 6))}',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              IconButton(
+                key: const ValueKey('weekview-next'),
+                tooltip: 'Next week',
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () => notifier.state = addDays(weekStart, 7),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              OutlinedButton(
+                key: const ValueKey('weekview-this-week'),
+                onPressed: () => notifier.state = startOfWeek(DateTime.now()),
+                child: const Text('This Week'),
+              ),
+              SegmentedButton<String>(
+                key: const ValueKey('day-week-switcher'),
+                segments: const [
+                  ButtonSegment(value: 'day', label: Text('Day')),
+                  ButtonSegment(value: 'week', label: Text('Week')),
+                ],
+                selected: const {'week'},
+                onSelectionChanged: (selection) {
+                  if (selection.contains('day')) context.go('/day');
+                },
+              ),
+              const SyncStatusAction(),
             ],
-            selected: const {'week'},
-            onSelectionChanged: (selection) {
-              if (selection.contains('day')) context.go('/day');
-            },
           ),
-          const SyncStatusAction(),
         ],
       ),
     );
@@ -142,18 +164,12 @@ class _WeekDayColumn extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Materialize recurring rules for this day so the week reflects them
     // (same trigger semantics as the Day View).
-    ref.watch(dayMaterializationProvider(date));
+    final materializationAsync = ref.watch(dayMaterializationProvider(date));
     final tasksAsync = ref.watch(dayTasksForDateProvider(date));
     final categoriesAsync = ref.watch(categoriesProvider);
 
-    final tasks = tasksAsync.maybeWhen(
-      data: (t) => t,
-      orElse: () => const <Task>[],
-    );
-    final categories = categoriesAsync.maybeWhen(
-      data: (c) => c,
-      orElse: () => const <Category>[],
-    );
+    final tasks = tasksAsync.value ?? const <Task>[];
+    final categories = categoriesAsync.value ?? const <Category>[];
 
     Category? categoryFor(Task task) {
       for (final c in categories) {
@@ -183,6 +199,9 @@ class _WeekDayColumn extends ConsumerWidget {
               vertical: AppSpacing.sm,
             ),
             decoration: BoxDecoration(
+              color: isToday
+                  ? AppThemeTokens.of(context).selected
+                  : AppThemeTokens.of(context).surface,
               border: Border(
                 bottom: BorderSide(
                   color: isToday
@@ -206,7 +225,7 @@ class _WeekDayColumn extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (tasks.isNotEmpty) ...[
+                if (tasksAsync.hasValue && tasks.isNotEmpty) ...[
                   const SizedBox(width: AppSpacing.xs),
                   Text(
                     '$completed/${tasks.length}',
@@ -226,27 +245,59 @@ class _WeekDayColumn extends ConsumerWidget {
               height: 3,
               color: AppColors.primary,
             ),
-          SizedBox(
-            height: totalHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (final task in tasks)
-                  _buildBlock(context, task, categoryFor(task)),
-              ],
+          if (materializationAsync.hasError)
+            ErrorPanel(
+              message: friendlyErrorMessage(materializationAsync.error!),
+              onRetry: () => ref.invalidate(dayMaterializationProvider(date)),
+              compact: true,
+            )
+          else if (tasksAsync.hasError)
+            ErrorPanel(
+              message: friendlyErrorMessage(tasksAsync.error!),
+              onRetry: () => ref.invalidate(dayTasksForDateProvider(date)),
+              compact: true,
+            )
+          else if (categoriesAsync.hasError)
+            ErrorPanel(
+              message: friendlyErrorMessage(categoriesAsync.error!),
+              onRetry: () => ref.invalidate(categoriesProvider),
+              compact: true,
+            )
+          else if (!materializationAsync.hasValue ||
+              !tasksAsync.hasValue ||
+              !categoriesAsync.hasValue)
+            const SizedBox(
+              height: 120,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            SizedBox(
+              height: totalHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final task in tasks)
+                    _buildBlock(context, task, categoryFor(task)),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildBlock(BuildContext context, Task task, Category? category) {
-    final startMinutes = task.startTime == null
-        ? 0
-        : minutesSinceMidnight(task.startTime!);
-    final durationMinutes =
-        task.scheduledDuration?.inMinutes.toDouble() ?? 60.0;
+    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(date);
+    final clippedStart = task.startTime!.isBefore(dayStart)
+        ? dayStart
+        : task.startTime!;
+    final clippedEnd = task.endTime!.isAfter(dayEnd) ? dayEnd : task.endTime!;
+    if (!clippedEnd.isAfter(clippedStart)) return const SizedBox.shrink();
+    final startMinutes = minutesSinceMidnight(clippedStart);
+    final durationMinutes = clippedEnd
+        .difference(clippedStart)
+        .inMinutes
+        .toDouble();
     final height = durationMinutes * AppConstants.pixelsPerMinute;
     final accent = category == null
         ? AppColors.primary
@@ -265,13 +316,35 @@ class _WeekDayColumn extends ConsumerWidget {
         ),
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          task.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+        child: Row(
+          children: [
+            Icon(
+              _statusIcon(task.status),
+              size: 10,
+              color: AppThemeTokens.of(context).textSecondary,
+            ),
+            const SizedBox(width: 3),
+            Expanded(
+              child: Text(
+                task.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall
+                    ?.copyWith(fontSize: 10, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  IconData _statusIcon(TaskStatus status) => switch (status) {
+    TaskStatus.completed => Icons.check_circle,
+    TaskStatus.inProgress => Icons.play_circle,
+    TaskStatus.skipped => Icons.skip_next,
+    TaskStatus.cancelled => Icons.cancel_outlined,
+    TaskStatus.rescheduled => Icons.schedule,
+    TaskStatus.planned => Icons.radio_button_unchecked,
+  };
 }

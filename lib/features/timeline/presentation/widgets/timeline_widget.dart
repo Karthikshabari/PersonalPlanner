@@ -11,8 +11,12 @@ import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
@@ -165,28 +169,38 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     if (slot == null) return;
     setState(() => _quickCreateSlot = null);
     final day = ref.read(selectedDateProvider);
-    final start = day.add(Duration(minutes: slot));
+    final dayLocal = PlannerTimeZone.toPlannerLocal(day);
+    final start = PlannerTimeZone.calendarDate(
+      dayLocal.year,
+      dayLocal.month,
+      dayLocal.day,
+      minute: slot,
+    );
     final end = start.add(Duration(minutes: _gridMinutes));
     final now = DateTime.now();
-    await ref
-        .read(undoStackProvider.notifier)
-        .execute(
-          CreateTaskCommand(
-            ref.read(taskRepositoryProvider),
-            Task(
-              id: '',
-              title: title,
-              startTime: start,
-              endTime: end,
-              estimatedDurationMin: _gridMinutes,
-              status: TaskStatus.planned,
-              isInbox: false,
-              createdAt: now,
-              updatedAt: now,
+    try {
+      await ref
+          .read(undoStackProvider.notifier)
+          .execute(
+            CreateTaskCommand(
+              ref.read(taskRepositoryProvider),
+              Task(
+                id: '',
+                title: title,
+                startTime: start,
+                endTime: end,
+                estimatedDurationMin: _gridMinutes,
+                status: TaskStatus.planned,
+                isInbox: false,
+                createdAt: now,
+                updatedAt: now,
+              ),
             ),
-          ),
-        );
-    if (mounted) _scrollToMinutes(slot);
+          );
+      if (mounted) _scrollToMinutes(slot);
+    } catch (error) {
+      if (mounted) showAppToast(context, friendlyErrorMessage(error));
+    }
   }
 
   void _requestQuickCreateAtCurrentTime() {
@@ -228,7 +242,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     setState(() {
       _drag = _DragPreview(
         task: task,
-        origStartMinutes: minutesSinceMidnight(task.startTime!),
+        origStartMinutes:
+            isSameDay(task.startTime!, ref.read(selectedDateProvider))
+            ? minutesSinceMidnight(task.startTime!)
+            : 0,
         durationMinutes: task.scheduledDuration?.inMinutes ?? _gridMinutes,
         deltaPx: 0,
       );
@@ -248,13 +265,21 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
     final grid = _gridMinutes;
     final deltaMinutes = (drag.deltaPx / _pixelsPerMinute).round();
-    final remaining = minutesPerDay - drag.durationMinutes;
     var newStartMin = snapSlotStart(drag.origStartMinutes + deltaMinutes, grid);
-    newStartMin = newStartMin.clamp(0, remaining > 0 ? remaining : 0);
+    final latestStart = drag.durationMinutes < minutesPerDay
+        ? minutesPerDay - drag.durationMinutes
+        : minutesPerDay - grid;
+    newStartMin = newStartMin.clamp(0, latestStart > 0 ? latestStart : 0);
     if (newStartMin == drag.origStartMinutes) return; // no effective change
 
     final day = ref.read(selectedDateProvider);
-    final newStart = day.add(Duration(minutes: newStartMin));
+    final dayLocal = PlannerTimeZone.toPlannerLocal(day);
+    final newStart = PlannerTimeZone.calendarDate(
+      dayLocal.year,
+      dayLocal.month,
+      dayLocal.day,
+      minute: newStartMin,
+    );
     final newEnd = newStart.add(Duration(minutes: drag.durationMinutes));
     final primary = MoveTaskCommand(
       repository: ref.read(taskRepositoryProvider),
@@ -303,15 +328,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
     final grid = _gridMinutes;
     final deltaMinutes = (resize.deltaPx / _pixelsPerMinute).round();
-    final maxDur = minutesPerDay - resize.origStartMinutes;
     final newDuration = snapDuration(
       resize.origDurationMinutes + deltaMinutes,
       grid,
-    ).clamp(grid, maxDur > 0 ? maxDur : grid);
+    ).clamp(grid, 10000);
     if (newDuration == resize.origDurationMinutes) return; // no change
 
-    final day = ref.read(selectedDateProvider);
-    final newStart = day.add(Duration(minutes: resize.origStartMinutes));
+    final newStart = resize.task.startTime!;
     final newEnd = newStart.add(Duration(minutes: newDuration));
     final primary = ResizeTaskCommand(
       repository: ref.read(taskRepositoryProvider),
@@ -511,33 +534,61 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       });
     });
     final selectedDate = ref.watch(selectedDateProvider);
+    final gridAsync = ref.watch(gridIntervalProvider);
     final tasksAsync = ref.watch(dayTasksProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final subtaskCountsAsync = ref.watch(subtaskCountsProvider);
-    final subtaskCounts = subtaskCountsAsync.maybeWhen(
-      data: (counts) => counts,
-      orElse: () => const <String, String>{},
-    );
+    if (gridAsync.hasError) {
+      return ErrorPanel(
+        message: friendlyErrorMessage(gridAsync.error!),
+        onRetry: () => ref.invalidate(gridIntervalProvider),
+      );
+    }
+    if (!gridAsync.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (tasksAsync.hasError) {
+      return ErrorPanel(
+        message: friendlyErrorMessage(tasksAsync.error!),
+        onRetry: () => ref.invalidate(dayTasksProvider),
+      );
+    }
+    if (!tasksAsync.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (categoriesAsync.hasError) {
+      return ErrorPanel(
+        message: friendlyErrorMessage(categoriesAsync.error!),
+        onRetry: () => ref.invalidate(categoriesProvider),
+      );
+    }
+    if (!categoriesAsync.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (subtaskCountsAsync.hasError) {
+      return ErrorPanel(
+        message: friendlyErrorMessage(subtaskCountsAsync.error!),
+        onRetry: () => ref.invalidate(subtaskCountsProvider),
+      );
+    }
+    if (!subtaskCountsAsync.hasValue) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final subtaskCounts = subtaskCountsAsync.requireValue;
     final selectedTaskId = ref.watch(selectedTaskIdProvider);
     final keepFlags = ref.watch(keepOverlapIdsProvider);
     final grid = _gridMinutes;
     final now = DateTime.now();
     final showNowLine = isSameDay(selectedDate, now);
 
-    final liveTasks = tasksAsync.maybeWhen(
-      data: (t) => t,
-      orElse: () => const <Task>[],
-    );
+    final liveTasks = tasksAsync.requireValue;
     final liveIds = liveTasks.map((task) => task.id).toSet();
     final tasks = [
       ...liveTasks,
       for (final task in _removedTasks.values)
         if (!liveIds.contains(task.id)) task,
     ];
-    final categories = categoriesAsync.maybeWhen(
-      data: (c) => c,
-      orElse: () => const <Category>[],
-    );
+    final categories = categoriesAsync.requireValue;
 
     Category? categoryFor(Task task) {
       for (final c in categories) {
@@ -588,61 +639,66 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               child: SingleChildScrollView(
                 controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
-                child: SizedBox(
-                  height: _totalHeight,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      _buildHourGrid(context, grid),
-                      for (final task in tasks)
-                        _buildPositionedBlock(
-                          context,
-                          task,
-                          categoryFor(task),
-                          selectedTaskId == task.id,
-                          overlapIndex: overlapIndex[task.id] ?? 0,
-                          hasOverlap: overlapIds.contains(task.id),
-                          groupedSubtaskCount: subtaskCountsAsync.hasValue
-                              ? subtaskCounts[task.id] ?? ''
-                              : '',
-                          // While being dragged the SAME subtree stays mounted
-                          // (the gesture must survive); only its opacity drops.
-                          dimmed: task.id == dragTaskId,
-                          removing: !liveIds.contains(task.id),
-                          overrideHeightMinutes: task.id == resizeTaskId
-                              ? _liveResizeMinutes
-                              : null,
-                        ),
-                      if (_drag != null)
-                        GhostPreview(
-                          title: _drag!.task.title,
-                          topPx:
-                              (_drag!.origStartMinutes * _pixelsPerMinute +
-                                      _drag!.deltaPx)
-                                  .clamp(
-                                    0.0,
-                                    _totalHeight -
-                                        _drag!.durationMinutes *
-                                            _pixelsPerMinute,
-                                  ),
-                          heightPx: _drag!.durationMinutes * _pixelsPerMinute,
-                          left: AppConstants.hourLabelWidth + 8,
-                          right: AppSpacing.md,
-                          accentColor: _accentColor(categoryFor(_drag!.task)),
-                          durationMinutes: _drag!.durationMinutes,
-                        ),
-                      if (showNowLine)
-                        CurrentTimeIndicator(pixelsPerMinute: _pixelsPerMinute),
-                      if (_quickCreateSlot != null)
-                        TaskQuickCreate(
-                          slotMinutes: _quickCreateSlot!,
-                          onSubmit: (title) {
-                            unawaited(_createQuickTask(title));
-                          },
-                          onCancel: () =>
-                              setState(() => _quickCreateSlot = null),
-                        ),
-                    ],
+                child: ColoredBox(
+                  color: AppThemeTokens.of(context).canvas,
+                  child: SizedBox(
+                    height: _totalHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _buildHourGrid(context, grid),
+                        for (final task in tasks)
+                          _buildPositionedBlock(
+                            context,
+                            task,
+                            categoryFor(task),
+                            selectedTaskId == task.id,
+                            overlapIndex: overlapIndex[task.id] ?? 0,
+                            hasOverlap: overlapIds.contains(task.id),
+                            groupedSubtaskCount: subtaskCountsAsync.hasValue
+                                ? subtaskCounts[task.id] ?? ''
+                                : '',
+                            // While being dragged the SAME subtree stays mounted
+                            // (the gesture must survive); only its opacity drops.
+                            dimmed: task.id == dragTaskId,
+                            removing: !liveIds.contains(task.id),
+                            overrideHeightMinutes: task.id == resizeTaskId
+                                ? _liveResizeMinutes
+                                : null,
+                          ),
+                        if (_drag != null)
+                          GhostPreview(
+                            title: _drag!.task.title,
+                            topPx:
+                                (_drag!.origStartMinutes * _pixelsPerMinute +
+                                        _drag!.deltaPx)
+                                    .clamp(
+                                      0.0,
+                                      _totalHeight -
+                                          _drag!.durationMinutes *
+                                              _pixelsPerMinute,
+                                    ),
+                            heightPx: _drag!.durationMinutes * _pixelsPerMinute,
+                            left: AppConstants.hourLabelWidth + 8,
+                            right: AppSpacing.md,
+                            accentColor: _accentColor(categoryFor(_drag!.task)),
+                            durationMinutes: _drag!.durationMinutes,
+                          ),
+                        if (showNowLine)
+                          CurrentTimeIndicator(
+                            pixelsPerMinute: _pixelsPerMinute,
+                          ),
+                        if (_quickCreateSlot != null)
+                          TaskQuickCreate(
+                            slotMinutes: _quickCreateSlot!,
+                            onSubmit: (title) {
+                              unawaited(_createQuickTask(title));
+                            },
+                            onCancel: () =>
+                                setState(() => _quickCreateSlot = null),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -673,7 +729,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     minutes = minutes.clamp(0, Duration.minutesPerDay - grid);
 
     final date = ref.read(selectedDateProvider);
-    final start = snapToGrid(date.add(Duration(minutes: minutes)), grid);
+    final dateLocal = PlannerTimeZone.toPlannerLocal(date);
+    final start = snapToGrid(
+      PlannerTimeZone.calendarDate(
+        dateLocal.year,
+        dateLocal.month,
+        dateLocal.day,
+        minute: minutes,
+      ),
+      grid,
+    );
     if (!isSameDay(start, date)) return;
     final end = start.add(Duration(minutes: grid));
 
@@ -728,9 +793,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       : AppColors.parseHex(category.colorHex);
 
   Widget _buildHourGrid(BuildContext context, int gridMinutes) {
-    final lineColor = Theme.of(context).dividerColor;
-    final labelStyle = Theme.of(context).textTheme.labelSmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final tokens = AppThemeTokens.of(context);
+    final lineColor = tokens.outline.withValues(alpha: 0.58);
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: tokens.textMuted,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
     return Column(
       children: [
         for (var hour = 0; hour < Duration.hoursPerDay; hour++)
@@ -738,6 +806,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             height: AppConstants.hourRowHeight,
             child: Stack(
               children: [
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: AppConstants.hourLabelWidth - 1,
+                  child: VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: tokens.outline.withValues(alpha: 0.34),
+                  ),
+                ),
                 Positioned(
                   top: 0,
                   left: AppConstants.hourLabelWidth,
@@ -753,7 +831,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                     child: Divider(
                       height: 1,
                       thickness: 0.5,
-                      color: lineColor.withValues(alpha: 0.45),
+                      color: lineColor.withValues(alpha: 0.42),
                     ),
                   ),
                 Positioned(
@@ -783,15 +861,21 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     required bool removing,
     double? overrideHeightMinutes,
   }) {
-    final displayTask = _clipTaskToSelectedDay(task);
+    final previewTask = overrideHeightMinutes == null || task.startTime == null
+        ? task
+        : task.copyWith(
+            endTime: task.startTime!.add(
+              Duration(minutes: overrideHeightMinutes.round()),
+            ),
+          );
+    final displayTask = _clipTaskToSelectedDay(previewTask);
     final startMinutes = displayTask.startTime == null
         ? 0
         : minutesSinceMidnight(displayTask.startTime!);
     final durationMinutes =
-        overrideHeightMinutes ??
         (displayTask.scheduledDuration?.inMinutes.toDouble() ??
-            displayTask.estimatedDurationMin?.toDouble() ??
-            AppConstants.defaultGridMinutes.toDouble());
+        displayTask.estimatedDurationMin?.toDouble() ??
+        AppConstants.defaultGridMinutes.toDouble());
     final height = (durationMinutes * _pixelsPerMinute).clamp(
       1.0,
       _totalHeight - startMinutes * _pixelsPerMinute,
@@ -893,15 +977,17 @@ class _EmptyDayState extends StatelessWidget {
     return IgnorePointer(
       ignoring: false,
       child: Center(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: AppSurface(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            color: AppThemeTokens.of(context).surfaceRaised,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.event_available_outlined,
-                  size: 44,
+                  size: 40,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -915,11 +1001,11 @@ class _EmptyDayState extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                IconButton.filled(
+                FilledButton.icon(
                   key: const ValueKey('empty-day-add'),
-                  tooltip: 'Add task block',
                   onPressed: onAdd,
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Add block'),
                 ),
               ],
             ),

@@ -7,6 +7,7 @@ import '../../../core/models/recurring_rule.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import '../../../core/utils/uuid.dart';
 import '../../timeline/data/task_repository.dart';
 import '../data/recurring_repository.dart';
 import 'rrule_utils.dart';
@@ -161,7 +162,12 @@ class RecurrenceService {
     final now = DateTime.now();
     final instance = await _tasks.insertTask(
       Task(
-        id: '',
+        // Rule/date is the logical occurrence identity. Existing materialized
+        // rows are found by date above and are never renamed, so this only
+        // makes new local/remote materializations converge.
+        id: generateDeterministicUuid(
+          'recurring-occurrence:${rule.id}:${isoDateString(dayStart)}',
+        ),
         title: rule.taskTitle,
         description: rule.taskDescription,
         startTime: startTime,

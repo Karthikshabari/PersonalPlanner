@@ -48,7 +48,10 @@ abstract final class TimerActions {
     BuildContext context,
     WidgetRef ref,
   ) async {
-    final active = ref.read(activeTimerProvider).value;
+    final activeAsync = ref.read(activeTimerProvider);
+    if (activeAsync.hasError) throw activeAsync.error!;
+    if (!activeAsync.hasValue) return false;
+    final active = activeAsync.requireValue;
     if (active == null) return false;
     await ref.read(timerServiceProvider).stop();
     await AndroidForegroundTimer().stop();

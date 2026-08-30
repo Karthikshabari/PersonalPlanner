@@ -5,6 +5,7 @@ import '../../../../core/models/category.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../providers/category_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -28,7 +29,9 @@ class CategoriesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesProvider);
     final repo = ref.read(categoryRepositoryProvider);
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
         title: const Text('Categories'),
         actions: const [SyncStatusAction()],
@@ -42,13 +45,20 @@ class CategoriesScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorPanel(message: friendlyErrorMessage(e)),
         data: (categories) => ReorderableListView.builder(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 600
+                ? AppSpacing.md
+                : AppSpacing.xl,
+          ),
           itemCount: categories.length,
           onReorderItem: (oldIndex, newIndex) async {
             final ids = categories.map((c) => c.id).toList();
             final moved = ids.removeAt(oldIndex);
             ids.insert(newIndex, moved);
-            await repo.reorderCategories(ids);
+            await _runCategoryMutation(
+              context,
+              () => repo.reorderCategories(ids),
+            );
           },
           proxyDecorator: (child, index, animation) => ScaleTransition(
             scale: Tween(begin: 1.0, end: 1.02).animate(animation),
@@ -84,8 +94,11 @@ class CategoriesScreen extends ConsumerWidget {
                             ? AppColors.primary
                             : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                      onPressed: () => repo.updateCategory(
-                        category.copyWith(isFocus: !category.isFocus),
+                      onPressed: () => _runCategoryMutation(
+                        context,
+                        () => repo.updateCategory(
+                          category.copyWith(isFocus: !category.isFocus),
+                        ),
                       ),
                     ),
                     IconButton(
@@ -171,20 +184,29 @@ class CategoriesScreen extends ConsumerWidget {
               onPressed: () async {
                 final name = nameController.text.trim();
                 if (name.isEmpty) return;
-                if (existing == null) {
-                  await repo.insertCategory(
-                    Category(
-                      id: '',
-                      name: name,
-                      colorHex: selectedColor,
-                      createdAt: DateTime.now(),
-                      updatedAt: DateTime.now(),
-                    ),
-                  );
-                } else {
-                  await repo.updateCategory(
-                    existing.copyWith(name: name, colorHex: selectedColor),
-                  );
+                try {
+                  if (existing == null) {
+                    await repo.insertCategory(
+                      Category(
+                        id: '',
+                        name: name,
+                        colorHex: selectedColor,
+                        createdAt: DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      ),
+                    );
+                  } else {
+                    await repo.updateCategory(
+                      existing.copyWith(name: name, colorHex: selectedColor),
+                    );
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text(friendlyErrorMessage(error))),
+                    );
+                  }
+                  return;
                 }
                 if (dialogContext.mounted) Navigator.of(dialogContext).pop();
               },
@@ -222,9 +244,25 @@ class CategoriesScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed == true) {
-      // ignore: use_build_context_synchronously
-      await ref.read(categoryRepositoryProvider).deleteCategory(category.id);
+    if (confirmed == true && context.mounted) {
+      await _runCategoryMutation(
+        context,
+        () => ref.read(categoryRepositoryProvider).deleteCategory(category.id),
+      );
+    }
+  }
+}
+
+Future<void> _runCategoryMutation(
+  BuildContext context,
+  Future<void> Function() operation,
+) async {
+  try {
+    await operation();
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     }
   }
 }

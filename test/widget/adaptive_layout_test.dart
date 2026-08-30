@@ -44,6 +44,12 @@ void main() {
       expect(find.text('Personal'), findsOneWidget);
       expect(find.text('Health'), findsOneWidget);
       expect(find.text('Learning'), findsOneWidget);
+      await tester.pageBack();
+      await settle(tester);
+      expect(find.text('Categories'), findsWidgets);
+      await tester.pageBack();
+      await settle(tester);
+      expect(find.byKey(const ValueKey('day-settings-action')), findsOneWidget);
       await teardownApp(tester, container);
     },
   );

@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/enums/priority.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
+import '../../../../core/widgets/async_value_view.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../providers/template_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -18,16 +21,9 @@ class TaskTemplatesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final templatesAsync = ref.watch(templatesProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
-    final templates = templatesAsync.maybeWhen(
-      data: (t) => t,
-      orElse: () => const [],
-    );
-    final categories = categoriesAsync.maybeWhen(
-      data: (c) => c,
-      orElse: () => const [],
-    );
-
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
         title: const Text('Task Templates'),
         actions: const [SyncStatusAction()],
@@ -37,82 +33,112 @@ class TaskTemplatesScreen extends ConsumerWidget {
         onPressed: () => showTemplateFormDialog(context, ref),
         child: const Icon(Icons.add),
       ),
-      body: templates.isEmpty
-          ? const Center(
+      body: AsyncValueView(
+        value: templatesAsync,
+        onRetry: () => ref.invalidate(templatesProvider),
+        builder: (templates) {
+          if (categoriesAsync.hasError) {
+            return ErrorPanel(
+              message: friendlyErrorMessage(categoriesAsync.error!),
+              onRetry: () => ref.invalidate(categoriesProvider),
+            );
+          }
+          if (!categoriesAsync.hasValue) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final categories = categoriesAsync.requireValue;
+          if (templates.isEmpty) {
+            return const Center(
               child: Text(
                 'No templates yet.\nCreate one with + or save a '
                 'task as template from the editor.',
               ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              itemCount: templates.length,
-              itemBuilder: (context, index) {
-                final template = templates[index];
-                final category = categories
-                    .where((c) => c.id == template.categoryId)
-                    .firstOrNull;
-                return Card(
-                  key: ValueKey('template-card-${template.id}'),
-                  child: ListTile(
-                    leading: category == null
-                        ? const Icon(Icons.bookmark_border_outlined)
-                        : Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: Color(
-                                int.parse(
-                                  category.colorHex.replaceFirst('#', '0xFF'),
-                                ),
-                              ),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                    title: Text(template.name),
-                    subtitle: Text(
-                      '${template.durationMin} min'
-                      '${category == null ? '' : ' · ${category.name}'}'
-                      ' · ${Priority.fromDb(template.priority).label}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined),
-                          tooltip: 'Edit',
-                          onPressed: () => showTemplateFormDialog(
-                            context,
-                            ref,
-                            existing: template,
-                          ),
-                        ),
-                        IconButton(
-                          key: ValueKey('delete-template-${template.id}'),
-                          icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Delete',
-                          onPressed: () async {
-                            final confirmed = await showConfirmDialog(
-                              context,
-                              title: 'Delete template?',
-                              message:
-                                  '"${template.name}" will be removed. Tasks '
-                                  'already created from it are not affected.',
-                              confirmLabel: 'Delete',
-                            );
-                            if (confirmed) {
-                              await ref
-                                  .read(templateRepositoryProvider)
-                                  .deleteTemplate(template.id);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+            );
+          }
+          return ListView.builder(
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).width < 600
+                  ? AppSpacing.md
+                  : AppSpacing.xl,
             ),
+            itemCount: templates.length,
+            itemBuilder: (context, index) {
+              final template = templates[index];
+              final category = categories
+                  .where((c) => c.id == template.categoryId)
+                  .firstOrNull;
+              return Card(
+                key: ValueKey('template-card-${template.id}'),
+                child: ListTile(
+                  leading: category == null
+                      ? const Icon(Icons.bookmark_border_outlined)
+                      : Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: Color(
+                              int.parse(
+                                category.colorHex.replaceFirst('#', '0xFF'),
+                              ),
+                            ),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                  title: Text(template.name),
+                  subtitle: Text(
+                    '${template.durationMin} min'
+                    '${category == null ? '' : ' · ${category.name}'}'
+                    ' · ${Priority.fromDb(template.priority).label}',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        tooltip: 'Edit',
+                        onPressed: () => showTemplateFormDialog(
+                          context,
+                          ref,
+                          existing: template,
+                        ),
+                      ),
+                      IconButton(
+                        key: ValueKey('delete-template-${template.id}'),
+                        icon: const Icon(Icons.delete_outline),
+                        tooltip: 'Delete',
+                        onPressed: () async {
+                          final confirmed = await showConfirmDialog(
+                            context,
+                            title: 'Delete template?',
+                            message:
+                                '"${template.name}" will be removed. Tasks '
+                                'already created from it are not affected.',
+                            confirmLabel: 'Delete',
+                          );
+                          if (!confirmed) return;
+                          try {
+                            await ref
+                                .read(templateRepositoryProvider)
+                                .deleteTemplate(template.id);
+                          } catch (error) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(friendlyErrorMessage(error)),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }

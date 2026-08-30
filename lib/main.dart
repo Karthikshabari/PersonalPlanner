@@ -28,8 +28,16 @@ Future<void> main() async {
   ErrorWidget.builder = (_) => const ErrorPanel(
     message: 'This screen could not be displayed. Please retry.',
   );
-  await _initializeSupabaseIfConfigured();
-  runApp(const _PlannerBootstrap());
+  Object? bootstrapError;
+  try {
+    await _initializeSupabaseIfConfigured();
+  } catch (error, stack) {
+    bootstrapError = error;
+    FlutterError.reportError(
+      FlutterErrorDetails(exception: error, stack: stack),
+    );
+  }
+  runApp(_PlannerBootstrap(initialBootstrapError: bootstrapError));
 }
 
 /// Drift and other async libraries can propagate package:stack_trace objects.
@@ -54,7 +62,9 @@ Future<void> _initializeSupabaseIfConfigured() async {
 }
 
 class _PlannerBootstrap extends StatefulWidget {
-  const _PlannerBootstrap();
+  final Object? initialBootstrapError;
+
+  const _PlannerBootstrap({this.initialBootstrapError});
 
   @override
   State<_PlannerBootstrap> createState() => _PlannerBootstrapState();
@@ -69,11 +79,17 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
   String? _requestedAccountId;
   Future<void>? _databaseSwitch;
   Object? _error;
+  Object? _bootstrapError;
   bool _switching = true;
 
   @override
   void initState() {
     super.initState();
+    _bootstrapError = widget.initialBootstrapError;
+    if (_bootstrapError == null) _startDatabaseScope();
+  }
+
+  void _startDatabaseScope() {
     if (SupabaseConfig.isConfigured) {
       final client = Supabase.instance.client;
       _authSubscription = client.auth.onAuthStateChange.listen((state) {
@@ -105,6 +121,49 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
       final opened = await _switchDatabase(target);
       if (!opened) return;
     }
+  }
+
+  Future<void> _retryBootstrap() async {
+    if (!mounted || _bootstrapError == null) return;
+    setState(() {
+      _bootstrapError = null;
+      _error = null;
+      _switching = true;
+    });
+    try {
+      // Supabase marks its singleton initialized before auth/session recovery
+      // finishes. Dispose that failed attempt so Retry can genuinely repeat
+      // initialization rather than silently returning a half-ready client.
+      if (SupabaseConfig.isConfigured) {
+        try {
+          await Supabase.instance.dispose();
+        } catch (_) {
+          // It is also valid for the first attempt to fail before a client was
+          // allocated; initialization below remains the source of truth.
+        }
+        await _initializeSupabaseIfConfigured();
+      }
+      if (!mounted) return;
+      _startDatabaseScope();
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: error, stack: stack),
+      );
+      if (!mounted) return;
+      setState(() {
+        _bootstrapError = error;
+        _switching = false;
+      });
+    }
+  }
+
+  void _retryDatabase() {
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+      _switching = true;
+    });
+    _requestDatabaseSwitch(_accountId);
   }
 
   Future<bool> _switchDatabase(String? accountId) async {
@@ -218,7 +277,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
   @override
   Widget build(BuildContext context) {
     final container = _container;
-    if (_switching || container == null) {
+    if (_bootstrapError != null || _switching || container == null) {
       return MaterialApp(
         theme: ThemeData.dark(),
         home: Scaffold(
@@ -238,12 +297,23 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
                   style: ThemeData.dark().textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 20),
-                if (_error == null)
+                if (_bootstrapError != null)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: ErrorPanel(
+                      message: friendlyErrorMessage(_bootstrapError!),
+                      onRetry: _retryBootstrap,
+                    ),
+                  )
+                else if (_error == null)
                   const CircularProgressIndicator()
                 else
                   Padding(
                     padding: const EdgeInsets.all(24),
-                    child: ErrorPanel(message: friendlyErrorMessage(_error!)),
+                    child: ErrorPanel(
+                      message: friendlyErrorMessage(_error!),
+                      onRetry: _retryDatabase,
+                    ),
                   ),
               ],
             ),

@@ -24,6 +24,7 @@
 .packages
 .pub-cache/
 .pub/
+/node_modules/
 /build/
 
 # Symbolication related

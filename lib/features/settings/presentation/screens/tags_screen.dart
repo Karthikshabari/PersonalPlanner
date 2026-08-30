@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/tag.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../task_editor/providers/tag_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -13,7 +14,9 @@ class TagsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tags = ref.watch(tagsProvider);
+    final tokens = AppThemeTokens.of(context);
     return Scaffold(
+      backgroundColor: tokens.canvas,
       appBar: AppBar(
         title: const Text('Tags'),
         actions: const [SyncStatusAction()],
@@ -27,7 +30,11 @@ class TagsScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => ErrorPanel(message: friendlyErrorMessage(error)),
         data: (items) => ListView.separated(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 600
+                ? AppSpacing.md
+                : AppSpacing.xl,
+          ),
           itemCount: items.length,
           separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
           itemBuilder: (context, index) {
@@ -89,17 +96,26 @@ class TagsScreen extends ConsumerWidget {
               final name = controller.text.trim();
               if (name.isEmpty) return;
               final repo = ref.read(tagRepositoryProvider);
-              if (existing == null) {
-                await repo.insertTag(
-                  Tag(
-                    id: '',
-                    name: name,
-                    createdAt: DateTime.now(),
-                    updatedAt: DateTime.now(),
-                  ),
-                );
-              } else {
-                await repo.updateTag(existing.copyWith(name: name));
+              try {
+                if (existing == null) {
+                  await repo.insertTag(
+                    Tag(
+                      id: '',
+                      name: name,
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                    ),
+                  );
+                } else {
+                  await repo.updateTag(existing.copyWith(name: name));
+                }
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(friendlyErrorMessage(error))),
+                  );
+                }
+                return;
               }
               if (dialogContext.mounted) Navigator.of(dialogContext).pop();
             },
@@ -135,7 +151,15 @@ class TagsScreen extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      await ref.read(tagRepositoryProvider).deleteTag(tag.id);
+      try {
+        await ref.read(tagRepositoryProvider).deleteTag(tag.id);
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+        }
+      }
     }
   }
 }

@@ -1,3 +1,5 @@
+import '../../../core/utils/planner_time_zone.dart';
+
 /// Minutes in a full day.
 const int minutesPerDay = 24 * 60;
 
@@ -7,12 +9,12 @@ const int minutesPerDay = 24 * 60;
 /// The result never crosses midnight: the latest possible start is
 /// `1440 - gridMinutes` minutes after midnight so a full final slot fits.
 DateTime snapToGrid(DateTime dateTime, int gridMinutes) {
-  return DateTime(
-    dateTime.year,
-    dateTime.month,
-    dateTime.day,
-    0,
-    snapSlotStart(dateTime.hour * 60 + dateTime.minute, gridMinutes),
+  final local = PlannerTimeZone.toPlannerLocal(dateTime);
+  return PlannerTimeZone.calendarDate(
+    local.year,
+    local.month,
+    local.day,
+    minute: snapSlotStart(local.hour * 60 + local.minute, gridMinutes),
   );
 }
 
