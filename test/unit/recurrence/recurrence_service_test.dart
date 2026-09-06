@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/recurring_rule.dart';
+import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/models/task_template.dart';
 import 'package:personal_planner/features/categories/data/category_repository.dart';
 import 'package:personal_planner/features/recurring/data/recurring_repository.dart';
@@ -85,6 +86,32 @@ void main() {
         ),
       );
     });
+
+    test(
+      'moving an occurrence does not recreate its original identity',
+      () async {
+        final rule = await rules.createRule(dailyRule());
+        final originalDate = DateTime(2026, 8, 24);
+        expect(await recurrence.materializeForDate(originalDate), 1);
+        final occurrence =
+            (await tasks.watchTasksForDay(originalDate).first).single;
+        final movedStart = DateTime(2026, 8, 26, 9);
+        await tasks.updateTask(
+          occurrence.copyWith(
+            startTime: movedStart,
+            endTime: movedStart.add(const Duration(minutes: 30)),
+          ),
+        );
+
+        expect(await recurrence.materializeForDate(originalDate), 0);
+        final all = await db.recurringRuleDao.getInstancesForDay(
+          rule.id,
+          DateTime(2026, 8, 1).toUtc().toIso8601String(),
+          DateTime(2026, 9, 1).toUtc().toIso8601String(),
+        );
+        expect(all.where((row) => row.id == occurrence.id), hasLength(1));
+      },
+    );
 
     test('weekdays rule skips weekend days', () async {
       await rules.createRule(
@@ -211,6 +238,48 @@ void main() {
       );
     });
   });
+
+  test(
+    'all-future reconciliation tombstones slots removed by the new rule',
+    () async {
+      final original = await rules.createRule(
+        dailyRule(startDate: DateTime(2026, 8, 1)),
+      );
+      final monday = DateTime(2026, 8, 24, 9);
+      final tuesday = DateTime(2026, 8, 25, 9);
+      final mondayTask = await tasks.insertTask(
+        Task(
+          id: 'future-monday',
+          title: 'Old title',
+          startTime: monday,
+          endTime: monday.add(const Duration(minutes: 30)),
+          recurringRuleId: original.id,
+          createdAt: monday,
+          updatedAt: monday,
+        ),
+      );
+      final tuesdayTask = await tasks.insertTask(
+        Task(
+          id: 'future-tuesday',
+          title: 'Obsolete title',
+          startTime: tuesday,
+          endTime: tuesday.add(const Duration(minutes: 30)),
+          recurringRuleId: original.id,
+          createdAt: tuesday,
+          updatedAt: tuesday,
+        ),
+      );
+
+      final updated = original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO');
+      await recurrence.reconcileMaterializedFuture(updated, monday);
+
+      final kept = await tasks.getTaskById(mondayTask.id);
+      final removed = await tasks.getTaskById(tuesdayTask.id);
+      expect(kept!.deletedAt, isNull);
+      expect(kept.title, updated.taskTitle);
+      expect(removed!.deletedAt, isNotNull);
+    },
+  );
 
   group('RecurringRepository CRUD', () {
     test('create/update/deactivate/soft-delete + watchActiveRules', () async {

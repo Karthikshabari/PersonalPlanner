@@ -127,6 +127,23 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('Day to Week keeps the selected day in view', (tester) async {
+    final container = await pumpDay(tester);
+    final selected = addDays(monday(), 4);
+    container.read(selectedDateProvider.notifier).state = selected;
+    await settle(tester);
+
+    await openWeekView(tester);
+
+    expect(container.read(selectedWeekStartProvider), monday());
+    expect(find.text('This Week'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('week-column-${isoDateString(selected)}')),
+      findsOneWidget,
+    );
+    await finish(tester, container);
+  });
+
   testWidgets('tapping a day column navigates to its Day View', (tester) async {
     final container = await pumpDay(tester);
     await seedWeekTasks(tester, container);

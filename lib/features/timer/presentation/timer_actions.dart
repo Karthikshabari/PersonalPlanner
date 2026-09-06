@@ -21,8 +21,17 @@ abstract final class TimerActions {
   ) async {
     final service = ref.read(timerServiceProvider);
     await service.start(task.id);
+    final session = await ref
+        .read(appDatabaseProvider)
+        .timerDao
+        .getActiveTimerForTask(task.id);
+    if (session == null) {
+      throw StateError('Timer session was not persisted before native start');
+    }
     final foregroundStarted = await AndroidForegroundTimer().start(
       taskTitle: task.title,
+      taskId: task.id,
+      sessionId: session.id,
     );
     if (AndroidForegroundTimer.supported && !foregroundStarted) {
       await service.pause();

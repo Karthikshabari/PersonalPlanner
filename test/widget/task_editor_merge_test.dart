@@ -102,7 +102,8 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    await openEditor(tester, container, task);
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
 
     await tester.enterText(titleField(), 'Local title');
     final current = await runDb(
@@ -183,5 +184,84 @@ void main() {
     );
     await finish(tester, container);
     PlannerTimeZone.initialize(identifier: 'UTC');
+  });
+
+  testWidgets('title-only save preserves a multi-day schedule exactly', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final start = DateTime(2027, 3, 15, 9, 17, 42);
+    final end = DateTime(2027, 3, 17, 10, 18, 43);
+    final task = await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
+            Task(
+              id: '',
+              title: 'Long task',
+              startTime: start,
+              endTime: end,
+              estimatedDurationMin: 2941,
+              createdAt: start,
+              updatedAt: start,
+            ),
+          ),
+    );
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    // Select directly so the regression does not depend on whether a very
+    // long block is clipped out of the day timeline's hit-test region.
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+    await tester.enterText(titleField(), 'Renamed long task');
+    await save(tester);
+
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved!.title, 'Renamed long task');
+    expect(
+      saved.startTime!.toUtc().millisecondsSinceEpoch,
+      start.toUtc().millisecondsSinceEpoch,
+    );
+    expect(
+      saved.endTime!.toUtc().millisecondsSinceEpoch,
+      end.toUtc().millisecondsSinceEpoch,
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('closing a dirty editor requires an explicit discard choice', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    await tester.enterText(titleField(), 'Discarded title');
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    expect(find.text('Discard unsaved changes?'), findsOneWidget);
+
+    await tester.tap(find.text('Keep editing'));
+    await settle(tester);
+    expect(container.read(selectedTaskIdProvider), task.id);
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    await tester.tap(find.text('Discard'));
+    await settle(tester);
+
+    expect(container.read(selectedTaskIdProvider), isNull);
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved!.title, 'Merge target');
+    await finish(tester, container);
   });
 }

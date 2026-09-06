@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../layout/adaptive_layout.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme_tokens.dart';
+import '../../features/review/providers/review_providers.dart';
+import '../../features/timeline/presentation/providers/selected_date_provider.dart';
+import '../utils/date_utils.dart';
 
 typedef _Destination = (String, IconData, IconData, String);
 
@@ -69,7 +73,7 @@ class AdaptiveShell extends StatelessWidget {
     final tokens = AppThemeTokens.of(context);
     return NavigationRail(
       selectedIndex: index,
-      onDestinationSelected: (i) => context.go(destinations[i].$1),
+      onDestinationSelected: (i) => _navigate(context, destinations[i].$1),
       labelType: NavigationRailLabelType.all,
       leading: Padding(
         padding: const EdgeInsets.only(
@@ -120,7 +124,7 @@ class AdaptiveShell extends StatelessWidget {
     return NavigationBar(
       labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       selectedIndex: index,
-      onDestinationSelected: (i) => context.go(destinations[i].$1),
+      onDestinationSelected: (i) => _navigate(context, destinations[i].$1),
       destinations: [
         for (final d in destinations)
           NavigationDestination(
@@ -130,5 +134,32 @@ class AdaptiveShell extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  void _navigate(BuildContext context, String location) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final selectedDate = container.read(selectedDateProvider);
+    if (location == '/week') {
+      container.read(selectedWeekStartProvider.notifier).state = startOfWeek(
+        selectedDate,
+      );
+    } else if (location == '/review') {
+      container.read(selectedReviewDateProvider.notifier).state = selectedDate;
+      container.read(selectedWeekStartProvider.notifier).state = startOfWeek(
+        selectedDate,
+      );
+    } else if (location == '/day') {
+      final current = GoRouterState.of(context).uri.path;
+      if (current.startsWith('/review')) {
+        container.read(selectedDateProvider.notifier).state = container.read(
+          selectedReviewDateProvider,
+        );
+      } else if (current.startsWith('/week')) {
+        container.read(selectedDateProvider.notifier).state = container.read(
+          selectedWeekStartProvider,
+        );
+      }
+    }
+    context.go(location);
   }
 }

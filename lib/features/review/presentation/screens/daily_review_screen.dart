@@ -43,6 +43,9 @@ class DailyReviewScreen extends ConsumerWidget {
             tooltip: 'Weekly review',
             icon: const Icon(Icons.calendar_view_week_outlined),
             onPressed: () {
+              ref.read(selectedWeekStartProvider.notifier).state = startOfWeek(
+                date,
+              );
               if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
                 context.go('/review/weekly');
               } else {
@@ -268,6 +271,8 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
   List<String> _wins = [];
   List<String> _improvements = [];
   bool _saving = false;
+  bool _hydrated = false;
+  bool _hydrating = true;
   String? _error;
 
   @override
@@ -283,14 +288,30 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
   }
 
   Future<void> _hydrate() async {
+    if (mounted) {
+      setState(() {
+        _hydrating = true;
+        _error = null;
+      });
+    }
     try {
       final existing = await ref
           .read(reviewRepositoryProvider)
           .getReviewForDate(widget.date);
-      if (!mounted || existing == null) return;
-      setState(() => _apply(existing));
+      if (!mounted) return;
+      setState(() {
+        if (existing != null) _apply(existing);
+        _hydrated = true;
+        _hydrating = false;
+      });
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyErrorMessage(error));
+      if (mounted) {
+        setState(() {
+          _hydrating = false;
+          _hydrated = false;
+          _error = friendlyErrorMessage(error);
+        });
+      }
     }
   }
 
@@ -304,7 +325,7 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || !_hydrated) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -327,8 +348,7 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
           updatedAt: DateTime.now(),
         ),
       );
-      // Refresh the cached aggregates so analytics and reviews stay in sync
-      // (planner.md Chunk 5 #9 trigger).
+      // Refresh the persisted daily snapshot for history/export consumers.
       await ref.read(dailyStatsServiceProvider).computeAndCache(widget.date);
       if (!mounted) return;
       setState(() => _saving = false);
@@ -351,59 +371,67 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
         children: [
           Text('Review', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.sm),
+          if (_hydrating) const LinearProgressIndicator(),
           if (_error != null)
             ErrorPanel(message: _error!, onRetry: _hydrate, compact: true),
-          TextField(
-            key: const ValueKey('review-reflection'),
-            controller: _reflectionController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'How did the day go?',
-              labelText: 'Reflection',
+          AbsorbPointer(
+            absorbing: !_hydrated || _saving,
+            child: Column(
+              children: [
+                TextField(
+                  key: const ValueKey('review-reflection'),
+                  controller: _reflectionController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'How did the day go?',
+                    labelText: 'Reflection',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                RatingPicker(
+                  label: 'Energy level',
+                  value: _energy,
+                  onChanged: (v) => setState(() => _energy = v),
+                ),
+                RatingPicker(
+                  label: 'Productivity',
+                  value: _productivity,
+                  onChanged: (v) => setState(() => _productivity = v),
+                ),
+                RatingPicker(
+                  label: 'Planning accuracy',
+                  value: _accuracy,
+                  onChanged: (v) => setState(() => _accuracy = v),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                StringListEditor(
+                  key: const ValueKey('review-wins'),
+                  label: 'Wins',
+                  items: _wins,
+                  hint: 'What went well?',
+                  onChanged: (items) => setState(() => _wins = items),
+                ),
+                StringListEditor(
+                  key: const ValueKey('review-improvements'),
+                  label: 'Improvements',
+                  items: _improvements,
+                  hint: 'What to do better?',
+                  onChanged: (items) => setState(() => _improvements = items),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                FilledButton(
+                  key: const ValueKey('review-save'),
+                  onPressed: _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save review'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          RatingPicker(
-            label: 'Energy level',
-            value: _energy,
-            onChanged: (v) => setState(() => _energy = v),
-          ),
-          RatingPicker(
-            label: 'Productivity',
-            value: _productivity,
-            onChanged: (v) => setState(() => _productivity = v),
-          ),
-          RatingPicker(
-            label: 'Planning accuracy',
-            value: _accuracy,
-            onChanged: (v) => setState(() => _accuracy = v),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          StringListEditor(
-            key: const ValueKey('review-wins'),
-            label: 'Wins',
-            items: _wins,
-            hint: 'What went well?',
-            onChanged: (items) => setState(() => _wins = items),
-          ),
-          StringListEditor(
-            key: const ValueKey('review-improvements'),
-            label: 'Improvements',
-            items: _improvements,
-            hint: 'What to do better?',
-            onChanged: (items) => setState(() => _improvements = items),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          FilledButton(
-            key: const ValueKey('review-save'),
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save review'),
           ),
         ],
       ),

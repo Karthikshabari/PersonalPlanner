@@ -43,6 +43,34 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
           ))
           .getSingleOrNull();
 
+  Future<TimerSessionRow?> getActiveTimer() =>
+      (select(timerSessions)
+            ..where((s) => s.endedAt.isNull() & s.deletedAt.isNull())
+            ..limit(1))
+          .getSingleOrNull();
+
+  /// Closes the active session for one task as part of the caller's
+  /// transaction. This is deliberately task-scoped so deleting task A can
+  /// never stop a timer that was started for task B while a dialog was open.
+  Future<bool> finalizeActiveForTask(String taskId, DateTime endedAt) async {
+    final session = await getActiveTimerForTask(taskId);
+    if (session == null) return false;
+    final end = endedAt.isBefore(session.startedAt)
+        ? session.startedAt
+        : endedAt;
+    await updateSession(
+      session.copyWith(
+        endedAt: Value(end),
+        durationSec: end
+            .difference(session.startedAt)
+            .inSeconds
+            .clamp(0, 1 << 31),
+        updatedAt: end,
+      ),
+    );
+    return true;
+  }
+
   Future<List<TimerSessionRow>> getSessionsForTask(String taskId) =>
       (select(timerSessions)
             ..where((s) => s.taskId.equals(taskId) & s.deletedAt.isNull())

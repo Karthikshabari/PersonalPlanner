@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../theme/app_theme_tokens.dart';
 import '../utils/duration_utils.dart';
+import '../utils/planner_time_zone.dart';
 import 'error_panel.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
 import '../../features/timer/providers/timer_providers.dart';
@@ -86,10 +87,29 @@ class TaskBlockWidget extends ConsumerWidget {
         : subtaskLookupError
         ? friendlyErrorMessage(subtasksAsync!.error!)
         : null;
+    final start = task.startTime == null
+        ? null
+        : PlannerTimeZone.toPlannerLocal(task.startTime!);
+    final end = task.endTime == null
+        ? null
+        : PlannerTimeZone.toPlannerLocal(task.endTime!);
+    String timeLabel(DateTime value) =>
+        '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    final interval = start == null || end == null
+        ? 'unscheduled'
+        : '${timeLabel(start)} to ${timeLabel(end)}';
+    final contextLabel = [
+      'Task ${task.title}',
+      interval,
+      task.status.label,
+      if (category != null) 'category ${category!.name}',
+      if (hasOverlap) 'overlapping task',
+    ].join(', ');
     return Semantics(
       button: onTap != null,
-      label: 'Task ${task.title}, ${task.status.label}',
-      hint: onTap == null ? null : 'Open task',
+      label: contextLabel,
+      hint: onTap == null ? null : 'Open task; long press to move',
+      onTap: onTap,
       child: Material(
         color: Colors.transparent,
         child: InkWell(

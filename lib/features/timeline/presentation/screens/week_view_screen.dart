@@ -12,6 +12,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../categories/providers/category_providers.dart';
@@ -62,7 +63,12 @@ class WeekViewScreen extends ConsumerWidget {
                 // Give the shared vertical viewport a finite child height;
                 // otherwise the Row's stretch axis becomes infinite and
                 // each day column receives invalid constraints.
-                final gridHeight = 24 * 60 * AppConstants.pixelsPerMinute + 64;
+                final gridHeight =
+                    days
+                            .map((day) => PlannerDayAxis(day).durationMinutes)
+                            .reduce((a, b) => a > b ? a : b) *
+                        AppConstants.pixelsPerMinute +
+                    64;
                 final horizontallyScrollable = isDesktop
                     ? grid
                     : SingleChildScrollView(
@@ -143,7 +149,10 @@ class WeekViewScreen extends ConsumerWidget {
                 ],
                 selected: const {'week'},
                 onSelectionChanged: (selection) {
-                  if (selection.contains('day')) context.go('/day');
+                  if (selection.contains('day')) {
+                    ref.read(selectedDateProvider.notifier).state = weekStart;
+                    context.go('/day');
+                  }
                 },
               ),
               const SyncStatusAction(),
@@ -182,7 +191,8 @@ class _WeekDayColumn extends ConsumerWidget {
         .where((t) => t.status == TaskStatus.completed)
         .length;
     final isToday = isSameDay(date, DateTime.now());
-    final totalHeight = 24 * 60 * AppConstants.pixelsPerMinute;
+    final totalHeight =
+        PlannerDayAxis(date).durationMinutes * AppConstants.pixelsPerMinute;
 
     return InkWell(
       key: ValueKey('week-column-${isoDateString(date)}'),
@@ -293,10 +303,9 @@ class _WeekDayColumn extends ConsumerWidget {
         : task.startTime!;
     final clippedEnd = task.endTime!.isAfter(dayEnd) ? dayEnd : task.endTime!;
     if (!clippedEnd.isAfter(clippedStart)) return const SizedBox.shrink();
-    final startMinutes = minutesSinceMidnight(clippedStart);
-    final durationMinutes = clippedEnd
-        .difference(clippedStart)
-        .inMinutes
+    final axis = PlannerDayAxis(date);
+    final startMinutes = axis.elapsedMinutes(clippedStart);
+    final durationMinutes = (axis.elapsedMinutes(clippedEnd) - startMinutes)
         .toDouble();
     final height = durationMinutes * AppConstants.pixelsPerMinute;
     final accent = category == null

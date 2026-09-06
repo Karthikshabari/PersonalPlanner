@@ -130,6 +130,20 @@ void main() {
     });
 
     test(
+      'rename then recreate of the original deterministic name is explicit',
+      () async {
+        final original = await tags.getOrCreateByName('deep-work');
+        await tags.updateTag(original.copyWith(name: 'focused'));
+
+        await expectLater(
+          tags.getOrCreateByName('deep-work'),
+          throwsA(isA<StateError>()),
+        );
+        expect((await tags.watchAllTags().first).single.name, 'focused');
+      },
+    );
+
+    test(
       'attach/detach tags on a task; watchTagsForTask streams them',
       () async {
         final task = await seedTask();
@@ -293,9 +307,66 @@ void main() {
         expect((await tasks.getTaskById(first.id))!.rescheduledToId, second.id);
       },
     );
+
+    test(
+      'ordinary edits do not rescan an unrelated pre-existing cycle',
+      () async {
+        final first = await seedTask(title: 'First');
+        final second = await seedTask(title: 'Second');
+        await db.customStatement(
+          'UPDATE tasks SET rescheduled_to_id = ? WHERE id = ?',
+          [second.id, first.id],
+        );
+        await db.customStatement(
+          'UPDATE tasks SET rescheduled_to_id = ? WHERE id = ?',
+          [first.id, second.id],
+        );
+
+        final edited = await tasks.updateTask(first.copyWith(title: 'Renamed'));
+        expect(edited.title, 'Renamed');
+        expect((await tasks.getTaskById(first.id))!.title, 'Renamed');
+      },
+    );
   });
 
   group('CategoryRepository CRUD support', () {
+    test(
+      'legacy seeded category is materialized before foreign-key rewrites',
+      () async {
+        await db.delete(db.categories).go();
+        await db.delete(db.appSettings).go();
+        final legacy = await categories.insertCategory(
+          Category(
+            id: 'legacy-work',
+            name: 'Work',
+            colorHex: '#4285F4',
+            createdAt: DateTime.utc(2026, 1, 1),
+            updatedAt: DateTime.utc(2026, 1, 1),
+          ),
+        );
+        final task = await seedTask(title: 'Legacy reference');
+        await tasks.updateTask(task.copyWith(categoryId: legacy.id));
+        await db
+            .into(db.appSettings)
+            .insert(
+              AppSettingsCompanion.insert(
+                key: 'default_categories_seeded',
+                value: 'true',
+              ),
+            );
+
+        await categories.seedDefaultsIfEmpty();
+
+        final stableId = CategoryRepository.defaultCategoryId('work');
+        expect((await tasks.getTaskById(task.id))!.categoryId, stableId);
+        expect((await categories.getCategoryById(stableId))!.name, 'Work');
+        expect(
+          (await categories.getCategoryById(legacy.id))!.deletedAt,
+          isNotNull,
+        );
+      },
+    );
+
     test('deleteCategory nulls out tasks in the category', () async {
       final cat = (await categories.getAllCategories()).first;
       final task = await seedTask();

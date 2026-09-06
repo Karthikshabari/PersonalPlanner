@@ -53,6 +53,23 @@ void main() {
     expect(reloaded!.status, TaskStatus.inProgress);
   });
 
+  test(
+    'deleting a task finalizes only its active session atomically',
+    () async {
+      final task = await seedTask('Deleted while timing');
+      await timer.start(task.id);
+
+      await tasks.deleteTask(task.id);
+
+      expect(await db.timerDao.getActiveTimerForTask(task.id), isNull);
+      final session = (await db.timerDao.getSessionsForTask(task.id)).single;
+      expect(session.endedAt, isNotNull);
+      final deleted = await tasks.getTaskById(task.id);
+      expect(deleted!.deletedAt, isNotNull);
+      expect(deleted.actualDurationMin, greaterThanOrEqualTo(0));
+    },
+  );
+
   test('pause finalizes the session; resume creates a NEW session', () async {
     final task = await seedTask('Alpha');
     await timer.start(task.id);

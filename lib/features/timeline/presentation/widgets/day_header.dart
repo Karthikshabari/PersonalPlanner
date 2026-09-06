@@ -9,6 +9,7 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
+import '../../../review/providers/review_providers.dart';
 import '../providers/selected_date_provider.dart';
 
 class DayHeader extends ConsumerWidget {
@@ -36,8 +37,20 @@ class DayHeader extends ConsumerWidget {
               vertical: compact ? AppSpacing.xs : AppSpacing.sm,
             ),
             child: compact
-                ? _buildCompactHeader(context, notifier, selectedDate, label)
-                : _buildDesktopHeader(context, notifier, selectedDate, label),
+                ? _buildCompactHeader(
+                    context,
+                    ref,
+                    notifier,
+                    selectedDate,
+                    label,
+                  )
+                : _buildDesktopHeader(
+                    context,
+                    ref,
+                    notifier,
+                    selectedDate,
+                    label,
+                  ),
           ),
         );
       },
@@ -46,6 +59,7 @@ class DayHeader extends ConsumerWidget {
 
   Widget _buildDesktopHeader(
     BuildContext context,
+    WidgetRef ref,
     StateController<DateTime> notifier,
     DateTime selectedDate,
     String label,
@@ -81,7 +95,7 @@ class DayHeader extends ConsumerWidget {
           child: const Text('Today'),
         ),
         const SizedBox(width: AppSpacing.xs),
-        _buildDayWeekSwitcher(context),
+        _buildDayWeekSwitcher(context, ref, selectedDate),
         const Spacer(),
         TextButton.icon(
           key: const ValueKey('day-settings-action'),
@@ -98,6 +112,7 @@ class DayHeader extends ConsumerWidget {
   /// 390dp without Wrap creating an unpredictable multi-row header.
   Widget _buildCompactHeader(
     BuildContext context,
+    WidgetRef ref,
     StateController<DateTime> notifier,
     DateTime selectedDate,
     String label,
@@ -137,7 +152,7 @@ class DayHeader extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xs),
-            _buildDayWeekSwitcher(context),
+            _buildDayWeekSwitcher(context, ref, selectedDate),
             const SizedBox(width: AppSpacing.xs),
             IconButton(
               key: const ValueKey('day-settings-action'),
@@ -152,7 +167,11 @@ class DayHeader extends ConsumerWidget {
     );
   }
 
-  Widget _buildDayWeekSwitcher(BuildContext context) => SegmentedButton<String>(
+  Widget _buildDayWeekSwitcher(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime selectedDate,
+  ) => SegmentedButton<String>(
     key: const ValueKey('day-week-switcher'),
     showSelectedIcon: false,
     segments: const [
@@ -161,7 +180,12 @@ class DayHeader extends ConsumerWidget {
     ],
     selected: const {'day'},
     onSelectionChanged: (selection) {
-      if (selection.contains('week')) context.go('/week');
+      if (selection.contains('week')) {
+        ref.read(selectedWeekStartProvider.notifier).state = startOfWeek(
+          selectedDate,
+        );
+        context.go('/week');
+      }
     },
   );
 

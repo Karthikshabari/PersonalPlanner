@@ -37,9 +37,7 @@ import '../widgets/tag_picker.dart';
 import '../widgets/use_template_dropdown.dart';
 
 class TaskEditorPanel extends ConsumerStatefulWidget {
-  final bool useDialogSizing;
-
-  const TaskEditorPanel({super.key, this.useDialogSizing = false});
+  const TaskEditorPanel({super.key});
 
   static Future<void> showAsBottomSheet(BuildContext context) {
     final container = ProviderScope.containerOf(context, listen: false);
@@ -96,6 +94,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   Set<String>? _originalTagIds;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+  bool _scheduleDirty = false;
   String? _categoryId;
   Priority _priority = Priority.none;
   TaskStatus _status = TaskStatus.planned;
@@ -156,6 +155,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _endTime = end == null
         ? null
         : TimeOfDay.fromDateTime(PlannerTimeZone.toPlannerLocal(end));
+    _scheduleDirty = false;
     _originalRuleId = task?.recurringRuleId;
     _customConfig = null;
     _loadedPreset = null;
@@ -169,6 +169,70 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   bool _sameIds(Set<String> left, Set<String> right) =>
       left.length == right.length && left.containsAll(right);
+
+  bool get _hasDraftChanges {
+    final original = _originalTask;
+    if (original == null) return false;
+    if (_titleController.text.trim() != original.title ||
+        _descriptionController.text.trim() != (original.description ?? '') ||
+        _notesController.text.trim() != (original.notes ?? '') ||
+        _estimatedController.text.trim() !=
+            (original.estimatedDurationMin?.toString() ?? '') ||
+        _actualController.text.trim() !=
+            (original.actualDurationMin?.toString() ?? '') ||
+        _categoryId != original.categoryId ||
+        _priority != original.priority ||
+        _status != original.status ||
+        _scheduleDirty) {
+      return true;
+    }
+    if (_stagedTagIds != null &&
+        _originalTagIds != null &&
+        !_sameIds(_stagedTagIds!, _originalTagIds!)) {
+      return true;
+    }
+    if (_originalRuleId == null) {
+      return _repeat != null && _repeat != RepeatPreset.never;
+    }
+    return _repeat != null &&
+        _loadedPreset != null &&
+        (_repeat != _loadedPreset ||
+            (_repeat == RepeatPreset.custom && _customConfig != null));
+  }
+
+  void _closeImmediately() {
+    ref.read(selectedTaskIdProvider.notifier).state = null;
+    if (MediaQuery.sizeOf(context).width < 900 &&
+        Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _requestClose() async {
+    if (_saving) return;
+    if (!_hasDraftChanges) {
+      _closeImmediately();
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Discard unsaved changes?'),
+        content: const Text('Your edits will be lost if you close the editor.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep editing'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) _closeImmediately();
+  }
 
   Future<_ExternalMergeChoice?> _showExternalConflictDialog(
     List<String> fields,
@@ -200,6 +264,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   }
 
   int get _effectiveDurationMinutes {
+    if (!_scheduleDirty) {
+      final persisted = _originalTask?.scheduledDuration;
+      if (persisted != null) {
+        return persisted.inMinutes.clamp(1, 10000);
+      }
+    }
     if (_startTime != null && _endTime != null) {
       var minutes =
           _endTime!.hour * 60 +
@@ -292,7 +362,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     final viewedDate = ref.read(selectedDateProvider);
     final date = task.startTime ?? viewedDate;
     final localDate = PlannerTimeZone.toPlannerLocal(date);
-    final start = _startTime == null
+    // TimeOfDay is only a display/editor control. Until the user touches a
+    // schedule button, retain the persisted instants verbatim so multi-day
+    // intervals and seconds cannot be shortened by a title-only save.
+    final start = !_scheduleDirty
+        ? task.startTime
+        : _startTime == null
         ? null
         : PlannerTimeZone.calendarDate(
             localDate.year,
@@ -301,7 +376,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
             hour: _startTime!.hour,
             minute: _startTime!.minute,
           );
-    var end = _endTime == null
+    var end = !_scheduleDirty
+        ? task.endTime
+        : _endTime == null
         ? null
         : PlannerTimeZone.calendarDate(
             localDate.year,
@@ -723,6 +800,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       _priority = Priority.fromDb(template.priority);
       _stagedTagIds = template.tags.toSet();
       if (_startTime != null) {
+        _scheduleDirty = true;
         final totalMinutes =
             _startTime!.hour * 60 + _startTime!.minute + template.durationMin;
         _endTime = TimeOfDay(
@@ -762,6 +840,36 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
     if (taskId != null && !tasksAsync.hasValue && !selectedTaskAsync.hasValue) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (taskId == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.touch_app_outlined,
+                size: 28,
+                color: AppThemeTokens.of(context).textMuted,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Select a task to edit',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Choose a block from the timeline or Inbox.',
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     Task? task;
@@ -827,271 +935,297 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     );
 
     final tokens = AppThemeTokens.of(context);
-    return ColoredBox(
-      color: tokens.surfaceSubtle,
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: tokens.selected,
-                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                    ),
-                    child: Icon(
-                      Icons.edit_outlined,
-                      size: 19,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: AppSectionHeader(
-                      title: 'Edit Task',
-                      subtitle: 'Keep the plan clear and actionable',
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Close editor',
-                    icon: const Icon(Icons.close),
-                    onPressed: () {
-                      ref.read(selectedTaskIdProvider.notifier).state = null;
-                      if (MediaQuery.sizeOf(context).width < 900 &&
-                          Navigator.of(context).canPop()) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const AppSectionHeader(
-                title: 'Task details',
-                icon: Icons.subject_outlined,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              if (_errorMessage != null)
-                ErrorPanel(message: _errorMessage!, compact: true),
-              if (taskTagsAsync.hasError)
-                ErrorPanel(
-                  message: friendlyErrorMessage(taskTagsAsync.error!),
-                  onRetry: () =>
-                      ref.invalidate(tagsForTaskProvider(selectedTaskId)),
-                  compact: true,
-                ),
-              if (!taskTagsAsync.hasValue && _stagedTagIds == null)
-                const Center(child: CircularProgressIndicator()),
-              if (ruleAsync?.hasError ?? false)
-                ErrorPanel(
-                  message: friendlyErrorMessage(ruleAsync!.error!),
-                  onRetry: () =>
-                      ref.invalidate(recurringRuleProvider(_originalRuleId!)),
-                  compact: true,
-                ),
-              if (ruleAsync != null && !ruleAsync.hasValue)
-                const Center(child: CircularProgressIndicator()),
-              UseTemplateDropdown(onSelected: (t) => _applyTemplate(t, task!)),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(labelText: 'Title'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(labelText: 'Description'),
-                maxLines: 2,
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const AppSectionHeader(
-                title: 'Schedule and status',
-                icon: Icons.schedule_outlined,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              CategoryDropdown(
-                value: _categoryId,
-                onChanged: (c) => setState(() => _categoryId = c),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<Priority>(
-                initialValue: _priority,
-                decoration: const InputDecoration(labelText: 'Priority'),
-                isExpanded: true,
-                items: [
-                  for (final p in Priority.values)
-                    DropdownMenuItem(value: p, child: Text(p.label)),
-                ],
-                onChanged: (p) =>
-                    setState(() => _priority = p ?? Priority.none),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              DropdownButtonFormField<TaskStatus>(
-                initialValue: _status,
-                decoration: const InputDecoration(labelText: 'Status'),
-                isExpanded: true,
-                items: [
-                  for (final s in {
-                    _status,
-                    ...(_originalTask?.status.allowedTransitions ??
-                        const <TaskStatus>[]),
-                  })
-                    DropdownMenuItem(value: s, child: Text(s.label)),
-                ],
-                onChanged: _status == TaskStatus.rescheduled
-                    ? null
-                    : (s) => setState(() => _status = s ?? TaskStatus.planned),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.access_time, size: 16),
-                      label: Text(
-                        _startTime == null
-                            ? 'Start'
-                            : _startTime!.format(context),
+    return PopScope<void>(
+      canPop: !_hasDraftChanges,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_requestClose());
+      },
+      child: ColoredBox(
+        color: tokens.surfaceSubtle,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: tokens.selected,
+                        borderRadius: BorderRadius.circular(tokens.radiusSmall),
                       ),
-                      onPressed: () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime:
-                              _startTime ?? const TimeOfDay(hour: 9, minute: 0),
-                        );
-                        if (picked != null) {
-                          setState(() => _startTime = picked);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.access_time_filled, size: 16),
-                      label: Text(
-                        _endTime == null ? 'End' : _endTime!.format(context),
+                      child: Icon(
+                        Icons.edit_outlined,
+                        size: 19,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
-                      onPressed: () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime:
-                              _endTime ?? const TimeOfDay(hour: 10, minute: 0),
-                        );
-                        if (picked != null) {
-                          setState(() => _endTime = picked);
-                        }
-                      },
                     ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: AppSectionHeader(
+                        title: 'Edit Task',
+                        subtitle: 'Keep the plan clear and actionable',
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close editor',
+                      icon: const Icon(Icons.close),
+                      onPressed: _requestClose,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                const AppSectionHeader(
+                  title: 'Task details',
+                  icon: Icons.subject_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                if (_errorMessage != null)
+                  ErrorPanel(message: _errorMessage!, compact: true),
+                if (taskTagsAsync.hasError)
+                  ErrorPanel(
+                    message: friendlyErrorMessage(taskTagsAsync.error!),
+                    onRetry: () =>
+                        ref.invalidate(tagsForTaskProvider(selectedTaskId)),
+                    compact: true,
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const AppSectionHeader(
-                title: 'Time tracking',
-                icon: Icons.timer_outlined,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              TextField(
-                controller: _estimatedController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Estimated duration (minutes)',
+                if (!taskTagsAsync.hasValue && _stagedTagIds == null)
+                  const Center(child: CircularProgressIndicator()),
+                if (ruleAsync?.hasError ?? false)
+                  ErrorPanel(
+                    message: friendlyErrorMessage(ruleAsync!.error!),
+                    onRetry: () =>
+                        ref.invalidate(recurringRuleProvider(_originalRuleId!)),
+                    compact: true,
+                  ),
+                if (ruleAsync != null && !ruleAsync.hasValue)
+                  const Center(child: CircularProgressIndicator()),
+                UseTemplateDropdown(
+                  onSelected: (t) => _applyTemplate(t, task!),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                key: const ValueKey('actual-duration-field'),
-                controller: _actualController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Actual duration (minutes)',
-                  helperText: 'Auto-tracked by the timer; editable',
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(labelText: 'Title'),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const SizedBox(height: AppSpacing.lg),
-              AppSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: TimerControls(task: task),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              if (ruleAsync == null || ruleAsync.hasValue)
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                const AppSectionHeader(
+                  title: 'Schedule and status',
+                  icon: Icons.schedule_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                CategoryDropdown(
+                  value: _categoryId,
+                  onChanged: (c) => setState(() => _categoryId = c),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                DropdownButtonFormField<Priority>(
+                  initialValue: _priority,
+                  decoration: const InputDecoration(labelText: 'Priority'),
+                  isExpanded: true,
+                  items: [
+                    for (final p in Priority.values)
+                      DropdownMenuItem(value: p, child: Text(p.label)),
+                  ],
+                  onChanged: (p) =>
+                      setState(() => _priority = p ?? Priority.none),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                DropdownButtonFormField<TaskStatus>(
+                  initialValue: _status,
+                  decoration: const InputDecoration(labelText: 'Status'),
+                  isExpanded: true,
+                  items: [
+                    for (final s in {
+                      _status,
+                      ...(_originalTask?.status.allowedTransitions ??
+                          const <TaskStatus>[]),
+                    })
+                      DropdownMenuItem(value: s, child: Text(s.label)),
+                  ],
+                  onChanged: _status == TaskStatus.rescheduled
+                      ? null
+                      : (s) =>
+                            setState(() => _status = s ?? TaskStatus.planned),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time, size: 16),
+                        label: Text(
+                          _startTime == null
+                              ? 'Start'
+                              : _startTime!.format(context),
+                        ),
+                        onPressed: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime:
+                                _startTime ??
+                                const TimeOfDay(hour: 9, minute: 0),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _startTime = picked;
+                              _scheduleDirty = true;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.access_time_filled, size: 16),
+                        label: Text(
+                          _endTime == null ? 'End' : _endTime!.format(context),
+                        ),
+                        onPressed: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime:
+                                _endTime ??
+                                const TimeOfDay(hour: 10, minute: 0),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _endTime = picked;
+                              _scheduleDirty = true;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+                const AppSectionHeader(
+                  title: 'Time tracking',
+                  icon: Icons.timer_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: _estimatedController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Estimated duration (minutes)',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                TextField(
+                  key: const ValueKey('actual-duration-field'),
+                  controller: _actualController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Actual duration (minutes)',
+                    helperText: 'Auto-tracked by the timer; editable',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                const SizedBox(height: AppSpacing.lg),
                 AppSurface(
                   padding: const EdgeInsets.all(AppSpacing.md),
-                  child: RecurrencePicker(
-                    selection: _repeat ?? RepeatPreset.never,
-                    anchorDate: anchorDate,
-                    existingRrule: rule?.rrule,
-                    customConfig: _customConfig,
-                    onChanged: (preset) => setState(() {
-                      _repeat = preset;
-                      if (preset != RepeatPreset.custom) _customConfig = null;
-                    }),
-                    onCustomConfirmed: (config) => setState(() {
-                      _customConfig = config;
-                      _repeat = RepeatPreset.custom;
-                    }),
+                  child: TimerControls(task: task),
+                ),
+                const SizedBox(height: AppSpacing.md),
+                if (ruleAsync == null || ruleAsync.hasValue)
+                  AppSurface(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: RecurrencePicker(
+                      selection: _repeat ?? RepeatPreset.never,
+                      anchorDate: anchorDate,
+                      existingRrule: rule?.rrule,
+                      customConfig: _customConfig,
+                      onChanged: (preset) => setState(() {
+                        _repeat = preset;
+                        if (preset != RepeatPreset.custom) _customConfig = null;
+                      }),
+                      onCustomConfirmed: (config) => setState(() {
+                        _customConfig = config;
+                        _repeat = RepeatPreset.custom;
+                      }),
+                    ),
+                  ),
+                const SizedBox(height: AppSpacing.md),
+                const AppSectionHeader(
+                  title: 'Notes and context',
+                  icon: Icons.notes_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                TextField(
+                  controller: _notesController,
+                  decoration: const InputDecoration(labelText: 'Notes'),
+                  maxLines: 4,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                const AppSectionHeader(
+                  title: 'Subtasks',
+                  icon: Icons.checklist_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Subtask checks and additions save immediately.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: tokens.textMuted),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppSurface(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: SubtaskEditor(taskId: task.id),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                const AppSectionHeader(
+                  title: 'Tags',
+                  icon: Icons.sell_outlined,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Tag selection is saved with the task; new tag names are created immediately.',
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: tokens.textMuted),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppSurface(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: TagPicker(
+                    taskId: task.id,
+                    selectedIds: _stagedTagIds ?? persistedTagIds,
+                    onChanged: (ids) => setState(() => _stagedTagIds = ids),
                   ),
                 ),
-              const SizedBox(height: AppSpacing.md),
-              const AppSectionHeader(
-                title: 'Notes and context',
-                icon: Icons.notes_outlined,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              TextField(
-                controller: _notesController,
-                decoration: const InputDecoration(labelText: 'Notes'),
-                maxLines: 4,
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const AppSectionHeader(
-                title: 'Subtasks',
-                icon: Icons.checklist_outlined,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              AppSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: SubtaskEditor(taskId: task.id),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              const AppSectionHeader(title: 'Tags', icon: Icons.sell_outlined),
-              const SizedBox(height: AppSpacing.sm),
-              AppSurface(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: TagPicker(
-                  taskId: task.id,
-                  selectedIds: _stagedTagIds ?? persistedTagIds,
-                  onChanged: (ids) => setState(() => _stagedTagIds = ids),
+                const SizedBox(height: AppSpacing.xl),
+                FilledButton.icon(
+                  key: const ValueKey('save-task-button'),
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save'),
+                  onPressed: _saving ? null : () => _save(task!),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              FilledButton.icon(
-                key: const ValueKey('save-task-button'),
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Save'),
-                onPressed: _saving ? null : () => _save(task!),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              OutlinedButton.icon(
-                key: const ValueKey('save-as-template-button'),
-                icon: const Icon(Icons.bookmark_add_outlined),
-                label: const Text('Save as template'),
-                onPressed: _saving
-                    ? null
-                    : () => _saveCurrentDraftAsTemplate(
-                        task!,
-                        _stagedTagIds ?? persistedTagIds,
-                      ),
-              ),
-            ],
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  key: const ValueKey('save-as-template-button'),
+                  icon: const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Save as template'),
+                  onPressed: _saving
+                      ? null
+                      : () => _saveCurrentDraftAsTemplate(
+                          task!,
+                          _stagedTagIds ?? persistedTagIds,
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

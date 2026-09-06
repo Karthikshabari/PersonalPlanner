@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
@@ -26,28 +27,56 @@ final activeTimerProvider = StreamProvider.autoDispose<ActiveTimer?>((ref) {
 /// the session's start time; each tick adds one second so the display also
 /// advances deterministically under the test clock.
 ///
-/// Built on [Stream.multi] so the underlying Timer is cancelled the moment
-/// the last listener goes away (widget dispose / provider autoDispose).
-final activeTimerElapsedProvider =
-    StreamProvider.autoDispose.family<int, String>((ref, taskId) {
-  final active = ref.watch(activeTimerProvider).value;
-  if (active == null || active.session.taskId != taskId) {
-    return const Stream<int>.empty();
-  }
-  var current =
-      DateTime.now().difference(active.session.startedAt).inSeconds;
-  if (current < 0) current = 0;
-  return Stream<int>.multi((channel) {
-    channel.add(current);
-    final timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      current++;
-      channel.add(current);
+/// Built on [Stream.multi] so the underlying Timer and lifecycle observer are
+/// cancelled the moment the last listener goes away (widget dispose /
+/// provider autoDispose).
+final activeTimerElapsedProvider = StreamProvider.autoDispose
+    .family<int, String>((ref, taskId) {
+      final active = ref.watch(activeTimerProvider).value;
+      if (active == null || active.session.taskId != taskId) {
+        return const Stream<int>.empty();
+      }
+      return Stream<int>.multi((channel) {
+        var tickSeconds = 0;
+        void emit() => channel.add(
+          elapsedSecondsSince(
+            active.session.startedAt,
+            DateTime.now(),
+          ).clamp(tickSeconds, 1 << 31).toInt(),
+        );
+
+        emit();
+        final timer = Timer.periodic(const Duration(seconds: 1), (_) {
+          tickSeconds++;
+          emit();
+        });
+        final observer = _TimerElapsedLifecycleObserver(onResumed: emit);
+        WidgetsBinding.instance.addObserver(observer);
+        channel.onCancel = () {
+          timer.cancel();
+          WidgetsBinding.instance.removeObserver(observer);
+        };
+      });
     });
-    channel.onCancel = () {
-      timer.cancel();
-    };
-  });
-});
+
+/// Computes persisted elapsed time from the session clock. Negative values can
+/// occur after a manual device-clock rollback; clamp them rather than showing
+/// an invalid negative timer.
+int elapsedSecondsSince(DateTime startedAt, DateTime now) {
+  final elapsed = now.difference(startedAt).inSeconds;
+  return elapsed < 0 ? 0 : elapsed;
+}
+
+class _TimerElapsedLifecycleObserver with WidgetsBindingObserver {
+  _TimerElapsedLifecycleObserver({required this.onResumed});
+
+  final VoidCallback onResumed;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) onResumed();
+  }
+}
 
 /// `⏱ 01:23:45` label format for timers.
 String formatTimerClock(int totalSeconds) {

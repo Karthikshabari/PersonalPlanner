@@ -70,7 +70,8 @@ class _PlannerBootstrap extends StatefulWidget {
   State<_PlannerBootstrap> createState() => _PlannerBootstrapState();
 }
 
-class _PlannerBootstrapState extends State<_PlannerBootstrap> {
+class _PlannerBootstrapState extends State<_PlannerBootstrap>
+    with WidgetsBindingObserver {
   AppDatabase? _database;
   ProviderContainer? _container;
   SyncEngine? _syncEngine;
@@ -85,8 +86,45 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrapError = widget.initialBootstrapError;
     if (_bootstrapError == null) _startDatabaseScope();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshPlannerTimezone());
+    }
+  }
+
+  Future<void> _refreshPlannerTimezone() async {
+    try {
+      await initializeTimezone();
+      final container = _container;
+      if (container != null) {
+        final enabled = await container.read(
+          reviewReminderEnabledProvider.future,
+        );
+        final minutes = await container.read(
+          reviewReminderMinutesProvider.future,
+        );
+        final notifications = container.read(notificationServiceProvider);
+        if (enabled) {
+          await notifications.scheduleDailyReminder(
+            hour: minutes ~/ 60,
+            minute: minutes % 60,
+          );
+        } else {
+          await notifications.cancelReminder();
+        }
+      }
+      if (mounted) setState(() {});
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: error, stack: stack),
+      );
+    }
   }
 
   void _startDatabaseScope() {
@@ -188,6 +226,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
     SyncEngine? engine;
     try {
       database = await AppDatabase.open(accountId: accountId);
+      AndroidForegroundTimer.setAccountScope(accountId);
       final openedDatabase = database;
       container = ProviderContainer(
         overrides: [appDatabaseProvider.overrideWithValue(openedDatabase)],
@@ -237,6 +276,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_authSubscription?.cancel());
     final container = _container;
     final database = _database;
@@ -376,6 +416,19 @@ Future<SyncEngine?> _initializeLocalServices(
   try {
     await AndroidForegroundTimer().init();
     Future<void> handleTimerAction(PendingForegroundTimerAction pending) async {
+      final active = await container
+          .read(appDatabaseProvider)
+          .timerDao
+          .getActiveTimer();
+      if (pending.accountId != AndroidForegroundTimer.accountScope ||
+          active == null ||
+          active.id != pending.sessionId ||
+          active.taskId != pending.taskId) {
+        // The envelope is stale (for example after account switching or a
+        // timer switch). Clear native state without touching the database.
+        await AndroidForegroundTimer().stop();
+        return;
+      }
       final service = container.read(timerServiceProvider);
       final occurredAt = pending.occurredAt.toLocal();
       if (pending.action == AndroidForegroundTimer.pauseButtonId) {

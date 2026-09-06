@@ -44,6 +44,13 @@ class RecurrenceService {
         continue;
       }
       final inserted = await _db.transaction(() async {
+        final occurrenceId = generateDeterministicUuid(
+          'recurring-occurrence:${rule.id}:$dateIso',
+        );
+        // A user may move an occurrence away from its original date. The
+        // current start-day query then misses it, so identity must be checked
+        // by the stable rule/date ID before creating a replacement.
+        if (await _db.taskDao.getTaskById(occurrenceId) != null) return false;
         final existing = await _db.recurringRuleDao.getInstancesForDay(
           rule.id,
           dayStartUtcIso,
@@ -88,6 +95,18 @@ class RecurrenceService {
       }
       final current = TaskRepository.fromRow(row);
       final day = startOfDay(current.startTime!);
+      final dayIso = isoDateString(day);
+      final stillInSeries =
+          !rule.exceptions.contains(dayIso) &&
+          (rule.endDate == null ||
+              dayIso.compareTo(isoDateString(rule.endDate!)) <= 0) &&
+          RruleUtils.occursOnDate(rule.rrule, rule.startDate, day);
+      if (!stillInSeries) {
+        // The new rule no longer produces this future slot. Keep the row as a
+        // tombstone so history and sync identity remain intact.
+        await _tasks.deleteTask(current.id);
+        continue;
+      }
       final (hour, minute) = _parseStartTimeOfDay(rule.startTimeOfDay);
       final start = PlannerTimeZone.calendarDate(
         day.year,

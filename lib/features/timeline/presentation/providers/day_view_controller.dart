@@ -14,6 +14,7 @@ import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../timer/providers/timer_providers.dart';
+import '../../../timer/platform/android_foreground_timer.dart';
 import '../../../inbox/domain/inbox_commands.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../domain/commands/batch_command.dart';
@@ -46,7 +47,13 @@ abstract final class TimelineActions {
     DateTime end,
   ) async {
     final tasksRepo = ref.read(taskRepositoryProvider);
-    final dayTasks = await tasksRepo.watchTasksForDay(start).first;
+    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(start);
+    final candidatesStart = start.isBefore(dayStart) ? start : dayStart;
+    final candidatesEnd = end.isAfter(dayEnd) ? end : dayEnd;
+    final dayTasks = await tasksRepo.getScheduledTasksBetween(
+      candidatesStart,
+      candidatesEnd,
+    );
     final command = item.isOverdue
         ? RescheduleOverdueCommand(
             repository: ref.read(inboxRepositoryProvider),
@@ -184,8 +191,9 @@ abstract final class TimelineActions {
     // provider graph.
     final viewedDate = ref.read(selectedDateProvider);
     final repository = ref.read(taskRepositoryProvider);
-    final wasTiming =
-        ref.read(activeTimerProvider).value?.session.taskId == task.id;
+    final activeBefore = ref.read(activeTimerProvider).value;
+    final wasTiming = activeBefore?.session.taskId == task.id;
+    final deletedSessionId = wasTiming ? activeBefore?.session.id : null;
 
     final confirmed = await showConfirmDialog(
       context,
@@ -249,11 +257,15 @@ abstract final class TimelineActions {
       await ref.read(undoStackProvider.notifier).execute(command);
     }
 
-    // A deleted task must not leave an invisible open session behind
-    // (the active-timer join filters soft-deleted rows). Finalize silently;
-    // undo restores the task with its tracked time intact.
+    // Task deletion finalizes its own active session inside the same database
+    // transaction. Stop the native service only when that service still
+    // represents the deleted session; a timer started for another task while
+    // the confirmation dialog was open must remain untouched.
     if (wasTiming) {
-      await ref.read(timerServiceProvider).stop();
+      final activeAfter = await repository.database.timerDao.getActiveTimer();
+      if (activeAfter == null || activeAfter.id == deletedSessionId) {
+        await AndroidForegroundTimer().stop();
+      }
     }
   }
 

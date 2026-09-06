@@ -2,6 +2,7 @@
 // v6 needs it to add foreign keys and remove legacy inline uniqueness safely.
 // ignore_for_file: experimental_member_use
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -68,6 +69,33 @@ part 'app_database.g.dart';
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
+
+  /// SQLite sync triggers append to sync_log after domain writes, but those
+  /// trigger-side writes are invisible to Drift's stream tracker. Propagate
+  /// each domain update to the outbox table so an already-open pending stream
+  /// wakes immediately. The remote apply marker still suppresses actual
+  /// trigger inserts; an empty wake is harmless and lets the engine re-check
+  /// durable state without polling.
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => StreamQueryUpdateRules([
+    ...super.streamUpdateRules.rules,
+    for (final table in const [
+      'tasks',
+      'categories',
+      'subtasks',
+      'tags',
+      'task_tags',
+      'recurring_rules',
+      'task_templates',
+      'daily_reviews',
+      'weekly_reviews',
+      'timer_sessions',
+    ])
+      WritePropagation(
+        on: TableUpdateQuery.onTableName(table),
+        result: [TableUpdate('sync_log', kind: UpdateKind.insert)],
+      ),
+  ]);
 
   /// Opens the stable anonymous database or an account-isolated database.
   /// Account IDs are UUIDs from Supabase Auth, not user-controlled paths.
@@ -143,8 +171,160 @@ class AppDatabase extends _$AppDatabase {
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      await _normalizeExistingInstants();
     },
   );
+
+  /// Repairs timestamp text written by older sync clients. SQLite compares
+  /// TEXT lexically, so equivalent offset and UTC forms must be normalized
+  /// before any range query runs. Malformed values are left untouched and
+  /// copied to the recovery ledger for a later repair tool.
+  Future<void> _normalizeExistingInstants() async {
+    const fields = <String, Map<String, String>>{
+      'tasks': {
+        'start_time': 'instant',
+        'end_time': 'instant',
+        'missed_at': 'minute',
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'categories': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'subtasks': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'tags': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'task_tags': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'recurring_rules': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'task_templates': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'daily_reviews': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'weekly_reviews': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'timer_sessions': {
+        'started_at': 'instant',
+        'ended_at': 'instant',
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+    };
+    const primaryKeys = <String, String>{
+      'task_tags': 'task_id = ? AND tag_id = ?',
+    };
+    final hasRecovery = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'planner_migration_recovery'",
+    ).getSingleOrNull();
+    final malformed =
+        <
+          ({
+            String table,
+            String key,
+            String column,
+            String raw,
+            Map<String, Object?> row,
+          })
+        >[];
+    await customStatement(
+      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
+    );
+    try {
+      for (final entry in fields.entries) {
+        final table = entry.key;
+        final columns = entry.value;
+        final rows = await customSelect('SELECT * FROM $table').get();
+        for (final row in rows) {
+          final key = table == 'task_tags'
+              ? '${row.read<String>('task_id')}:${row.read<String>('tag_id')}'
+              : row.read<String>('id');
+          for (final field in columns.entries) {
+            final raw = row.readNullable<String>(field.key);
+            if (raw == null) continue;
+            final parsed = DateTime.tryParse(raw);
+            if (parsed == null) {
+              malformed.add((
+                table: table,
+                key: key,
+                column: field.key,
+                raw: raw,
+                row: Map<String, Object?>.from(row.data),
+              ));
+              continue;
+            }
+            final canonicalUtc = parsed.toUtc().toIso8601String();
+            final canonical = field.value == 'minute'
+                ? canonicalUtc.substring(0, 16)
+                : canonicalUtc;
+            if (canonical == raw) continue;
+            final where = primaryKeys[table] ?? 'id = ?';
+            final variables = table == 'task_tags'
+                ? <Object>[
+                    canonical,
+                    row.read<String>('task_id'),
+                    row.read<String>('tag_id'),
+                  ]
+                : <Object>[canonical, key];
+            await customStatement(
+              'UPDATE $table SET ${field.key} = ? WHERE $where',
+              variables,
+            );
+          }
+        }
+      }
+      if (malformed.isEmpty || hasRecovery == null) return;
+      for (final item in malformed) {
+        await customStatement(
+          'INSERT OR REPLACE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'timestamp:${item.table}:${item.key}:${item.column}',
+            item.table,
+            item.key,
+            jsonEncode({
+              'row': item.row,
+              'column': item.column,
+              'value': item.raw,
+            }),
+            'Unparseable timestamp retained during normalization',
+            DateTime.now().toUtc().toIso8601String(),
+          ],
+        );
+      }
+    } finally {
+      await customStatement(
+        "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+      );
+    }
+  }
 
   /// Schema-v6 is the audit stabilization migration. It upgrades every
   /// released v1-v5 database without resetting user data, then rebuilds the
@@ -320,6 +500,43 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> _normalizeLegacyRows() async {
+    // Foreign-key hardening must never make legacy child data unrecoverable.
+    // This local table is intentionally outside the application model: it is
+    // a migration ledger that can be exported or repaired by a later tool.
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    await _captureOrphanRows(
+      table: 'task_tags',
+      rowId: "task_id || ':' || tag_id",
+      where:
+          'NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = task_tags.task_id) '
+          'OR NOT EXISTS (SELECT 1 FROM tags g WHERE g.id = task_tags.tag_id)',
+      reason: 'Missing task or tag parent during schema upgrade',
+      requiredTables: const ['task_tags', 'tasks', 'tags'],
+    );
+    await _captureOrphanRows(
+      table: 'subtasks',
+      rowId: 'id',
+      where: 'NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = subtasks.task_id)',
+      reason: 'Missing task parent during schema upgrade',
+      requiredTables: const ['subtasks', 'tasks'],
+    );
+    await _captureOrphanRows(
+      table: 'timer_sessions',
+      rowId: 'id',
+      where: 'NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = timer_sessions.task_id)',
+      reason: 'Missing task parent during schema upgrade',
+      requiredTables: const ['timer_sessions', 'tasks'],
+    );
+
     // Optional references can be repaired without losing their owning row.
     await _customStatementIfTables(
       ['tasks', 'categories'],
@@ -358,7 +575,8 @@ class AppDatabase extends _$AppDatabase {
       'AND NOT EXISTS (SELECT 1 FROM categories c WHERE c.id = task_templates.category_id)',
     );
 
-    // Child rows without a parent are already unreachable in the application.
+    // Child rows without a parent are retained in planner_migration_recovery
+    // above before constraint hardening removes them from the live tables.
     await _customStatementIfTables(
       ['task_tags', 'tasks', 'tags'],
       'DELETE FROM task_tags WHERE '
@@ -450,6 +668,40 @@ class AppDatabase extends _$AppDatabase {
       'WHERE ended_at IS NULL AND deleted_at IS NULL '
       'ORDER BY started_at DESC, id DESC LIMIT 1)',
     );
+  }
+
+  Future<void> _captureOrphanRows({
+    required String table,
+    required String rowId,
+    required String where,
+    required String reason,
+    required List<String> requiredTables,
+  }) async {
+    for (final tableName in requiredTables) {
+      final exists = await customSelect(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$tableName'",
+      ).getSingleOrNull();
+      if (exists == null) return;
+    }
+    final rows = await customSelect('SELECT * FROM $table WHERE $where').get();
+    for (final row in rows) {
+      final rowIdValue = table == 'task_tags'
+          ? '${row.data['task_id']}:${row.data['tag_id']}'
+          : '${row.data['id']}';
+      await customStatement(
+        'INSERT OR REPLACE INTO planner_migration_recovery '
+        '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          '$table:$rowIdValue',
+          table,
+          rowIdValue,
+          jsonEncode(row.data),
+          reason,
+          DateTime.now().toUtc().toIso8601String(),
+        ],
+      );
+    }
   }
 
   Future<void> _customStatementIfTables(

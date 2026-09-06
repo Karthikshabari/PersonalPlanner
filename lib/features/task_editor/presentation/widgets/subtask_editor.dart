@@ -141,16 +141,21 @@ class _SubtaskEditorState extends ConsumerState<SubtaskEditor> {
                       children: [
                         ReorderableDragStartListener(
                           index: index,
-                          child: Icon(
-                            Icons.drag_handle,
-                            size: 18,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
+                          child: Semantics(
+                            button: true,
+                            label: 'Reorder subtask ${subtask.title}',
+                            child: Icon(
+                              Icons.drag_handle,
+                              size: 18,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                           ),
                         ),
                         IconButton(
                           key: ValueKey('subtask-delete-${subtask.id}'),
+                          tooltip: 'Delete subtask ${subtask.title}',
                           icon: const Icon(Icons.close, size: 16),
                           onPressed: _busy
                               ? null

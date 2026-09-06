@@ -36,6 +36,7 @@ class WeeklyReviewScreen extends ConsumerWidget {
             tooltip: 'Daily review',
             icon: const Icon(Icons.calendar_view_day_outlined),
             onPressed: () {
+              ref.read(selectedReviewDateProvider.notifier).state = weekStart;
               if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
                 context.go('/review');
               } else {
@@ -193,6 +194,8 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
   List<String> _goalsMissed = [];
   List<String> _nextFocus = [];
   bool _saving = false;
+  bool _hydrated = false;
+  bool _hydrating = true;
   String? _error;
 
   @override
@@ -208,25 +211,41 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
   }
 
   Future<void> _hydrate() async {
+    if (mounted) {
+      setState(() {
+        _hydrating = true;
+        _error = null;
+      });
+    }
     try {
       final existing = await ref
           .read(reviewRepositoryProvider)
           .getWeeklyReviewForWeek(widget.weekStart);
-      if (!mounted || existing == null) return;
+      if (!mounted) return;
       setState(() {
-        _reflectionController.text = existing.reflection ?? '';
-        _overall = existing.overallRating;
-        _goalsMet = [...existing.goalsMet];
-        _goalsMissed = [...existing.goalsMissed];
-        _nextFocus = [...existing.nextWeekFocus];
+        if (existing != null) {
+          _reflectionController.text = existing.reflection ?? '';
+          _overall = existing.overallRating;
+          _goalsMet = [...existing.goalsMet];
+          _goalsMissed = [...existing.goalsMissed];
+          _nextFocus = [...existing.nextWeekFocus];
+        }
+        _hydrated = true;
+        _hydrating = false;
       });
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyErrorMessage(error));
+      if (mounted) {
+        setState(() {
+          _hydrating = false;
+          _hydrated = false;
+          _error = friendlyErrorMessage(error);
+        });
+      }
     }
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving || !_hydrated) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -269,53 +288,61 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
         children: [
           Text('Review', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.sm),
+          if (_hydrating) const LinearProgressIndicator(),
           if (_error != null)
             ErrorPanel(message: _error!, onRetry: _hydrate, compact: true),
-          TextField(
-            key: const ValueKey('weekly-reflection'),
-            controller: _reflectionController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'How did the week go?',
-              labelText: 'Reflection',
+          AbsorbPointer(
+            absorbing: !_hydrated || _saving,
+            child: Column(
+              children: [
+                TextField(
+                  key: const ValueKey('weekly-reflection'),
+                  controller: _reflectionController,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    hintText: 'How did the week go?',
+                    labelText: 'Reflection',
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                RatingPicker(
+                  label: 'Overall rating',
+                  value: _overall,
+                  onChanged: (v) => setState(() => _overall = v),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                StringListEditor(
+                  key: const ValueKey('weekly-goals-met'),
+                  label: 'Goals met',
+                  items: _goalsMet,
+                  onChanged: (items) => setState(() => _goalsMet = items),
+                ),
+                StringListEditor(
+                  key: const ValueKey('weekly-goals-missed'),
+                  label: 'Goals missed',
+                  items: _goalsMissed,
+                  onChanged: (items) => setState(() => _goalsMissed = items),
+                ),
+                StringListEditor(
+                  key: const ValueKey('weekly-next-focus'),
+                  label: 'Next week focus',
+                  items: _nextFocus,
+                  onChanged: (items) => setState(() => _nextFocus = items),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                FilledButton(
+                  key: const ValueKey('weekly-save'),
+                  onPressed: _save,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save review'),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          RatingPicker(
-            label: 'Overall rating',
-            value: _overall,
-            onChanged: (v) => setState(() => _overall = v),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          StringListEditor(
-            key: const ValueKey('weekly-goals-met'),
-            label: 'Goals met',
-            items: _goalsMet,
-            onChanged: (items) => setState(() => _goalsMet = items),
-          ),
-          StringListEditor(
-            key: const ValueKey('weekly-goals-missed'),
-            label: 'Goals missed',
-            items: _goalsMissed,
-            onChanged: (items) => setState(() => _goalsMissed = items),
-          ),
-          StringListEditor(
-            key: const ValueKey('weekly-next-focus'),
-            label: 'Next week focus',
-            items: _nextFocus,
-            onChanged: (items) => setState(() => _nextFocus = items),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          FilledButton(
-            key: const ValueKey('weekly-save'),
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save review'),
           ),
         ],
       ),

@@ -9,6 +9,7 @@ import 'package:personal_planner/features/timeline/domain/commands/create_task_c
 import 'package:personal_planner/features/timeline/domain/commands/delete_task_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/move_task_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/resize_task_command.dart';
+import 'package:personal_planner/features/timer/domain/timer_service.dart';
 
 import '../../helpers/sqlite_setup.dart' as sqlite_setup;
 
@@ -69,6 +70,29 @@ void main() {
       },
     );
   });
+
+  test(
+    'DeleteTaskCommand closes an active session before tombstoning',
+    () async {
+      final task = await repo.insertTask(
+        newTask(
+          'Timing delete',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
+      await TimerService(db).start(task.id);
+
+      await DeleteTaskCommand(repository: repo, original: task).execute();
+
+      expect(await db.timerDao.getActiveTimerForTask(task.id), isNull);
+      expect(
+        (await db.timerDao.getSessionsForTask(task.id)).single.endedAt,
+        isNotNull,
+      );
+      expect((await repo.getTaskById(task.id))!.deletedAt, isNotNull);
+    },
+  );
 
   group('MoveTaskCommand', () {
     test('execute moves to new slot; undo restores original', () async {

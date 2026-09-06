@@ -39,12 +39,18 @@ class TaskAggregateSnapshot {
   Future<void> softDelete(AppDatabase db) async {
     final now = DateTime.now().toUtc();
     final nowIso = now.toIso8601String();
+    await db.timerDao.finalizeActiveForTask(task.id, now);
+    final totalSec = await db.timerDao.getTotalDurationSecForTask(task.id);
+    final actual = (totalSec ~/ 60 + task.manualDurationAdjustmentMin)
+        .clamp(0, 1 << 31)
+        .toInt();
     await db.customUpdate(
-      'UPDATE tasks SET deleted_at = ?, updated_at = ?, sync_status = 1, '
+      'UPDATE tasks SET deleted_at = ?, updated_at = ?, actual_duration_min = ?, sync_status = 1, '
       'revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
       variables: [
         Variable<String>(nowIso),
         Variable<String>(nowIso),
+        Variable<int>(actual),
         Variable<String>(task.id),
       ],
       updates: {db.tasks},

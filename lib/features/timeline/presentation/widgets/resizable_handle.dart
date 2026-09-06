@@ -14,6 +14,8 @@ class ResizableHandle extends StatefulWidget {
   final ValueChanged<double> onResizeUpdate;
   final VoidCallback onResizeEnd;
   final VoidCallback onResizeCancel;
+  final VoidCallback? onIncrease;
+  final VoidCallback? onDecrease;
 
   const ResizableHandle({
     super.key,
@@ -21,6 +23,8 @@ class ResizableHandle extends StatefulWidget {
     required this.onResizeUpdate,
     required this.onResizeEnd,
     required this.onResizeCancel,
+    this.onIncrease,
+    this.onDecrease,
   });
 
   static bool get isTouchPlatform =>
@@ -108,6 +112,9 @@ class _ResizableHandleState extends State<ResizableHandle> {
         child: Semantics(
           label: 'Resize task',
           button: true,
+          hint: 'Use increase and decrease actions to change duration',
+          onIncrease: widget.onIncrease,
+          onDecrease: widget.onDecrease,
           child: SizedBox(
             height: ResizableHandle.isTouchPlatform
                 ? ResizableHandle.touchTargetHeight

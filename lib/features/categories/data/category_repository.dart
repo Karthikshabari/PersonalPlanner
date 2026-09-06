@@ -190,7 +190,23 @@ class CategoryRepository {
     CategoryRow legacy,
     String stableId,
   ) async {
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
+    // Materialize the parent before moving any foreign keys. SQLite foreign
+    // keys are immediate here, so updating a task/rule/template first would
+    // fail before the canonical category exists.
+    await _dao.insertCategory(
+      CategoriesCompanion.insert(
+        id: stableId,
+        name: legacy.name,
+        colorHex: legacy.colorHex,
+        sortOrder: Value(legacy.sortOrder),
+        isFocus: Value(legacy.isFocus),
+        createdAt: legacy.createdAt,
+        updatedAt: now,
+        syncStatus: const Value(1),
+        revision: const Value(1),
+      ),
+    );
     await _db.customUpdate(
       'UPDATE tasks SET category_id = ?, updated_at = ?, sync_status = 1, '
       'revision = revision + 1 WHERE category_id = ?',
@@ -230,19 +246,6 @@ class CategoryRepository {
         Variable<String>(legacy.id),
       ],
       updates: {_db.categories},
-    );
-    await _dao.insertCategory(
-      CategoriesCompanion.insert(
-        id: stableId,
-        name: legacy.name,
-        colorHex: legacy.colorHex,
-        sortOrder: Value(legacy.sortOrder),
-        isFocus: Value(legacy.isFocus),
-        createdAt: legacy.createdAt,
-        updatedAt: now,
-        syncStatus: const Value(1),
-        revision: const Value(1),
-      ),
     );
   }
 
