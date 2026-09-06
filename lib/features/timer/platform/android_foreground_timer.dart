@@ -12,6 +12,9 @@ class AndroidForegroundTimer {
   static const String stopButtonId = 'timer_stop';
   static const String _startedAtKey = 'timer_started_at_ms';
   static const String _titleKey = 'timer_title';
+  static const String _taskIdKey = 'timer_task_id';
+  static const String _sessionIdKey = 'timer_session_id';
+  static const String _accountIdKey = 'timer_account_id';
   static const String _pendingActionKey = 'timer_pending_action';
   static const String _pendingActionAtKey = 'timer_pending_action_at_ms';
 
@@ -24,7 +27,11 @@ class AndroidForegroundTimer {
   static bool get supported => Platform.isAndroid;
 
   static bool _initialized = false;
-  static String _currentTitle = '';
+  static String? accountScope;
+
+  static void setAccountScope(String? accountId) {
+    accountScope = accountId;
+  }
 
   Future<void> init() async {
     if (!supported || _initialized) return;
@@ -53,6 +60,9 @@ class AndroidForegroundTimer {
       final occurredAtMs = data['occurredAtMs'] as int?;
       final action = PendingForegroundTimerAction(
         action: data['timerAction'] as String,
+        taskId: data['taskId'] as String?,
+        sessionId: data['sessionId'] as String?,
+        accountId: data['accountId'] as String?,
         occurredAt: occurredAtMs == null
             ? DateTime.now().toUtc()
             : DateTime.fromMillisecondsSinceEpoch(occurredAtMs, isUtc: true),
@@ -83,15 +93,30 @@ class AndroidForegroundTimer {
     await _activeButtonAction;
   }
 
-  Future<bool> start({required String taskTitle}) async {
+  Future<bool> start({
+    required String taskTitle,
+    required String taskId,
+    required String sessionId,
+  }) async {
     if (!supported) return true;
-    _currentTitle = taskTitle;
     try {
       await FlutterForegroundTask.saveData(
         key: _startedAtKey,
         value: DateTime.now().toUtc().millisecondsSinceEpoch,
       );
       await FlutterForegroundTask.saveData(key: _titleKey, value: taskTitle);
+      await FlutterForegroundTask.saveData(key: _taskIdKey, value: taskId);
+      await FlutterForegroundTask.saveData(
+        key: _sessionIdKey,
+        value: sessionId,
+      );
+      final account = accountScope;
+      if (account != null) {
+        await FlutterForegroundTask.saveData(
+          key: _accountIdKey,
+          value: account,
+        );
+      }
       final result = await FlutterForegroundTask.startService(
         serviceId: serviceId,
         serviceTypes: [ForegroundServiceTypes.specialUse],
@@ -112,18 +137,6 @@ class AndroidForegroundTimer {
     }
   }
 
-  /// Refreshes the elapsed time in the persistent notification.
-  Future<void> updateElapsed(String clockLabel) async {
-    if (!supported) return;
-    try {
-      if (await FlutterForegroundTask.isRunningService) {
-        await FlutterForegroundTask.updateService(
-          notificationText: '$_currentTitle  $clockLabel',
-        );
-      }
-    } catch (_) {}
-  }
-
   Future<void> stop() async {
     if (!supported) return;
     try {
@@ -131,6 +144,9 @@ class AndroidForegroundTimer {
     } catch (_) {}
     await FlutterForegroundTask.removeData(key: _startedAtKey);
     await FlutterForegroundTask.removeData(key: _titleKey);
+    await FlutterForegroundTask.removeData(key: _taskIdKey);
+    await FlutterForegroundTask.removeData(key: _sessionIdKey);
+    await FlutterForegroundTask.removeData(key: _accountIdKey);
     await FlutterForegroundTask.removeData(key: _pendingActionKey);
     await FlutterForegroundTask.removeData(key: _pendingActionAtKey);
   }
@@ -144,10 +160,15 @@ class AndroidForegroundTimer {
     final occurredAtMs = await FlutterForegroundTask.getData<int>(
       key: _pendingActionAtKey,
     );
-    await FlutterForegroundTask.removeData(key: _pendingActionKey);
-    await FlutterForegroundTask.removeData(key: _pendingActionAtKey);
     return PendingForegroundTimerAction(
       action: action,
+      taskId: await FlutterForegroundTask.getData<String>(key: _taskIdKey),
+      sessionId: await FlutterForegroundTask.getData<String>(
+        key: _sessionIdKey,
+      ),
+      accountId: await FlutterForegroundTask.getData<String>(
+        key: _accountIdKey,
+      ),
       occurredAt: occurredAtMs == null
           ? DateTime.now().toUtc()
           : DateTime.fromMillisecondsSinceEpoch(occurredAtMs, isUtc: true),
@@ -157,10 +178,16 @@ class AndroidForegroundTimer {
 
 class PendingForegroundTimerAction {
   final String action;
+  final String? taskId;
+  final String? sessionId;
+  final String? accountId;
   final DateTime occurredAt;
 
   const PendingForegroundTimerAction({
     required this.action,
+    this.taskId,
+    this.sessionId,
+    this.accountId,
     required this.occurredAt,
   });
 }
@@ -228,6 +255,15 @@ class _ForegroundTimerHandler extends TaskHandler {
     await FlutterForegroundTask.stopService();
     FlutterForegroundTask.sendDataToMain({
       'timerAction': id,
+      'taskId': await FlutterForegroundTask.getData<String>(
+        key: 'timer_task_id',
+      ),
+      'sessionId': await FlutterForegroundTask.getData<String>(
+        key: 'timer_session_id',
+      ),
+      'accountId': await FlutterForegroundTask.getData<String>(
+        key: 'timer_account_id',
+      ),
       'occurredAtMs': occurredAtMs,
     });
   }

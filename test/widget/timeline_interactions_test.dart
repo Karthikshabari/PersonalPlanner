@@ -24,14 +24,14 @@ import '../helpers/test_container.dart';
 final DateTime viewDay = DateTime(2027, 3, 15);
 
 Task taskSpec(String title, int startMinutes, int endMinutes) => Task(
-      id: '',
-      title: title,
-      startTime: viewDay.add(Duration(minutes: startMinutes)),
-      endTime: viewDay.add(Duration(minutes: endMinutes)),
-      estimatedDurationMin: endMinutes - startMinutes,
-      createdAt: DateTime(2026, 1, 1),
-      updatedAt: DateTime(2026, 1, 1),
-    );
+  id: '',
+  title: title,
+  startTime: viewDay.add(Duration(minutes: startMinutes)),
+  endTime: viewDay.add(Duration(minutes: endMinutes)),
+  estimatedDurationMin: endMinutes - startMinutes,
+  createdAt: DateTime(2026, 1, 1),
+  updatedAt: DateTime(2026, 1, 1),
+);
 
 Future<Task> insertTask(
   WidgetTester tester,
@@ -78,14 +78,12 @@ Future<Task?> streamedTaskById(
   return null;
 }
 
-Future<void> mouseDrag(
-  WidgetTester tester,
-  Finder finder,
-  Offset delta,
-) async {
+Future<void> mouseDrag(WidgetTester tester, Finder finder, Offset delta) async {
   final center = tester.getCenter(finder);
-  final gesture =
-      await tester.startGesture(center, kind: PointerDeviceKind.mouse);
+  final gesture = await tester.startGesture(
+    center,
+    kind: PointerDeviceKind.mouse,
+  );
   await tester.pump(const Duration(milliseconds: 50));
   const steps = 6.0;
   for (var i = 0; i < steps; i++) {
@@ -139,18 +137,20 @@ void main() {
     final container = await buildTestContainer(tester);
     // Set the viewed date BEFORE pumping so the timeline's initial scroll
     // anchor targets 07:00 of [viewDay] and morning blocks are on screen.
-    container.read(date_provider.selectedDateProvider.notifier).state =
-        viewDay;
+    container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     return container;
   }
 
-
-  testWidgets('desktop drag moves a block and snaps to the grid',
-      (tester) async {
+  testWidgets('desktop drag moves a block and snaps to the grid', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Draggable', 480, 540));
+    final a = await insertTask(
+      tester,
+      container,
+      taskSpec('Draggable', 480, 540),
+    );
 
     // Drag up by exactly one hour.
     await mouseDrag(tester, blockOf(a), const Offset(0, -64));
@@ -164,15 +164,49 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('ghost preview shows during drag and original is dimmed',
-      (tester) async {
+  testWidgets('long block drag preserves duration when moved across midnight', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Ghosty', 480, 540));
+    final start = viewDay.add(const Duration(hours: 8));
+    final longTask = await insertTask(
+      tester,
+      container,
+      Task(
+        id: '',
+        title: 'Long block',
+        startTime: start,
+        endTime: start.add(const Duration(hours: 25)),
+        estimatedDurationMin: 25 * 60,
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      ),
+    );
+
+    await mouseDrag(tester, blockOf(longTask), const Offset(0, -64));
+    await settle(tester);
+
+    final fetched = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(longTask.id),
+    );
+    expect(fetched!.startTime, start.subtract(const Duration(hours: 1)));
+    expect(fetched.endTime, start.add(const Duration(hours: 24)));
+    expect(fetched.scheduledDuration, const Duration(hours: 25));
+    await finish(tester, container);
+  });
+
+  testWidgets('ghost preview shows during drag and original is dimmed', (
+    tester,
+  ) async {
+    final container = await pumpDesktop(tester);
+    final a = await insertTask(tester, container, taskSpec('Ghosty', 480, 540));
 
     final center = tester.getCenter(blockOf(a));
-    final gesture =
-        await tester.startGesture(center, kind: PointerDeviceKind.mouse);
+    final gesture = await tester.startGesture(
+      center,
+      kind: PointerDeviceKind.mouse,
+    );
     await tester.pump(const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(0, -40));
     await tester.pump(const Duration(milliseconds: 100));
@@ -193,8 +227,11 @@ void main() {
 
   testWidgets('resize by bottom handle extends duration', (tester) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Stretchy', 480, 540));
+    final a = await insertTask(
+      tester,
+      container,
+      taskSpec('Stretchy', 480, 540),
+    );
 
     final handle = find.descendant(
       of: blockOf(a),
@@ -213,7 +250,10 @@ void main() {
   testWidgets('resize cannot shrink below one grid slot', (tester) async {
     final container = await pumpDesktop(tester);
     final a = await insertTask(
-        tester, container, taskSpec('One hour only', 480, 540));
+      tester,
+      container,
+      taskSpec('One hour only', 480, 540),
+    );
 
     final handle = find.descendant(
       of: blockOf(a),
@@ -227,11 +267,11 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('conflict dialog appears on overlapping drop; cancel discards',
-      (tester) async {
+  testWidgets('conflict dialog appears on overlapping drop; cancel discards', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Alpha', 480, 540));
+    final a = await insertTask(tester, container, taskSpec('Alpha', 480, 540));
     await insertTask(tester, container, taskSpec('Beta', 540, 600));
 
     await mouseDrag(tester, blockOf(a), const Offset(0, 64)); // → 9:00–10:00
@@ -246,15 +286,13 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('"Shift All Following" moves all subsequent blocks',
-      (tester) async {
+  testWidgets('"Shift All Following" moves all subsequent blocks', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Alpha', 480, 540));
-    final b =
-        await insertTask(tester, container, taskSpec('Beta', 540, 600));
-    final c =
-        await insertTask(tester, container, taskSpec('Gamma', 660, 720));
+    final a = await insertTask(tester, container, taskSpec('Alpha', 480, 540));
+    final b = await insertTask(tester, container, taskSpec('Beta', 540, 600));
+    final c = await insertTask(tester, container, taskSpec('Gamma', 660, 720));
 
     await mouseDrag(tester, blockOf(a), const Offset(0, 64)); // → 9:00–10:00
     await settle(tester);
@@ -272,15 +310,13 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('"Shift Only Overlapping" leaves non-overlapping blocks alone',
-      (tester) async {
+  testWidgets('"Shift Only Overlapping" leaves non-overlapping blocks alone', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Alpha', 480, 540));
-    final b =
-        await insertTask(tester, container, taskSpec('Beta', 540, 600));
-    final c =
-        await insertTask(tester, container, taskSpec('Gamma', 660, 720));
+    final a = await insertTask(tester, container, taskSpec('Alpha', 480, 540));
+    final b = await insertTask(tester, container, taskSpec('Beta', 540, 600));
+    final c = await insertTask(tester, container, taskSpec('Gamma', 660, 720));
 
     await mouseDrag(tester, blockOf(a), const Offset(0, 64)); // → 9:00–10:00
     await settle(tester);
@@ -298,11 +334,11 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('"Keep Overlap" keeps both blocks and renders indicator',
-      (tester) async {
+  testWidgets('"Keep Overlap" keeps both blocks and renders indicator', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Alpha', 480, 540));
+    final a = await insertTask(tester, container, taskSpec('Alpha', 480, 540));
     await insertTask(tester, container, taskSpec('Beta', 540, 600));
 
     await mouseDrag(tester, blockOf(a), const Offset(0, 64)); // → 9:00–10:00
@@ -324,8 +360,11 @@ void main() {
 
   testWidgets('Ctrl+Z undoes a move; Ctrl+Shift+Z redoes it', (tester) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Undoable', 480, 540));
+    final a = await insertTask(
+      tester,
+      container,
+      taskSpec('Undoable', 480, 540),
+    );
 
     await mouseDrag(tester, blockOf(a), const Offset(0, -64)); // → 7:00
     await settle(tester);
@@ -344,11 +383,15 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('D key duplicates the selected task into the next free slot',
-      (tester) async {
+  testWidgets('D key duplicates the selected task into the next free slot', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Original', 480, 540));
+    final a = await insertTask(
+      tester,
+      container,
+      taskSpec('Original', 480, 540),
+    );
     await insertTask(tester, container, taskSpec('Occupying', 540, 600));
 
     await tester.tap(find.text('Original'));
@@ -361,8 +404,9 @@ void main() {
 
     final dayTasks = await streamedDayTasks(tester, container);
     expect(dayTasks, hasLength(3));
-    final copy = dayTasks
-        .singleWhere((t) => t.title == 'Original' && t.id != a.id);
+    final copy = dayTasks.singleWhere(
+      (t) => t.title == 'Original' && t.id != a.id,
+    );
     // 9:00–10:00 occupied → copy lands at 10:00.
     expect(copy.startTime, viewDay.add(const Duration(hours: 10)));
     expect(copy.scheduledDuration, a.scheduledDuration);
@@ -370,11 +414,11 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('Delete key asks for confirmation and soft-deletes',
-      (tester) async {
+  testWidgets('Delete key asks for confirmation and soft-deletes', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('Doomed', 480, 540));
+    final a = await insertTask(tester, container, taskSpec('Doomed', 480, 540));
 
     await tester.tap(find.text('Doomed'));
     await settle(tester);
@@ -390,8 +434,10 @@ void main() {
     expect(dayTasks, isEmpty);
     // The day stream filters deleted rows, so read the raw record directly
     // (getTaskById intentionally includes soft-deleted rows).
-    final raw =
-        await runDb(tester, () => container.read(taskRepositoryProvider).getTaskById(a.id));
+    final raw = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(a.id),
+    );
     expect(raw!.deletedAt, isNotNull);
 
     // Ctrl+Z restores the deleted task.
@@ -402,11 +448,15 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('right-click opens context menu with Change Status submenu',
-      (tester) async {
+  testWidgets('right-click opens context menu with Change Status submenu', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
-    final a =
-        await insertTask(tester, container, taskSpec('MenuTarget', 480, 540));
+    final a = await insertTask(
+      tester,
+      container,
+      taskSpec('MenuTarget', 480, 540),
+    );
 
     await tester.tap(blockOf(a), buttons: kSecondaryMouseButton);
     await settle(tester);
@@ -426,12 +476,12 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('long-press without movement opens context menu (touch)',
-      (tester) async {
+  testWidgets('long-press without movement opens context menu (touch)', (
+    tester,
+  ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     final container = await buildTestContainer(tester);
-    container.read(date_provider.selectedDateProvider.notifier).state =
-        viewDay;
+    container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     await insertTask(tester, container, taskSpec('TouchMenu', 480, 540));
 
@@ -442,8 +492,9 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('grid interval change persists and updates timeline snapping',
-      (tester) async {
+  testWidgets('grid interval change persists and updates timeline snapping', (
+    tester,
+  ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await buildTestContainer(tester);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
@@ -461,17 +512,18 @@ void main() {
     // Back on the day view the new interval drives quick-create sizing.
     appRouter.go('/day');
     await settle(tester);
-    container.read(date_provider.selectedDateProvider.notifier).state =
-        viewDay;
+    container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
     await settle(tester);
 
     await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
     await settle(tester);
     await tester.enterText(
-        find.descendant(
-            of: find.byType(TaskQuickCreate),
-            matching: find.byType(TextField)),
-        'Quarter');
+      find.descendant(
+        of: find.byType(TaskQuickCreate),
+        matching: find.byType(TextField),
+      ),
+      'Quarter',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 

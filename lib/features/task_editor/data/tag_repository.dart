@@ -39,10 +39,34 @@ class TagRepository {
       await _dao.updateTag(restored);
       return _fromRow(restored);
     }
+    final sameId = await _dao.getTagById(effective.id);
+    if (sameId != null) {
+      if (sameId.deletedAt == null && sameId.name != effective.name) {
+        throw StateError(
+          'Tag ID ${effective.id} is already named "${sameId.name}". '
+          'Rename or delete that tag before recreating "${effective.name}".',
+        );
+      }
+      if (sameId.deletedAt != null) {
+        final restored = sameId.copyWith(
+          name: effective.name,
+          updatedAt: now,
+          deletedAt: const Value(null),
+          syncStatus: 1,
+          revision: sameId.revision + 1,
+        );
+        await _dao.updateTag(restored);
+        return _fromRow(restored);
+      }
+    }
     await _dao.insertTag(_toCompanion(effective));
-    // insertOrIgnore: if a tag with this name already exists, return it.
-    final inserted = await _dao.getTagByName(effective.name);
-    return inserted == null ? effective : _fromRow(inserted);
+    final inserted = await _dao.getTagById(effective.id);
+    if (inserted == null || inserted.name != effective.name) {
+      throw StateError(
+        'Tag "${effective.name}" could not be persisted because its ID is in use.',
+      );
+    }
+    return _fromRow(inserted);
   }
 
   /// Finds or creates the tag with [name] and returns its id.
@@ -58,6 +82,12 @@ class TagRepository {
     final deterministicId = generateDeterministicUuid('tag:$trimmed');
     final deterministic = await _dao.getTagById(deterministicId);
     if (deterministic != null) {
+      if (deterministic.deletedAt == null && deterministic.name != trimmed) {
+        throw StateError(
+          'Tag "$deterministicId" is currently named "${deterministic.name}". '
+          'Rename or delete it before recreating "$trimmed".',
+        );
+      }
       if (deterministic.deletedAt != null) {
         final now = DateTime.now();
         await _dao.updateTag(

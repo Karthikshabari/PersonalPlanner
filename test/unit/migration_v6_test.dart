@@ -85,6 +85,69 @@ void main() {
     },
   );
 
+  test('v6 migration records orphan child history before cleanup', () async {
+    final directory = Directory.systemTemp.createTempSync(
+      'planner_migration_v6_orphans',
+    );
+    final file = File('${directory.path}/orphans.sqlite3');
+    try {
+      MigrationSchema.create(file, 5);
+      final legacy = sqlite3.open(file.path);
+      legacy.execute('''
+        INSERT INTO subtasks
+          (id, task_id, title, created_at, updated_at)
+        VALUES ('orphan-subtask', 'missing-task', 'Keep this title',
+          '${MigrationSchema.timestamp}', '${MigrationSchema.timestamp}')
+      ''');
+      legacy.execute('''
+        INSERT INTO timer_sessions
+          (id, task_id, started_at, ended_at, duration_sec, created_at, updated_at)
+        VALUES ('orphan-timer', 'missing-task', '${MigrationSchema.timestamp}',
+          '${MigrationSchema.timestamp}', 90, '${MigrationSchema.timestamp}',
+          '${MigrationSchema.timestamp}')
+      ''');
+      legacy.execute('''
+        INSERT INTO task_tags (task_id, tag_id, created_at)
+        VALUES ('missing-task', 'missing-tag', '${MigrationSchema.timestamp}')
+      ''');
+      legacy.dispose();
+
+      final db = AppDatabase(NativeDatabase(file));
+      try {
+        final recovered = await db
+            .customSelect(
+              'SELECT table_name, row_id, payload, reason '
+              'FROM planner_migration_recovery ORDER BY table_name, row_id',
+            )
+            .get();
+        expect(recovered, hasLength(3));
+        expect(
+          recovered.map((row) => row.read<String>('row_id')),
+          containsAll(<String>[
+            'missing-task:missing-tag',
+            'orphan-subtask',
+            'orphan-timer',
+          ]),
+        );
+        expect(
+          recovered.map((row) => row.read<String>('payload')),
+          everyElement(isNotEmpty),
+        );
+        expect(
+          recovered.map((row) => row.read<String>('reason')),
+          everyElement(contains('Missing')),
+        );
+        expect(await db.select(db.subtasks).get(), hasLength(1));
+        expect(await db.select(db.timerSessions).get(), hasLength(1));
+        expect(await db.select(db.taskTags).get(), hasLength(1));
+      } finally {
+        await db.close();
+      }
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
   test('v6 creates and enforces foreign keys, checks, partial indexes, and FTS', () async {
     final db = AppDatabase(NativeDatabase.memory());
     try {

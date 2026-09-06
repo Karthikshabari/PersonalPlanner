@@ -6,8 +6,8 @@ import '../../../core/models/enums/task_status.dart';
 import '../../../core/utils/date_utils.dart';
 
 /// Computes per-day aggregates and maintains the `daily_stats_cache` table
-/// (planner.md Chunk 5 #9). Triggered when a daily review is saved; Chunk 7's
-/// analytics screen will trigger it on open through [computeAndCache].
+/// (planner.md Chunk 5 #9). Review save currently refreshes the cache; live
+/// review and analytics screens compute from source rows.
 class DailyStatsService {
   final AppDatabase _db;
 
@@ -62,6 +62,14 @@ class DailyStatsService {
     final categories = await (_db.select(_db.categories)).get();
     final focusIds = {for (final c in categories) c.id: c.isFocus};
     final now = DateTime.now();
+    final tasksStartingInRange = tasks
+        .where(
+          (task) =>
+              task.startTime != null &&
+              !task.startTime!.isBefore(startInclusive) &&
+              task.startTime!.isBefore(endExclusive),
+        )
+        .toList(growable: false);
 
     final sessions =
         await (_db.select(_db.timerSessions)..where(
@@ -76,12 +84,19 @@ class DailyStatsService {
                   ),
             ))
             .get();
-    final allCompletedSessions =
-        await (_db.select(_db.timerSessions)..where(
-              (session) =>
-                  session.deletedAt.isNull() & session.endedAt.isNotNull(),
-            ))
-            .get();
+    // Manual adjustments are applied only to tasks that start in the
+    // requested range. Restrict this lookup to those task IDs instead of
+    // rereading every completed session in the database for each day/bucket.
+    final taskIds = tasksStartingInRange.map((task) => task.id).toList();
+    final allCompletedSessions = taskIds.isEmpty
+        ? const <TimerSessionRow>[]
+        : await (_db.select(_db.timerSessions)..where(
+                (session) =>
+                    session.deletedAt.isNull() &
+                    session.endedAt.isNotNull() &
+                    session.taskId.isIn(taskIds),
+              ))
+              .get();
     final totalSessionSecondsByTask = <String, int>{};
     for (final session in allCompletedSessions) {
       totalSessionSecondsByTask.update(
@@ -90,15 +105,6 @@ class DailyStatsService {
         ifAbsent: () => session.durationSec,
       );
     }
-    final tasksStartingInRange = tasks
-        .where(
-          (task) =>
-              task.startTime != null &&
-              !task.startTime!.isBefore(startInclusive) &&
-              task.startTime!.isBefore(endExclusive),
-        )
-        .toList(growable: false);
-
     var plannedMin = 0;
     var actualMin = 0;
     var focusMin = 0;
@@ -155,7 +161,7 @@ class DailyStatsService {
     // intersection with this range; manual task adjustments remain attached
     // to the task's local start date. Sessions whose task was deleted or is
     // otherwise unavailable still contribute their measured duration.
-    var trackedSeconds = 0;
+    final trackedSecondsByDay = <String, int>{};
     var manualAdjustmentMin = 0;
     for (final session in sessions) {
       final endedAt = session.endedAt!;
@@ -166,7 +172,28 @@ class DailyStatsService {
           ? endedAt
           : endExclusive;
       if (!overlapEnd.isAfter(overlapStart)) continue;
-      trackedSeconds += overlapEnd.difference(overlapStart).inSeconds;
+
+      // Attribute and round at the same day boundary used by
+      // computeForDate. This keeps a range total equal to the sum of its day
+      // buckets for sub-minute sessions crossing midnight.
+      var cursor = startOfDay(overlapStart);
+      while (cursor.isBefore(overlapEnd)) {
+        final dayEnd = addDays(cursor, 1);
+        final segmentStart = overlapStart.isAfter(cursor)
+            ? overlapStart
+            : cursor;
+        final segmentEnd = overlapEnd.isBefore(dayEnd) ? overlapEnd : dayEnd;
+        if (segmentEnd.isAfter(segmentStart)) {
+          final day = isoDateString(cursor);
+          trackedSecondsByDay.update(
+            day,
+            (seconds) =>
+                seconds + segmentEnd.difference(segmentStart).inSeconds,
+            ifAbsent: () => segmentEnd.difference(segmentStart).inSeconds,
+          );
+        }
+        cursor = dayEnd;
+      }
     }
     final adjustedTaskIds = <String>{};
     for (final task in tasksStartingInRange) {
@@ -185,10 +212,13 @@ class DailyStatsService {
         manualAdjustmentMin += adjustment;
       }
     }
-    actualMin =
-        (trackedSeconds ~/ Duration.secondsPerMinute + manualAdjustmentMin)
-            .clamp(0, 1 << 31)
-            .toInt();
+    final trackedMinutes = trackedSecondsByDay.values.fold<int>(
+      0,
+      (total, seconds) => total + seconds ~/ Duration.secondsPerMinute,
+    );
+    actualMin = (trackedMinutes + manualAdjustmentMin)
+        .clamp(0, 1 << 31)
+        .toInt();
 
     final review = await _db.reviewDao.getDailyReviewByDate(
       isoDateString(startInclusive),

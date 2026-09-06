@@ -34,6 +34,19 @@ void main() {
     await teardownApp(tester, container);
   });
 
+  testWidgets('editor shows a neutral prompt when no task is selected', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    await pumpDesktop(tester, container);
+    expect(find.text('Select a task to edit'), findsOneWidget);
+    expect(
+      find.text('The selected task is no longer available.'),
+      findsNothing,
+    );
+    await teardownApp(tester, container);
+  });
+
   testWidgets('current time indicator is visible on today', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);

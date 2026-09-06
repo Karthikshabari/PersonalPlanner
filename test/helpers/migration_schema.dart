@@ -2,18 +2,17 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 
-/// Exact hand-written snapshots of the schemas shipped by v1 through v5.
+/// Exact hand-written snapshots of the schemas shipped by v1 through v6.
 ///
-/// These deliberately omit the v6 foreign keys, checks, task-tag tombstone
-/// columns, and partial indexes.  The migration tests use these snapshots so
-/// that a current generated schema cannot accidentally test only a fresh
-/// install.
+/// Version 6 is represented separately from the current generated schema: it
+/// has the v6 task/tag/stat columns and FTS objects, but deliberately lacks the
+/// v7 sync tables and server-version columns.
 class MigrationSchema {
   static const timestamp = '2026-01-01T00:00:00.000Z';
 
   static void create(File file, int version) {
-    if (version < 1 || version > 5) {
-      throw ArgumentError.value(version, 'version', 'must be between 1 and 5');
+    if (version < 1 || version > 6) {
+      throw ArgumentError.value(version, 'version', 'must be between 1 and 6');
     }
     final db = sqlite3.open(file.path);
     try {
@@ -23,8 +22,10 @@ class MigrationSchema {
       if (version >= 3) _createV3(db);
       if (version >= 4) _createV4(db);
       if (version >= 5) _createV5(db);
+      if (version >= 6) _createV6(db);
       db.execute('PRAGMA user_version = $version');
       _seed(db, version);
+      if (version >= 6) _createV6Fts(db);
     } finally {
       db.dispose();
     }
@@ -225,6 +226,54 @@ class MigrationSchema {
         revision INTEGER NOT NULL DEFAULT 1
       )
     ''');
+  }
+
+  static void _createV6(Database db) {
+    db.execute(
+      'ALTER TABLE tasks ADD COLUMN manual_duration_adjustment_min INTEGER NOT NULL DEFAULT 0',
+    );
+    db.execute(
+      'ALTER TABLE task_tags ADD COLUMN updated_at TEXT NOT NULL DEFAULT "$timestamp"',
+    );
+    db.execute('ALTER TABLE task_tags ADD COLUMN deleted_at TEXT NULL');
+    db.execute(
+      'ALTER TABLE task_tags ADD COLUMN revision INTEGER NOT NULL DEFAULT 1',
+    );
+    db.execute(
+      'ALTER TABLE daily_stats_cache ADD COLUMN planned_tasks INTEGER NOT NULL DEFAULT 0',
+    );
+    db.execute(
+      'ALTER TABLE daily_stats_cache ADD COLUMN in_progress_tasks INTEGER NOT NULL DEFAULT 0',
+    );
+  }
+
+  static void _createV6Fts(Database db) {
+    db.execute('''
+      CREATE VIRTUAL TABLE tasks_fts USING fts5(
+        title, description, notes, content='tasks', content_rowid='rowid'
+      )
+    ''');
+    db.execute('''
+      CREATE TRIGGER tasks_fts_insert AFTER INSERT ON tasks BEGIN
+        INSERT INTO tasks_fts(rowid, title, description, notes)
+        VALUES (new.rowid, new.title, new.description, new.notes);
+      END
+    ''');
+    db.execute('''
+      CREATE TRIGGER tasks_fts_update AFTER UPDATE ON tasks BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description, notes)
+        VALUES ('delete', old.rowid, old.title, old.description, old.notes);
+        INSERT INTO tasks_fts(rowid, title, description, notes)
+        VALUES (new.rowid, new.title, new.description, new.notes);
+      END
+    ''');
+    db.execute('''
+      CREATE TRIGGER tasks_fts_delete AFTER DELETE ON tasks BEGIN
+        INSERT INTO tasks_fts(tasks_fts, rowid, title, description, notes)
+        VALUES ('delete', old.rowid, old.title, old.description, old.notes);
+      END
+    ''');
+    db.execute("INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild')");
   }
 
   static void _seed(Database db, int version) {

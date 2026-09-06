@@ -13,7 +13,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
+import '../../../../core/utils/uuid.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/app_surface.dart';
@@ -97,8 +99,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
   double get _pixelsPerMinute => AppConstants.pixelsPerMinute;
 
+  PlannerDayAxis get _dayAxis => PlannerDayAxis(ref.read(selectedDateProvider));
+
   double get _totalHeight =>
-      AppConstants.hourRowHeight * Duration.hoursPerDay + AppSpacing.huge;
+      _dayAxis.durationMinutes * _pixelsPerMinute + AppSpacing.huge;
 
   int get _gridMinutes =>
       ref.watch(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
@@ -116,7 +120,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final selectedDate = ref.read(selectedDateProvider);
     final now = DateTime.now();
     final anchorMinutes = isSameDay(selectedDate, now)
-        ? (minutesSinceMidnight(now) - 90).toDouble()
+        ? (_dayAxis.elapsedMinutes(now) - 90).toDouble()
         : (7 * Duration.minutesPerHour).toDouble();
     return _anchorOffset(anchorMinutes).clamp(0.0, _maxScrollExtent());
   }
@@ -145,7 +149,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     if (!_scrollController.hasClients || !isSameDay(selectedDate, now)) {
       return;
     }
-    _scrollToMinutes(minutesSinceMidnight(now) - 90);
+    _scrollToMinutes((_dayAxis.elapsedMinutes(now) - 90).round());
   }
 
   void _scrollToMinutes(int minutes) {
@@ -168,35 +172,25 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final slot = _quickCreateSlot;
     if (slot == null) return;
     setState(() => _quickCreateSlot = null);
-    final day = ref.read(selectedDateProvider);
-    final dayLocal = PlannerTimeZone.toPlannerLocal(day);
-    final start = PlannerTimeZone.calendarDate(
-      dayLocal.year,
-      dayLocal.month,
-      dayLocal.day,
-      minute: slot,
-    );
+    final start = _dayAxis.instantAt(slot.toDouble());
     final end = start.add(Duration(minutes: _gridMinutes));
     final now = DateTime.now();
+    final task = Task(
+      id: generateUuidV7(),
+      title: title,
+      startTime: start,
+      endTime: end,
+      estimatedDurationMin: _gridMinutes,
+      status: TaskStatus.planned,
+      isInbox: false,
+      createdAt: now,
+      updatedAt: now,
+    );
     try {
-      await ref
-          .read(undoStackProvider.notifier)
-          .execute(
-            CreateTaskCommand(
-              ref.read(taskRepositoryProvider),
-              Task(
-                id: '',
-                title: title,
-                startTime: start,
-                endTime: end,
-                estimatedDurationMin: _gridMinutes,
-                status: TaskStatus.planned,
-                isInbox: false,
-                createdAt: now,
-                updatedAt: now,
-              ),
-            ),
-          );
+      await _resolveConflictsAndCommit(
+        CreateTaskCommand(ref.read(taskRepositoryProvider), task),
+        task,
+      );
       if (mounted) _scrollToMinutes(slot);
     } catch (error) {
       if (mounted) showAppToast(context, friendlyErrorMessage(error));
@@ -208,9 +202,14 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final date = ref.read(selectedDateProvider);
     final now = DateTime.now();
     final raw = isSameDay(date, now)
-        ? minutesSinceMidnight(now)
+        ? _dayAxis.elapsedMinutes(now).round()
         : 9 * Duration.minutesPerHour;
-    setState(() => _quickCreateSlot = snapSlotStart(raw, grid));
+    setState(
+      () => _quickCreateSlot = snapSlotStart(
+        raw,
+        grid,
+      ).clamp(0, _dayAxis.durationMinutes - grid),
+    );
   }
 
   void _handleDoubleTapDown(TapDownDetails details) {
@@ -220,14 +219,19 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     // position is the local y plus the current scroll offset.
     final contentY = details.localPosition.dy + _scrollController.offset;
     final rawMinutes = contentY / _pixelsPerMinute;
-    final snapped = snapSlotStart(rawMinutes.round(), _gridMinutes);
+    final snapped = snapSlotStart(
+      rawMinutes.round(),
+      _gridMinutes,
+    ).clamp(0, _dayAxis.durationMinutes - _gridMinutes);
     final slotEnd = snapped + _gridMinutes;
     for (final task in tasks) {
       final visibleTask = _clipTaskToSelectedDay(task);
       final s = visibleTask.startTime == null
-          ? 0
-          : minutesSinceMidnight(visibleTask.startTime!);
-      final e = s + (visibleTask.scheduledDuration?.inMinutes ?? _gridMinutes);
+          ? 0.0
+          : _dayAxis.elapsedMinutes(visibleTask.startTime!);
+      final e = visibleTask.endTime == null
+          ? s + _gridMinutes
+          : _dayAxis.elapsedMinutes(visibleTask.endTime!);
       if (snapped < e && slotEnd > s) return;
     }
     setState(() => _quickCreateSlot = snapped);
@@ -242,11 +246,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     setState(() {
       _drag = _DragPreview(
         task: task,
-        origStartMinutes:
-            isSameDay(task.startTime!, ref.read(selectedDateProvider))
-            ? minutesSinceMidnight(task.startTime!)
-            : 0,
-        durationMinutes: task.scheduledDuration?.inMinutes ?? _gridMinutes,
+        // Keep the original interval in the selected day's coordinate
+        // system. A continuation segment therefore starts before 00:00
+        // instead of being mistaken for a midnight-origin task.
+        origStartMinutes: _minutesFromSelectedDay(task.startTime!),
+        durationMinutes: _elapsedDurationMinutes(task),
         deltaPx: 0,
       );
     });
@@ -266,20 +270,19 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final grid = _gridMinutes;
     final deltaMinutes = (drag.deltaPx / _pixelsPerMinute).round();
     var newStartMin = snapSlotStart(drag.origStartMinutes + deltaMinutes, grid);
-    final latestStart = drag.durationMinutes < minutesPerDay
-        ? minutesPerDay - drag.durationMinutes
-        : minutesPerDay - grid;
-    newStartMin = newStartMin.clamp(0, latestStart > 0 ? latestStart : 0);
+    final earliestStart = drag.durationMinutes >= _dayAxis.durationMinutes
+        ? -(drag.durationMinutes - grid)
+        : 0;
+    final latestStart = drag.durationMinutes < _dayAxis.durationMinutes
+        ? _dayAxis.durationMinutes - drag.durationMinutes
+        : _dayAxis.durationMinutes - grid;
+    newStartMin = newStartMin.clamp(
+      earliestStart,
+      latestStart > earliestStart ? latestStart : earliestStart,
+    );
     if (newStartMin == drag.origStartMinutes) return; // no effective change
 
-    final day = ref.read(selectedDateProvider);
-    final dayLocal = PlannerTimeZone.toPlannerLocal(day);
-    final newStart = PlannerTimeZone.calendarDate(
-      dayLocal.year,
-      dayLocal.month,
-      dayLocal.day,
-      minute: newStartMin,
-    );
+    final newStart = _dayAxis.instantAt(newStartMin.toDouble());
     final newEnd = newStart.add(Duration(minutes: drag.durationMinutes));
     final primary = MoveTaskCommand(
       repository: ref.read(taskRepositoryProvider),
@@ -308,8 +311,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     setState(() {
       _resize = _ResizePreview(
         task: task,
-        origStartMinutes: minutesSinceMidnight(task.startTime!),
-        origDurationMinutes: task.scheduledDuration?.inMinutes ?? _gridMinutes,
+        origStartMinutes: _minutesFromSelectedDay(task.startTime!),
+        origDurationMinutes: _elapsedDurationMinutes(task),
         deltaPx: 0,
       );
     });
@@ -345,6 +348,20 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     await _resolveConflictsAndCommit(primary, hypothetical);
   }
 
+  void _resizeBySemantic(Task task, int deltaMinutes) {
+    if (task.startTime == null || task.endTime == null) return;
+    final newEnd = task.endTime!.add(Duration(minutes: deltaMinutes));
+    if (!newEnd.isAfter(task.startTime!)) return;
+    final primary = ResizeTaskCommand(
+      repository: ref.read(taskRepositoryProvider),
+      original: task,
+      newEnd: newEnd,
+    );
+    unawaited(
+      _resolveConflictsAndCommit(primary, task.copyWith(endTime: newEnd)),
+    );
+  }
+
   void _cancelDrag() {
     if (_drag == null) return;
     setState(() => _drag = null);
@@ -373,7 +390,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     SchedulingCommand primary,
     Task hypothetical,
   ) async {
-    final tasks = _currentTasks();
+    final tasks = hypothetical.startTime != null && hypothetical.endTime != null
+        ? await _loadSchedulingCandidates(hypothetical)
+        : _currentTasks();
     final conflicts = ConflictDetector.detect(hypothetical, tasks);
     final historyNotifier = ref.read(undoStackProvider.notifier);
 
@@ -435,6 +454,21 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         }
         return true;
     }
+  }
+
+  Future<List<Task>> _loadSchedulingCandidates(Task hypothetical) {
+    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(
+      ref.read(selectedDateProvider),
+    );
+    final start = hypothetical.startTime!.isBefore(dayStart)
+        ? hypothetical.startTime!
+        : dayStart;
+    final end = hypothetical.endTime!.isAfter(dayEnd)
+        ? hypothetical.endTime!
+        : dayEnd;
+    return ref
+        .read(taskRepositoryProvider)
+        .getScheduledTasksBetween(start, end);
   }
 
   List<SchedulingCommand> _shiftCommands(
@@ -673,10 +707,14 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                 (_drag!.origStartMinutes * _pixelsPerMinute +
                                         _drag!.deltaPx)
                                     .clamp(
-                                      0.0,
+                                      -(_drag!.durationMinutes - _gridMinutes)
+                                              .clamp(
+                                                0,
+                                                _dayAxis.durationMinutes,
+                                              ) *
+                                          _pixelsPerMinute,
                                       _totalHeight -
-                                          _drag!.durationMinutes *
-                                              _pixelsPerMinute,
+                                          _gridMinutes * _pixelsPerMinute,
                                     ),
                             heightPx: _drag!.durationMinutes * _pixelsPerMinute,
                             left: AppConstants.hourLabelWidth + 8,
@@ -687,6 +725,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                         if (showNowLine)
                           CurrentTimeIndicator(
                             pixelsPerMinute: _pixelsPerMinute,
+                            day: ref.read(selectedDateProvider),
                           ),
                         if (_quickCreateSlot != null)
                           TaskQuickCreate(
@@ -726,19 +765,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     );
     var minutes = (contentY / _pixelsPerMinute).round();
     minutes = ((minutes / grid).round()) * grid;
-    minutes = minutes.clamp(0, Duration.minutesPerDay - grid);
+    minutes = minutes.clamp(0, _dayAxis.durationMinutes - grid);
 
     final date = ref.read(selectedDateProvider);
-    final dateLocal = PlannerTimeZone.toPlannerLocal(date);
-    final start = snapToGrid(
-      PlannerTimeZone.calendarDate(
-        dateLocal.year,
-        dateLocal.month,
-        dateLocal.day,
-        minute: minutes,
-      ),
-      grid,
-    );
+    final start = _dayAxis.instantAt(minutes.toDouble());
     if (!isSameDay(start, date)) return;
     final end = start.add(Duration(minutes: grid));
 
@@ -799,51 +829,59 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       color: tokens.textMuted,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
+    final markers = _dayAxis.hourMarkers;
     return Column(
       children: [
-        for (var hour = 0; hour < Duration.hoursPerDay; hour++)
-          SizedBox(
-            height: AppConstants.hourRowHeight,
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 0,
-                  bottom: 0,
-                  left: AppConstants.hourLabelWidth - 1,
-                  child: VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: tokens.outline.withValues(alpha: 0.34),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: AppConstants.hourLabelWidth,
-                  right: 0,
-                  child: Divider(height: 1, thickness: 1, color: lineColor),
-                ),
-                // Minor grid lines when the interval is finer than one hour.
-                for (var m = gridMinutes; m < 60; m += gridMinutes)
-                  Positioned(
-                    top: AppConstants.hourRowHeight * m / 60,
-                    left: AppConstants.hourLabelWidth,
-                    right: 0,
-                    child: Divider(
-                      height: 1,
-                      thickness: 0.5,
-                      color: lineColor.withValues(alpha: 0.42),
+        for (var index = 0; index < markers.length - 1; index++)
+          Builder(
+            builder: (context) {
+              final marker = markers[index];
+              final rowMinutes =
+                  markers[index + 1].elapsedMinutes - marker.elapsedMinutes;
+              return SizedBox(
+                height: rowMinutes * _pixelsPerMinute,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      bottom: 0,
+                      left: AppConstants.hourLabelWidth - 1,
+                      child: VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: tokens.outline.withValues(alpha: 0.34),
+                      ),
                     ),
-                  ),
-                Positioned(
-                  top: 2,
-                  left: AppSpacing.sm,
-                  child: Text(
-                    '${hour.toString().padLeft(2, '0')}:00',
-                    style: labelStyle,
-                  ),
+                    Positioned(
+                      top: 0,
+                      left: AppConstants.hourLabelWidth,
+                      right: 0,
+                      child: Divider(height: 1, thickness: 1, color: lineColor),
+                    ),
+                    for (
+                      var m = gridMinutes;
+                      m < 60 && m < rowMinutes;
+                      m += gridMinutes
+                    )
+                      Positioned(
+                        top: rowMinutes * _pixelsPerMinute * m / 60,
+                        left: AppConstants.hourLabelWidth,
+                        right: 0,
+                        child: Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: lineColor.withValues(alpha: 0.42),
+                        ),
+                      ),
+                    Positioned(
+                      top: 2,
+                      left: AppSpacing.sm,
+                      child: Text(marker.label, style: labelStyle),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
       ],
     );
@@ -870,22 +908,32 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           );
     final displayTask = _clipTaskToSelectedDay(previewTask);
     final startMinutes = displayTask.startTime == null
-        ? 0
-        : minutesSinceMidnight(displayTask.startTime!);
+        ? 0.0
+        : _dayAxis.elapsedMinutes(displayTask.startTime!);
     final durationMinutes =
-        (displayTask.scheduledDuration?.inMinutes.toDouble() ??
-        displayTask.estimatedDurationMin?.toDouble() ??
-        AppConstants.defaultGridMinutes.toDouble());
+        displayTask.startTime == null || displayTask.endTime == null
+        ? displayTask.estimatedDurationMin?.toDouble() ??
+              AppConstants.defaultGridMinutes.toDouble()
+        : (_dayAxis.elapsedMinutes(displayTask.endTime!) - startMinutes)
+              .clamp(0, _dayAxis.durationMinutes)
+              .toDouble();
     final height = (durationMinutes * _pixelsPerMinute).clamp(
       1.0,
       _totalHeight - startMinutes * _pixelsPerMinute,
     );
-    final renderedHeight = ResizableHandle.isTouchPlatform && selected
-        ? height.toDouble().clamp(
-            ResizableHandle.touchTargetHeight,
-            double.infinity,
-          )
-        : height.toDouble();
+    final visualHeight = height.toDouble();
+    final renderedHeight = ResizableHandle.isTouchPlatform
+        ? visualHeight
+              .clamp(ResizableHandle.touchTargetHeight, double.infinity)
+              .toDouble()
+        : visualHeight;
+    final outerTop = ResizableHandle.isTouchPlatform
+        ? (startMinutes * _pixelsPerMinute -
+                  (renderedHeight - visualHeight) / 2)
+              .clamp(0.0, double.infinity)
+              .toDouble()
+        : startMinutes * _pixelsPerMinute;
+    final visualTop = startMinutes * _pixelsPerMinute - outerTop;
     final leftOffset = overlapIndex * AppConstants.overlapOffsetPerIndex;
 
     final block = Stack(
@@ -911,16 +959,47 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             right: 0,
             height: ResizableHandle.isTouchPlatform
                 ? ResizableHandle.touchTargetHeight
+                      .clamp(12, visualHeight)
+                      .toDouble()
                 : AppConstants.resizeHandleHeight,
             child: ResizableHandle(
               onResizeStart: () => _startResize(task),
               onResizeUpdate: _updateResize,
               onResizeEnd: _endResize,
               onResizeCancel: _cancelResize,
+              onIncrease: () => _resizeBySemantic(task, _gridMinutes),
+              onDecrease: () => _resizeBySemantic(task, -_gridMinutes),
             ),
           ),
       ],
     );
+
+    void selectTask() {
+      ref.read(selectedTaskIdProvider.notifier).state = task.id;
+      widget.onTaskTap?.call(task);
+    }
+
+    final dragChild = ResizableHandle.isTouchPlatform
+        ? Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: selectTask,
+                  child: const SizedBox.expand(),
+                ),
+              ),
+              Positioned(
+                top: visualTop,
+                left: 0,
+                right: 0,
+                height: visualHeight,
+                child: block,
+              ),
+            ],
+          )
+        : block;
 
     final interactiveBlock = IgnorePointer(
       ignoring: removing,
@@ -931,13 +1010,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         onDragCancel: _cancelDrag,
         onContextMenuRequested: (position) =>
             showTaskContextMenu(context, ref, task, position),
-        child: dimmed ? Opacity(opacity: 0.35, child: block) : block,
+        child: dimmed ? Opacity(opacity: 0.35, child: dragChild) : dragChild,
       ),
     );
 
     return Positioned(
       key: ValueKey('task-block-${task.id}'),
-      top: startMinutes * _pixelsPerMinute + 1,
+      top: outerTop + 1,
       left: AppConstants.hourLabelWidth + 8 + leftOffset,
       right: AppSpacing.md,
       height: renderedHeight,
@@ -964,6 +1043,31 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final clippedEnd = end.isAfter(dayEnd) ? dayEnd : end;
     if (clippedStart == start && clippedEnd == end) return task;
     return task.copyWith(startTime: clippedStart, endTime: clippedEnd);
+  }
+
+  int _minutesFromSelectedDay(DateTime instant) {
+    final selected = PlannerTimeZone.toPlannerLocal(
+      ref.read(selectedDateProvider),
+    );
+    final local = PlannerTimeZone.toPlannerLocal(instant);
+    final selectedDate = DateTime.utc(
+      selected.year,
+      selected.month,
+      selected.day,
+    );
+    final taskDate = DateTime.utc(local.year, local.month, local.day);
+    final dayDelta = taskDate.difference(selectedDate).inDays;
+    if (dayDelta == 0) return _dayAxis.elapsedMinutes(instant).round();
+    return dayDelta * minutesPerDay +
+        local.hour * Duration.minutesPerHour +
+        local.minute;
+  }
+
+  int _elapsedDurationMinutes(Task task) {
+    if (task.startTime == null || task.endTime == null) {
+      return task.scheduledDuration?.inMinutes ?? _gridMinutes;
+    }
+    return task.endTime!.difference(task.startTime!).inMinutes;
   }
 }
 

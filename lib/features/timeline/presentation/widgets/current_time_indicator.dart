@@ -3,13 +3,18 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme_tokens.dart';
-import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 
 class CurrentTimeIndicator extends StatefulWidget {
   final double pixelsPerMinute;
+  final DateTime day;
 
-  const CurrentTimeIndicator({super.key, required this.pixelsPerMinute});
+  const CurrentTimeIndicator({
+    super.key,
+    required this.pixelsPerMinute,
+    required this.day,
+  });
 
   @override
   State<CurrentTimeIndicator> createState() => _CurrentTimeIndicatorState();
@@ -37,7 +42,9 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final local = PlannerTimeZone.toPlannerLocal(_now);
-    final top = minutesSinceMidnight(_now) * widget.pixelsPerMinute;
+    final top =
+        PlannerDayAxis(widget.day).elapsedMinutes(_now) *
+        widget.pixelsPerMinute;
     return Positioned(
       left: 0,
       right: 0,

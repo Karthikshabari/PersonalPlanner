@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -24,6 +23,7 @@ import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../providers/notification_settings_providers.dart';
 import '../../data/backup_service.dart';
+import '../../data/backup_input.dart';
 import '../../../task_editor/providers/subtask_providers.dart';
 import '../../../task_editor/providers/tag_providers.dart';
 import '../../../templates/providers/template_providers.dart';
@@ -444,17 +444,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     });
     try {
       final source = utf8.decode(
-        await selected.readAsBytes(),
+        await BackupInputReader.read(selected),
         allowMalformed: false,
       );
       final service = BackupService(ref.read(appDatabaseProvider));
       if (replace) {
         final preImport = await service.exportJson();
         final directory = await getApplicationDocumentsDirectory();
-        final recovery = File(
-          '${directory.path}/personal_planner_pre_import_backup.json',
+        final recovery = await BackupRecoveryWriter.write(
+          directoryPath: directory.path,
+          contents: preImport,
         );
-        await recovery.writeAsString(preImport);
         if (!mounted) return;
         final confirmed = await showConfirmDialog(
           context,
@@ -462,7 +462,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           message: 'All current local planner data will be replaced. A recovery backup was saved first.',
           confirmLabel: 'Replace',
         );
-        if (!confirmed) return;
+        if (!confirmed) {
+          if (mounted) {
+            setState(
+              () => _backupMessage =
+                  'Import cancelled. Recovery backup retained at ${recovery.path}',
+            );
+          }
+          return;
+        }
         await service.replaceFromJson(
           source,
           preImportBackup: preImport,
@@ -470,7 +478,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ownershipConfirmed: ownershipConfirmed,
         );
         _invalidatePortableProviders();
-        if (mounted) setState(() => _backupMessage = 'Backup restored.');
+        if (mounted) {
+          setState(
+            () => _backupMessage =
+                'Backup restored. Recovery copy retained at ${recovery.path}',
+          );
+        }
       } else {
         final result = await service.importJson(
           source,

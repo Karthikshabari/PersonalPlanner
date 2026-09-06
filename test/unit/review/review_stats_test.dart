@@ -417,6 +417,49 @@ void main() {
       },
     );
 
+    test('range actual time rounds each day before summing buckets', () async {
+      final firstDay = DateTime(2026, 8, 12);
+      final secondDay = addDays(firstDay, 1);
+      final task = await tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Subminute overnight work',
+          startTime: firstDay.add(const Duration(hours: 23)),
+          endTime: secondDay.add(const Duration(hours: 1)),
+          createdAt: firstDay,
+          updatedAt: firstDay,
+        ),
+      );
+      await TimerRepository(db).insertSession(
+        TimerSession(
+          id: '',
+          taskId: task.id,
+          startedAt: firstDay.add(
+            const Duration(hours: 23, minutes: 59, seconds: 30),
+          ),
+          endedAt: secondDay.add(const Duration(seconds: 30)),
+          durationSec: 60,
+          createdAt: firstDay,
+          updatedAt: firstDay,
+        ),
+      );
+
+      final firstStats = await statsService.computeForDate(firstDay);
+      final secondStats = await statsService.computeForDate(secondDay);
+      final rangeStats = await statsService.computeRange(
+        firstDay,
+        addDays(secondDay, 1),
+      );
+
+      expect(firstStats.actualDurationMin, 0);
+      expect(secondStats.actualDurationMin, 0);
+      expect(rangeStats.actualDurationMin, 0);
+      expect(
+        firstStats.actualDurationMin + secondStats.actualDurationMin,
+        rangeStats.actualDurationMin,
+      );
+    });
+
     test(
       'completed sessions count even when their task is unscheduled or deleted',
       () async {

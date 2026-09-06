@@ -61,7 +61,7 @@ class TaskRepository {
     }
     _validate(effective);
     await _db.transaction(() async {
-      await _validateHistoryLinks(effective);
+      await _validateHistoryLinks(effective, previous: row);
       await _dao.updateTask(
         _toRow(effective, syncStatus: 1, revision: row.revision + 1),
       );
@@ -78,10 +78,16 @@ class TaskRepository {
     if (row == null || row.deletedAt != null) return;
     final now = DateTime.now();
     await _db.transaction(() async {
+      await _db.timerDao.finalizeActiveForTask(taskId, now);
+      final totalSec = await _db.timerDao.getTotalDurationSecForTask(taskId);
+      final actual = (totalSec ~/ 60 + row.manualDurationAdjustmentMin)
+          .clamp(0, 1 << 31)
+          .toInt();
       await _dao.updateTask(
         row.copyWith(
           deletedAt: Value(now),
           updatedAt: now,
+          actualDurationMin: Value(actual),
           syncStatus: 1,
           revision: row.revision + 1,
         ),
@@ -253,7 +259,20 @@ class TaskRepository {
   /// History links form a single directed successor chain. Check the
   /// complete proposed graph in the same SQLite transaction so self-links,
   /// direct cycles, and longer remote/local cycles cannot be committed.
-  Future<void> _validateHistoryLinks(Task proposed) async {
+  Future<void> _validateHistoryLinks(Task proposed, {TaskRow? previous}) async {
+    // Title/status/schedule edits do not change the relationship graph. Do
+    // not rescan unrelated history for those ordinary mutations; relationship
+    // changes still validate the complete graph in the same transaction.
+    if (previous != null &&
+        previous.rescheduledFromId == proposed.rescheduledFromId &&
+        previous.rescheduledToId == proposed.rescheduledToId) {
+      return;
+    }
+    if (previous == null &&
+        proposed.rescheduledFromId == null &&
+        proposed.rescheduledToId == null) {
+      return;
+    }
     final rows = await (_db.select(_db.tasks)).get();
     final graph = <String, Set<String>>{
       for (final row in rows) row.id: <String>{},
