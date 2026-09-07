@@ -127,6 +127,33 @@ void main() {
       expect(fetched.endTime, inserted.endTime);
       expect(fetched.deletedAt, isNull);
     });
+
+    test('does not overwrite a concurrent schedule edit', () async {
+      final inserted = await repo.insertTask(
+        newTask(
+          'Concurrent move',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
+      final command = MoveTaskCommand(
+        repository: repo,
+        original: inserted,
+        newStart: day.add(const Duration(hours: 12)),
+        newEnd: day.add(const Duration(hours: 13)),
+      );
+      await repo.updateTask(
+        inserted.copyWith(
+          startTime: day.add(const Duration(hours: 10)),
+          endTime: day.add(const Duration(hours: 11)),
+        ),
+      );
+
+      await expectLater(command.execute(), throwsStateError);
+      final current = await repo.getTaskById(inserted.id);
+      expect(current!.startTime, day.add(const Duration(hours: 10)));
+      expect(current.endTime, day.add(const Duration(hours: 11)));
+    });
   });
 
   group('ResizeTaskCommand', () {
@@ -153,6 +180,32 @@ void main() {
       await command.undo();
       fetched = await repo.getTaskById(inserted.id);
       expect(fetched!.endTime, inserted.endTime);
+    });
+
+    test('does not overwrite a concurrent move before resizing', () async {
+      final inserted = await repo.insertTask(
+        newTask(
+          'Concurrent resize',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ),
+      );
+      final command = ResizeTaskCommand(
+        repository: repo,
+        original: inserted,
+        newEnd: day.add(const Duration(hours: 10)),
+      );
+      await repo.updateTask(
+        inserted.copyWith(
+          startTime: day.add(const Duration(hours: 11)),
+          endTime: day.add(const Duration(hours: 12)),
+        ),
+      );
+
+      await expectLater(command.execute(), throwsStateError);
+      final current = await repo.getTaskById(inserted.id);
+      expect(current!.startTime, day.add(const Duration(hours: 11)));
+      expect(current.endTime, day.add(const Duration(hours: 12)));
     });
   });
 

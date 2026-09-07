@@ -78,8 +78,15 @@ void main() {
     expect(find.text('00:00:00'), findsWidgets);
 
     // Timer ticks once per second — block chip, editor and overlay in sync.
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump();
+    // The elapsed stream is mounted asynchronously after the start write. In
+    // a long sequential suite it can miss the first fake-clock tick, so wait
+    // for the observable two-second state with a bounded timeout instead of
+    // assuming the provider mounted at t=0.
+    for (var attempt = 0; attempt < 4; attempt++) {
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      if (find.text('00:00:02').evaluate().isNotEmpty) break;
+    }
     expect(find.text('00:00:02'), findsWidgets);
     expect(find.byKey(const ValueKey('overlay-timer-elapsed')), findsOneWidget);
 

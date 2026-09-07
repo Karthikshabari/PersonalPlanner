@@ -8,6 +8,7 @@ import '../../../../core/models/enums/priority.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/recurring_rule.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -23,10 +24,14 @@ import '../../../timeline/presentation/providers/day_tasks_provider.dart';
 import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../../timeline/presentation/providers/undo_stack_provider.dart';
+import '../../../timeline/domain/conflict_resolver.dart';
+import '../../../timeline/domain/scheduling_conflict_service.dart';
+import '../../../timeline/presentation/widgets/conflict_resolution_dialog.dart';
 import '../../../../core/models/task_template.dart';
 import '../../providers/tag_providers.dart';
 import '../../providers/task_editor_action_provider.dart';
 import '../../domain/task_editor_save_command.dart';
+import '../../domain/task_editor_draft.dart';
 import '../../../timer/presentation/widgets/timer_controls.dart';
 import '../../../timer/providers/timer_providers.dart';
 import '../widgets/category_dropdown.dart';
@@ -201,6 +206,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   }
 
   void _closeImmediately() {
+    // Desktop keeps this panel mounted while the selected task changes. Clear
+    // the draft before clearing selection so reopening the same task cannot
+    // reuse discarded (or already-closed) controller values.
+    _syncFromTask(null, force: true);
     ref.read(selectedTaskIdProvider.notifier).state = null;
     if (MediaQuery.sizeOf(context).width < 900 &&
         Navigator.of(context).canPop()) {
@@ -458,8 +467,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     // Read the current row immediately before writing. The editor keeps the
     // original snapshot from when it opened, so changes made elsewhere can
     // be merged field-by-field instead of silently being overwritten.
-    final latest = await ref.read(taskRepositoryProvider).getTaskById(task.id);
-    if (latest == null || latest.deletedAt != null) {
+    final latestSnapshot = await ref
+        .read(taskRepositoryProvider)
+        .getTaskWithRevision(task.id);
+    final latest = latestSnapshot?.$1;
+    final latestRevision = latestSnapshot?.$2;
+    if (latest == null || latest.deletedAt != null || latestRevision == null) {
       throw StateError('Task ${task.id} is no longer available');
     }
     final original = _originalTask ?? task;
@@ -473,7 +486,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     final actualDirty =
         _actualController.text.trim() !=
         (original.actualDurationMin?.toString() ?? '');
-    final localDraft = task.copyWith(
+    final draft = TaskEditorDraft(
       title: _titleController.text.trim(),
       description: normalizedDescription.isEmpty ? null : normalizedDescription,
       notes: normalizedNotes.isEmpty ? null : normalizedNotes,
@@ -486,65 +499,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       actualDurationMin: actualDirty
           ? (actual ?? task.actualDurationMin)
           : null,
+      actualDurationDirty: actualDirty,
     );
 
-    bool changed<T>(T local, T baseline) => local != baseline;
-    final conflicts = <String>[];
-    void checkConflict<T>(String label, T local, T baseline, T remote) {
-      if (changed(local, baseline) &&
-          changed(remote, baseline) &&
-          local != remote) {
-        conflicts.add(label);
-      }
-    }
-
-    checkConflict('Title', localDraft.title, original.title, latest.title);
-    checkConflict(
-      'Description',
-      localDraft.description,
-      original.description,
-      latest.description,
-    );
-    checkConflict('Notes', localDraft.notes, original.notes, latest.notes);
-    checkConflict(
-      'Category',
-      localDraft.categoryId,
-      original.categoryId,
-      latest.categoryId,
-    );
-    checkConflict(
-      'Priority',
-      localDraft.priority,
-      original.priority,
-      latest.priority,
-    );
-    checkConflict('Status', localDraft.status, original.status, latest.status);
-    checkConflict(
-      'Start time',
-      localDraft.startTime,
-      original.startTime,
-      latest.startTime,
-    );
-    checkConflict(
-      'End time',
-      localDraft.endTime,
-      original.endTime,
-      latest.endTime,
-    );
-    checkConflict(
-      'Estimated duration',
-      localDraft.estimatedDurationMin,
-      original.estimatedDurationMin,
-      latest.estimatedDurationMin,
-    );
-    if (actualDirty) {
-      checkConflict(
-        'Actual duration',
-        actual,
-        original.actualDurationMin,
-        latest.actualDurationMin,
-      );
-    }
+    final conflicts = draft.conflictingFields(original, latest);
     final tagsDirty = !_sameIds(stagedTagIds, originalTagIds);
     if (tagsDirty && !_sameIds(latestTagIds, originalTagIds)) {
       conflicts.add('Tags');
@@ -569,43 +527,82 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       }
     }
 
-    final editedTask = latest.copyWith(
-      title: changed(localDraft.title, original.title)
-          ? localDraft.title
-          : latest.title,
-      description: changed(localDraft.description, original.description)
-          ? localDraft.description
-          : latest.description,
-      notes: changed(localDraft.notes, original.notes)
-          ? localDraft.notes
-          : latest.notes,
-      categoryId: changed(localDraft.categoryId, original.categoryId)
-          ? localDraft.categoryId
-          : latest.categoryId,
-      priority: changed(localDraft.priority, original.priority)
-          ? localDraft.priority
-          : latest.priority,
-      status: changed(localDraft.status, original.status)
-          ? localDraft.status
-          : latest.status,
-      startTime: changed(localDraft.startTime, original.startTime)
-          ? localDraft.startTime
-          : latest.startTime,
-      endTime: changed(localDraft.endTime, original.endTime)
-          ? localDraft.endTime
-          : latest.endTime,
-      estimatedDurationMin:
-          changed(
-            localDraft.estimatedDurationMin,
-            original.estimatedDurationMin,
-          )
-          ? localDraft.estimatedDurationMin
-          : latest.estimatedDurationMin,
-      actualDurationMin: actualDirty
-          ? (actual ?? latest.actualDurationMin)
-          : latest.actualDurationMin,
-    );
+    final editedTask = draft.mergeOnto(original, latest);
     final tagsToSave = tagsDirty ? stagedTagIds : latestTagIds;
+
+    // Scheduling edits use the same fresh full-interval candidate set and
+    // resolution choices as drag, resize, keyboard and Inbox scheduling.
+    // Keep the plan outside the persistence branches so recurrence and
+    // ordinary saves apply the selected shifts inside their transaction.
+    var schedulePlan = const ResolutionPlan();
+    var scheduleCandidates = const <Task>[];
+    final scheduleChanged =
+        editedTask.startTime != latest.startTime ||
+        editedTask.endTime != latest.endTime;
+    if (scheduleChanged &&
+        editedTask.startTime != null &&
+        editedTask.endTime != null) {
+      final repository = ref.read(taskRepositoryProvider);
+      scheduleCandidates = await SchedulingConflictService.loadCandidates(
+        repository,
+        editedTask,
+        anchorDate: viewedDate,
+      );
+      final scheduleConflicts = SchedulingConflictService.conflicts(
+        editedTask,
+        scheduleCandidates,
+      );
+      if (scheduleConflicts.isNotEmpty) {
+        if (!mounted) return;
+        final choice = await showConflictResolutionDialog(
+          context,
+          droppedTask: editedTask,
+          conflicts: scheduleConflicts,
+        );
+        if (choice == null) {
+          if (mounted) setState(() => _saving = false);
+          return;
+        }
+        schedulePlan = SchedulingConflictService.plan(
+          proposed: editedTask,
+          candidates: scheduleCandidates,
+          resolution: choice,
+          maxCascadeDepth: AppConstants.maxCascadeDepth,
+        );
+      }
+    }
+
+    Future<void> applySchedulePlan() async {
+      if (schedulePlan.shifts.isEmpty) return;
+      final repository = ref.read(taskRepositoryProvider);
+      final originals = {
+        for (final candidate in scheduleCandidates) candidate.id: candidate,
+      };
+      for (final shift in schedulePlan.shifts) {
+        final expected = originals[shift.taskId];
+        if (expected == null) continue;
+        final currentSnapshot = await repository.getTaskWithRevision(
+          shift.taskId,
+        );
+        final current = currentSnapshot?.$1;
+        final revision = currentSnapshot?.$2;
+        if (current == null || revision == null) {
+          throw StateError(
+            'A conflicting task was removed while the schedule dialog was open.',
+          );
+        }
+        if (current.startTime != expected.startTime ||
+            current.endTime != expected.endTime) {
+          throw StateError(
+            'A conflicting task changed while the schedule dialog was open; reload and try again.',
+          );
+        }
+        await repository.updateTask(
+          current.copyWith(startTime: shift.newStart, endTime: shift.newEnd),
+          expectedRevision: revision,
+        );
+      }
+    }
 
     if (editedTask.status != latest.status &&
         !latest.status.allowedTransitions.contains(editedTask.status)) {
@@ -630,7 +627,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         description: scope == RecurrenceScope.allFuture
             ? 'Update future recurring tasks'
             : 'Update recurring occurrence',
+        extraTaskIds: schedulePlan.shifts.map((shift) => shift.taskId).toSet(),
         mutation: () async {
+          await applySchedulePlan();
+          int? taskRevisionForWrite = latestRevision;
           final liveRule = await rulesRepo.getRuleById(ruleId);
           if (liveRule == null) {
             throw StateError('Recurring rule $ruleId not found');
@@ -668,6 +668,14 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
               await ref
                   .read(recurrenceServiceProvider)
                   .reconcileMaterializedFuture(updatedRule, boundary);
+              // Reconciliation updates every future materialized instance,
+              // including the one currently open in the editor. Refresh its
+              // revision before the editor's final write so the optimistic
+              // guard does not reject our own atomic series update.
+              final refreshed = await ref
+                  .read(taskRepositoryProvider)
+                  .getTaskWithRevision(task.id);
+              taskRevisionForWrite = refreshed?.$2;
             }
           } else if (wantsDetach) {
             await rulesRepo.addException(ruleId, boundary);
@@ -684,6 +692,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                             ? null
                             : ruleId),
                 ),
+                expectedRevision: taskRevisionForWrite,
               );
           if (actualDirty && actual != null) {
             await ref
@@ -704,6 +713,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       await TaskEditorSaveCommand(
         ref.read(appDatabaseProvider),
       ).execute(() async {
+        await applySchedulePlan();
         final rule = await rulesRepo.createRule(
           RecurringRule(
             id: '',
@@ -726,7 +736,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         );
         await ref
             .read(taskRepositoryProvider)
-            .updateTask(editedTask.copyWith(recurringRuleId: rule.id));
+            .updateTask(
+              editedTask.copyWith(recurringRuleId: rule.id),
+              expectedRevision: latestRevision,
+            );
         if (actualDirty && actual != null) {
           await ref.read(timerServiceProvider).setManualActual(task.id, actual);
         }
@@ -738,9 +751,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       await TaskEditorSaveCommand(
         ref.read(appDatabaseProvider),
       ).execute(() async {
+        await applySchedulePlan();
         await ref
             .read(taskRepositoryProvider)
-            .updateTask(editedTask.copyWith(recurringRuleId: null));
+            .updateTask(
+              editedTask.copyWith(recurringRuleId: null),
+              expectedRevision: latestRevision,
+            );
         if (actualDirty && actual != null) {
           await ref.read(timerServiceProvider).setManualActual(task.id, actual);
         }
@@ -776,11 +793,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Task saved')));
     if (close && mounted) {
-      ref.read(selectedTaskIdProvider.notifier).state = null;
-      if (MediaQuery.sizeOf(context).width < 900 &&
-          Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
+      _closeImmediately();
     }
   }
 

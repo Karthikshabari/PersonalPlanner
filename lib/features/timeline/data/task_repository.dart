@@ -43,12 +43,18 @@ class TaskRepository {
     Task task, {
     bool allowRescheduledTransition = false,
     bool allowStatusTransition = false,
+    int? expectedRevision,
   }) async {
     final now = DateTime.now();
     final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
     final row = await _dao.getTaskById(effective.id);
     if (row == null) {
       throw StateError('Task ${effective.id} not found');
+    }
+    if (expectedRevision != null && row.revision != expectedRevision) {
+      throw StateError(
+        'Task ${effective.id} changed while it was being edited; reload it before saving.',
+      );
     }
     final previousStatus = TaskStatus.fromDb(row.status);
     if (!allowStatusTransition &&
@@ -134,6 +140,13 @@ class TaskRepository {
   Future<Task?> getTaskById(String taskId) async {
     final row = await _dao.getTaskById(taskId);
     return row == null ? null : fromRow(row);
+  }
+
+  /// Reads the domain task and its persistence revision as one snapshot. UI
+  /// editors use the revision for an optimistic compare-and-swap at save time.
+  Future<(Task task, int revision)?> getTaskWithRevision(String taskId) async {
+    final row = await _dao.getTaskById(taskId);
+    return row == null ? null : (fromRow(row), row.revision);
   }
 
   /// Scheduled, active tasks intersecting the local interval [start, end).

@@ -47,6 +47,15 @@ void main() {
 
   Future<void> save(WidgetTester tester) async {
     final button = find.byKey(const ValueKey('save-task-button'));
+    // The editor's task, tags and recurrence providers resolve independently
+    // after the selected-task state changes. Under a loaded test process the
+    // panel can take more than the generic settle window to mount its actions;
+    // wait for the externally visible Save control instead of treating that
+    // normal loading interval as a missing widget.
+    for (var attempt = 0; attempt < 30 && button.evaluate().isEmpty; attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(button, findsOneWidget);
     final editorScrollable = find
         .ancestor(of: button, matching: find.byType(Scrollable))
         .last;
@@ -262,6 +271,12 @@ void main() {
       () => container.read(taskRepositoryProvider).getTaskById(task.id),
     );
     expect(saved!.title, 'Merge target');
+
+    // Reopen the same task: the discarded controller draft must not survive
+    // the desktop panel's unmount-free close path.
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+    expect(tester.widget<TextField>(titleField()).controller!.text, 'Merge target');
     await finish(tester, container);
   });
 }
