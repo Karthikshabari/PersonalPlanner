@@ -327,6 +327,29 @@ void main() {
         expect((await tasks.getTaskById(first.id))!.title, 'Renamed');
       },
     );
+
+    test('expected revision rejects a concurrent task edit', () async {
+      final original = await seedTask(title: 'Original');
+      final persisted = await db.taskDao.getTaskById(original.id);
+      expect(persisted, isNotNull);
+
+      await db.customStatement(
+        'UPDATE tasks SET title = ?, revision = revision + 1 WHERE id = ?',
+        ['Changed elsewhere', original.id],
+      );
+
+      await expectLater(
+        tasks.updateTask(
+          original.copyWith(title: 'Stale editor value'),
+          expectedRevision: persisted!.revision,
+        ),
+        throwsStateError,
+      );
+      expect(
+        (await tasks.getTaskById(original.id))!.title,
+        'Changed elsewhere',
+      );
+    });
   });
 
   group('CategoryRepository CRUD support', () {

@@ -49,6 +49,197 @@ class DailyStatsService {
     return stats;
   }
 
+  /// Computes every day in [start, end) from one bounded source snapshot.
+  /// Analytics uses this to avoid rereading the same tasks, categories and
+  /// timer history once per day while retaining the established day formulas.
+  Future<List<DailyStats>> computeRangeDays(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final startInclusive = startOfDay(start);
+    final endExclusive = startOfDay(end);
+    if (!startInclusive.isBefore(endExclusive)) return const <DailyStats>[];
+
+    final tasks = await _db.taskDao.getTasksBetween(
+      startInclusive,
+      endExclusive,
+    );
+    final categories = await (_db.select(_db.categories)).get();
+    final focusIds = {for (final c in categories) c.id: c.isFocus};
+    final sessions =
+        await (_db.select(_db.timerSessions)..where(
+              (session) =>
+                  session.deletedAt.isNull() &
+                  session.endedAt.isNotNull() &
+                  session.startedAt.isSmallerThanValue(
+                    endExclusive.toUtc().toIso8601String(),
+                  ) &
+                  session.endedAt.isBiggerThanValue(
+                    startInclusive.toUtc().toIso8601String(),
+                  ),
+            ))
+            .get();
+    final tasksStartingInRange = tasks
+        .where(
+          (task) =>
+              task.startTime != null &&
+              !task.startTime!.isBefore(startInclusive) &&
+              task.startTime!.isBefore(endExclusive),
+        )
+        .toList(growable: false);
+    final taskIds = tasksStartingInRange.map((task) => task.id).toList();
+    final allCompletedSessions = taskIds.isEmpty
+        ? const <TimerSessionRow>[]
+        : await (_db.select(_db.timerSessions)..where(
+                (session) =>
+                    session.deletedAt.isNull() &
+                    session.endedAt.isNotNull() &
+                    session.taskId.isIn(taskIds),
+              ))
+              .get();
+    final reviews = await _db.reviewDao.getDailyReviewsBetween(
+      isoDateString(startInclusive),
+      isoDateString(endExclusive),
+    );
+    final reviewByDate = {for (final review in reviews) review.date: review};
+    final now = DateTime.now();
+    final result = <DailyStats>[];
+    for (
+      var day = startInclusive;
+      day.isBefore(endExclusive);
+      day = addDays(day, 1)
+    ) {
+      final dayEnd = addDays(day, 1);
+      final dayTasksStarting = tasksStartingInRange
+          .where(
+            (task) =>
+                task.startTime!.isBefore(dayEnd) &&
+                !task.startTime!.isBefore(day),
+          )
+          .toList(growable: false);
+      var plannedMin = 0;
+      var focusMin = 0;
+      var completed = 0;
+      var planned = 0;
+      var inProgress = 0;
+      var missed = 0;
+      var skipped = 0;
+      var cancelled = 0;
+      var rescheduled = 0;
+      for (final task in tasks) {
+        final startsInDay =
+            task.startTime != null &&
+            !task.startTime!.isBefore(day) &&
+            task.startTime!.isBefore(dayEnd);
+        if (startsInDay) {
+          switch (TaskStatus.fromDb(task.status)) {
+            case TaskStatus.completed:
+              completed++;
+            case TaskStatus.skipped:
+              skipped++;
+            case TaskStatus.cancelled:
+              cancelled++;
+            case TaskStatus.rescheduled:
+              rescheduled++;
+            case TaskStatus.planned:
+              planned++;
+              if (task.endTime != null && task.endTime!.isBefore(now)) {
+                missed++;
+              }
+            case TaskStatus.inProgress:
+              inProgress++;
+              if (task.endTime != null && task.endTime!.isBefore(now)) {
+                missed++;
+              }
+          }
+        }
+        if (task.startTime != null && task.endTime != null) {
+          final overlapStart = task.startTime!.isAfter(day)
+              ? task.startTime!
+              : day;
+          final overlapEnd = task.endTime!.isBefore(dayEnd)
+              ? task.endTime!
+              : dayEnd;
+          if (overlapEnd.isAfter(overlapStart)) {
+            final minutes = overlapEnd.difference(overlapStart).inMinutes;
+            plannedMin += minutes;
+            if (task.categoryId != null && focusIds[task.categoryId!] == true) {
+              focusMin += minutes;
+            }
+          }
+        }
+      }
+
+      final trackedSecondsByDay = <String, int>{};
+      for (final session in sessions) {
+        final overlapStart = session.startedAt.isAfter(day)
+            ? session.startedAt
+            : day;
+        final endedAt = session.endedAt!;
+        final overlapEnd = endedAt.isBefore(dayEnd) ? endedAt : dayEnd;
+        if (overlapEnd.isAfter(overlapStart)) {
+          trackedSecondsByDay[isoDateString(day)] =
+              (trackedSecondsByDay[isoDateString(day)] ?? 0) +
+              overlapEnd.difference(overlapStart).inSeconds;
+        }
+      }
+      final dayTaskIds = dayTasksStarting.map((task) => task.id).toSet();
+      final totalSessionSecondsByTask = <String, int>{};
+      for (final session in allCompletedSessions) {
+        if (!dayTaskIds.contains(session.taskId)) continue;
+        totalSessionSecondsByTask.update(
+          session.taskId,
+          (seconds) => seconds + session.durationSec,
+          ifAbsent: () => session.durationSec,
+        );
+      }
+      var manualAdjustmentMin = 0;
+      for (final task in dayTasksStarting) {
+        final sessionMinutes =
+            (totalSessionSecondsByTask[task.id] ?? 0) ~/
+            Duration.secondsPerMinute;
+        final adjustment = task.manualDurationAdjustmentMin != 0
+            ? task.manualDurationAdjustmentMin
+            : task.actualDurationMin == null
+            ? 0
+            : task.actualDurationMin! - sessionMinutes;
+        manualAdjustmentMin += adjustment;
+      }
+      final trackedMinutes = trackedSecondsByDay.values.fold<int>(
+        0,
+        (total, seconds) => total + seconds ~/ Duration.secondsPerMinute,
+      );
+      final review = reviewByDate[isoDateString(day)];
+      result.add(
+        DailyStats(
+          date: day,
+          totalTasks: dayTasksStarting.length,
+          completedTasks: completed,
+          plannedTasks: planned,
+          inProgressTasks: inProgress,
+          missedTasks: missed,
+          skippedTasks: skipped,
+          cancelledTasks: cancelled,
+          rescheduledTasks: rescheduled,
+          plannedDurationMin: plannedMin,
+          actualDurationMin: (trackedMinutes + manualAdjustmentMin)
+              .clamp(0, 1 << 31)
+              .toInt(),
+          focusDurationMin: focusMin,
+          energyLevel: review?.energyLevel,
+          productivityRating: review?.productivityRating,
+          planningAccuracyPct: DailyStatsCalculator.planningAccuracyPct(
+            dayTasksStarting,
+            estimatedDurationMin: (task) => task.estimatedDurationMin,
+            actualDurationMin: (task) => task.actualDurationMin,
+          ),
+          computedAt: DateTime.now(),
+        ),
+      );
+    }
+    return result;
+  }
+
   Future<DailyStats> _computeRange(
     DateTime startInclusive,
     DateTime endExclusive,

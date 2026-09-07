@@ -114,6 +114,12 @@ class TaskBlockWidget extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          mouseCursor: onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          hoverColor: tokens.hover,
+          focusColor: tokens.focus.withValues(alpha: 0.12),
+          splashColor: tokens.selected,
           borderRadius: BorderRadius.circular(8),
           child: Container(
             decoration: BoxDecoration(

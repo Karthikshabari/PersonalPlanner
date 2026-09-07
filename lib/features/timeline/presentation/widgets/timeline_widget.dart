@@ -33,6 +33,7 @@ import '../../domain/commands/resize_task_command.dart';
 import '../../domain/commands/scheduling_command.dart';
 import '../../domain/conflict_detector.dart';
 import '../../domain/conflict_resolver.dart';
+import '../../domain/scheduling_conflict_service.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/day_view_controller.dart';
@@ -393,7 +394,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final tasks = hypothetical.startTime != null && hypothetical.endTime != null
         ? await _loadSchedulingCandidates(hypothetical)
         : _currentTasks();
-    final conflicts = ConflictDetector.detect(hypothetical, tasks);
+    final conflicts = SchedulingConflictService.conflicts(hypothetical, tasks);
     final historyNotifier = ref.read(undoStackProvider.notifier);
 
     void clearOverlapFlags() {
@@ -426,9 +427,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         return true;
 
       case ConflictResolution.shiftAllFollowing:
-        final plan = ConflictResolver.planShiftAllFollowing(
-          moved: hypothetical,
-          dayTasks: tasks,
+        final plan = SchedulingConflictService.plan(
+          proposed: hypothetical,
+          candidates: tasks,
+          resolution: choice,
+          maxCascadeDepth: AppConstants.maxCascadeDepth,
         );
         clearOverlapFlags();
         await historyNotifier.execute(
@@ -437,9 +440,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         return true;
 
       case ConflictResolution.shiftOnlyOverlapping:
-        final plan = ConflictResolver.planShiftOnlyOverlapping(
-          moved: hypothetical,
-          dayTasks: tasks,
+        final plan = SchedulingConflictService.plan(
+          proposed: hypothetical,
+          candidates: tasks,
+          resolution: choice,
           maxCascadeDepth: AppConstants.maxCascadeDepth,
         );
         clearOverlapFlags();
@@ -457,18 +461,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   }
 
   Future<List<Task>> _loadSchedulingCandidates(Task hypothetical) {
-    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(
-      ref.read(selectedDateProvider),
+    return SchedulingConflictService.loadCandidates(
+      ref.read(taskRepositoryProvider),
+      hypothetical,
+      anchorDate: ref.read(selectedDateProvider),
     );
-    final start = hypothetical.startTime!.isBefore(dayStart)
-        ? hypothetical.startTime!
-        : dayStart;
-    final end = hypothetical.endTime!.isAfter(dayEnd)
-        ? hypothetical.endTime!
-        : dayEnd;
-    return ref
-        .read(taskRepositoryProvider)
-        .getScheduledTasksBetween(start, end);
   }
 
   List<SchedulingCommand> _shiftCommands(

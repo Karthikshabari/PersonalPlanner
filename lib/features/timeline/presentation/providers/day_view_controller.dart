@@ -19,7 +19,6 @@ import '../../../inbox/domain/inbox_commands.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../domain/commands/batch_command.dart';
 import '../../domain/commands/move_task_command.dart';
-import '../../domain/conflict_detector.dart';
 import '../widgets/conflict_resolution_dialog.dart';
 import '../../domain/commands/change_status_command.dart';
 import '../../domain/commands/delete_task_command.dart';
@@ -27,6 +26,7 @@ import '../../domain/commands/duplicate_task_command.dart';
 import '../../domain/commands/resize_task_command.dart';
 import '../../domain/commands/scheduling_command.dart';
 import '../../domain/conflict_resolver.dart';
+import '../../domain/scheduling_conflict_service.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/grid_settings_provider.dart';
@@ -47,13 +47,6 @@ abstract final class TimelineActions {
     DateTime end,
   ) async {
     final tasksRepo = ref.read(taskRepositoryProvider);
-    final (dayStart, dayEnd) = PlannerTimeZone.dayBounds(start);
-    final candidatesStart = start.isBefore(dayStart) ? start : dayStart;
-    final candidatesEnd = end.isAfter(dayEnd) ? end : dayEnd;
-    final dayTasks = await tasksRepo.getScheduledTasksBetween(
-      candidatesStart,
-      candidatesEnd,
-    );
     final command = item.isOverdue
         ? RescheduleOverdueCommand(
             repository: ref.read(inboxRepositoryProvider),
@@ -81,7 +74,15 @@ abstract final class TimelineActions {
       rescheduledToId: null,
       missedAt: null,
     );
-    final conflicts = ConflictDetector.detect(hypothetical, dayTasks);
+    final dayTasks = await SchedulingConflictService.loadCandidates(
+      tasksRepo,
+      hypothetical,
+      anchorDate: start,
+    );
+    final conflicts = SchedulingConflictService.conflicts(
+      hypothetical,
+      dayTasks,
+    );
     if (conflicts.isEmpty) {
       await ref.read(undoStackProvider.notifier).execute(command);
       return true;
@@ -97,16 +98,12 @@ abstract final class TimelineActions {
       await ref.read(undoStackProvider.notifier).execute(command);
       return true;
     }
-    final plan = choice == ConflictResolution.shiftAllFollowing
-        ? ConflictResolver.planShiftAllFollowing(
-            moved: hypothetical,
-            dayTasks: dayTasks,
-          )
-        : ConflictResolver.planShiftOnlyOverlapping(
-            moved: hypothetical,
-            dayTasks: dayTasks,
-            maxCascadeDepth: AppConstants.maxCascadeDepth,
-          );
+    final plan = SchedulingConflictService.plan(
+      proposed: hypothetical,
+      candidates: dayTasks,
+      resolution: choice,
+      maxCascadeDepth: AppConstants.maxCascadeDepth,
+    );
     final byId = {for (final task in dayTasks) task.id: task};
     await ref
         .read(undoStackProvider.notifier)
@@ -359,8 +356,12 @@ abstract final class TimelineActions {
     SchedulingCommand primary,
     Task hypothetical,
   ) async {
-    final tasks = ref.read(dayTasksProvider).value ?? const <Task>[];
-    final conflicts = ConflictDetector.detect(hypothetical, tasks);
+    final tasks = await SchedulingConflictService.loadCandidates(
+      ref.read(taskRepositoryProvider),
+      hypothetical,
+      anchorDate: ref.read(selectedDateProvider),
+    );
+    final conflicts = SchedulingConflictService.conflicts(hypothetical, tasks);
     final history = ref.read(undoStackProvider.notifier);
     ref.read(keepOverlapIdsProvider.notifier).state = const <String>{};
     if (conflicts.isEmpty) {
@@ -382,16 +383,12 @@ abstract final class TimelineActions {
       };
       return true;
     }
-    final plan = choice == ConflictResolution.shiftAllFollowing
-        ? ConflictResolver.planShiftAllFollowing(
-            moved: hypothetical,
-            dayTasks: tasks,
-          )
-        : ConflictResolver.planShiftOnlyOverlapping(
-            moved: hypothetical,
-            dayTasks: tasks,
-            maxCascadeDepth: AppConstants.maxCascadeDepth,
-          );
+    final plan = SchedulingConflictService.plan(
+      proposed: hypothetical,
+      candidates: tasks,
+      resolution: choice,
+      maxCascadeDepth: AppConstants.maxCascadeDepth,
+    );
     final byId = {for (final item in tasks) item.id: item};
     await history.execute(
       BatchCommand([

@@ -224,6 +224,11 @@ class RecurrenceAggregateCommand implements SchedulingCommand {
   final AppDatabase database;
   final String ruleId;
   final Future<void> Function() mutation;
+
+  /// Additional task aggregates mutated inside [mutation] (for example,
+  /// neighboring blocks shifted by the shared conflict policy). They are
+  /// captured here so one editor save remains fully undoable.
+  final Set<String> extraTaskIds;
   @override
   final String description;
 
@@ -235,24 +240,68 @@ class RecurrenceAggregateCommand implements SchedulingCommand {
     required this.ruleId,
     required this.mutation,
     required this.description,
+    this.extraTaskIds = const <String>{},
   });
 
   @override
   Future<void> execute() async {
-    _before ??= await RecurrenceAggregateSnapshot.capture(database, ruleId);
+    _before ??= await RecurrenceAggregateSnapshot.capture(
+      database,
+      ruleId,
+      extraTaskIds: extraTaskIds,
+    );
     if (_before == null) throw StateError('Recurring rule $ruleId not found');
     await database.transaction(mutation);
     _after = await RecurrenceAggregateSnapshot.capture(
       database,
       ruleId,
-      extraTaskIds: _before!.tasks.map((task) => task.id).toSet(),
+      extraTaskIds: {...extraTaskIds, ..._before!.tasks.map((task) => task.id)},
     );
   }
 
   @override
   Future<void> undo() async {
     await database.transaction(() async {
-      await _before?.restore(database, after: _after);
+      final beforeTaskIds =
+          _before?.tasks.map((task) => task.id).toSet() ?? const <String>{};
+      final current = await RecurrenceAggregateSnapshot.capture(
+        database,
+        ruleId,
+        extraTaskIds: {...extraTaskIds, ...beforeTaskIds},
+      );
+      // Observe materialized occurrences created after execute() before
+      // restoring. Unchanged new rows are part of the edited aggregate and
+      // are tombstoned by restore; rows edited independently are preserved by
+      // its conditional comparison.
+      await _before?.restore(database, after: _mergeLateRows(_after, current));
     });
+  }
+
+  static RecurrenceAggregateSnapshot? _mergeLateRows(
+    RecurrenceAggregateSnapshot? baseline,
+    RecurrenceAggregateSnapshot? current,
+  ) {
+    if (baseline == null) return current;
+    if (current == null) return baseline;
+    final tasks = {for (final row in baseline.tasks) row.id: row};
+    for (final row in current.tasks) {
+      tasks.putIfAbsent(row.id, () => row);
+    }
+    final subtasks = {for (final row in baseline.subtasks) row.id: row};
+    for (final row in current.subtasks) {
+      subtasks.putIfAbsent(row.id, () => row);
+    }
+    final tags = {
+      for (final row in baseline.taskTags) '${row.taskId}:${row.tagId}': row,
+    };
+    for (final row in current.taskTags) {
+      tags.putIfAbsent('${row.taskId}:${row.tagId}', () => row);
+    }
+    return RecurrenceAggregateSnapshot(
+      rule: baseline.rule,
+      tasks: tasks.values.toList(growable: false),
+      subtasks: subtasks.values.toList(growable: false),
+      taskTags: tags.values.toList(growable: false),
+    );
   }
 }
