@@ -189,10 +189,9 @@ void main() {
     );
     await tester.enterText(notesField, 'Some notes');
 
-    // The editor content scrolls (subtasks/tags sections); bring Save into
-    // view before tapping.
+    // Save is in the persistent editor header and remains visible while the
+    // form content scrolls.
     final saveButton = find.byKey(const ValueKey('save-task-button'));
-    await tester.ensureVisible(saveButton);
     await settle(tester);
     await tester.tap(saveButton);
     await settle(tester);

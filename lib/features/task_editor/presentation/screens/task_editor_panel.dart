@@ -41,14 +41,32 @@ import '../widgets/subtask_editor.dart';
 import '../widgets/tag_picker.dart';
 import '../widgets/use_template_dropdown.dart';
 
-class TaskEditorPanel extends ConsumerStatefulWidget {
-  const TaskEditorPanel({super.key});
+enum TaskEditorPresentation { desktopPanel, bottomSheet }
 
-  static Future<void> showAsBottomSheet(BuildContext context) {
+class TaskEditorPanel extends ConsumerStatefulWidget {
+  final TaskEditorPresentation presentation;
+
+  /// Parent-owned close action. For a bottom sheet this callback is
+  /// responsible for dismissing the sheet; without it the panel pops its
+  /// own modal route.
+  final VoidCallback? onClose;
+
+  const TaskEditorPanel({
+    super.key,
+    this.presentation = TaskEditorPresentation.desktopPanel,
+    this.onClose,
+  });
+
+  static Future<void> showAsBottomSheet(
+    BuildContext context, {
+    VoidCallback? onClose,
+  }) {
     final container = ProviderScope.containerOf(context, listen: false);
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -70,9 +88,12 @@ class TaskEditorPanel extends ConsumerStatefulWidget {
                 : MediaQuery.sizeOf(context).height * .9;
             return ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxHeight),
-              child: const SizedBox(
+              child: SizedBox(
                 width: double.infinity,
-                child: TaskEditorPanel(),
+                child: TaskEditorPanel(
+                  presentation: TaskEditorPresentation.bottomSheet,
+                  onClose: onClose,
+                ),
               ),
             );
           },
@@ -96,6 +117,8 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   String? _editingTaskId;
   Task? _originalTask;
+  Task? _conflictBaselineTask;
+  TaskEditorBaseline? _baseline;
   Set<String>? _originalTagIds;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
@@ -107,6 +130,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   bool _saving = false;
   String? _errorMessage;
   Task? _activeTask;
+  bool _synchronizingControllers = false;
 
   // Recurrence staging (Chunk 4). `_repeat == null` means "unchanged or
   // still loading" — never persisted as-is. `_loadedPreset` is what the
@@ -125,6 +149,15 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _notesController = TextEditingController();
     _estimatedController = TextEditingController();
     _actualController = TextEditingController();
+    for (final controller in [
+      _titleController,
+      _descriptionController,
+      _notesController,
+      _estimatedController,
+      _actualController,
+    ]) {
+      controller.addListener(_onEditorControllerChanged);
+    }
   }
 
   @override
@@ -137,17 +170,173 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     super.dispose();
   }
 
+  void _onEditorControllerChanged() {
+    if (_synchronizingControllers || !mounted) return;
+    // PopScope must be rebuilt as soon as a text field changes; relying on a
+    // later provider rebuild leaves Android Back/barrier dismissal with a
+    // stale clean-state decision.
+    setState(() {});
+  }
+
+  void _setControllerText(TextEditingController controller, String value) {
+    controller.value = controller.value.copyWith(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  bool _sameTimeOfDay(TimeOfDay? left, TimeOfDay? right) =>
+      left?.hour == right?.hour && left?.minute == right?.minute;
+
+  bool get _scheduleInputsChanged {
+    final task = _baseline?.task ?? _originalTask;
+    if (task == null) return false;
+    final originalStart = task.startTime == null
+        ? null
+        : TimeOfDay.fromDateTime(
+            PlannerTimeZone.toPlannerLocal(task.startTime!),
+          );
+    final originalEnd = task.endTime == null
+        ? null
+        : TimeOfDay.fromDateTime(PlannerTimeZone.toPlannerLocal(task.endTime!));
+    return !_sameTimeOfDay(_startTime, originalStart) ||
+        !_sameTimeOfDay(_endTime, originalEnd);
+  }
+
+  bool _taskFieldsChangedAgainst(Task baseline) =>
+      TaskEditorBaseline.normalizeTitle(_titleController.text) !=
+          TaskEditorBaseline.normalizeTitle(baseline.title) ||
+      TaskEditorBaseline.normalizeDescription(_descriptionController.text) !=
+          baseline.description ||
+      TaskEditorBaseline.normalizeNotes(_notesController.text) !=
+          TaskEditorBaseline.normalizeNotes(baseline.notes ?? '') ||
+      _estimatedController.text.trim() !=
+          (baseline.estimatedDurationMin?.toString() ?? '') ||
+      _actualController.text.trim() !=
+          (baseline.actualDurationMin?.toString() ?? '') ||
+      _categoryId != baseline.categoryId ||
+      _priority != baseline.priority ||
+      _status != baseline.status ||
+      _scheduleInputsChanged;
+
+  void _rebaseUntouchedFields(Task latest) {
+    final previous = _baseline?.task;
+    if (previous == null) return;
+    final titleDirty =
+        TaskEditorBaseline.normalizeTitle(_titleController.text) !=
+        TaskEditorBaseline.normalizeTitle(previous.title);
+    final descriptionDirty =
+        TaskEditorBaseline.normalizeDescription(_descriptionController.text) !=
+        previous.description;
+    final notesDirty =
+        TaskEditorBaseline.normalizeNotes(_notesController.text) !=
+        TaskEditorBaseline.normalizeNotes(previous.notes ?? '');
+    final estimatedDirty =
+        _estimatedController.text.trim() !=
+        (previous.estimatedDurationMin?.toString() ?? '');
+    final actualDirty =
+        _actualController.text.trim() !=
+        (previous.actualDurationMin?.toString() ?? '');
+    final categoryDirty = _categoryId != previous.categoryId;
+    final priorityDirty = _priority != previous.priority;
+    final statusDirty = _status != previous.status;
+    final scheduleDirty = _scheduleInputsChanged;
+    final conflictBaseline = _conflictBaselineTask ?? previous;
+
+    _synchronizingControllers = true;
+    if (!titleDirty) _setControllerText(_titleController, latest.title);
+    if (!descriptionDirty) {
+      _setControllerText(_descriptionController, latest.description ?? '');
+    }
+    if (!notesDirty) _setControllerText(_notesController, latest.notes ?? '');
+    if (!estimatedDirty) {
+      _setControllerText(
+        _estimatedController,
+        latest.estimatedDurationMin?.toString() ?? '',
+      );
+    }
+    if (!actualDirty) {
+      _setControllerText(
+        _actualController,
+        latest.actualDurationMin?.toString() ?? '',
+      );
+    }
+    if (!categoryDirty) _categoryId = latest.categoryId;
+    if (!priorityDirty) _priority = latest.priority;
+    if (!statusDirty) _status = latest.status;
+    if (!scheduleDirty) {
+      _startTime = latest.startTime == null
+          ? null
+          : TimeOfDay.fromDateTime(
+              PlannerTimeZone.toPlannerLocal(latest.startTime!),
+            );
+      _endTime = latest.endTime == null
+          ? null
+          : TimeOfDay.fromDateTime(
+              PlannerTimeZone.toPlannerLocal(latest.endTime!),
+            );
+    }
+    _synchronizingControllers = false;
+    _conflictBaselineTask = conflictBaseline.copyWith(
+      title: titleDirty ? conflictBaseline.title : latest.title,
+      description: descriptionDirty
+          ? conflictBaseline.description
+          : latest.description,
+      notes: notesDirty ? conflictBaseline.notes : latest.notes,
+      categoryId: categoryDirty
+          ? conflictBaseline.categoryId
+          : latest.categoryId,
+      priority: priorityDirty ? conflictBaseline.priority : latest.priority,
+      status: statusDirty ? conflictBaseline.status : latest.status,
+      startTime: scheduleDirty ? conflictBaseline.startTime : latest.startTime,
+      endTime: scheduleDirty ? conflictBaseline.endTime : latest.endTime,
+      estimatedDurationMin: estimatedDirty
+          ? conflictBaseline.estimatedDurationMin
+          : latest.estimatedDurationMin,
+      actualDurationMin: actualDirty
+          ? conflictBaseline.actualDurationMin
+          : latest.actualDurationMin,
+    );
+    _originalTask = latest;
+    _baseline = TaskEditorBaseline(
+      task: latest,
+      tagIds: _originalTagIds ?? _baseline!.tagIds,
+      recurrenceSignature: _baseline!.recurrenceSignature,
+    );
+  }
+
   void _syncFromTask(Task? task, {bool force = false}) {
     final id = task?.id;
-    if (!force && _editingTaskId == id) return;
+    if (!force && _editingTaskId == id) {
+      final baseline = _baseline;
+      if (task == null ||
+          baseline == null ||
+          baseline.hasSameTaskValues(task)) {
+        return;
+      }
+      _rebaseUntouchedFields(task);
+      return;
+    }
+    _synchronizingControllers = true;
     _editingTaskId = id;
     _originalTask = task;
+    _conflictBaselineTask = task;
+    _baseline = task == null
+        ? null
+        : TaskEditorBaseline(task: task, tagIds: const <String>{});
     _originalTagIds = null;
-    _titleController.text = task?.title ?? '';
-    _descriptionController.text = task?.description ?? '';
-    _notesController.text = task?.notes ?? '';
-    _estimatedController.text = task?.estimatedDurationMin?.toString() ?? '';
-    _actualController.text = task?.actualDurationMin?.toString() ?? '';
+    _setControllerText(_titleController, task?.title ?? '');
+    _setControllerText(_descriptionController, task?.description ?? '');
+    _setControllerText(_notesController, task?.notes ?? '');
+    _setControllerText(
+      _estimatedController,
+      task?.estimatedDurationMin?.toString() ?? '',
+    );
+    _setControllerText(
+      _actualController,
+      task?.actualDurationMin?.toString() ?? '',
+    );
     _categoryId = task?.categoryId;
     _priority = task?.priority ?? Priority.none;
     _status = task?.status ?? TaskStatus.planned;
@@ -167,6 +356,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     // Tasks without a rule are "Never"; for recurring tasks the preset is
     // resolved once the rule loads (see build).
     _repeat = task?.recurringRuleId == null ? RepeatPreset.never : null;
+    _synchronizingControllers = false;
   }
 
   String _formatTimeOfDay(TimeOfDay time) =>
@@ -176,19 +366,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       left.length == right.length && left.containsAll(right);
 
   bool get _hasDraftChanges {
-    final original = _originalTask;
+    final original = _baseline?.task ?? _originalTask;
     if (original == null) return false;
-    if (_titleController.text.trim() != original.title ||
-        _descriptionController.text.trim() != (original.description ?? '') ||
-        _notesController.text.trim() != (original.notes ?? '') ||
-        _estimatedController.text.trim() !=
-            (original.estimatedDurationMin?.toString() ?? '') ||
-        _actualController.text.trim() !=
-            (original.actualDurationMin?.toString() ?? '') ||
-        _categoryId != original.categoryId ||
-        _priority != original.priority ||
-        _status != original.status ||
-        _scheduleDirty) {
+    if (_taskFieldsChangedAgainst(original)) {
       return true;
     }
     if (_stagedTagIds != null &&
@@ -210,8 +390,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     // the draft before clearing selection so reopening the same task cannot
     // reuse discarded (or already-closed) controller values.
     _syncFromTask(null, force: true);
+    _activeTask = null;
     ref.read(selectedTaskIdProvider.notifier).state = null;
-    if (MediaQuery.sizeOf(context).width < 900 &&
+    final callback = widget.onClose;
+    if (callback != null) {
+      callback();
+    } else if (widget.presentation == TaskEditorPresentation.bottomSheet &&
         Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -366,8 +550,38 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
   }
 
+  Future<TaskEditorPersistedState> _readPersistedState(String taskId) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final saved = await repository.getTaskById(taskId);
+    if (saved == null) {
+      throw StateError('Task $taskId not found after save');
+    }
+    final tagIds =
+        (await ref.read(tagRepositoryProvider).getTagsForTask(taskId))
+            .map((tag) => tag.id)
+            .toSet();
+    return TaskEditorPersistedState(task: saved, tagIds: tagIds);
+  }
+
+  void _acceptPersistedState(TaskEditorPersistedState persisted) {
+    _syncFromTask(persisted.task, force: true);
+    _originalTagIds = persisted.tagIds;
+    _stagedTagIds = persisted.tagIds;
+    _baseline = TaskEditorBaseline(
+      task: persisted.task,
+      tagIds: persisted.tagIds,
+      recurrenceSignature: persisted.recurrenceSignature,
+    );
+    _errorMessage = null;
+  }
+
   Future<void> _saveImpl(Task task, {bool close = false}) async {
     if (_saving) return;
+    // A schedule control is a projection of the persisted instant. Recompute
+    // this flag from the snapshot instead of treating any picker interaction
+    // as a permanent dirty marker, so changing a time and changing it back is
+    // a clean editor.
+    _scheduleDirty = _scheduleInputsChanged;
     final viewedDate = ref.read(selectedDateProvider);
     final date = task.startTime ?? viewedDate;
     final localDate = PlannerTimeZone.toPlannerLocal(date);
@@ -443,6 +657,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     final rulesRepo = ref.read(recurringRepositoryProvider);
     final hadRule = _originalRuleId != null;
     RecurrenceScope? scope;
+    TaskEditorPersistedState? persistedState;
     if (hadRule) {
       scope = await showRecurrenceScopeDialog(
         context,
@@ -475,17 +690,18 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     if (latest == null || latest.deletedAt != null || latestRevision == null) {
       throw StateError('Task ${task.id} is no longer available');
     }
-    final original = _originalTask ?? task;
+    final conflictBaseline = _conflictBaselineTask ?? _originalTask ?? task;
+    final mergeBaseline = _baseline?.task ?? conflictBaseline;
     final latestTagIds =
         (await ref.read(tagRepositoryProvider).getTagsForTask(task.id))
             .map((tag) => tag.id)
             .toSet();
     final originalTagIds = _originalTagIds ?? stagedTagIds;
-    final normalizedDescription = _descriptionController.text.trim();
+    final normalizedDescription = _descriptionController.text;
     final normalizedNotes = _notesController.text.trim();
     final actualDirty =
         _actualController.text.trim() !=
-        (original.actualDurationMin?.toString() ?? '');
+        (mergeBaseline.actualDurationMin?.toString() ?? '');
     final draft = TaskEditorDraft(
       title: _titleController.text.trim(),
       description: normalizedDescription.isEmpty ? null : normalizedDescription,
@@ -502,7 +718,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       actualDurationDirty: actualDirty,
     );
 
-    final conflicts = draft.conflictingFields(original, latest);
+    final conflicts = draft.conflictingFields(conflictBaseline, latest);
     final tagsDirty = !_sameIds(stagedTagIds, originalTagIds);
     if (tagsDirty && !_sameIds(latestTagIds, originalTagIds)) {
       conflicts.add('Tags');
@@ -527,7 +743,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       }
     }
 
-    final editedTask = draft.mergeOnto(original, latest);
+    final editedTask = draft.mergeOnto(mergeBaseline, latest);
     final tagsToSave = tagsDirty ? stagedTagIds : latestTagIds;
 
     // Scheduling edits use the same fresh full-interval candidate set and
@@ -706,90 +922,82 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       );
       await ref.read(undoStackProvider.notifier).execute(command);
       ref.invalidate(recurringRuleProvider(ruleId));
+      persistedState = await _readPersistedState(task.id);
     } else if (!hadRule && _repeat != null && _repeat != RepeatPreset.never) {
       // Attach a brand-new rule to this previously one-off task.
       final anchorDate = start ?? DateTime.now();
       final rruleString = _resolveRrule(anchorDate)!;
-      await TaskEditorSaveCommand(
-        ref.read(appDatabaseProvider),
-      ).execute(() async {
-        await applySchedulePlan();
-        final rule = await rulesRepo.createRule(
-          RecurringRule(
-            id: '',
-            rrule: rruleString,
-            taskTitle: editedTask.title,
-            taskDescription: editedTask.description == ''
-                ? null
-                : editedTask.description,
-            durationMin: _effectiveDurationMinutes,
-            categoryId: _categoryId,
-            priority: _priority.dbValue,
-            tags: stagedTagIds.toList(),
-            startTimeOfDay: _startTime == null
-                ? '09:00'
-                : _formatTimeOfDay(_startTime!),
-            startDate: startOfDay(anchorDate),
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          ),
-        );
-        await ref
-            .read(taskRepositoryProvider)
-            .updateTask(
-              editedTask.copyWith(recurringRuleId: rule.id),
-              expectedRevision: latestRevision,
-            );
-        if (actualDirty && actual != null) {
-          await ref.read(timerServiceProvider).setManualActual(task.id, actual);
-        }
-        await ref
-            .read(tagRepositoryProvider)
-            .replaceTagsForTask(task.id, tagsToSave);
-      });
+      persistedState =
+          await TaskEditorSaveCommand(ref.read(appDatabaseProvider))
+              .execute(() async {
+                await applySchedulePlan();
+                final rule = await rulesRepo.createRule(
+                  RecurringRule(
+                    id: '',
+                    rrule: rruleString,
+                    taskTitle: editedTask.title,
+                    taskDescription: editedTask.description == ''
+                        ? null
+                        : editedTask.description,
+                    durationMin: _effectiveDurationMinutes,
+                    categoryId: _categoryId,
+                    priority: _priority.dbValue,
+                    tags: stagedTagIds.toList(),
+                    startTimeOfDay: _startTime == null
+                        ? '09:00'
+                        : _formatTimeOfDay(_startTime!),
+                    startDate: startOfDay(anchorDate),
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                  ),
+                );
+                await ref
+                    .read(taskRepositoryProvider)
+                    .updateTask(
+                      editedTask.copyWith(recurringRuleId: rule.id),
+                      expectedRevision: latestRevision,
+                    );
+                if (actualDirty && actual != null) {
+                  await ref
+                      .read(timerServiceProvider)
+                      .setManualActual(task.id, actual);
+                }
+                await ref
+                    .read(tagRepositoryProvider)
+                    .replaceTagsForTask(task.id, tagsToSave);
+                return _readPersistedState(task.id);
+              });
     } else {
-      await TaskEditorSaveCommand(
-        ref.read(appDatabaseProvider),
-      ).execute(() async {
-        await applySchedulePlan();
-        await ref
-            .read(taskRepositoryProvider)
-            .updateTask(
-              editedTask.copyWith(recurringRuleId: null),
-              expectedRevision: latestRevision,
-            );
-        if (actualDirty && actual != null) {
-          await ref.read(timerServiceProvider).setManualActual(task.id, actual);
-        }
-        await ref
-            .read(tagRepositoryProvider)
-            .replaceTagsForTask(task.id, tagsToSave);
-      });
+      persistedState =
+          await TaskEditorSaveCommand(ref.read(appDatabaseProvider))
+              .execute(() async {
+                await applySchedulePlan();
+                await ref
+                    .read(taskRepositoryProvider)
+                    .updateTask(
+                      editedTask.copyWith(recurringRuleId: null),
+                      expectedRevision: latestRevision,
+                    );
+                if (actualDirty && actual != null) {
+                  await ref
+                      .read(timerServiceProvider)
+                      .setManualActual(task.id, actual);
+                }
+                await ref
+                    .read(tagRepositoryProvider)
+                    .replaceTagsForTask(task.id, tagsToSave);
+                return _readPersistedState(task.id);
+              });
     }
 
-    final saved = await ref.read(taskRepositoryProvider).getTaskById(task.id);
-    if (saved == null) throw StateError('Task ${task.id} not found after save');
+    final persisted = persistedState ?? await _readPersistedState(task.id);
 
     // Re-materialize the viewed day so new/changed rules show up instantly.
     ref.invalidate(dayMaterializationProvider(viewedDate));
 
     if (!mounted) return;
-    setState(() {
-      _originalRuleId = saved.recurringRuleId;
-      _originalTask = saved;
-      _originalTagIds = tagsToSave;
-      _stagedTagIds = tagsToSave;
-      _saving = false;
-      if (saved.recurringRuleId == null) {
-        _repeat = RepeatPreset.never;
-        _customConfig = null;
-        _loadedPreset = null;
-      } else if (scope == RecurrenceScope.thisOccurrence) {
-        // Staged repeat changes were discarded — re-resolve from the rule.
-        _repeat = null;
-        _customConfig = null;
-      }
-    });
+    _acceptPersistedState(persisted);
+    setState(() => _saving = false);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Task saved')));
     if (close && mounted) {
@@ -824,6 +1032,92 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     });
   }
 
+  Widget _persistentHeader(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final task = _activeTask;
+    return Material(
+      color: tokens.surfaceSubtle,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          AppSpacing.md,
+          AppSpacing.lg,
+          AppSpacing.sm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: tokens.selected,
+                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                  ),
+                  child: Icon(
+                    Icons.edit_outlined,
+                    size: 19,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                const Expanded(
+                  child: AppSectionHeader(
+                    title: 'Edit Task',
+                    subtitle: 'Keep the plan clear and actionable',
+                  ),
+                ),
+                Semantics(
+                  button: true,
+                  label: 'Close editor',
+                  child: IconButton(
+                    tooltip: 'Close editor',
+                    icon: const Icon(Icons.close),
+                    onPressed: _requestClose,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FilledButton.icon(
+                key: const ValueKey('save-task-button'),
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save'),
+                onPressed: _saving || task == null ? null : () => _save(task),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _editorFrame(BuildContext context, Widget body) {
+    final tokens = AppThemeTokens.of(context);
+    return PopScope<void>(
+      canPop: !_hasDraftChanges,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_requestClose());
+      },
+      child: ColoredBox(
+        color: tokens.surfaceSubtle,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _persistentHeader(context),
+            const Divider(height: 1),
+            Expanded(child: body),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(taskEditorSaveRequestProvider, (previous, next) {
@@ -837,49 +1131,65 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         : ref.watch(selectedTaskByIdProvider(taskId));
 
     if (taskId != null && tasksAsync.hasError) {
-      return ErrorPanel(
-        message: friendlyErrorMessage(tasksAsync.error!),
-        onRetry: () {
-          ref.invalidate(dayTasksProvider);
-          ref.invalidate(selectedTaskByIdProvider(taskId));
-        },
+      return _editorFrame(
+        context,
+        Center(
+          child: ErrorPanel(
+            message: friendlyErrorMessage(tasksAsync.error!),
+            onRetry: () {
+              ref.invalidate(dayTasksProvider);
+              ref.invalidate(selectedTaskByIdProvider(taskId));
+            },
+          ),
+        ),
       );
     }
     if (taskId != null && selectedTaskAsync.hasError) {
-      return ErrorPanel(
-        message: friendlyErrorMessage(selectedTaskAsync.error!),
-        onRetry: () => ref.invalidate(selectedTaskByIdProvider(taskId)),
+      return _editorFrame(
+        context,
+        Center(
+          child: ErrorPanel(
+            message: friendlyErrorMessage(selectedTaskAsync.error!),
+            onRetry: () => ref.invalidate(selectedTaskByIdProvider(taskId)),
+          ),
+        ),
       );
     }
     if (taskId != null && !tasksAsync.hasValue && !selectedTaskAsync.hasValue) {
-      return const Center(child: CircularProgressIndicator());
+      return _editorFrame(
+        context,
+        const Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (taskId == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.touch_app_outlined,
-                size: 28,
-                color: AppThemeTokens.of(context).textMuted,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                'Select a task to edit',
-                style: Theme.of(context).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Choose a block from the timeline or Inbox.',
-                style: Theme.of(context).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
+      return _editorFrame(
+        context,
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.touch_app_outlined,
+                  size: 28,
+                  color: AppThemeTokens.of(context).textMuted,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Select a task to edit',
+                  style: Theme.of(context).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Choose a block from the timeline or Inbox.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -893,12 +1203,27 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       }
     }
     task ??= selectedTaskAsync.value;
+    // A task update can briefly invalidate the day stream before the
+    // selected-task query publishes its replacement row. Keep the mounted
+    // editor alive during that transient gap so a successful Save cannot
+    // remove its controls or lose focus; an explicit null query result still
+    // represents a genuinely deleted/missing task.
+    if (task == null &&
+        !selectedTaskAsync.hasValue &&
+        _activeTask?.id == taskId) {
+      task = _activeTask;
+    }
     _activeTask = task;
     _syncFromTask(task);
 
     if (task == null) {
-      return const ErrorPanel(
-        message: 'The selected task is no longer available.',
+      return _editorFrame(
+        context,
+        const Center(
+          child: ErrorPanel(
+            message: 'The selected task is no longer available.',
+          ),
+        ),
       );
     }
     final selectedTaskId = task.id;
@@ -948,50 +1273,16 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     );
 
     final tokens = AppThemeTokens.of(context);
-    return PopScope<void>(
-      canPop: !_hasDraftChanges,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) unawaited(_requestClose());
-      },
-      child: ColoredBox(
-        color: tokens.surfaceSubtle,
+    return _editorFrame(
+      context,
+      IgnorePointer(
+        ignoring: _saving,
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: tokens.selected,
-                        borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                      ),
-                      child: Icon(
-                        Icons.edit_outlined,
-                        size: 19,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: AppSectionHeader(
-                        title: 'Edit Task',
-                        subtitle: 'Keep the plan clear and actionable',
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Close editor',
-                      icon: const Icon(Icons.close),
-                      onPressed: _requestClose,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
                 const AppSectionHeader(
                   title: 'Task details',
                   icon: Icons.subject_outlined,
@@ -1092,7 +1383,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                           if (picked != null) {
                             setState(() {
                               _startTime = picked;
-                              _scheduleDirty = true;
+                              _scheduleDirty = _scheduleInputsChanged;
                             });
                           }
                         },
@@ -1115,7 +1406,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                           if (picked != null) {
                             setState(() {
                               _endTime = picked;
-                              _scheduleDirty = true;
+                              _scheduleDirty = _scheduleInputsChanged;
                             });
                           }
                         },
@@ -1219,13 +1510,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
-                FilledButton.icon(
-                  key: const ValueKey('save-task-button'),
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
-                  onPressed: _saving ? null : () => _save(task!),
-                ),
-                const SizedBox(height: AppSpacing.sm),
                 OutlinedButton.icon(
                   key: const ValueKey('save-as-template-button'),
                   icon: const Icon(Icons.bookmark_add_outlined),

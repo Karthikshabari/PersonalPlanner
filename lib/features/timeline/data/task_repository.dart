@@ -47,26 +47,28 @@ class TaskRepository {
   }) async {
     final now = DateTime.now();
     final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
-    final row = await _dao.getTaskById(effective.id);
-    if (row == null) {
-      throw StateError('Task ${effective.id} not found');
-    }
-    if (expectedRevision != null && row.revision != expectedRevision) {
-      throw StateError(
-        'Task ${effective.id} changed while it was being edited; reload it before saving.',
-      );
-    }
-    final previousStatus = TaskStatus.fromDb(row.status);
-    if (!allowStatusTransition &&
-        !previousStatus.canTransitionTo(effective.status) &&
-        !(allowRescheduledTransition &&
-            effective.status == TaskStatus.rescheduled)) {
-      throw StateError(
-        'Cannot change ${previousStatus.label} to ${effective.status.label}',
-      );
-    }
     _validate(effective);
+    late TaskRow row;
     await _db.transaction(() async {
+      final current = await _dao.getTaskById(effective.id);
+      if (current == null) {
+        throw StateError('Task ${effective.id} not found');
+      }
+      row = current;
+      if (expectedRevision != null && current.revision != expectedRevision) {
+        throw StateError(
+          'Task ${effective.id} changed while it was being edited; reload it before saving.',
+        );
+      }
+      final previousStatus = TaskStatus.fromDb(current.status);
+      if (!allowStatusTransition &&
+          !previousStatus.canTransitionTo(effective.status) &&
+          !(allowRescheduledTransition &&
+              effective.status == TaskStatus.rescheduled)) {
+        throw StateError(
+          'Cannot change ${previousStatus.label} to ${effective.status.label}',
+        );
+      }
       await _validateHistoryLinks(effective, previous: row);
       await _dao.updateTask(
         _toRow(effective, syncStatus: 1, revision: row.revision + 1),
