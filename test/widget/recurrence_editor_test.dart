@@ -91,7 +91,6 @@ void main() {
 
   Future<void> saveTask(WidgetTester tester) async {
     final button = find.byKey(const ValueKey('save-task-button'));
-    await bringIntoView(tester, button);
     await tester.tap(button);
     await settle(tester);
   }

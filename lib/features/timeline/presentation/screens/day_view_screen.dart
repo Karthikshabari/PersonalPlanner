@@ -7,6 +7,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../inbox/presentation/widgets/inbox_sidebar.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../providers/selected_date_provider.dart';
+import '../providers/selected_task_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../timer/presentation/widgets/timer_overlay.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -51,7 +52,17 @@ class DayViewScreen extends ConsumerWidget {
                           ),
                         ),
                         VerticalDivider(width: 1),
-                        SizedBox(width: 340, child: TaskEditorPanel()),
+                        SizedBox(
+                          width: 340,
+                          child: TaskEditorPanel(
+                            presentation: TaskEditorPresentation.desktopPanel,
+                            onClose: () =>
+                                ref
+                                        .read(selectedTaskIdProvider.notifier)
+                                        .state =
+                                    null,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -89,8 +100,10 @@ class DayViewScreen extends ConsumerWidget {
                       materializationError ?? const SizedBox.shrink(),
                       Expanded(
                         child: TimelineWidget(
-                          onTaskTap: (_) =>
-                              TaskEditorPanel.showAsBottomSheet(context),
+                          onTaskTap: (_) => TaskEditorPanel.showAsBottomSheet(
+                            context,
+                            onClose: () => Navigator.of(context).pop(),
+                          ),
                         ),
                       ),
                     ],

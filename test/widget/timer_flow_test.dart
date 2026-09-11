@@ -266,7 +266,6 @@ void main() {
     const field = Key('actual-duration-field');
     await tester.ensureVisible(find.byKey(field));
     await tester.enterText(find.byKey(field), '45');
-    await tester.ensureVisible(find.byKey(const ValueKey('save-task-button')));
     await tester.tap(find.byKey(const ValueKey('save-task-button')));
     await settle(tester);
 

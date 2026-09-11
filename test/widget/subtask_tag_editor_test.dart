@@ -204,7 +204,6 @@ void main() {
             .length,
         1);
     final save = find.byKey(const ValueKey('save-task-button'));
-    await bringIntoView(tester, save);
     await tester.tap(save);
     await settle(tester);
     await finish(tester, container);
@@ -236,7 +235,6 @@ void main() {
 
     // Tag selection is part of the explicit editor Save contract.
     final save = find.byKey(const ValueKey('save-task-button'));
-    await bringIntoView(tester, save);
     await tester.tap(save);
     await settle(tester);
 

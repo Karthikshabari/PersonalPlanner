@@ -52,23 +52,31 @@ void main() {
     // panel can take more than the generic settle window to mount its actions;
     // wait for the externally visible Save control instead of treating that
     // normal loading interval as a missing widget.
-    for (var attempt = 0; attempt < 30 && button.evaluate().isEmpty; attempt++) {
+    for (
+      var attempt = 0;
+      attempt < 30 && button.evaluate().isEmpty;
+      attempt++
+    ) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(button, findsOneWidget);
-    final editorScrollable = find
-        .ancestor(of: button, matching: find.byType(Scrollable))
-        .last;
-    for (var attempt = 0; attempt < 12; attempt++) {
-      await settle(tester);
-      final rect = tester.getRect(button);
-      final viewport = tester.getRect(editorScrollable);
-      if (rect.top >= viewport.top + 24 &&
-          rect.bottom <= viewport.bottom - 24) {
-        break;
+    final scrollables = find.ancestor(
+      of: button,
+      matching: find.byType(Scrollable),
+    );
+    if (scrollables.evaluate().isNotEmpty) {
+      final editorScrollable = scrollables.last;
+      for (var attempt = 0; attempt < 12; attempt++) {
+        await settle(tester);
+        final rect = tester.getRect(button);
+        final viewport = tester.getRect(editorScrollable);
+        if (rect.top >= viewport.top + 24 &&
+            rect.bottom <= viewport.bottom - 24) {
+          break;
+        }
+        final dy = rect.center.dy > viewport.center.dy ? -100.0 : 100.0;
+        await tester.drag(editorScrollable, Offset(0, dy));
       }
-      final dy = rect.center.dy > viewport.center.dy ? -100.0 : 100.0;
-      await tester.drag(editorScrollable, Offset(0, dy));
     }
     await settle(tester);
     await tester.tap(button);
@@ -139,6 +147,65 @@ void main() {
       () => container.read(taskRepositoryProvider).getTaskById(task.id),
     );
     expect(saved!.title, 'Remote title');
+    await finish(tester, container);
+  });
+
+  testWidgets('clean editor adopts an external persisted update', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    final current = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .updateTask(current!.copyWith(description: 'Remote description')),
+    );
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      if (tester
+              .widget<TextField>(
+                find.byWidgetPredicate(
+                  (widget) =>
+                      widget is TextField &&
+                      widget.decoration?.labelText == 'Description',
+                ),
+              )
+              .controller
+              ?.text ==
+          'Remote description') {
+        break;
+      }
+    }
+
+    final description = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField && widget.decoration?.labelText == 'Description',
+    );
+    expect(
+      tester.widget<TextField>(description).controller!.text,
+      'Remote description',
+    );
+    await tester.enterText(titleField(), 'Local after remote');
+    await save(tester);
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    expect(find.text('Discard unsaved changes?'), findsNothing);
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved!.title, 'Local after remote');
+    expect(saved.description, 'Remote description');
     await finish(tester, container);
   });
 
@@ -276,7 +343,169 @@ void main() {
     // the desktop panel's unmount-free close path.
     container.read(selectedTaskIdProvider.notifier).state = task.id;
     await settle(tester);
-    expect(tester.widget<TextField>(titleField()).controller!.text, 'Merge target');
+    expect(
+      tester.widget<TextField>(titleField()).controller!.text,
+      'Merge target',
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('successful Save establishes a clean close baseline', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    await tester.enterText(titleField(), 'Saved title');
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Description',
+      ),
+      'Saved description',
+    );
+    await save(tester);
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+
+    expect(find.text('Discard unsaved changes?'), findsNothing);
+    expect(container.read(selectedTaskIdProvider), isNull);
+    await finish(tester, container);
+  });
+
+  testWidgets('editing after Save makes the editor dirty again', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    await tester.enterText(titleField(), 'First saved title');
+    await save(tester);
+    // Re-select after the persistence stream settles. This keeps the
+    // regression focused on the persisted baseline even when a test database
+    // briefly emits its loading state between two writes.
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+    await tester.enterText(titleField(), 'Second unsaved title');
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+
+    expect(find.text('Discard unsaved changes?'), findsOneWidget);
+    await tester.tap(find.text('Keep editing'));
+    await settle(tester);
+    expect(
+      tester.widget<TextField>(titleField()).controller!.text,
+      'Second unsaved title',
+    );
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    await tester.tap(find.text('Discard'));
+    await settle(tester);
+    await finish(tester, container);
+  });
+
+  testWidgets('failed Save leaves the editor dirty', (tester) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    await tester.enterText(titleField(), '');
+    await tester.tap(find.byKey(const ValueKey('save-task-button')));
+    await settle(tester);
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+
+    expect(find.text('Discard unsaved changes?'), findsOneWidget);
+    await tester.tap(find.text('Keep editing'));
+    await settle(tester);
+    await tester.enterText(titleField(), 'Restored title');
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    await tester.tap(find.text('Discard'));
+    await settle(tester);
+    await finish(tester, container);
+  });
+
+  testWidgets('an unchanged editor closes without prompting', (tester) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+    expect(find.text('Discard unsaved changes?'), findsNothing);
+    expect(container.read(selectedTaskIdProvider), isNull);
+    await finish(tester, container);
+  });
+
+  testWidgets('editor actions remain visible while the form scrolls', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 800));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+
+    final templateButton = find.byKey(
+      const ValueKey('save-as-template-button'),
+    );
+    final formScrollables = find.ancestor(
+      of: templateButton,
+      matching: find.byType(Scrollable),
+    );
+    expect(formScrollables, findsOneWidget);
+    final formScrollable = formScrollables.last;
+    await tester.scrollUntilVisible(
+      templateButton,
+      500,
+      scrollable: formScrollable,
+    );
+    await settle(tester);
+
+    expect(find.byTooltip('Close editor'), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-task-button')), findsOneWidget);
+    expect(templateButton, findsOneWidget);
+    expect(
+      tester.getRect(templateButton).bottom,
+      lessThanOrEqualTo(tester.getRect(formScrollable).bottom),
+    );
+    expect(tester.takeException(), isNull);
+    await finish(tester, container);
+  });
+
+  testWidgets('missing-task state keeps a usable close action', (tester) async {
+    final container = await buildTestContainer(tester);
+    await pumpApp(tester, container, surface: const Size(1400, 800));
+    container.read(selectedTaskIdProvider.notifier).state = 'missing-task';
+    await settle(tester);
+
+    expect(
+      find.text('The selected task is no longer available.'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Close editor'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close editor'));
+    await settle(tester);
+
+    expect(container.read(selectedTaskIdProvider), isNull);
+    expect(find.text('Discard unsaved changes?'), findsNothing);
     await finish(tester, container);
   });
 }
