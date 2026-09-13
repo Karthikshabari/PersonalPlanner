@@ -17,8 +17,9 @@ Future<void> showTaskContextMenu(
   BuildContext context,
   WidgetRef ref,
   Task task,
-  Offset globalPosition,
-) async {
+  Offset globalPosition, {
+  VoidCallback? onEdit,
+}) async {
   final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   final choice = await showMenu<String>(
     context: context,
@@ -60,6 +61,7 @@ Future<void> showTaskContextMenu(
     case 'edit':
       ref.read(selectedTaskIdProvider.notifier).state = task.id;
       ref.read(taskEditorOpenProvider.notifier).state = true;
+      onEdit?.call();
       if (MediaQuery.sizeOf(context).width < AppConstants.desktopBreakpoint) {
         await TaskEditorPanel.showAsBottomSheet(context);
       }

@@ -14,17 +14,25 @@ import '../providers/selected_task_provider.dart';
 import '../widgets/day_header.dart';
 import '../widgets/timeline_widget.dart';
 
-class DayViewScreen extends ConsumerWidget {
+class DayViewScreen extends ConsumerStatefulWidget {
   const DayViewScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DayViewScreen> createState() => _DayViewScreenState();
+}
+
+class _DayViewScreenState extends ConsumerState<DayViewScreen> {
+  bool _editorVisible = false;
+
+  @override
+  Widget build(BuildContext context) {
     ref.listen<String?>(selectedTaskIdProvider, (previous, next) {
-      if (next != null && previous != next) {
-        ref.read(taskEditorOpenProvider.notifier).state = true;
+      if (next != null && previous != next && mounted) {
+        setState(() => _editorVisible = true);
       }
     });
     void closeEditor() {
+      setState(() => _editorVisible = false);
       ref.read(taskEditorOpenProvider.notifier).state = false;
       ref.read(selectedTaskIdProvider.notifier).state = null;
     }
@@ -35,17 +43,10 @@ class DayViewScreen extends ConsumerWidget {
         onClose: () => Navigator.of(context).pop(),
       );
       ref.read(taskEditorOpenProvider.notifier).state = false;
+      if (mounted) setState(() => _editorVisible = false);
     }
 
-    final selectedDate = ref.watch(selectedDateProvider);
-    final materialization = ref.watch(dayMaterializationProvider(selectedDate));
-    final materializationError = materialization.hasError
-        ? ErrorPanel(
-            message: friendlyErrorMessage(materialization.error!),
-            onRetry: () =>
-                ref.invalidate(dayMaterializationProvider(selectedDate)),
-          )
-        : null;
+    final selectedDate = ref.read(selectedDateProvider);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -54,32 +55,37 @@ class DayViewScreen extends ConsumerWidget {
         // entry points; reading it avoids keeping a legacy StateProvider
         // subscription alive across route replacement.
         final selectedTaskId = ref.read(selectedTaskIdProvider);
-        // This provider is the rebuild signal for selection changes; the
-        // selected task itself remains a non-reactive read to avoid a closed
-        // legacy StateProvider subscription during route replacement.
-        final editorOpen = ref.watch(taskEditorOpenProvider);
-        if (selectedTaskId != null && !editorOpen) {
-          // A few existing entry points select a task immediately before
-          // routing to Day. Open the on-demand panel after this frame without
-          // subscribing to the legacy selection provider.
+        // A selection supplied by Search/Week is an explicit request to
+        // open the editor when this route is entered. Local state keeps
+        // the panel responsive without subscribing to the legacy
+        // selection provider across route/container replacement.
+        if (selectedTaskId != null && !_editorVisible) {
+          _editorVisible = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!context.mounted) return;
-            if (ref.read(selectedTaskIdProvider) == selectedTaskId &&
-                !ref.read(taskEditorOpenProvider)) {
+            if (mounted && ref.read(selectedTaskIdProvider) != null) {
               ref.read(taskEditorOpenProvider.notifier).state = true;
             }
           });
         }
-        final showDesktopEditor = isDesktop && selectedTaskId != null;
+        final showDesktopEditor =
+            isDesktop && selectedTaskId != null && _editorVisible;
 
         final timeline = Column(
           children: [
-            materializationError ?? const SizedBox.shrink(),
+            const _DayMaterializationStatus(),
             Expanded(
               child: TimelineWidget(
+                onEditTask: isDesktop
+                    ? (_) {
+                        setState(() => _editorVisible = true);
+                        ref.read(taskEditorOpenProvider.notifier).state = true;
+                      }
+                    : null,
                 onTaskTap: isDesktop
-                    ? (_) =>
-                          ref.read(taskEditorOpenProvider.notifier).state = true
+                    ? (_) {
+                        setState(() => _editorVisible = true);
+                        ref.read(taskEditorOpenProvider.notifier).state = true;
+                      }
                     : (_) => openMobileEditor(),
               ),
             ),
@@ -145,6 +151,23 @@ class DayViewScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Keeps recurrence materialization tied to the currently viewed date without
+/// making the surrounding Day layout subscribe to a legacy selection provider.
+class _DayMaterializationStatus extends ConsumerWidget {
+  const _DayMaterializationStatus();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final date = ref.watch(selectedDateProvider);
+    final materialization = ref.watch(dayMaterializationProvider(date));
+    if (!materialization.hasError) return const SizedBox.shrink();
+    return ErrorPanel(
+      message: friendlyErrorMessage(materialization.error!),
+      onRetry: () => ref.invalidate(dayMaterializationProvider(date)),
     );
   }
 }

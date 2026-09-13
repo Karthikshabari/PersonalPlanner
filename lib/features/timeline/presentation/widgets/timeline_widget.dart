@@ -77,8 +77,9 @@ class _ResizePreview {
 
 class TimelineWidget extends ConsumerStatefulWidget {
   final void Function(Task task)? onTaskTap;
+  final void Function(Task task)? onEditTask;
 
-  const TimelineWidget({super.key, this.onTaskTap});
+  const TimelineWidget({super.key, this.onTaskTap, this.onEditTask});
 
   @override
   ConsumerState<TimelineWidget> createState() => _TimelineWidgetState();
@@ -505,6 +506,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     });
     final selectedDate = ref.watch(selectedDateProvider);
     final gridAsync = ref.watch(gridIntervalProvider);
+    // Keep the canonical day stream alive for command/history consumers as
+    // well as the active calendar projection. The latter intentionally
+    // filters rescheduled predecessors, while repositories and tests still
+    // observe the complete persisted day list.
+    ref.watch(dayTasksProvider);
     final tasksAsync = ref.watch(activeDayTasksProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final subtaskCountsAsync = ref.watch(subtaskCountsProvider);
@@ -545,12 +551,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       return const Center(child: CircularProgressIndicator());
     }
     final subtaskCounts = subtaskCountsAsync.requireValue;
-    // Selection changes also toggle the editor-open signal from the Day
-    // surface. Read the legacy selection value non-reactively here so a
-    // routed Day widget cannot retain a closed subscription between screens;
-    // the editor-open provider still rebuilds the block highlighting.
-    ref.watch(taskEditorOpenProvider);
-    final selectedTaskId = ref.read(selectedTaskIdProvider);
+    final selectedTaskId = ref.watch(selectedTaskIdProvider);
     final keepFlags = ref.watch(keepOverlapIdsProvider);
     final grid = _gridMinutes;
     final now = DateTime.now();
@@ -917,8 +918,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         onDragUpdate: _updateDrag,
         onDragEnd: _endDrag,
         onDragCancel: _cancelDrag,
-        onContextMenuRequested: (position) =>
-            showTaskContextMenu(context, ref, task, position),
+        onContextMenuRequested: (position) => showTaskContextMenu(
+          context,
+          ref,
+          task,
+          position,
+          onEdit: () => widget.onEditTask?.call(task),
+        ),
         child: dimmed ? Opacity(opacity: 0.35, child: dragChild) : dragChild,
       ),
     );
