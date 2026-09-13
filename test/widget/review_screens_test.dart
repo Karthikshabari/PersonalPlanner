@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
@@ -91,9 +92,12 @@ void main() {
       expect(find.text('1 / 2 completed'), findsOneWidget);
       // Planned total: 1h + 1h30m.
       expect(find.textContaining('2h 30m planned'), findsOneWidget);
-    expect(find.byKey(const ValueKey('review-mini-timeline')), findsNothing);
-    expect(find.text('What changed'), findsOneWidget);
-    expect(find.text('Added during the day'), findsAtLeastNWidgets(1));
+      expect(find.textContaining('tracked'), findsNothing);
+      expect(find.byKey(const ValueKey('review-mini-timeline')), findsNothing);
+      expect(find.text('Energy level'), findsNothing);
+      expect(find.text('Planning accuracy'), findsNothing);
+      expect(find.text('What changed'), findsOneWidget);
+      expect(find.text('Added during the day'), findsAtLeastNWidgets(1));
       await finish(tester, container);
     },
   );
@@ -155,6 +159,43 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('editing the simplified note preserves legacy review fields', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final repo = container.read(reviewRepositoryProvider);
+    await runDb(
+      tester,
+      () => repo.saveDailyReview(
+        DailyReview(
+          id: '',
+          date: today(),
+          reflection: 'Old note',
+          energyLevel: 4,
+          wins: ['Legacy win'],
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    await tester.tap(find.text('Review').last);
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('review-note')),
+      'Updated note',
+    );
+    await tester.tap(find.byKey(const ValueKey('review-save')));
+    await settle(tester);
+
+    final saved = await runDb(tester, () => repo.getReviewForDate(today()));
+    expect(saved!.reflection, 'Updated note');
+    expect(saved.energyLevel, 4);
+    expect(saved.wins, ['Legacy win']);
+    await finish(tester, container);
+  });
+
   testWidgets('weekly review shows aggregates and saves the review', (
     tester,
   ) async {
@@ -173,7 +214,7 @@ void main() {
     expect(find.text('Weekly Review'), findsOneWidget);
     expect(find.text('This week'), findsOneWidget);
     expect(find.text('1 / 2 completed'), findsOneWidget);
-    expect(find.text('What changed'), findsOneWidget);
+    expect(find.text('What changed this week'), findsOneWidget);
 
     await tester.enterText(
       find.byKey(const ValueKey('weekly-note')),
@@ -208,6 +249,9 @@ void main() {
     final selectedWeek = addDays(startOfWeek(today()), -7);
     container.read(selectedWeekStartProvider.notifier).state = selectedWeek;
     await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('week-next')));
+    await settle(tester);
+    expect(container.read(selectedWeekStartProvider), startOfWeek(today()));
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('review-mode-switcher')),
@@ -216,7 +260,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(container.read(selectedReviewDateProvider), selectedWeek);
+    expect(container.read(selectedReviewDateProvider), startOfWeek(today()));
     expect(find.text('Daily Review'), findsOneWidget);
     await finish(tester, container);
   });

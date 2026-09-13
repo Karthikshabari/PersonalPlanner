@@ -13,6 +13,7 @@ import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
+import '../../domain/review_insights.dart';
 import '../../providers/review_providers.dart';
 import '../widgets/review_mode_switcher.dart';
 import '../widgets/review_sections.dart';
@@ -115,7 +116,7 @@ class WeeklyReviewScreen extends ConsumerWidget {
 
   Widget _buildSummary(
     AsyncValue<DailyStats> stats,
-    AsyncValue<dynamic> insights,
+    AsyncValue<ReviewInsights> insights,
     bool future,
   ) {
     if (stats.hasError) {
@@ -132,18 +133,20 @@ class WeeklyReviewScreen extends ConsumerWidget {
       insights: insights.requireValue,
       future: future,
       heading: 'This week',
+      emptyLabel: 'No planned items for this week.',
     );
   }
 
-  Widget _buildChanges(AsyncValue<dynamic> insights, bool future) {
+  Widget _buildChanges(AsyncValue<ReviewInsights> insights, bool future) {
     if (!insights.hasValue) return const SizedBox.shrink();
     return ReviewChangesSection(
       insights: insights.requireValue,
       future: future,
+      heading: 'What changed this week',
     );
   }
 
-  Widget _buildCarryover(AsyncValue<dynamic> insights) {
+  Widget _buildCarryover(AsyncValue<ReviewInsights> insights) {
     if (!insights.hasValue) return const SizedBox.shrink();
     return ReviewCarryoverSection(
       heading: 'Next week',
