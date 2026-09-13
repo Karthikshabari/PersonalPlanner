@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
+import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/features/day_context/providers/day_context_providers.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 
 import '../helpers/test_container.dart';
@@ -101,6 +103,33 @@ void main() {
       await finish(tester, container);
     },
   );
+
+  testWidgets('daily review shows the saved day context badge only when set', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/review');
+    await pumpApp(tester, container, surface: const Size(390, 844));
+    await settle(tester);
+    final date = today();
+    final badge = find.byKey(
+      ValueKey('review-day-context-${isoDateString(date)}'),
+    );
+
+    expect(badge, findsNothing);
+
+    await runDb(
+      tester,
+      () => container
+          .read(dayContextRepositoryProvider)
+          .save(isoDateString(date), DayContextKind.office, null),
+    );
+    await settle(tester);
+
+    expect(badge, findsOneWidget);
+    expect(find.text('Office'), findsOneWidget);
+    await finish(tester, container);
+  });
 
   testWidgets(
     'fill and save the daily review persists it and refreshes stats',

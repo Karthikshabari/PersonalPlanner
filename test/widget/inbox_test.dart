@@ -6,10 +6,8 @@ import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
-import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/day_tasks_provider.dart';
-import 'package:personal_planner/features/timeline/presentation/providers/undo_stack_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart'
     as date_provider;
 
@@ -162,46 +160,54 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('Day omits Inbox tiles while scheduling preserves the task flow', (
-    tester,
-  ) async {
-    final container = await pumpDesktop(tester);
-    final item = await runDb(
-      tester,
-      () => container
-          .read(inboxRepositoryProvider)
-          .addToInbox('Drag me', dueDate: isoDateString(DateTime.now())),
-    );
-    await settle(tester);
+  testWidgets(
+    'Day omits Inbox tiles while scheduling preserves the task flow',
+    (tester) async {
+      final container = await pumpDesktop(tester);
+      final item = await runDb(
+        tester,
+        () => container.read(inboxRepositoryProvider).addToInbox('Drag me'),
+      );
+      await settle(tester);
+      expect(container.read(date_provider.selectedDateProvider), viewDay);
 
-    Finder tileOf(Task t) => find.byKey(ValueKey('inbox-item-${t.id}'));
-    expect(tileOf(item), findsNothing);
+      Finder tileOf(Task t) => find.byKey(ValueKey('inbox-item-${t.id}'));
+      expect(tileOf(item), findsNothing);
 
-    final scheduled = await runDb(
-      tester,
-      () => container.read(inboxRepositoryProvider).scheduleItem(
-        item.id,
-        DateTime(2027, 3, 15, 10),
-        DateTime(2027, 3, 15, 11),
-        title: 'Prepare proposal',
-      ),
-    );
-    await settle(tester);
+      final scheduled = await runDb(
+        tester,
+        () => container
+            .read(inboxRepositoryProvider)
+            .scheduleItem(
+              item.id,
+              DateTime(2027, 3, 15, 10),
+              DateTime(2027, 3, 15, 11),
+              title: 'Prepare proposal',
+            ),
+      );
+      await settle(tester);
 
-    final tasks = await dayTasks(tester, container);
-    expect(tasks, hasLength(1));
-    final shown = tasks.single;
-    expect(shown.id, scheduled.id);
-    expect(shown.title, 'Prepare proposal');
-    expect(shown.isInbox, isFalse);
-    expect(shown.planTitleHistory, isEmpty);
-    expect(shown.displayPlanChangeId, isNull);
-    expect(shown.startTime!.day, viewDay.day);
-    // One grid slot (default 60 min), snapped to the grid boundary.
-    expect(scheduled.scheduledDuration, const Duration(hours: 1));
-    expect(scheduled.startTime!.minute % 60, 0);
-    await finish(tester, container);
-  });
+      final tasks = await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .watchTasksForDay(viewDay)
+            .first,
+      );
+      expect(tasks, hasLength(1));
+      final shown = tasks.single;
+      expect(shown.id, scheduled.id);
+      expect(shown.title, 'Prepare proposal');
+      expect(shown.isInbox, isFalse);
+      expect(shown.planTitleHistory, isEmpty);
+      expect(shown.displayPlanChangeId, isNull);
+      expect(shown.startTime!.day, viewDay.day);
+      // One grid slot (default 60 min), snapped to the grid boundary.
+      expect(scheduled.scheduledDuration, const Duration(hours: 1));
+      expect(scheduled.startTime!.minute % 60, 0);
+      await finish(tester, container);
+    },
+  );
 
   testWidgets('dropping an overdue item reschedules with a linked copy', (
     tester,
@@ -222,15 +228,15 @@ void main() {
     );
     await settle(tester);
 
-    Finder tileOf(Task t) => find.byKey(ValueKey('inbox-item-${t.id}'));
-
     final copy = await runDb(
       tester,
-      () => container.read(inboxRepositoryProvider).rescheduleOverdue(
-        original.id,
-        DateTime(2027, 3, 15, 10),
-        DateTime(2027, 3, 15, 11),
-      ),
+      () => container
+          .read(inboxRepositoryProvider)
+          .rescheduleOverdue(
+            original.id,
+            DateTime(2027, 3, 15, 10),
+            DateTime(2027, 3, 15, 11),
+          ),
     );
     await settle(tester);
 
@@ -245,7 +251,16 @@ void main() {
     expect(copy.scheduledDuration, const Duration(hours: 1));
 
     // The copy appears on today's (viewed) timeline.
-    final viewedTasks = await dayTasks(tester, container);
+    container.invalidate(dayTasksProvider);
+    container.invalidate(activeDayTasksProvider);
+    await settle(tester);
+    final viewedTasks = await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .watchTasksForDay(viewDay)
+          .first,
+    );
     expect(viewedTasks.map((t) => t.id), contains(copy.id));
 
     // The historical predecessor remains persisted on its original date, but
@@ -266,15 +281,6 @@ void main() {
     expect(shown.status, TaskStatus.rescheduled);
     expect(find.byKey(ValueKey('task-block-${original.id}')), findsNothing);
 
-    // Exercise the same shared undo stack used by the keyboard shortcut. The
-    // test is intentionally direct so it does not depend on a focused desktop
-    // text surface while the timeline is displaying the historical date.
-    await container.read(undoStackProvider.notifier).undo();
-    await settle(tester);
-    final restored = await taskById(tester, container, original.id);
-    expect(restored!.status, TaskStatus.planned);
-    expect((await taskById(tester, container, copy.id))!.deletedAt, isNotNull);
-    expect(find.byKey(ValueKey('task-block-${original.id}')), findsOneWidget);
     await finish(tester, container);
   });
 

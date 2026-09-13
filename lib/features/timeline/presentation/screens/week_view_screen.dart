@@ -218,7 +218,13 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeader(context, weekStart, selectedDate, days),
+            Flexible(
+              fit: FlexFit.loose,
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: _buildHeader(context, weekStart, selectedDate, days),
+              ),
+            ),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -431,9 +437,13 @@ class _WeekPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstAxis = PlannerDayAxis(days.first);
     final tokens = AppThemeTokens.of(context);
-    return Column(
+    return Stack(
       children: [
-        IntrinsicHeight(
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 80,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -464,7 +474,11 @@ class _WeekPage extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(
+        Positioned(
+          top: 80,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: NotificationListener<ScrollUpdateNotification>(
             onNotification: (notification) {
               onScroll(notification.metrics.pixels);
@@ -573,42 +587,45 @@ class _WeekHeaderCell extends ConsumerWidget {
             child: SizedBox(
               height: 48,
               child: Center(
-                child: Wrap(
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: AppSpacing.xs,
-                  children: [
-                    Text(
-                      DateFormat('EEE d').format(date),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    if (tasksAsync.hasValue && tasks.isNotEmpty)
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: AppSpacing.xs,
+                    children: [
                       Text(
-                        '$completed/${tasks.length}',
-                        key: ValueKey('day-count-${isoDateString(date)}'),
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        DateFormat('EEE d').format(date),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                    if (isToday)
-                      const Icon(
-                        Icons.today,
-                        key: ValueKey('week-today-marker'),
-                        size: 14,
-                      ),
-                  ],
+                      if (tasksAsync.hasValue && tasks.isNotEmpty)
+                        Text(
+                          '$completed/${tasks.length}',
+                          key: ValueKey('day-count-${isoDateString(date)}'),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      if (isToday)
+                        const Icon(
+                          Icons.today,
+                          key: ValueKey('week-today-marker'),
+                          size: 14,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
           SizedBox(
             height: 30,
-            child: Align(
-              alignment: Alignment.center,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
               child: DayContextAction(date: date, compact: true),
             ),
           ),

@@ -48,6 +48,11 @@ dependencies:
   window_manager: ^0.5.1
   stack_trace: ^1.12.1
 
+  # Required at runtime by Flutter's generated Android plugin registrant.
+  # The integration test API remains used only by integration-test targets.
+  integration_test:
+    sdk: flutter
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -59,10 +64,6 @@ dev_dependencies:
   drift_dev: ^2.28.0
   freezed: ^3.0.6
   json_serializable: ^6.9.5
-
-  # End-to-end application flows (kept separate from unit/widget tests)
-  integration_test:
-    sdk: flutter
 
 flutter:
   uses-material-design: true

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/daily_review.dart';
 import '../../../../core/models/daily_stats.dart';
+import '../../../../core/models/day_context.dart';
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -12,6 +13,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../day_context/providers/day_context_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_insights.dart';
 import '../../providers/review_providers.dart';
@@ -26,6 +28,7 @@ class DailyReviewScreen extends ConsumerWidget {
     final date = ref.watch(selectedReviewDateProvider);
     final statsAsync = ref.watch(dailyStatsProvider(date));
     final insightsAsync = ref.watch(dailyReviewInsightsProvider(date));
+    final dayContext = ref.watch(dayContextForDateProvider(date)).value;
     final tokens = AppThemeTokens.of(context);
     final future = startOfDay(date).isAfter(startOfDay(DateTime.now()));
 
@@ -56,7 +59,7 @@ class DailyReviewScreen extends ConsumerWidget {
                 },
               ),
               const SizedBox(height: AppSpacing.sm),
-              _buildDateNav(context, ref, date),
+              _buildDateNav(context, ref, date, dayContext?.displayLabel),
               const SizedBox(height: AppSpacing.md),
               _buildSummary(statsAsync, insightsAsync, future),
               const SizedBox(height: AppSpacing.md),
@@ -72,7 +75,12 @@ class DailyReviewScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildDateNav(BuildContext context, WidgetRef ref, DateTime date) {
+  Widget _buildDateNav(
+    BuildContext context,
+    WidgetRef ref,
+    DateTime date,
+    String? dayContextLabel,
+  ) {
     final notifier = ref.read(selectedReviewDateProvider.notifier);
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -89,6 +97,11 @@ class DailyReviewScreen extends ConsumerWidget {
           DateFormat('EEE, MMM d, yyyy').format(date),
           style: Theme.of(context).textTheme.titleLarge,
         ),
+        if (dayContextLabel != null)
+          _DayContextBadge(
+            key: ValueKey('review-day-context-${isoDateString(date)}'),
+            label: dayContextLabel,
+          ),
         IconButton(
           key: const ValueKey('review-next-day'),
           tooltip: 'Next day',
@@ -141,6 +154,39 @@ class DailyReviewScreen extends ConsumerWidget {
     return ReviewCarryoverSection(
       heading: 'Tomorrow',
       items: insights.requireValue.carryover,
+    );
+  }
+}
+
+class _DayContextBadge extends StatelessWidget {
+  final String label;
+
+  const _DayContextBadge({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Semantics(
+      label: 'Day context: $label',
+      container: true,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 140),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color: tokens.surfaceSubtle,
+          border: Border.all(color: tokens.outline),
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelMedium,
+        ),
+      ),
     );
   }
 }
