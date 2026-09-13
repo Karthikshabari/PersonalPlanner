@@ -5,16 +5,24 @@ import 'package:intl/intl.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/theme/app_colors.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
+import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
 
 import '../helpers/test_container.dart';
 
 void main() {
-  Future<void> pumpDesktop(WidgetTester tester, ProviderContainer container) =>
-      pumpApp(tester, container, surface: const Size(1400, 1000));
+  Future<void> pumpDesktop(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+  }
 
   testWidgets('app launches with dark theme and 24-hour grid', (tester) async {
     final container = await buildTestContainer(tester);
@@ -34,12 +42,15 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('editor shows a neutral prompt when no task is selected', (
+  testWidgets('day starts timeline-first without a permanent editor', (
     tester,
   ) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    expect(find.text('Select a task to edit'), findsOneWidget);
+    expect(find.text('Select a task to edit'), findsNothing);
+    expect(find.byKey(const ValueKey('timeline-gestures')), findsOneWidget);
+    expect(find.byKey(const ValueKey('inbox-sidebar')), findsNothing);
+    expect(find.byKey(const ValueKey('day-needs-attention')), findsNothing);
     expect(
       find.text('The selected task is no longer available.'),
       findsNothing,
@@ -51,6 +62,36 @@ void main() {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
     expect(find.byType(CurrentTimeIndicator), findsOneWidget);
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('Day omits general Inbox items and surfaces due attention only', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final now = DateTime.now();
+    final dueToday = isoDateString(now);
+    await runDb(
+      tester,
+      () => container
+          .read(inboxRepositoryProvider)
+          .addToInbox('Pay electricity bill', dueDate: dueToday),
+    );
+    await runDb(
+      tester,
+      () => container.read(inboxRepositoryProvider).addToInbox('General idea'),
+    );
+    await pumpDesktop(tester, container);
+
+    expect(find.byKey(const ValueKey('day-needs-attention')), findsOneWidget);
+    expect(find.text('Pay electricity bill'), findsOneWidget);
+    expect(find.text('General idea'), findsNothing);
+    expect(find.byKey(const ValueKey('inbox-sidebar')), findsNothing);
+
+    appRouter.go('/inbox');
+    await settle(tester);
+    expect(find.text('Pay electricity bill'), findsOneWidget);
+    expect(find.text('General idea'), findsOneWidget);
     await teardownApp(tester, container);
   });
 

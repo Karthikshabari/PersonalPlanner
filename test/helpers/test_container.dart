@@ -38,6 +38,10 @@ Future<void> pumpApp(
   ProviderContainer container, {
   Size? surface,
 }) async {
+  // Explicitly unmount the previous app tree before attaching a fresh
+  // ProviderContainer. This prevents a routed Consumer from retaining a
+  // Riverpod subscription that belongs to a disposed test container.
+  await tester.pumpWidget(const SizedBox.shrink());
   if (surface != null) {
     tester.view.physicalSize = surface;
     tester.view.devicePixelRatio = 1.0;

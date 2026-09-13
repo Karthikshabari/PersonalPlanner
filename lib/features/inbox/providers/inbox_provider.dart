@@ -100,6 +100,29 @@ final todayInboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
   );
 });
 
+/// Small Day-surface projection: only overdue scheduled work and explicit
+/// Inbox captures whose date-only due date is today. General captures remain
+/// available from the dedicated Inbox screen.
+final dayAttentionProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
+  final clock = ref.watch(inboxClockProvider);
+  final inbox = ref.watch(inboxProvider);
+  if (clock.hasError) {
+    return Stream<List<InboxItem>>.error(clock.error!, clock.stackTrace);
+  }
+  if (inbox.hasError) {
+    return Stream<List<InboxItem>>.error(inbox.error!, inbox.stackTrace);
+  }
+  if (!clock.hasValue || !inbox.hasValue) {
+    return const Stream<List<InboxItem>>.empty();
+  }
+  final today = isoDateString(clock.requireValue);
+  return Stream.value(
+    inbox.requireValue
+        .where((item) => item.isOverdue || item.task.dueDate == today)
+        .toList(growable: false),
+  );
+});
+
 /// Date-only comparison against the application's canonical Monday–Sunday
 /// week containing planner-local today.
 bool isInboxItemVisibleInToday(InboxItem item, DateTime now) {

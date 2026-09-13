@@ -6,7 +6,11 @@ import '../../../../core/providers/database_provider.dart';
 
 final selectedTaskIdProvider = StateProvider<String?>((ref) => null);
 
-final selectedTaskByIdProvider =
-    FutureProvider.autoDispose.family<Task?, String>((ref, taskId) {
-  return ref.watch(taskRepositoryProvider).getTaskById(taskId);
-});
+/// True while the on-demand desktop editor is open. Selection and editing are
+/// deliberately separate so the Day timeline can stay full-width by default.
+final taskEditorOpenProvider = StateProvider<bool>((ref) => false);
+
+final selectedTaskByIdProvider = FutureProvider.autoDispose
+    .family<Task?, String>((ref, taskId) {
+      return ref.watch(taskRepositoryProvider).getTaskById(taskId);
+    });
