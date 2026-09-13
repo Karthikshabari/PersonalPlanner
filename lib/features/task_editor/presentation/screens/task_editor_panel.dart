@@ -107,6 +107,7 @@ class TaskEditorPanel extends ConsumerStatefulWidget {
       ),
     ).whenComplete(() {
       container.read(selectedTaskIdProvider.notifier).state = null;
+      container.read(taskEditorOpenProvider.notifier).state = false;
     });
   }
 

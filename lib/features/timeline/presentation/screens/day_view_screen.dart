@@ -4,13 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
-import '../../../inbox/presentation/widgets/inbox_sidebar.dart';
+import '../../../../core/widgets/error_panel.dart';
+import '../../../inbox/presentation/widgets/day_needs_attention.dart';
+import '../../../recurring/providers/recurring_providers.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
+import '../../../timer/presentation/widgets/timer_overlay.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
-import '../../../recurring/providers/recurring_providers.dart';
-import '../../../timer/presentation/widgets/timer_overlay.dart';
-import '../../../../core/widgets/error_panel.dart';
 import '../widgets/day_header.dart';
 import '../widgets/timeline_widget.dart';
 
@@ -19,8 +19,24 @@ class DayViewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Materialize recurring rules for the viewed date (Chunk 4 #3). Watching
-    // the provider keeps the work alive and re-runs when the date changes.
+    ref.listen<String?>(selectedTaskIdProvider, (previous, next) {
+      if (next != null && previous != next) {
+        ref.read(taskEditorOpenProvider.notifier).state = true;
+      }
+    });
+    void closeEditor() {
+      ref.read(taskEditorOpenProvider.notifier).state = false;
+      ref.read(selectedTaskIdProvider.notifier).state = null;
+    }
+
+    Future<void> openMobileEditor() async {
+      await TaskEditorPanel.showAsBottomSheet(
+        context,
+        onClose: () => Navigator.of(context).pop(),
+      );
+      ref.read(taskEditorOpenProvider.notifier).state = false;
+    }
+
     final selectedDate = ref.watch(selectedDateProvider);
     final materialization = ref.watch(dayMaterializationProvider(selectedDate));
     final materializationError = materialization.hasError
@@ -30,58 +46,82 @@ class DayViewScreen extends ConsumerWidget {
                 ref.invalidate(dayMaterializationProvider(selectedDate)),
           )
         : null;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = isDesktopWidth(constraints.maxWidth);
+        // Selection is written immediately before opening the editor from all
+        // entry points; reading it avoids keeping a legacy StateProvider
+        // subscription alive across route replacement.
+        final selectedTaskId = ref.read(selectedTaskIdProvider);
+        // This provider is the rebuild signal for selection changes; the
+        // selected task itself remains a non-reactive read to avoid a closed
+        // legacy StateProvider subscription during route replacement.
+        final editorOpen = ref.watch(taskEditorOpenProvider);
+        if (selectedTaskId != null && !editorOpen) {
+          // A few existing entry points select a task immediately before
+          // routing to Day. Open the on-demand panel after this frame without
+          // subscribing to the legacy selection provider.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!context.mounted) return;
+            if (ref.read(selectedTaskIdProvider) == selectedTaskId &&
+                !ref.read(taskEditorOpenProvider)) {
+              ref.read(taskEditorOpenProvider.notifier).state = true;
+            }
+          });
+        }
+        final showDesktopEditor = isDesktop && selectedTaskId != null;
+
+        final timeline = Column(
+          children: [
+            materializationError ?? const SizedBox.shrink(),
+            Expanded(
+              child: TimelineWidget(
+                onTaskTap: isDesktop
+                    ? (_) =>
+                          ref.read(taskEditorOpenProvider.notifier).state = true
+                    : (_) => openMobileEditor(),
+              ),
+            ),
+          ],
+        );
+
         if (isDesktop) {
           return Stack(
             children: [
               Column(
                 children: [
-                  DayHeader(),
+                  const DayHeader(),
+                  const DayNeedsAttention(),
                   Expanded(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              materializationError ?? const SizedBox.shrink(),
-                              const Expanded(child: TimelineWidget()),
-                            ],
+                        Expanded(child: timeline),
+                        if (showDesktopEditor) ...[
+                          const VerticalDivider(width: 1),
+                          SizedBox(
+                            width: 340,
+                            child: TaskEditorPanel(
+                              presentation: TaskEditorPresentation.desktopPanel,
+                              onClose: closeEditor,
+                            ),
                           ),
-                        ),
-                        VerticalDivider(width: 1),
-                        SizedBox(
-                          width: 340,
-                          child: TaskEditorPanel(
-                            presentation: TaskEditorPresentation.desktopPanel,
-                            onClose: () =>
-                                ref
-                                        .read(selectedTaskIdProvider.notifier)
-                                        .state =
-                                    null,
-                          ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
-                  InboxSidebar(),
                 ],
               ),
-              // Floating running-timer widget (Chunk 6 #8).
               Positioned(
                 bottom: AppSpacing.lg,
-                left: AppSpacing.lg,
-                right: 340 + AppSpacing.lg,
-                child: Align(
-                  alignment: Alignment.bottomRight,
-                  child: TimerOverlay(),
-                ),
+                right: showDesktopEditor ? 340 + AppSpacing.lg : AppSpacing.lg,
+                child: const TimerOverlay(),
               ),
             ],
           );
         }
+
         return SafeArea(
           top: true,
           bottom: false,
@@ -98,21 +138,8 @@ class DayViewScreen extends ConsumerWidget {
             child: Column(
               children: [
                 const DayHeader(),
-                Expanded(
-                  child: Column(
-                    children: [
-                      materializationError ?? const SizedBox.shrink(),
-                      Expanded(
-                        child: TimelineWidget(
-                          onTaskTap: (_) => TaskEditorPanel.showAsBottomSheet(
-                            context,
-                            onClose: () => Navigator.of(context).pop(),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const DayNeedsAttention(),
+                Expanded(child: timeline),
               ],
             ),
           ),

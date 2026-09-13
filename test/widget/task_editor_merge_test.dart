@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
@@ -10,6 +11,13 @@ import 'package:personal_planner/features/timeline/presentation/providers/select
 import '../helpers/test_container.dart';
 
 void main() {
+  setUp(() {
+    // Each test gets a fresh ProviderContainer; reset the global router so a
+    // Day route element from the preceding test cannot be reused with a
+    // closed container subscription.
+    appRouter.go('/day');
+  });
+
   final date = DateTime(2027, 3, 15, 9);
 
   Future<Task> insertTask(WidgetTester tester, ProviderContainer container) {

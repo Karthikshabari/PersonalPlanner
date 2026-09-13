@@ -59,6 +59,7 @@ Future<void> showTaskContextMenu(
   switch (choice) {
     case 'edit':
       ref.read(selectedTaskIdProvider.notifier).state = task.id;
+      ref.read(taskEditorOpenProvider.notifier).state = true;
       if (MediaQuery.sizeOf(context).width < AppConstants.desktopBreakpoint) {
         await TaskEditorPanel.showAsBottomSheet(context);
       }

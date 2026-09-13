@@ -110,18 +110,21 @@ class AdaptiveShell extends StatelessWidget {
     final destinations = _mobileDestinations;
     final index = _selectedIndex(context, destinations);
     if (index == null) return null;
-    return NavigationBar(
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-      selectedIndex: index,
-      onDestinationSelected: (i) => _navigate(context, destinations[i].$1),
-      destinations: [
-        for (final d in destinations)
-          NavigationDestination(
-            icon: Icon(d.$2),
-            selectedIcon: Icon(d.$3),
-            label: d.$4,
-          ),
-      ],
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: NavigationBar(
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        selectedIndex: index,
+        onDestinationSelected: (i) => _navigate(context, destinations[i].$1),
+        destinations: [
+          for (final d in destinations)
+            NavigationDestination(
+              icon: Icon(d.$2),
+              selectedIcon: Icon(d.$3),
+              label: d.$4,
+            ),
+        ],
+      ),
     );
   }
 

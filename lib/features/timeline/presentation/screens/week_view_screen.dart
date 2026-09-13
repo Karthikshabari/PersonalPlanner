@@ -284,6 +284,8 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
                           ref.read(selectedDateProvider.notifier).state = date;
                           ref.read(selectedTaskIdProvider.notifier).state =
                               task.id;
+                          ref.read(taskEditorOpenProvider.notifier).state =
+                              true;
                           context.go('/day');
                         },
                         scrollController: _scrollControllerFor(page),
@@ -545,7 +547,7 @@ class _WeekHeaderCell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasksAsync = ref.watch(dayTasksForDateProvider(date));
+    final tasksAsync = ref.watch(activeDayTasksForDateProvider(date));
     final tasks = tasksAsync.value ?? const <Task>[];
     final completed = tasks
         .where((task) => task.status.dbValue == 'completed')
@@ -638,7 +640,7 @@ class _WeekDayGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final materialization = ref.watch(dayMaterializationProvider(date));
-    final tasksAsync = ref.watch(dayTasksForDateProvider(date));
+    final tasksAsync = ref.watch(activeDayTasksForDateProvider(date));
     final categoriesAsync = ref.watch(categoriesProvider);
     final internalRuler = showInternalRuler ? rulerWidth : 0.0;
     final available = math.max(1, columnWidth - internalRuler).toDouble();

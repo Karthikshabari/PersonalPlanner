@@ -17,7 +17,6 @@ import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/utils/uuid.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
@@ -138,7 +137,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   }
 
   List<Task> _currentTasks() =>
-      ref.read(dayTasksProvider).value ?? const <Task>[];
+      ref.read(activeDayTasksProvider).value ?? const <Task>[];
 
   void _scrollToCurrentTime() {
     final selectedDate = ref.read(selectedDateProvider);
@@ -456,7 +455,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<List<Task>>>(dayTasksProvider, (previous, next) {
+    ref.listen<AsyncValue<List<Task>>>(activeDayTasksProvider, (
+      previous,
+      next,
+    ) {
       final previousTasks = previous?.maybeWhen(
         data: (value) => value,
         orElse: () => null,
@@ -479,14 +481,6 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           _removedTasks.remove(task.id);
         }
         if (removed.isNotEmpty && mounted) setState(() {});
-      }
-      final selectedId = ref.read(selectedTaskIdProvider);
-      if (selectedId == null || !next.hasValue) return;
-      final stillVisible = next.value!.any(
-        (task) => task.id == selectedId && task.deletedAt == null,
-      );
-      if (!stillVisible) {
-        ref.read(selectedTaskIdProvider.notifier).state = null;
       }
     });
     ref.listen<int?>(timelineQuickCreateSlotProvider, (_, next) {
@@ -511,7 +505,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     });
     final selectedDate = ref.watch(selectedDateProvider);
     final gridAsync = ref.watch(gridIntervalProvider);
-    final tasksAsync = ref.watch(dayTasksProvider);
+    final tasksAsync = ref.watch(activeDayTasksProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final subtaskCountsAsync = ref.watch(subtaskCountsProvider);
     if (gridAsync.hasError) {
@@ -526,7 +520,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     if (tasksAsync.hasError) {
       return ErrorPanel(
         message: friendlyErrorMessage(tasksAsync.error!),
-        onRetry: () => ref.invalidate(dayTasksProvider),
+        onRetry: () => ref.invalidate(activeDayTasksProvider),
       );
     }
     if (!tasksAsync.hasValue) {
@@ -551,7 +545,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       return const Center(child: CircularProgressIndicator());
     }
     final subtaskCounts = subtaskCountsAsync.requireValue;
-    final selectedTaskId = ref.watch(selectedTaskIdProvider);
+    // Selection changes also toggle the editor-open signal from the Day
+    // surface. Read the legacy selection value non-reactively here so a
+    // routed Day widget cannot retain a closed subscription between screens;
+    // the editor-open provider still rebuilds the block highlighting.
+    ref.watch(taskEditorOpenProvider);
+    final selectedTaskId = ref.read(selectedTaskIdProvider);
     final keepFlags = ref.watch(keepOverlapIdsProvider);
     final grid = _gridMinutes;
     final now = DateTime.now();
@@ -991,39 +990,11 @@ class _EmptyDayState extends StatelessWidget {
     return IgnorePointer(
       ignoring: false,
       child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: AppSurface(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            color: AppThemeTokens.of(context).surfaceRaised,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.event_available_outlined,
-                  size: 40,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'No tasks planned for this day',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'Tap + to add your first block',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                FilledButton.icon(
-                  key: const ValueKey('empty-day-add'),
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add block'),
-                ),
-              ],
-            ),
-          ),
+        child: TextButton.icon(
+          key: const ValueKey('empty-day-add'),
+          onPressed: onAdd,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Add block'),
         ),
       ),
     );
