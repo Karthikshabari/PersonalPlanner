@@ -8,12 +8,15 @@ import '../../../../core/models/enums/priority.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/recurring_rule.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/models/plan_title_change.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
+import '../../../../core/utils/task_time_metrics.dart';
+import '../../../../core/utils/uuid.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
@@ -32,6 +35,7 @@ import '../../providers/tag_providers.dart';
 import '../../providers/task_editor_action_provider.dart';
 import '../../domain/task_editor_save_command.dart';
 import '../../domain/task_editor_draft.dart';
+import '../../domain/plan_title_history.dart';
 import '../../../timer/presentation/widgets/timer_controls.dart';
 import '../../../timer/providers/timer_providers.dart';
 import '../widgets/category_dropdown.dart';
@@ -40,6 +44,8 @@ import '../widgets/save_as_template_dialog.dart';
 import '../widgets/subtask_editor.dart';
 import '../widgets/tag_picker.dart';
 import '../widgets/use_template_dropdown.dart';
+import '../widgets/plan_change_dialog.dart';
+import '../../../timeline/presentation/widgets/schedule_fields.dart';
 
 enum TaskEditorPresentation { desktopPanel, bottomSheet }
 
@@ -112,7 +118,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   late final TextEditingController _titleController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _notesController;
-  late final TextEditingController _estimatedController;
   late final TextEditingController _actualController;
 
   String? _editingTaskId;
@@ -121,7 +126,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   TaskEditorBaseline? _baseline;
   Set<String>? _originalTagIds;
   TimeOfDay? _startTime;
-  TimeOfDay? _endTime;
+  DateTime? _startInstant;
+  DateTime? _endInstant;
+  String? _dueDate;
   bool _scheduleDirty = false;
   String? _categoryId;
   Priority _priority = Priority.none;
@@ -131,6 +138,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   String? _errorMessage;
   Task? _activeTask;
   bool _synchronizingControllers = false;
+  _TitleSaveIntent? _pendingTitleSaveIntent;
 
   // Recurrence staging (Chunk 4). `_repeat == null` means "unchanged or
   // still loading" — never persisted as-is. `_loadedPreset` is what the
@@ -147,13 +155,11 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _titleController = TextEditingController();
     _descriptionController = TextEditingController();
     _notesController = TextEditingController();
-    _estimatedController = TextEditingController();
     _actualController = TextEditingController();
     for (final controller in [
       _titleController,
       _descriptionController,
       _notesController,
-      _estimatedController,
       _actualController,
     ]) {
       controller.addListener(_onEditorControllerChanged);
@@ -165,7 +171,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _titleController.dispose();
     _descriptionController.dispose();
     _notesController.dispose();
-    _estimatedController.dispose();
     _actualController.dispose();
     super.dispose();
   }
@@ -186,22 +191,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     );
   }
 
-  bool _sameTimeOfDay(TimeOfDay? left, TimeOfDay? right) =>
-      left?.hour == right?.hour && left?.minute == right?.minute;
-
   bool get _scheduleInputsChanged {
     final task = _baseline?.task ?? _originalTask;
     if (task == null) return false;
-    final originalStart = task.startTime == null
-        ? null
-        : TimeOfDay.fromDateTime(
-            PlannerTimeZone.toPlannerLocal(task.startTime!),
-          );
-    final originalEnd = task.endTime == null
-        ? null
-        : TimeOfDay.fromDateTime(PlannerTimeZone.toPlannerLocal(task.endTime!));
-    return !_sameTimeOfDay(_startTime, originalStart) ||
-        !_sameTimeOfDay(_endTime, originalEnd);
+    return _startInstant != task.startTime || _endInstant != task.endTime;
   }
 
   bool _taskFieldsChangedAgainst(Task baseline) =>
@@ -211,13 +204,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
           baseline.description ||
       TaskEditorBaseline.normalizeNotes(_notesController.text) !=
           TaskEditorBaseline.normalizeNotes(baseline.notes ?? '') ||
-      _estimatedController.text.trim() !=
-          (baseline.estimatedDurationMin?.toString() ?? '') ||
       _actualController.text.trim() !=
           (baseline.actualDurationMin?.toString() ?? '') ||
       _categoryId != baseline.categoryId ||
       _priority != baseline.priority ||
       _status != baseline.status ||
+      _dueDate != baseline.dueDate ||
       _scheduleInputsChanged;
 
   void _rebaseUntouchedFields(Task latest) {
@@ -232,15 +224,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     final notesDirty =
         TaskEditorBaseline.normalizeNotes(_notesController.text) !=
         TaskEditorBaseline.normalizeNotes(previous.notes ?? '');
-    final estimatedDirty =
-        _estimatedController.text.trim() !=
-        (previous.estimatedDurationMin?.toString() ?? '');
     final actualDirty =
         _actualController.text.trim() !=
         (previous.actualDurationMin?.toString() ?? '');
     final categoryDirty = _categoryId != previous.categoryId;
     final priorityDirty = _priority != previous.priority;
     final statusDirty = _status != previous.status;
+    final dueDateDirty = _dueDate != previous.dueDate;
     final scheduleDirty = _scheduleInputsChanged;
     final conflictBaseline = _conflictBaselineTask ?? previous;
 
@@ -250,12 +240,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       _setControllerText(_descriptionController, latest.description ?? '');
     }
     if (!notesDirty) _setControllerText(_notesController, latest.notes ?? '');
-    if (!estimatedDirty) {
-      _setControllerText(
-        _estimatedController,
-        latest.estimatedDurationMin?.toString() ?? '',
-      );
-    }
     if (!actualDirty) {
       _setControllerText(
         _actualController,
@@ -265,16 +249,14 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     if (!categoryDirty) _categoryId = latest.categoryId;
     if (!priorityDirty) _priority = latest.priority;
     if (!statusDirty) _status = latest.status;
+    if (!dueDateDirty) _dueDate = latest.dueDate;
     if (!scheduleDirty) {
+      _startInstant = latest.startTime;
+      _endInstant = latest.endTime;
       _startTime = latest.startTime == null
           ? null
           : TimeOfDay.fromDateTime(
               PlannerTimeZone.toPlannerLocal(latest.startTime!),
-            );
-      _endTime = latest.endTime == null
-          ? null
-          : TimeOfDay.fromDateTime(
-              PlannerTimeZone.toPlannerLocal(latest.endTime!),
             );
     }
     _synchronizingControllers = false;
@@ -291,9 +273,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       status: statusDirty ? conflictBaseline.status : latest.status,
       startTime: scheduleDirty ? conflictBaseline.startTime : latest.startTime,
       endTime: scheduleDirty ? conflictBaseline.endTime : latest.endTime,
-      estimatedDurationMin: estimatedDirty
-          ? conflictBaseline.estimatedDurationMin
-          : latest.estimatedDurationMin,
+      dueDate: dueDateDirty ? conflictBaseline.dueDate : latest.dueDate,
       actualDurationMin: actualDirty
           ? conflictBaseline.actualDurationMin
           : latest.actualDurationMin,
@@ -330,10 +310,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _setControllerText(_descriptionController, task?.description ?? '');
     _setControllerText(_notesController, task?.notes ?? '');
     _setControllerText(
-      _estimatedController,
-      task?.estimatedDurationMin?.toString() ?? '',
-    );
-    _setControllerText(
       _actualController,
       task?.actualDurationMin?.toString() ?? '',
     );
@@ -346,9 +322,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _startTime = start == null
         ? null
         : TimeOfDay.fromDateTime(PlannerTimeZone.toPlannerLocal(start));
-    _endTime = end == null
-        ? null
-        : TimeOfDay.fromDateTime(PlannerTimeZone.toPlannerLocal(end));
+    _startInstant = start;
+    _endInstant = end;
+    _dueDate = task?.dueDate;
     _scheduleDirty = false;
     _originalRuleId = task?.recurringRuleId;
     _customConfig = null;
@@ -361,6 +337,20 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   String _formatTimeOfDay(TimeOfDay time) =>
       '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+
+  Future<void> _pickDueDate() async {
+    final initial = _dueDate == null
+        ? PlannerTimeZone.toPlannerLocal(DateTime.now())
+        : parseIsoDate(_dueDate!);
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDate: DateTime(initial.year, initial.month, initial.day),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _dueDate = isoDateString(picked));
+  }
 
   bool _sameIds(Set<String> left, Set<String> right) =>
       left.length == right.length && left.containsAll(right);
@@ -457,45 +447,19 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   }
 
   int get _effectiveDurationMinutes {
-    if (!_scheduleDirty) {
-      final persisted = _originalTask?.scheduledDuration;
-      if (persisted != null) {
-        return persisted.inMinutes.clamp(1, 10000);
-      }
-    }
-    if (_startTime != null && _endTime != null) {
-      var minutes =
-          _endTime!.hour * 60 +
-          _endTime!.minute -
-          (_startTime!.hour * 60 + _startTime!.minute);
-      if (minutes <= 0) minutes += Duration.minutesPerDay;
-      return minutes;
-    }
-    return (int.tryParse(_estimatedController.text.trim()) ?? 60).clamp(
-      1,
-      10000,
-    );
+    return (TaskTimeMetrics.plannedMinutes(_startInstant, _endInstant) ?? 60)
+        .clamp(1, 10000);
   }
 
   SaveAsTemplateDraft? _currentTemplateDraft(Task task, Set<String> tagIds) {
     final title = _titleController.text.trim();
-    final estimatedText = _estimatedController.text.trim();
-    final estimated = int.tryParse(estimatedText);
     if (title.isEmpty) {
       _showValidationError('Title must not be blank');
       return null;
     }
-    if (estimatedText.isNotEmpty && estimated == null) {
-      _showValidationError('Estimated duration must be a whole number');
-      return null;
-    }
-    if (estimated != null && estimated <= 0) {
-      _showValidationError('Estimated duration must be positive');
-      return null;
-    }
-    if (_startTime != null &&
-        _endTime != null &&
-        _effectiveDurationMinutes <= 0) {
+    if (_startInstant != null &&
+        _endInstant != null &&
+        !_endInstant!.isAfter(_startInstant!)) {
       _showValidationError('End time must be later than start time');
       return null;
     }
@@ -503,7 +467,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     return SaveAsTemplateDraft(
       suggestedName: title,
       description: description.isEmpty ? null : description,
-      durationMin: estimated ?? _effectiveDurationMinutes,
+      durationMin: _effectiveDurationMinutes,
       categoryId: _categoryId,
       priority: _priority.dbValue,
       tagIds: Set.unmodifiable(tagIds),
@@ -573,6 +537,62 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       recurrenceSignature: persisted.recurrenceSignature,
     );
     _errorMessage = null;
+    _pendingTitleSaveIntent = null;
+  }
+
+  _TitleSaveIntent _titleSaveIntentFor({
+    required String previousTitle,
+    required String nextTitle,
+    required PlanChangeDecision decision,
+  }) {
+    final existing = _pendingTitleSaveIntent;
+    if (existing != null &&
+        existing.matches(
+          previousTitle: previousTitle,
+          nextTitle: nextTitle,
+          decision: decision,
+        )) {
+      return existing;
+    }
+    final intent = _TitleSaveIntent(
+      id: generateUuidV7(),
+      previousTitle: previousTitle,
+      nextTitle: nextTitle,
+      decision: decision,
+      changedAt: DateTime.now().toUtc(),
+    );
+    _pendingTitleSaveIntent = intent;
+    return intent;
+  }
+
+  Task _applyTitleDecision(
+    Task task, {
+    required Task latest,
+    required _TitleSaveIntent intent,
+    required bool allFuture,
+  }) {
+    if (intent.decision == PlanChangeDecision.replace) {
+      return task.copyWith(displayPlanChangeId: null);
+    }
+    final eventId = allFuture
+        ? generateDeterministicUuid(
+            'plan-title-change:${intent.id}:${latest.id}',
+          )
+        : intent.id;
+    final event = PlanTitleChange(
+      id: eventId,
+      previousTitle: latest.title,
+      newTitle: task.title,
+      changedAt: intent.changedAt,
+    );
+    final history = PlanTitleHistory.appendOrRestore(
+      task.planTitleHistory,
+      event,
+    );
+    return task.copyWith(
+      planTitleHistory: history,
+      displayPlanChangeId: event.id,
+    );
   }
 
   Future<void> _saveImpl(Task task, {bool close = false}) async {
@@ -583,68 +603,35 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     // a clean editor.
     _scheduleDirty = _scheduleInputsChanged;
     final viewedDate = ref.read(selectedDateProvider);
-    final date = task.startTime ?? viewedDate;
-    final localDate = PlannerTimeZone.toPlannerLocal(date);
-    // TimeOfDay is only a display/editor control. Until the user touches a
-    // schedule button, retain the persisted instants verbatim so multi-day
-    // intervals and seconds cannot be shortened by a title-only save.
-    final start = !_scheduleDirty
-        ? task.startTime
-        : _startTime == null
-        ? null
-        : PlannerTimeZone.calendarDate(
-            localDate.year,
-            localDate.month,
-            localDate.day,
-            hour: _startTime!.hour,
-            minute: _startTime!.minute,
-          );
-    var end = !_scheduleDirty
-        ? task.endTime
-        : _endTime == null
-        ? null
-        : PlannerTimeZone.calendarDate(
-            localDate.year,
-            localDate.month,
-            localDate.day,
-            hour: _endTime!.hour,
-            minute: _endTime!.minute,
-          );
-    if (start != null && end != null && !end.isAfter(start)) {
-      final endLocal = PlannerTimeZone.toPlannerLocal(end);
-      end = PlannerTimeZone.calendarDate(
-        endLocal.year,
-        endLocal.month,
-        endLocal.day + 1,
-        hour: _endTime!.hour,
-        minute: _endTime!.minute,
-      );
-    }
-    final estimatedText = _estimatedController.text.trim();
+    // Preserve exact persisted instants until a schedule control is changed;
+    // full date/time controls create minute-precision values only then.
+    final start = _scheduleDirty ? _startInstant : task.startTime;
+    final end = _scheduleDirty ? _endInstant : task.endTime;
     final actualText = _actualController.text.trim();
-    final estimated = int.tryParse(estimatedText);
     final actual = int.tryParse(actualText);
+    // Empty is a legitimate untouched value for a task with no manual
+    // Actual source. Clearing an existing total, however, is ambiguous: the
+    // user must explicitly enter 0 so it becomes a signed manual source.
+    final actualWasEdited =
+        actualText !=
+        ((_baseline?.task ?? task).actualDurationMin?.toString() ?? '');
     if (_titleController.text.trim().isEmpty) {
       _showValidationError('Title must not be blank');
-      return;
-    }
-    if (estimatedText.isNotEmpty && estimated == null) {
-      _showValidationError('Estimated duration must be a whole number');
-      return;
-    }
-    if (estimated != null && estimated <= 0) {
-      _showValidationError('Estimated duration must be positive');
       return;
     }
     if (actualText.isNotEmpty && actual == null) {
       _showValidationError('Actual duration must be a whole number');
       return;
     }
+    if (actualWasEdited && actualText.isEmpty) {
+      _showValidationError('Enter total minutes, or 0');
+      return;
+    }
     if (actual != null && actual < 0) {
       _showValidationError('Actual duration must not be negative');
       return;
     }
-    if (start != null && end != null && !end.isAfter(start)) {
+    if (_scheduleDirty && start != null && end != null && !end.isAfter(start)) {
       _showValidationError('End time must be later than start time');
       return;
     }
@@ -711,7 +698,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       status: _status,
       startTime: start,
       endTime: end,
-      estimatedDurationMin: estimated,
+      dueDate: _dueDate,
       actualDurationMin: actualDirty
           ? (actual ?? task.actualDurationMin)
           : null,
@@ -743,8 +730,46 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       }
     }
 
-    final editedTask = draft.mergeOnto(mergeBaseline, latest);
+    var editedTask = draft.mergeOnto(mergeBaseline, latest);
     final tagsToSave = tagsDirty ? stagedTagIds : latestTagIds;
+
+    // A title history decision is intentionally made after a field-level
+    // external merge chose the exact persisted row we are about to replace.
+    // Creation/Inbox conversion do not use this editor path; unscheduled
+    // rows are also excluded so an ordinary capture cannot gain fake history.
+    PlanChangeDecision? titleDecision;
+    _TitleSaveIntent? titleIntent;
+    final titleChanged =
+        !latest.isInbox &&
+        latest.startTime != null &&
+        latest.endTime != null &&
+        PlanTitleHistory.normalizeTitle(editedTask.title) !=
+            PlanTitleHistory.normalizeTitle(latest.title);
+    if (titleChanged) {
+      if (!mounted) return;
+      titleDecision = await showPlanChangeDialog(
+        context,
+        previousTitle: latest.title,
+        nextTitle: editedTask.title,
+        allFuture: scope == RecurrenceScope.allFuture,
+      );
+      if (titleDecision == null) {
+        _pendingTitleSaveIntent = null;
+        if (mounted) setState(() => _saving = false);
+        return;
+      }
+      titleIntent = _titleSaveIntentFor(
+        previousTitle: latest.title,
+        nextTitle: editedTask.title,
+        decision: titleDecision,
+      );
+      editedTask = _applyTitleDecision(
+        editedTask,
+        latest: latest,
+        intent: titleIntent,
+        allFuture: scope == RecurrenceScope.allFuture,
+      );
+    }
 
     // Scheduling edits use the same fresh full-interval candidate set and
     // resolution choices as drag, resize, keyboard and Inbox scheduling.
@@ -883,7 +908,17 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
               await rulesRepo.updateRule(updatedRule);
               await ref
                   .read(recurrenceServiceProvider)
-                  .reconcileMaterializedFuture(updatedRule, boundary);
+                  .reconcileMaterializedFuture(
+                    updatedRule,
+                    boundary,
+                    excludeTaskId: task.id,
+                    planTitleChangeIntentId: titleIntent?.id,
+                    planTitleChangedAt: titleIntent?.changedAt,
+                    preservePlanTitleChange:
+                        titleDecision == PlanChangeDecision.preserve,
+                    clearPlanTitleDisplay:
+                        titleDecision == PlanChangeDecision.replace,
+                  );
               // Reconciliation updates every future materialized instance,
               // including the one currently open in the editor. Refresh its
               // revision before the editor's final write so the optimistic
@@ -1016,17 +1051,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     setState(() {
       _titleController.text = template.name;
       _descriptionController.text = template.description ?? '';
-      _estimatedController.text = template.durationMin.toString();
       _categoryId = template.categoryId;
       _priority = Priority.fromDb(template.priority);
       _stagedTagIds = template.tags.toSet();
-      if (_startTime != null) {
+      if (_startInstant != null) {
         _scheduleDirty = true;
-        final totalMinutes =
-            _startTime!.hour * 60 + _startTime!.minute + template.durationMin;
-        _endTime = TimeOfDay(
-          hour: (totalMinutes ~/ 60) % 24,
-          minute: totalMinutes % 60,
+        _endInstant = _startInstant!.add(
+          Duration(minutes: template.durationMin),
         );
       }
     });
@@ -1165,9 +1196,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     if (taskId == null) {
       return _editorFrame(
         context,
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+        SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1322,6 +1353,33 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   decoration: const InputDecoration(labelText: 'Description'),
                   maxLines: 2,
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Material(
+                  color: Colors.transparent,
+                  child: ExpansionTile(
+                    key: const ValueKey('plan-changes-section'),
+                    title: const Text('Plan changes'),
+                    children: task.planTitleHistory.isEmpty
+                        ? const [
+                            ListTile(
+                              title: Text('No intentional title changes yet.'),
+                            ),
+                          ]
+                        : [
+                            for (final change in task.planTitleHistory)
+                              ListTile(
+                                dense: true,
+                                title: Text(
+                                  '${change.previousTitle} → ${change.newTitle}',
+                                  key: ValueKey('plan-change-${change.id}'),
+                                ),
+                                subtitle: Text(
+                                  '${change.changedAt.toLocal()}${change.revertedAt == null ? '' : ' · Reverted'}',
+                                ),
+                              ),
+                          ],
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 const AppSectionHeader(
                   title: 'Schedule and status',
@@ -1363,55 +1421,46 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                             setState(() => _status = s ?? TaskStatus.planned),
                 ),
                 const SizedBox(height: AppSpacing.md),
+                ScheduleFields(
+                  start: _startInstant,
+                  end: _endInstant,
+                  enabled: !_saving,
+                  onStartChanged: (value) => setState(() {
+                    _startInstant = value;
+                    _startTime = value == null
+                        ? null
+                        : TimeOfDay.fromDateTime(
+                            PlannerTimeZone.toPlannerLocal(value),
+                          );
+                    _scheduleDirty = _scheduleInputsChanged;
+                  }),
+                  onEndChanged: (value) => setState(() {
+                    _endInstant = value;
+                    _scheduleDirty = _scheduleInputsChanged;
+                  }),
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        icon: const Icon(Icons.access_time, size: 16),
+                        key: const ValueKey('task-due-date'),
+                        onPressed: _saving ? null : _pickDueDate,
+                        icon: const Icon(Icons.event_outlined, size: 18),
                         label: Text(
-                          _startTime == null
-                              ? 'Start'
-                              : _startTime!.format(context),
+                          _dueDate == null ? 'Add due date' : 'Due $_dueDate',
                         ),
-                        onPressed: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime:
-                                _startTime ??
-                                const TimeOfDay(hour: 9, minute: 0),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _startTime = picked;
-                              _scheduleDirty = _scheduleInputsChanged;
-                            });
-                          }
-                        },
                       ),
                     ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.access_time_filled, size: 16),
-                        label: Text(
-                          _endTime == null ? 'End' : _endTime!.format(context),
-                        ),
-                        onPressed: () async {
-                          final picked = await showTimePicker(
-                            context: context,
-                            initialTime:
-                                _endTime ??
-                                const TimeOfDay(hour: 10, minute: 0),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              _endTime = picked;
-                              _scheduleDirty = _scheduleInputsChanged;
-                            });
-                          }
-                        },
+                    if (_dueDate != null)
+                      IconButton(
+                        key: const ValueKey('task-clear-due-date'),
+                        tooltip: 'Clear due date',
+                        onPressed: _saving
+                            ? null
+                            : () => setState(() => _dueDate = null),
+                        icon: const Icon(Icons.clear),
                       ),
-                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
@@ -1420,12 +1469,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   icon: Icons.timer_outlined,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                TextField(
-                  controller: _estimatedController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Estimated duration (minutes)',
-                  ),
+                Text(
+                  _startInstant == null || _endInstant == null
+                      ? 'Not scheduled'
+                      : 'Planned duration: ${TaskTimeMetrics.plannedMinutes(_startInstant, _endInstant)} minutes',
+                  key: const ValueKey('planned-duration-display'),
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(color: tokens.textMuted),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 TextField(
@@ -1531,3 +1581,28 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 }
 
 enum _ExternalMergeChoice { reload, keepMine }
+
+class _TitleSaveIntent {
+  final String id;
+  final String previousTitle;
+  final String nextTitle;
+  final PlanChangeDecision decision;
+  final DateTime changedAt;
+
+  const _TitleSaveIntent({
+    required this.id,
+    required this.previousTitle,
+    required this.nextTitle,
+    required this.decision,
+    required this.changedAt,
+  });
+
+  bool matches({
+    required String previousTitle,
+    required String nextTitle,
+    required PlanChangeDecision decision,
+  }) =>
+      this.previousTitle == previousTitle &&
+      this.nextTitle == nextTitle &&
+      this.decision == decision;
+}

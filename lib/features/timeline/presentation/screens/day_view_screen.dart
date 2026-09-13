@@ -72,8 +72,12 @@ class DayViewScreen extends ConsumerWidget {
               // Floating running-timer widget (Chunk 6 #8).
               Positioned(
                 bottom: AppSpacing.lg,
-                right: AppSpacing.lg,
-                child: TimerOverlay(),
+                left: AppSpacing.lg,
+                right: 340 + AppSpacing.lg,
+                child: Align(
+                  alignment: Alignment.bottomRight,
+                  child: TimerOverlay(),
+                ),
               ),
             ],
           );

@@ -8,6 +8,11 @@ import '../../../core/models/task.dart';
 import '../../../core/utils/acyclic_links.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/uuid.dart';
+import '../../../core/utils/task_time_metrics.dart';
+import '../../timer/domain/task_actual_duration_service.dart';
+import '../../timer/data/timer_repository.dart';
+import '../../timer/domain/timer_service.dart';
+import '../../task_editor/domain/plan_title_history.dart';
 
 class TaskRepository {
   final AppDatabase _db;
@@ -23,15 +28,38 @@ class TaskRepository {
 
   Future<Task> insertTask(Task task) async {
     final now = DateTime.now();
+    // A caller that supplies an initial Actual value is creating a manual
+    // source, not a second writable cache. This preserves older import/test
+    // callers while keeping the source/cache invariant from the first row.
+    final hasInitialManualSource =
+        task.manualActualSet ||
+        task.manualDurationAdjustmentMin != 0 ||
+        task.actualDurationMin != null;
+    // An explicit signed source (for example an imported legacy row) wins
+    // over the compatibility cache. A cache with no source is adapted as an
+    // initial desired manual total.
+    final initialAdjustment =
+        task.manualActualSet || task.manualDurationAdjustmentMin != 0
+        ? task.manualDurationAdjustmentMin
+        : (task.actualDurationMin ?? 0);
     final effective = _normalizeScheduling(task).copyWith(
       id: task.id.isEmpty ? generateUuidV7() : task.id,
       createdAt: task.createdAt,
       updatedAt: now,
+      manualDurationAdjustmentMin: hasInitialManualSource
+          ? initialAdjustment
+          : 0,
+      manualActualSet: hasInitialManualSource,
+      actualDurationMin: hasInitialManualSource
+          ? initialAdjustment.clamp(0, 1 << 31).toInt()
+          : null,
     );
     _validate(effective);
     await _db.transaction(() async {
       await _validateHistoryLinks(effective);
       await _dao.insertTask(_toCompanion(effective));
+      await TaskActualDurationService(_db)
+          .recomputeTaskInTransaction(effective.id);
       await _invalidateStatsForIntervals([
         (effective.startTime, effective.endTime),
       ]);
@@ -48,7 +76,12 @@ class TaskRepository {
     final now = DateTime.now();
     final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
     _validate(effective);
+    final terminalStatus = _isTerminalStatus(effective.status);
+    final ownerDeviceId = terminalStatus
+        ? await TimerRepository(_db).localDeviceId()
+        : null;
     late TaskRow row;
+    late Task persisted;
     await _db.transaction(() async {
       final current = await _dao.getTaskById(effective.id);
       if (current == null) {
@@ -60,44 +93,60 @@ class TaskRepository {
           'Task ${effective.id} changed while it was being edited; reload it before saving.',
         );
       }
+      // actual_duration_min is a derived cache and the manual source has a
+      // dedicated desired-total API. Ordinary editor/status/schedule updates
+      // must never replay an older cached aggregate over newly finished work.
+      final canonical = effective.copyWith(
+        actualDurationMin: current.actualDurationMin,
+        manualDurationAdjustmentMin: current.manualDurationAdjustmentMin,
+        manualActualSet: current.manualActualSet,
+      );
+      PlanTitleHistory.validateTransition(
+        previous: PlanTitleHistory.decodeJson(current.planTitleHistoryJson),
+        next: canonical.planTitleHistory,
+      );
       final previousStatus = TaskStatus.fromDb(current.status);
       if (!allowStatusTransition &&
-          !previousStatus.canTransitionTo(effective.status) &&
+          !previousStatus.canTransitionTo(canonical.status) &&
           !(allowRescheduledTransition &&
-              effective.status == TaskStatus.rescheduled)) {
+              canonical.status == TaskStatus.rescheduled)) {
         throw StateError(
-          'Cannot change ${previousStatus.label} to ${effective.status.label}',
+          'Cannot change ${previousStatus.label} to ${canonical.status.label}',
         );
       }
-      await _validateHistoryLinks(effective, previous: row);
+      await _validateHistoryLinks(canonical, previous: row);
+      if (ownerDeviceId != null) {
+        await TimerService(_db)
+            .stopOwnedTaskInTransaction(canonical.id, ownerDeviceId, now);
+      }
       await _dao.updateTask(
-        _toRow(effective, syncStatus: 1, revision: row.revision + 1),
+        _toRow(canonical, syncStatus: 1, revision: row.revision + 1),
       );
       await _invalidateStatsForIntervals([
         (row.startTime, row.endTime),
-        (effective.startTime, effective.endTime),
+        (canonical.startTime, canonical.endTime),
       ]);
+      persisted = canonical;
     });
-    return effective;
+    return persisted;
   }
 
   Future<void> deleteTask(String taskId) async {
     final row = await _dao.getTaskById(taskId);
     if (row == null || row.deletedAt != null) return;
     final now = DateTime.now();
+    final ownerDeviceId = await TimerRepository(_db).localDeviceId();
     await _db.transaction(() async {
-      await _db.timerDao.finalizeActiveForTask(taskId, now);
-      final totalSec = await _db.timerDao.getTotalDurationSecForTask(taskId);
-      final actual = (totalSec ~/ 60 + row.manualDurationAdjustmentMin)
-          .clamp(0, 1 << 31)
-          .toInt();
+      await TimerService(_db)
+          .stopOwnedTaskInTransaction(taskId, ownerDeviceId, now);
+      await TaskActualDurationService(_db).recomputeTaskInTransaction(taskId);
+      final refreshed = await _dao.getTaskById(taskId) ?? row;
       await _dao.updateTask(
-        row.copyWith(
+        refreshed.copyWith(
           deletedAt: Value(now),
           updatedAt: now,
-          actualDurationMin: Value(actual),
           syncStatus: 1,
-          revision: row.revision + 1,
+          revision: refreshed.revision + 1,
         ),
       );
       await _invalidateStatsForIntervals([(row.startTime, row.endTime)]);
@@ -135,6 +184,12 @@ class TaskRepository {
     });
   }
 
+  static bool _isTerminalStatus(TaskStatus status) =>
+      status == TaskStatus.completed ||
+      status == TaskStatus.skipped ||
+      status == TaskStatus.cancelled ||
+      status == TaskStatus.rescheduled;
+
   Stream<List<Task>> watchTasksForDay(DateTime date) => _dao
       .watchTasksForDay(date)
       .map((rows) => rows.map(TaskRepository.fromRow).toList());
@@ -159,6 +214,15 @@ class TaskRepository {
   ) async {
     final rows = await _dao.getTasksBetween(start, end);
     return rows.map(fromRow).toList(growable: false);
+  }
+
+  Future<Map<String, int>> getTaskRevisions(Iterable<String> taskIds) async {
+    final ids = taskIds.toSet();
+    if (ids.isEmpty) return const <String, int>{};
+    final rows = await (_db.select(
+      _db.tasks,
+    )..where((task) => task.id.isIn(ids))).get();
+    return {for (final row in rows) row.id: row.revision};
   }
 
   Future<void> _invalidateStatsForIntervals(
@@ -191,6 +255,7 @@ class TaskRepository {
     estimatedDurationMin: row.estimatedDurationMin,
     actualDurationMin: row.actualDurationMin,
     manualDurationAdjustmentMin: row.manualDurationAdjustmentMin,
+    manualActualSet: row.manualActualSet,
     categoryId: row.categoryId,
     priority: Priority.fromDb(row.priority),
     status: TaskStatus.fromDb(row.status),
@@ -199,7 +264,11 @@ class TaskRepository {
     rescheduledFromId: row.rescheduledFromId,
     rescheduledToId: row.rescheduledToId,
     isInbox: row.isInbox,
+    inboxContentVersion: row.inboxContentVersion,
+    dueDate: row.dueDate,
     missedAt: row.missedAt,
+    planTitleHistory: PlanTitleHistory.decodeJson(row.planTitleHistoryJson),
+    displayPlanChangeId: row.displayPlanChangeId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -214,6 +283,7 @@ class TaskRepository {
     estimatedDurationMin: Value(t.estimatedDurationMin),
     actualDurationMin: Value(t.actualDurationMin),
     manualDurationAdjustmentMin: Value(t.manualDurationAdjustmentMin),
+    manualActualSet: Value(t.manualActualSet),
     categoryId: Value(t.categoryId),
     priority: Value(t.priority.dbValue),
     status: Value(t.status.dbValue),
@@ -222,7 +292,13 @@ class TaskRepository {
     rescheduledFromId: Value(t.rescheduledFromId),
     rescheduledToId: Value(t.rescheduledToId),
     isInbox: Value(t.isInbox),
+    inboxContentVersion: Value(t.inboxContentVersion),
+    dueDate: Value(t.dueDate),
     missedAt: Value(t.missedAt),
+    planTitleHistoryJson: Value(
+      PlanTitleHistory.encodeJson(t.planTitleHistory),
+    ),
+    displayPlanChangeId: Value(t.displayPlanChangeId),
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     deletedAt: Value(t.deletedAt),
@@ -248,6 +324,25 @@ class TaskRepository {
         'must not be negative',
       );
     }
+    if (task.inboxContentVersion != 0 && task.inboxContentVersion != 1) {
+      throw ArgumentError.value(
+        task.inboxContentVersion,
+        'inboxContentVersion',
+        'must be 0 or 1',
+      );
+    }
+    if (task.dueDate != null && !isValidIsoDate(task.dueDate!)) {
+      throw ArgumentError.value(
+        task.dueDate,
+        'dueDate',
+        'must be a valid yyyy-MM-dd date',
+      );
+    }
+    PlanTitleHistory.validate(
+      task.planTitleHistory,
+      displayPlanChangeId: task.displayPlanChangeId,
+      currentTitle: task.title,
+    );
     if (task.endTime != null && task.startTime == null) {
       throw ArgumentError('endTime requires startTime');
     }
@@ -263,12 +358,20 @@ class TaskRepository {
   /// schedule values from an earlier edit.
   static Task _normalizeScheduling(Task task) {
     if (task.isInbox) {
-      return task.copyWith(startTime: null, endTime: null);
+      return task.copyWith(
+        startTime: null,
+        endTime: null,
+        estimatedDurationMin: null,
+      );
     }
+    final projection = TaskTimeMetrics.plannedMinutes(
+      task.startTime,
+      task.endTime,
+    );
     if (task.startTime != null || task.endTime != null) {
-      return task.copyWith(isInbox: false);
+      return task.copyWith(isInbox: false, estimatedDurationMin: projection);
     }
-    return task;
+    return task.copyWith(estimatedDurationMin: null);
   }
 
   /// History links form a single directed successor chain. Check the
@@ -322,6 +425,7 @@ class TaskRepository {
         estimatedDurationMin: t.estimatedDurationMin,
         actualDurationMin: t.actualDurationMin,
         manualDurationAdjustmentMin: t.manualDurationAdjustmentMin,
+        manualActualSet: t.manualActualSet,
         categoryId: t.categoryId,
         priority: t.priority.dbValue,
         status: t.status.dbValue,
@@ -330,7 +434,11 @@ class TaskRepository {
         rescheduledFromId: t.rescheduledFromId,
         rescheduledToId: t.rescheduledToId,
         isInbox: t.isInbox,
+        inboxContentVersion: t.inboxContentVersion,
+        dueDate: t.dueDate,
         missedAt: t.missedAt,
+        planTitleHistoryJson: PlanTitleHistory.encodeJson(t.planTitleHistory),
+        displayPlanChangeId: t.displayPlanChangeId,
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
         deletedAt: t.deletedAt,

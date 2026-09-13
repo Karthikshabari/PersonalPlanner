@@ -9,14 +9,18 @@ import '../theme/app_theme_tokens.dart';
 import '../utils/duration_utils.dart';
 import '../utils/planner_time_zone.dart';
 import 'error_panel.dart';
+import 'task_progress_background.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
 import '../../features/timer/providers/timer_providers.dart';
+import '../../features/timeline/domain/timeline_geometry.dart';
 import 'status_badge.dart';
 
 class TaskBlockWidget extends ConsumerWidget {
   final Task task;
   final Category? category;
   final bool selected;
+  final TimelineTaskGeometry? geometry;
+  final bool compact;
 
   /// Runtime-only flag: this block participates in an overlap that was
   /// allowed ("Keep Overlap"). Renders a striped texture, amber outline and
@@ -34,6 +38,8 @@ class TaskBlockWidget extends ConsumerWidget {
     required this.task,
     this.category,
     this.selected = false,
+    this.geometry,
+    this.compact = false,
     this.hasOverlap = false,
     this.groupedSubtaskCount,
     this.onTap,
@@ -44,10 +50,13 @@ class TaskBlockWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = AppThemeTokens.of(context);
+    final taskFillForeground = geometry == null ? null : tokens.onTaskFill;
     final categoryColor = category == null
         ? null
         : AppColors.parseHex(category!.colorHex);
     final duration = task.scheduledDuration;
+    final actualMinutes = task.actualDurationMin ?? 0;
+    final planChange = task.displayPlanChange;
     // "2/4" completion count; only rendered when the task has subtasks.
     final subtasksAsync = groupedSubtaskCount == null
         ? ref.watch(subtasksForTaskProvider(task.id))
@@ -100,8 +109,14 @@ class TaskBlockWidget extends ConsumerWidget {
         : '${timeLabel(start)} to ${timeLabel(end)}';
     final contextLabel = [
       'Task ${task.title}',
+      if (planChange != null)
+        'plan changed from ${planChange.previousTitle} to ${task.title}',
       interval,
       task.status.label,
+      if (duration != null) 'planned ${duration.inMinutes} minutes',
+      'actual $actualMinutes minutes',
+      if (geometry != null && geometry!.overtimeDuration > Duration.zero)
+        'overtime ${geometry!.overtimeDuration.inMinutes} minutes',
       if (category != null) 'category ${category!.name}',
       if (hasOverlap) 'overlapping task',
     ].join(', ');
@@ -166,170 +181,251 @@ class TaskBlockWidget extends ConsumerWidget {
                 ),
               ],
             ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Short blocks (15-min grid slots, live shrink-resize) only fit
-                // the title; showing the badge row there overflows the Column.
-                final compact = constraints.maxHeight < 38;
-                if (constraints.maxHeight < 24) {
-                  return ClipRect(
-                    child: SizedBox(
-                      height: constraints.maxHeight,
-                      child: Text(
-                        task.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+            child: Stack(
+              children: [
+                if (geometry != null)
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                      child: TaskProgressBackground(geometry: geometry!),
                     ),
-                  );
-                }
-                return Stack(
-                  children: [
-                    if (hasOverlap)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: CustomPaint(painter: _StripesPainter()),
-                          ),
-                        ),
-                      ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          task.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        if (!compact) ...[
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              StatusBadge(
-                                status: task.status,
-                                onTap: onStatusTap,
-                              ),
-                              const Spacer(),
-                              if (duration != null)
-                                Text(
-                                  duration.shortLabel,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w500,
+                  ),
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? AppSpacing.xs : AppSpacing.md,
+                    vertical: compact ? AppSpacing.xs : AppSpacing.sm,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Short blocks (15-min grid slots, live shrink-resize) only fit
+                      // the title; showing the badge row there overflows the Column.
+                      final compactBlock =
+                          compact || constraints.maxHeight < 38;
+                      if (constraints.maxHeight < 24) {
+                        return ClipRect(
+                          child: SizedBox(
+                            height: constraints.maxHeight,
+                            child: Tooltip(
+                              message: planChange == null
+                                  ? task.title
+                                  : '${planChange.previousTitle} → ${task.title}',
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      task.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.clip,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: taskFillForeground,
+                                          ),
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (hasOverlap)
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: Icon(
-                          Icons.warning_amber_rounded,
-                          size: 13,
-                          color: tokens.warning,
-                        ),
-                      ),
-                    // Recurring-series marker (Chunk 4 #14): small ↻ in the
-                    // corner; the overlap warning wins when both apply.
-                    if (task.recurringRuleId != null && !hasOverlap)
-                      Positioned(
-                        top: 0,
-                        right: 2,
-                        child: Icon(
-                          key: const ValueKey('recurring-indicator'),
-                          Icons.refresh,
-                          size: 13,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    if (timerLabel != null)
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        child: Row(
-                          key: const ValueKey('block-timer-chip'),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.timer_outlined,
-                              size: 10,
-                              color: tokens.pending,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              timerLabel,
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                color: tokens.pending,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
+                                  if (planChange != null)
+                                    Icon(
+                                      Icons.history,
+                                      key: const ValueKey(
+                                        'plan-change-indicator',
+                                      ),
+                                      size: 12,
+                                      color: taskFillForeground,
+                                    ),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    if (renderedSubtaskCount != null)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Text(
-                          renderedSubtaskCount,
-                          key: const ValueKey('subtask-count'),
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
                           ),
-                        ),
-                      ),
-                    if (subtaskLookupLoading && !subtaskLookupError)
-                      const Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: CircularProgressIndicator(strokeWidth: 1.5),
-                        ),
-                      ),
-                    if (lookupError != null)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Tooltip(
-                          message: lookupError,
-                          child: Icon(
-                            Icons.error_outline,
-                            size: 12,
-                            color: colorScheme.error,
+                        );
+                      }
+                      final showPriorTitle =
+                          planChange != null &&
+                          constraints.maxHeight >= (compact ? 54 : 58);
+                      final titleStyle = Theme.of(context).textTheme.titleSmall
+                          ?.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: taskFillForeground,
+                          );
+                      return Stack(
+                        children: [
+                          if (hasOverlap)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: CustomPaint(
+                                    painter: _StripesPainter(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (showPriorTitle)
+                                Text(
+                                  planChange.previousTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: titleStyle?.copyWith(
+                                    fontWeight: FontWeight.w400,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                              Tooltip(
+                                message: planChange == null
+                                    ? task.title
+                                    : '${planChange.previousTitle} → ${task.title}',
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        task.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: titleStyle,
+                                      ),
+                                    ),
+                                    if (planChange != null && !showPriorTitle)
+                                      Icon(
+                                        Icons.history,
+                                        key: const ValueKey(
+                                          'plan-change-indicator',
+                                        ),
+                                        size: 12,
+                                        color: taskFillForeground,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (!compactBlock) ...[
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    StatusBadge(
+                                      status: task.status,
+                                      onTap: onStatusTap,
+                                    ),
+                                    const Spacer(),
+                                    if (duration != null)
+                                      Text(
+                                        duration.shortLabel,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: geometry == null
+                                              ? colorScheme.onSurfaceVariant
+                                              : tokens.onTaskFill.withValues(
+                                                  alpha: 0.82,
+                                                ),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
-                        ),
-                      ),
-                  ],
-                );
-              },
+                          if (hasOverlap)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Icon(
+                                Icons.warning_amber_rounded,
+                                size: 13,
+                                color: tokens.warning,
+                              ),
+                            ),
+                          // Recurring-series marker (Chunk 4 #14): small ↻ in the
+                          // corner; the overlap warning wins when both apply.
+                          if (task.recurringRuleId != null && !hasOverlap)
+                            Positioned(
+                              top: 0,
+                              right: 2,
+                              child: Icon(
+                                key: const ValueKey('recurring-indicator'),
+                                Icons.refresh,
+                                size: 13,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          if (timerLabel != null)
+                            Positioned(
+                              bottom: 0,
+                              left: 0,
+                              child: Row(
+                                key: const ValueKey('block-timer-chip'),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.timer_outlined,
+                                    size: 10,
+                                    color: tokens.pending,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    timerLabel,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: tokens.pending,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          if (renderedSubtaskCount != null)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Text(
+                                renderedSubtaskCount,
+                                key: const ValueKey('subtask-count'),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          if (subtaskLookupLoading && !subtaskLookupError)
+                            const Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: SizedBox(
+                                width: 10,
+                                height: 10,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                ),
+                              ),
+                            ),
+                          if (lookupError != null)
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Tooltip(
+                                message: lookupError,
+                                child: Icon(
+                                  Icons.error_outline,
+                                  size: 12,
+                                  color: colorScheme.error,
+                                ),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ),

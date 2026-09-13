@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/category.dart';
-import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
@@ -22,18 +21,13 @@ import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
-import '../../../inbox/domain/inbox_commands.dart';
-import '../../../inbox/providers/inbox_provider.dart';
 import '../../../task_editor/providers/subtask_providers.dart';
 import '../../../sync/providers/sync_providers.dart';
-import '../../domain/commands/create_task_command.dart';
-import '../../domain/commands/batch_command.dart';
 import '../../domain/commands/move_task_command.dart';
 import '../../domain/commands/resize_task_command.dart';
 import '../../domain/commands/scheduling_command.dart';
 import '../../domain/conflict_detector.dart';
-import '../../domain/conflict_resolver.dart';
-import '../../domain/scheduling_conflict_service.dart';
+import '../../domain/scheduled_task_draft.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/day_view_controller.dart';
@@ -42,8 +36,6 @@ import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../providers/timeline_action_provider.dart';
-import '../providers/undo_stack_provider.dart';
-import 'conflict_resolution_dialog.dart';
 import 'current_time_indicator.dart';
 import 'draggable_task_block.dart';
 import 'ghost_preview.dart';
@@ -51,6 +43,9 @@ import 'resizable_handle.dart';
 import 'task_context_menu.dart';
 import 'task_block_motion.dart';
 import 'task_quick_create.dart';
+import 'timeline_hour_grid.dart';
+import 'timeline_overlap_action.dart';
+import '../../domain/timeline_geometry.dart';
 
 /// Live interaction previews held while a gesture is in progress.
 class _DragPreview {
@@ -97,6 +92,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   _ResizePreview? _resize;
   final _removedTasks = <String, Task>{};
   final _removalTimers = <String, Timer>{};
+  bool _quickCreateOpening = false;
 
   double get _pixelsPerMinute => AppConstants.pixelsPerMinute;
 
@@ -169,32 +165,72 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   // Quick create (routed through the command history for undo support)
   // ------------------------------------------------------------------
 
-  Future<void> _createQuickTask(String title) async {
-    final slot = _quickCreateSlot;
-    if (slot == null) return;
-    setState(() => _quickCreateSlot = null);
+  Future<void> _showQuickCreate(int slot) async {
+    if (_quickCreateOpening || !mounted) return;
+    _quickCreateOpening = true;
+    final grid = _gridMinutes;
     final start = _dayAxis.instantAt(slot.toDouble());
-    final end = start.add(Duration(minutes: _gridMinutes));
-    final now = DateTime.now();
-    final task = Task(
-      id: generateUuidV7(),
-      title: title,
-      startTime: start,
-      endTime: end,
-      estimatedDurationMin: _gridMinutes,
-      status: TaskStatus.planned,
-      isInbox: false,
-      createdAt: now,
-      updatedAt: now,
-    );
-    try {
-      await _resolveConflictsAndCommit(
-        CreateTaskCommand(ref.read(taskRepositoryProvider), task),
-        task,
+    final end = start.add(Duration(minutes: grid));
+    final taskId = generateUuidV7();
+    final desktop =
+        MediaQuery.sizeOf(context).width >= AppConstants.desktopBreakpoint;
+    Future<bool> submit(ScheduledTaskDraft draft) async {
+      final saved = await TimelineActions.createScheduledTask(
+        context,
+        ref,
+        draft,
       );
-      if (mounted) _scrollToMinutes(slot);
-    } catch (error) {
-      if (mounted) showAppToast(context, friendlyErrorMessage(error));
+      if (saved == null || !mounted) return false;
+      ref.read(selectedDateProvider.notifier).state = startOfDay(
+        saved.startTime!,
+      );
+      ref.read(selectedTaskIdProvider.notifier).state = saved.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToMinutes(slot);
+      });
+      return true;
+    }
+
+    try {
+      final route = desktop
+          ? showDialog<void>(
+              context: context,
+              barrierDismissible: false,
+              builder: (dialogContext) => Dialog(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: TaskQuickCreate(
+                    taskId: taskId,
+                    initialStart: start,
+                    initialEnd: end,
+                    onSubmit: submit,
+                    onCancel: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+            )
+          : showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              isDismissible: false,
+              enableDrag: false,
+              useSafeArea: true,
+              builder: (sheetContext) => Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+                ),
+                child: TaskQuickCreate(
+                  taskId: taskId,
+                  initialStart: start,
+                  initialEnd: end,
+                  onSubmit: submit,
+                  onCancel: () => Navigator.of(sheetContext).pop(),
+                ),
+              ),
+            );
+      await route;
+    } finally {
+      _quickCreateOpening = false;
     }
   }
 
@@ -390,104 +426,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   Future<bool> _resolveConflictsAndCommit(
     SchedulingCommand primary,
     Task hypothetical,
-  ) async {
-    final tasks = hypothetical.startTime != null && hypothetical.endTime != null
-        ? await _loadSchedulingCandidates(hypothetical)
-        : _currentTasks();
-    final conflicts = SchedulingConflictService.conflicts(hypothetical, tasks);
-    final historyNotifier = ref.read(undoStackProvider.notifier);
-
-    void clearOverlapFlags() {
-      ref.read(keepOverlapIdsProvider.notifier).state = const <String>{};
-    }
-
-    if (conflicts.isEmpty) {
-      clearOverlapFlags();
-      await historyNotifier.execute(primary);
-      return true;
-    }
-
-    if (!mounted) return false;
-    final choice = await showConflictResolutionDialog(
-      context,
-      droppedTask: hypothetical,
-      conflicts: conflicts,
-    );
-    if (choice == null) return false; // Cancel — discard the operation.
-
-    switch (choice) {
-      case ConflictResolution.keepOverlap:
-        clearOverlapFlags();
-        await historyNotifier.execute(primary);
-        if (!mounted) return true;
-        ref.read(keepOverlapIdsProvider.notifier).state = {
-          hypothetical.id,
-          for (final c in conflicts) c.id,
-        };
-        return true;
-
-      case ConflictResolution.shiftAllFollowing:
-        final plan = SchedulingConflictService.plan(
-          proposed: hypothetical,
-          candidates: tasks,
-          resolution: choice,
-          maxCascadeDepth: AppConstants.maxCascadeDepth,
-        );
-        clearOverlapFlags();
-        await historyNotifier.execute(
-          BatchCommand([primary, ..._shiftCommands(plan.shifts, tasks)]),
-        );
-        return true;
-
-      case ConflictResolution.shiftOnlyOverlapping:
-        final plan = SchedulingConflictService.plan(
-          proposed: hypothetical,
-          candidates: tasks,
-          resolution: choice,
-          maxCascadeDepth: AppConstants.maxCascadeDepth,
-        );
-        clearOverlapFlags();
-        await historyNotifier.execute(
-          BatchCommand([primary, ..._shiftCommands(plan.shifts, tasks)]),
-        );
-        if (plan.keepOverlapIds.isNotEmpty && mounted) {
-          ref.read(keepOverlapIdsProvider.notifier).state = {
-            ...plan.keepOverlapIds,
-            hypothetical.id,
-          };
-        }
-        return true;
-    }
-  }
-
-  Future<List<Task>> _loadSchedulingCandidates(Task hypothetical) {
-    return SchedulingConflictService.loadCandidates(
-      ref.read(taskRepositoryProvider),
-      hypothetical,
-      anchorDate: ref.read(selectedDateProvider),
-    );
-  }
-
-  List<SchedulingCommand> _shiftCommands(
-    List<PlannedShift> shifts,
-    List<Task> tasks,
-  ) {
-    final byId = {for (final t in tasks) t.id: t};
-    final commands = <SchedulingCommand>[];
-    for (final shift in shifts) {
-      final original = byId[shift.taskId];
-      if (original == null) continue;
-      commands.add(
-        MoveTaskCommand(
-          repository: ref.read(taskRepositoryProvider),
-          original: original,
-          newStart: shift.newStart,
-          newEnd: shift.newEnd,
-        ),
-      );
-    }
-    return commands;
-  }
+  ) => TimelineActions.commitScheduledChange(
+    context,
+    ref,
+    primary: primary,
+    hypothetical: hypothetical,
+    anchorDate: ref.read(selectedDateProvider),
+  );
 
   // ------------------------------------------------------------------
   // Status cycling
@@ -634,6 +579,14 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ...keepFlags,
     };
     final overlapIndex = ConflictDetector.overlapLanes(liveTasks);
+    final geometryById = {
+      for (final geometry in TimelineGeometry.layoutForDay(
+        tasks: tasks,
+        date: selectedDate,
+        pixelsPerMinute: _pixelsPerMinute,
+      ))
+        geometry.task.id: geometry,
+    };
 
     final dragTaskId = _drag?.task.id;
     final resizeTaskId = _resize?.task.id;
@@ -647,6 +600,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         ref.read(timelineQuickCreateSlotProvider.notifier).state = null;
       });
     }
+    if (_quickCreateSlot != null && !_quickCreateOpening) {
+      final slot = _quickCreateSlot!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _quickCreateSlot != slot || _quickCreateOpening) {
+          return;
+        }
+        setState(() => _quickCreateSlot = null);
+        unawaited(_showQuickCreate(slot));
+      });
+    }
 
     Future<void> refreshSync() async {
       final engine = ref.read(syncEngineProvider);
@@ -655,7 +618,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     }
 
     return DragTarget<InboxItem>(
-      onWillAcceptWithDetails: (_) => true,
+      onWillAcceptWithDetails: (_) {
+        return true;
+      },
       onAcceptWithDetails: (details) =>
           _handleInboxDrop(details.data, details.offset),
       builder: (context, candidateItems, rejectedItems) => GestureDetector(
@@ -674,66 +639,79 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                   color: AppThemeTokens.of(context).canvas,
                   child: SizedBox(
                     height: _totalHeight,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _buildHourGrid(context, grid),
-                        for (final task in tasks)
-                          _buildPositionedBlock(
-                            context,
-                            task,
-                            categoryFor(task),
-                            selectedTaskId == task.id,
-                            overlapIndex: overlapIndex[task.id] ?? 0,
-                            hasOverlap: overlapIds.contains(task.id),
-                            groupedSubtaskCount: subtaskCountsAsync.hasValue
-                                ? subtaskCounts[task.id] ?? ''
-                                : '',
-                            // While being dragged the SAME subtree stays mounted
-                            // (the gesture must survive); only its opacity drops.
-                            dimmed: task.id == dragTaskId,
-                            removing: !liveIds.contains(task.id),
-                            overrideHeightMinutes: task.id == resizeTaskId
-                                ? _liveResizeMinutes
-                                : null,
-                          ),
-                        if (_drag != null)
-                          GhostPreview(
-                            title: _drag!.task.title,
-                            topPx:
-                                (_drag!.origStartMinutes * _pixelsPerMinute +
-                                        _drag!.deltaPx)
-                                    .clamp(
-                                      -(_drag!.durationMinutes - _gridMinutes)
-                                              .clamp(
-                                                0,
-                                                _dayAxis.durationMinutes,
-                                              ) *
-                                          _pixelsPerMinute,
-                                      _totalHeight -
-                                          _gridMinutes * _pixelsPerMinute,
-                                    ),
-                            heightPx: _drag!.durationMinutes * _pixelsPerMinute,
-                            left: AppConstants.hourLabelWidth + 8,
-                            right: AppSpacing.md,
-                            accentColor: _accentColor(categoryFor(_drag!.task)),
-                            durationMinutes: _drag!.durationMinutes,
-                          ),
-                        if (showNowLine)
-                          CurrentTimeIndicator(
-                            pixelsPerMinute: _pixelsPerMinute,
-                            day: ref.read(selectedDateProvider),
-                          ),
-                        if (_quickCreateSlot != null)
-                          TaskQuickCreate(
-                            slotMinutes: _quickCreateSlot!,
-                            onSubmit: (title) {
-                              unawaited(_createQuickTask(title));
-                            },
-                            onCancel: () =>
-                                setState(() => _quickCreateSlot = null),
-                          ),
-                      ],
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final laneWidth =
+                            (constraints.maxWidth -
+                                    AppConstants.hourLabelWidth -
+                                    8 -
+                                    AppSpacing.md)
+                                .clamp(1.0, double.infinity)
+                                .toDouble();
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _buildHourGrid(context, grid),
+                            for (final task in tasks)
+                              _buildPositionedBlock(
+                                context,
+                                task,
+                                categoryFor(task),
+                                selectedTaskId == task.id,
+                                geometry: geometryById[task.id],
+                                allTasks: tasks,
+                                availableLaneWidth: laneWidth,
+                                overlapIndex: overlapIndex[task.id] ?? 0,
+                                hasOverlap:
+                                    overlapIds.contains(task.id) ||
+                                    (geometryById[task.id]?.hasOverlap ??
+                                        false),
+                                groupedSubtaskCount: subtaskCountsAsync.hasValue
+                                    ? subtaskCounts[task.id] ?? ''
+                                    : '',
+                                // While being dragged the SAME subtree stays mounted
+                                // (the gesture must survive); only its opacity drops.
+                                dimmed: task.id == dragTaskId,
+                                removing: !liveIds.contains(task.id),
+                                overrideHeightMinutes: task.id == resizeTaskId
+                                    ? _liveResizeMinutes
+                                    : null,
+                              ),
+                            if (_drag != null)
+                              GhostPreview(
+                                title: _drag!.task.title,
+                                topPx:
+                                    (_drag!.origStartMinutes *
+                                                _pixelsPerMinute +
+                                            _drag!.deltaPx)
+                                        .clamp(
+                                          -(_drag!.durationMinutes -
+                                                      _gridMinutes)
+                                                  .clamp(
+                                                    0,
+                                                    _dayAxis.durationMinutes,
+                                                  ) *
+                                              _pixelsPerMinute,
+                                          _totalHeight -
+                                              _gridMinutes * _pixelsPerMinute,
+                                        ),
+                                heightPx:
+                                    _drag!.durationMinutes * _pixelsPerMinute,
+                                left: AppConstants.hourLabelWidth + 8,
+                                right: AppSpacing.md,
+                                accentColor: _accentColor(
+                                  categoryFor(_drag!.task),
+                                ),
+                                durationMinutes: _drag!.durationMinutes,
+                              ),
+                            if (showNowLine)
+                              CurrentTimeIndicator(
+                                pixelsPerMinute: _pixelsPerMinute,
+                                day: ref.read(selectedDateProvider),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -769,41 +747,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     if (!isSameDay(start, date)) return;
     final end = start.add(Duration(minutes: grid));
 
-    final repo = ref.read(inboxRepositoryProvider);
-    late final SchedulingCommand command;
-    late final Task hypothetical;
-    if (item.isOverdue) {
-      command = RescheduleOverdueCommand(
-        repository: repo,
-        originalId: item.task.id,
-        start: start,
-        end: end,
-      );
-      hypothetical = item.task.copyWith(
-        id: 'reschedule-preview-${item.task.id}',
-        startTime: start,
-        endTime: end,
-        actualDurationMin: null,
-        status: TaskStatus.planned,
-        recurringRuleId: item.task.recurringRuleId,
-        rescheduledFromId: item.task.id,
-        rescheduledToId: null,
-        missedAt: null,
-      );
-    } else {
-      command = ScheduleInboxItemCommand(
-        repository: repo,
-        taskId: item.task.id,
-        start: start,
-        end: end,
-      );
-      hypothetical = item.task.copyWith(
-        isInbox: false,
-        startTime: start,
-        endTime: end,
-      );
-    }
-    final committed = await _resolveConflictsAndCommit(command, hypothetical);
+    final committed = await TimelineActions.showInboxSchedulingForm(
+      context,
+      ref,
+      item,
+      start,
+      end,
+    );
     if (!committed || !mounted) return;
     if (item.isOverdue) {
       showAppToast(
@@ -820,67 +770,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       : AppColors.parseHex(category.colorHex);
 
   Widget _buildHourGrid(BuildContext context, int gridMinutes) {
-    final tokens = AppThemeTokens.of(context);
-    final lineColor = tokens.outline.withValues(alpha: 0.58);
-    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: tokens.textMuted,
-      fontFeatures: const [FontFeature.tabularFigures()],
-    );
-    final markers = _dayAxis.hourMarkers;
-    return Column(
-      children: [
-        for (var index = 0; index < markers.length - 1; index++)
-          Builder(
-            builder: (context) {
-              final marker = markers[index];
-              final rowMinutes =
-                  markers[index + 1].elapsedMinutes - marker.elapsedMinutes;
-              return SizedBox(
-                height: rowMinutes * _pixelsPerMinute,
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 0,
-                      bottom: 0,
-                      left: AppConstants.hourLabelWidth - 1,
-                      child: VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: tokens.outline.withValues(alpha: 0.34),
-                      ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      left: AppConstants.hourLabelWidth,
-                      right: 0,
-                      child: Divider(height: 1, thickness: 1, color: lineColor),
-                    ),
-                    for (
-                      var m = gridMinutes;
-                      m < 60 && m < rowMinutes;
-                      m += gridMinutes
-                    )
-                      Positioned(
-                        top: rowMinutes * _pixelsPerMinute * m / 60,
-                        left: AppConstants.hourLabelWidth,
-                        right: 0,
-                        child: Divider(
-                          height: 1,
-                          thickness: 0.5,
-                          color: lineColor.withValues(alpha: 0.42),
-                        ),
-                      ),
-                    Positioned(
-                      top: 2,
-                      left: AppSpacing.sm,
-                      child: Text(marker.label, style: labelStyle),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-      ],
+    return TimelineHourGrid(
+      date: ref.read(selectedDateProvider),
+      gridMinutes: gridMinutes,
+      pixelsPerMinute: _pixelsPerMinute,
+      rulerWidth: AppConstants.hourLabelWidth,
     );
   }
 
@@ -889,6 +783,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     Task task,
     Category? category,
     bool selected, {
+    TimelineTaskGeometry? geometry,
+    required List<Task> allTasks,
+    required double availableLaneWidth,
     required int overlapIndex,
     required bool hasOverlap,
     required bool dimmed,
@@ -903,20 +800,18 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               Duration(minutes: overrideHeightMinutes.round()),
             ),
           );
-    final displayTask = _clipTaskToSelectedDay(previewTask);
-    final startMinutes = displayTask.startTime == null
-        ? 0.0
-        : _dayAxis.elapsedMinutes(displayTask.startTime!);
-    final durationMinutes =
-        displayTask.startTime == null || displayTask.endTime == null
-        ? displayTask.estimatedDurationMin?.toDouble() ??
-              AppConstants.defaultGridMinutes.toDouble()
-        : (_dayAxis.elapsedMinutes(displayTask.endTime!) - startMinutes)
-              .clamp(0, _dayAxis.durationMinutes)
-              .toDouble();
-    final height = (durationMinutes * _pixelsPerMinute).clamp(
+    final displayGeometry = overrideHeightMinutes == null
+        ? geometry
+        : TimelineGeometry.layoutForDay(
+            tasks: [previewTask],
+            date: ref.read(selectedDateProvider),
+            pixelsPerMinute: _pixelsPerMinute,
+          ).firstOrNull;
+    if (displayGeometry == null) return const SizedBox.shrink();
+    final startMinutes = displayGeometry.topPx / _pixelsPerMinute;
+    final height = displayGeometry.heightPx.clamp(
       1.0,
-      _totalHeight - startMinutes * _pixelsPerMinute,
+      _totalHeight - displayGeometry.topPx,
     );
     final visualHeight = height.toDouble();
     final renderedHeight = ResizableHandle.isTouchPlatform
@@ -931,13 +826,19 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               .toDouble()
         : startMinutes * _pixelsPerMinute;
     final visualTop = startMinutes * _pixelsPerMinute - outerTop;
-    final leftOffset = overlapIndex * AppConstants.overlapOffsetPerIndex;
+    final laneCount = displayGeometry.laneCount;
+    final laneIndex = displayGeometry.laneIndex;
+    final laneWidth = availableLaneWidth / laneCount;
+    final dense =
+        displayGeometry.hasOverlap &&
+        laneWidth < 84 * MediaQuery.textScalerOf(context).scale(1);
 
     final block = Stack(
       fit: StackFit.expand,
       children: [
         TaskBlockWidget(
-          task: displayTask,
+          task: task,
+          geometry: displayGeometry,
           category: category,
           selected: selected,
           hasOverlap: hasOverlap,
@@ -966,6 +867,18 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               onResizeCancel: _cancelResize,
               onIncrease: () => _resizeBySemantic(task, _gridMinutes),
               onDecrease: () => _resizeBySemantic(task, -_gridMinutes),
+            ),
+          ),
+        if (dense && laneIndex == 0)
+          Positioned.fill(
+            child: TimelineOverlapAction(
+              geometry: displayGeometry,
+              tasks: allTasks,
+              date: ref.read(selectedDateProvider),
+              onOpen: (openedTask) {
+                ref.read(selectedTaskIdProvider.notifier).state = openedTask.id;
+                widget.onTaskTap?.call(openedTask);
+              },
             ),
           ),
       ],
@@ -1014,8 +927,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     return Positioned(
       key: ValueKey('task-block-${task.id}'),
       top: outerTop + 1,
-      left: AppConstants.hourLabelWidth + 8 + leftOffset,
-      right: AppSpacing.md,
+      left: AppConstants.hourLabelWidth + 8 + laneWidth * laneIndex + 2,
+      width: (laneWidth - 4).clamp(2.0, double.infinity).toDouble(),
       height: renderedHeight,
       child: TaskBlockMotion(
         isDragging: !removing && task.id == _drag?.task.id,

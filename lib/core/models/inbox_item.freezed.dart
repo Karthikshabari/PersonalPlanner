@@ -73,7 +73,7 @@ as Task,
 @override
 @pragma('vm:prefer-inline')
 $TaskCopyWith<$Res> get task {
-
+  
   return $TaskCopyWith<$Res>(_self.task, (value) {
     return _then(_self.copyWith(task: value));
   });
@@ -216,7 +216,7 @@ return overdue(_that.task);case _:
 
 class ExplicitInboxItem extends InboxItem {
   const ExplicitInboxItem(this.task): super._();
-
+  
 
 @override final  Task task;
 
@@ -279,7 +279,7 @@ as Task,
 @override
 @pragma('vm:prefer-inline')
 $TaskCopyWith<$Res> get task {
-
+  
   return $TaskCopyWith<$Res>(_self.task, (value) {
     return _then(_self.copyWith(task: value));
   });
@@ -291,7 +291,7 @@ $TaskCopyWith<$Res> get task {
 
 class OverdueInboxItem extends InboxItem {
   const OverdueInboxItem(this.task): super._();
-
+  
 
 @override final  Task task;
 
@@ -354,7 +354,7 @@ as Task,
 @override
 @pragma('vm:prefer-inline')
 $TaskCopyWith<$Res> get task {
-
+  
   return $TaskCopyWith<$Res>(_self.task, (value) {
     return _then(_self.copyWith(task: value));
   });

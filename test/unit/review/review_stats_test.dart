@@ -199,6 +199,8 @@ void main() {
             categoryId: categoryId,
             estimatedDurationMin: estimated,
             actualDurationMin: actual,
+            manualDurationAdjustmentMin: actual ?? 0,
+            manualActualSet: actual != null,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
           ),
@@ -451,9 +453,11 @@ void main() {
         addDays(secondDay, 1),
       );
 
-      expect(firstStats.actualDurationMin, 0);
+      // R12 allocates whole task minutes once, using largest remainders,
+      // rather than flooring each wall-span day independently.
+      expect(firstStats.actualDurationMin, 1);
       expect(secondStats.actualDurationMin, 0);
-      expect(rangeStats.actualDurationMin, 0);
+      expect(rangeStats.actualDurationMin, 1);
       expect(
         firstStats.actualDurationMin + secondStats.actualDurationMin,
         rangeStats.actualDurationMin,

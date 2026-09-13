@@ -206,12 +206,7 @@ void main() {
       tester.widget<TextField>(descField).controller!.text,
       'Warmup + strength',
     );
-    final estField = find.byWidgetPredicate(
-      (w) =>
-          w is TextField &&
-          w.decoration?.labelText == 'Estimated duration (minutes)',
-    );
-    expect(tester.widget<TextField>(estField).controller!.text, '45');
+    expect(find.text('Planned duration: 45 minutes'), findsOneWidget);
     expect(find.text('Medium'), findsWidgets); // priority dropdown value
 
     await finish(tester, container);
@@ -256,14 +251,8 @@ void main() {
       (widget) =>
           widget is TextField && widget.decoration?.labelText == 'Description',
     );
-    final estimatedField = find.byWidgetPredicate(
-      (widget) =>
-          widget is TextField &&
-          widget.decoration?.labelText == 'Estimated duration (minutes)',
-    );
     await tester.enterText(titleField, 'Unsaved focus plan');
     await tester.enterText(descriptionField, 'Draft details');
-    await tester.enterText(estimatedField, '45');
 
     final draftTagChip = find.byKey(const ValueKey('tag-chip-draft-only'));
     await bringIntoViewHelper(tester, draftTagChip);
@@ -289,7 +278,7 @@ void main() {
     );
     expect(templates.single.name, 'Unsaved focus plan');
     expect(templates.single.description, 'Draft details');
-    expect(templates.single.durationMin, 45);
+    expect(templates.single.durationMin, 60);
     expect(templates.single.tags, [draftTag.id]);
     // Sanity: source task still exists and is untouched.
     final source = await runDb(
@@ -298,7 +287,7 @@ void main() {
     );
     expect(source!.title, 'Weekly review prep');
     expect(source.description, isNull);
-    expect(source.estimatedDurationMin, 25);
+    expect(source.estimatedDurationMin, 60);
     final sourceTags = await runDb(
       tester,
       () => container.read(tagRepositoryProvider).getTagsForTask(inserted.id),

@@ -49,7 +49,8 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   }) async {
     if (ftsQuery.trim().isEmpty) return const <TaskSearchRow>[];
     final rows = await customSelect(
-      'SELECT t.id, t.title, t.start_time, t.status, t.category_id, '
+      'SELECT t.id, t.title, t.description, t.is_inbox, t.start_time, '
+      't.status, t.category_id, '
       'bm25(tasks_fts) AS relevance '
       'FROM tasks_fts '
       'JOIN tasks t ON t.rowid = tasks_fts.rowid '
@@ -67,6 +68,8 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
           (row) => TaskSearchRow(
             id: row.read<String>('id'),
             title: row.read<String>('title'),
+            description: row.readNullable<String>('description'),
+            isInbox: row.read<bool>('is_inbox'),
             startTime: _parseDateTime(row.readNullable<String>('start_time')),
             status: row.read<String>('status'),
             categoryId: row.readNullable<String>('category_id'),
@@ -119,6 +122,8 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
 class TaskSearchRow {
   final String id;
   final String title;
+  final String? description;
+  final bool isInbox;
   final DateTime? startTime;
   final String status;
   final String? categoryId;
@@ -127,6 +132,8 @@ class TaskSearchRow {
   const TaskSearchRow({
     required this.id,
     required this.title,
+    required this.description,
+    required this.isInbox,
     required this.startTime,
     required this.status,
     required this.categoryId,

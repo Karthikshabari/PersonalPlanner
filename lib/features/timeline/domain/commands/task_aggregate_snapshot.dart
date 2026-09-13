@@ -2,6 +2,9 @@ import 'package:drift/drift.dart';
 
 import '../../../../core/database/app_database.dart';
 import '../../data/task_repository.dart';
+import '../../../timer/data/timer_repository.dart';
+import '../../../timer/domain/task_actual_duration_service.dart';
+import '../../../timer/domain/timer_service.dart';
 
 /// The task-owned rows that must move together for reversible creation and
 /// deletion. Timer sessions deliberately remain historical records; deleting
@@ -39,12 +42,12 @@ class TaskAggregateSnapshot {
   Future<void> softDelete(AppDatabase db) async {
     final now = DateTime.now().toUtc();
     final nowIso = now.toIso8601String();
-    await db.timerDao.finalizeActiveForTask(task.id, now);
-    final totalSec = await db.timerDao.getTotalDurationSecForTask(task.id);
-    final actual = (totalSec ~/ 60 + task.manualDurationAdjustmentMin)
-        .clamp(0, 1 << 31)
-        .toInt();
-    await db.customUpdate(
+    final owner = await TimerRepository(db).localDeviceId();
+    await db.transaction(() async {
+      await TimerService(db).stopOwnedTaskInTransaction(task.id, owner, now);
+      await TaskActualDurationService(db).recomputeTaskInTransaction(task.id);
+      final actual = (await db.taskDao.getTaskById(task.id))?.actualDurationMin;
+      await db.customUpdate(
       'UPDATE tasks SET deleted_at = ?, updated_at = ?, actual_duration_min = ?, sync_status = 1, '
       'revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
       variables: [
@@ -54,8 +57,8 @@ class TaskAggregateSnapshot {
         Variable<String>(task.id),
       ],
       updates: {db.tasks},
-    );
-    await db.customUpdate(
+      );
+      await db.customUpdate(
       'UPDATE subtasks SET deleted_at = ?, updated_at = ?, sync_status = 1, '
       'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
       variables: [
@@ -64,8 +67,8 @@ class TaskAggregateSnapshot {
         Variable<String>(task.id),
       ],
       updates: {db.subtasks},
-    );
-    await db.customUpdate(
+      );
+      await db.customUpdate(
       'UPDATE task_tags SET deleted_at = ?, updated_at = ?, sync_status = 1, '
       'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
       variables: [
@@ -74,7 +77,8 @@ class TaskAggregateSnapshot {
         Variable<String>(task.id),
       ],
       updates: {db.taskTags},
-    );
+      );
+    });
   }
 
   Future<void> restore(AppDatabase db) async {
@@ -156,5 +160,6 @@ class TaskAggregateSnapshot {
             );
       }
     }
+    await TaskActualDurationService(db).recomputeTask(task.id);
   }
 }

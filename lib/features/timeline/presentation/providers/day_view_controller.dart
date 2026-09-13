@@ -17,7 +17,9 @@ import '../../../timer/providers/timer_providers.dart';
 import '../../../timer/platform/android_foreground_timer.dart';
 import '../../../inbox/domain/inbox_commands.dart';
 import '../../../inbox/providers/inbox_provider.dart';
+import '../../data/task_repository.dart';
 import '../../domain/commands/batch_command.dart';
+import '../../domain/commands/create_task_command.dart';
 import '../../domain/commands/move_task_command.dart';
 import '../widgets/conflict_resolution_dialog.dart';
 import '../../domain/commands/change_status_command.dart';
@@ -28,15 +30,87 @@ import '../../domain/commands/scheduling_command.dart';
 import '../../domain/conflict_resolver.dart';
 import '../../domain/scheduling_conflict_service.dart';
 import '../../domain/snap_to_grid.dart';
+import '../../domain/scheduled_task_draft.dart';
+import '../../../../core/utils/task_time_metrics.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/undo_stack_provider.dart';
+import '../widgets/task_quick_create.dart';
 
 /// Shared high-level scheduling actions, invoked from the context menu,
 /// keyboard shortcuts and dialogs.
 abstract final class TimelineActions {
+  /// Creates a scheduled task after the compact form has validated its
+  /// complete interval. The draft ID is used verbatim, making retries
+  /// idempotent at the local database boundary.
+  static Future<Task?> createScheduledTask(
+    BuildContext context,
+    WidgetRef ref,
+    ScheduledTaskDraft draft,
+  ) async {
+    final error = draft.validationError;
+    if (error != null) throw ArgumentError(error);
+    final now = DateTime.now();
+    final task = Task(
+      id: draft.id,
+      title: draft.title.trim(),
+      description: draft.description.isEmpty ? null : draft.description,
+      startTime: draft.start!,
+      endTime: draft.end!,
+      estimatedDurationMin: TaskTimeMetrics.plannedMinutes(
+        draft.start!,
+        draft.end!,
+      ),
+      status: TaskStatus.planned,
+      isInbox: false,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final repository = ref.read(taskRepositoryProvider);
+    final existing = await repository.getTaskById(task.id);
+    if (existing != null && existing.deletedAt == null) {
+      final sameRequest =
+          existing.title == task.title &&
+          existing.description == task.description &&
+          existing.startTime == task.startTime &&
+          existing.endTime == task.endTime &&
+          !existing.isInbox;
+      if (sameRequest) return existing;
+      throw StateError(
+        'This task ID already exists with different values; review it before retrying.',
+      );
+    }
+    if (!context.mounted) return null;
+    final committed = await commitScheduledChange(
+      context,
+      ref,
+      primary: CreateTaskCommand(repository, task),
+      hypothetical: task,
+      anchorDate: draft.start!,
+    );
+    if (!committed) return null;
+    return ref.read(taskRepositoryProvider).getTaskById(task.id);
+  }
+
+  /// One conflict-aware commit boundary for all scheduled-task entry points.
+  /// Candidate rows are re-read after any user dialog and before the command
+  /// runs, so a newly inserted overlap never gets silently ignored.
+  static Future<bool> commitScheduledChange(
+    BuildContext context,
+    WidgetRef ref, {
+    required SchedulingCommand primary,
+    required Task hypothetical,
+    DateTime? anchorDate,
+  }) => _commitConflictAware(
+    context,
+    ref,
+    primary,
+    hypothetical,
+    anchorDate: anchorDate,
+  );
+
   /// Schedules/reschedules an Inbox item through the same conflict-aware
   /// command path used by timeline drops.
   static Future<bool> scheduleInboxItem(
@@ -45,20 +119,41 @@ abstract final class TimelineActions {
     InboxItem item,
     DateTime start,
     DateTime end,
+    {
+    String? title,
+    String? description,
+    bool replaceDescription = false,
+  }
   ) async {
-    final tasksRepo = ref.read(taskRepositoryProvider);
+    final repository = ref.read(inboxRepositoryProvider);
+    final current = await repository.database.taskDao.getTaskById(item.task.id);
+    if (current != null && !current.isInbox) {
+      final sameRequest =
+          current.startTime == start &&
+          current.endTime == end &&
+          (title == null || current.title == title) &&
+          (!replaceDescription || current.description == description);
+      if (sameRequest) return true;
+    }
+    if (!context.mounted) return false;
     final command = item.isOverdue
         ? RescheduleOverdueCommand(
-            repository: ref.read(inboxRepositoryProvider),
+            repository: repository,
             originalId: item.task.id,
             start: start,
             end: end,
+            title: title,
+            description: description,
+            replaceDescription: replaceDescription,
           )
         : ScheduleInboxItemCommand(
-            repository: ref.read(inboxRepositoryProvider),
+            repository: repository,
             taskId: item.task.id,
             start: start,
             end: end,
+            title: title,
+            description: description,
+            replaceDescription: replaceDescription,
           );
     final hypothetical = item.task.copyWith(
       id: item.isOverdue ? 'reschedule-preview-${item.task.id}' : item.task.id,
@@ -73,54 +168,69 @@ abstract final class TimelineActions {
           : item.task.rescheduledFromId,
       rescheduledToId: null,
       missedAt: null,
+      title: title ?? item.task.title,
+      description: replaceDescription ? description : item.task.description,
     );
-    final dayTasks = await SchedulingConflictService.loadCandidates(
-      tasksRepo,
-      hypothetical,
+    return commitScheduledChange(
+      context,
+      ref,
+      primary: command,
+      hypothetical: hypothetical,
       anchorDate: start,
     );
-    final conflicts = SchedulingConflictService.conflicts(
-      hypothetical,
-      dayTasks,
+  }
+
+  /// Opens the shared full scheduling form for every Inbox conversion entry
+  /// point, including drag/drop. Explicit captures start with a blank title;
+  /// overdue tasks retain their meaningful title and linked-copy semantics.
+  static Future<bool> showInboxSchedulingForm(
+    BuildContext context,
+    WidgetRef ref,
+    InboxItem item,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 760),
+          child: TaskQuickCreate(
+            taskId: item.task.id,
+            initialStart: start,
+            initialEnd: end,
+            initialTitle: item.isOverdue ? item.task.title : '',
+            initialDescription: item.task.description ?? '',
+            heading: item.isOverdue
+                ? 'Reschedule overdue task'
+                : 'Schedule Inbox capture',
+            infoText: item.task.dueDate == null
+                ? null
+                : 'Due date: ${item.task.dueDate}',
+            conversionMode: !item.isOverdue,
+            onSubmit: (draft) async {
+              final committed = await scheduleInboxItem(
+                context,
+                ref,
+                item,
+                draft.start!,
+                draft.end!,
+                title: draft.title.trim(),
+                description: draft.description,
+                replaceDescription: true,
+              );
+              if (committed && dialogContext.mounted) {
+                Navigator.of(dialogContext).pop(true);
+              }
+              return false;
+            },
+            onCancel: () => Navigator.of(dialogContext).pop(false),
+          ),
+        ),
+      ),
     );
-    if (conflicts.isEmpty) {
-      await ref.read(undoStackProvider.notifier).execute(command);
-      return true;
-    }
-    if (!context.mounted) return false;
-    final choice = await showConflictResolutionDialog(
-      context,
-      droppedTask: hypothetical,
-      conflicts: conflicts,
-    );
-    if (choice == null) return false;
-    if (choice == ConflictResolution.keepOverlap) {
-      await ref.read(undoStackProvider.notifier).execute(command);
-      return true;
-    }
-    final plan = SchedulingConflictService.plan(
-      proposed: hypothetical,
-      candidates: dayTasks,
-      resolution: choice,
-      maxCascadeDepth: AppConstants.maxCascadeDepth,
-    );
-    final byId = {for (final task in dayTasks) task.id: task};
-    await ref
-        .read(undoStackProvider.notifier)
-        .execute(
-          BatchCommand([
-            command,
-            for (final shift in plan.shifts)
-              if (byId[shift.taskId] != null)
-                MoveTaskCommand(
-                  repository: tasksRepo,
-                  original: byId[shift.taskId]!,
-                  newStart: shift.newStart,
-                  newEnd: shift.newEnd,
-                ),
-          ]),
-        );
-    return true;
+    return result ?? false;
   }
 
   /// Duplicates [task] into the next available slot after the original.
@@ -259,10 +369,7 @@ abstract final class TimelineActions {
     // represents the deleted session; a timer started for another task while
     // the confirmation dialog was open must remain untouched.
     if (wasTiming) {
-      final activeAfter = await repository.database.timerDao.getActiveTimer();
-      if (activeAfter == null || activeAfter.id == deletedSessionId) {
-        await AndroidForegroundTimer().stop();
-      }
+      await AndroidForegroundTimer().clearSession(deletedSessionId!);
     }
   }
 
@@ -354,18 +461,42 @@ abstract final class TimelineActions {
     BuildContext context,
     WidgetRef ref,
     SchedulingCommand primary,
-    Task hypothetical,
-  ) async {
+    Task hypothetical, {
+    DateTime? anchorDate,
+  }) async {
+    final repository = ref.read(taskRepositoryProvider);
+    final DateTime anchor = anchorDate ?? ref.read(selectedDateProvider);
     final tasks = await SchedulingConflictService.loadCandidates(
-      ref.read(taskRepositoryProvider),
+      repository,
       hypothetical,
-      anchorDate: ref.read(selectedDateProvider),
+      anchorDate: anchor,
     );
+    final candidateRevisions = await repository.getTaskRevisions(
+      tasks.map((task) => task.id),
+    );
+    var needsPreflight = true;
+    Future<void> beforeExecute() async {
+      if (!needsPreflight) return;
+      await _revalidateCandidates(
+        repository,
+        hypothetical,
+        tasks,
+        candidateRevisions,
+        anchor,
+      );
+      needsPreflight = false;
+    }
     final conflicts = SchedulingConflictService.conflicts(hypothetical, tasks);
     final history = ref.read(undoStackProvider.notifier);
     ref.read(keepOverlapIdsProvider.notifier).state = const <String>{};
     if (conflicts.isEmpty) {
-      await history.execute(primary);
+      await history.execute(
+        BatchCommand(
+          [primary],
+          database: repository.database,
+          beforeExecute: beforeExecute,
+        ),
+      );
       return true;
     }
     if (!context.mounted) return false;
@@ -376,7 +507,13 @@ abstract final class TimelineActions {
     );
     if (choice == null) return false;
     if (choice == ConflictResolution.keepOverlap) {
-      await history.execute(primary);
+      await history.execute(
+        BatchCommand(
+          [primary],
+          database: repository.database,
+          beforeExecute: beforeExecute,
+        ),
+      );
       ref.read(keepOverlapIdsProvider.notifier).state = {
         hypothetical.id,
         for (final conflict in conflicts) conflict.id,
@@ -391,17 +528,21 @@ abstract final class TimelineActions {
     );
     final byId = {for (final item in tasks) item.id: item};
     await history.execute(
-      BatchCommand([
-        primary,
-        for (final shift in plan.shifts)
-          if (byId[shift.taskId] != null)
-            MoveTaskCommand(
-              repository: ref.read(taskRepositoryProvider),
-              original: byId[shift.taskId]!,
-              newStart: shift.newStart,
-              newEnd: shift.newEnd,
-            ),
-      ]),
+      BatchCommand(
+        [
+          primary,
+          for (final shift in plan.shifts)
+            if (byId[shift.taskId] != null)
+              MoveTaskCommand(
+                repository: repository,
+                original: byId[shift.taskId]!,
+                newStart: shift.newStart,
+                newEnd: shift.newEnd,
+              ),
+        ],
+        database: repository.database,
+        beforeExecute: beforeExecute,
+      ),
     );
     if (plan.keepOverlapIds.isNotEmpty) {
       ref.read(keepOverlapIdsProvider.notifier).state = {
@@ -410,6 +551,42 @@ abstract final class TimelineActions {
       };
     }
     return true;
+  }
+
+  static Future<void> _revalidateCandidates(
+    TaskRepository repository,
+    Task hypothetical,
+    List<Task> original,
+    Map<String, int> originalRevisions,
+    DateTime anchorDate,
+  ) async {
+    final fresh = await SchedulingConflictService.loadCandidates(
+      repository,
+      hypothetical,
+      anchorDate: anchorDate,
+    );
+    ({DateTime? start, DateTime? end, TaskStatus status, DateTime? deletedAt})
+    snapshot(Task task) => (
+      start: task.startTime,
+      end: task.endTime,
+      status: task.status,
+      deletedAt: task.deletedAt,
+    );
+    final before = {for (final task in original) task.id: snapshot(task)};
+    final after = {for (final task in fresh) task.id: snapshot(task)};
+    final freshRevisions = await repository.getTaskRevisions(
+      fresh.map((task) => task.id),
+    );
+    if (before.length != after.length ||
+        before.keys.any((id) => before[id] != after[id]) ||
+        originalRevisions.length != freshRevisions.length ||
+        originalRevisions.keys.any(
+          (id) => originalRevisions[id] != freshRevisions[id],
+        )) {
+      throw StateError(
+        'The schedule changed while the dialog was open. Review the fresh conflicts and try again.',
+      );
+    }
   }
 }
 

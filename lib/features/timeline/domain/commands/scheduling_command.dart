@@ -8,3 +8,8 @@ abstract class SchedulingCommand {
 
   Future<void> undo();
 }
+
+/// Optional result marker for commands whose exact retry may be a no-op.
+abstract interface class MutationAwareSchedulingCommand {
+  bool get didMutate;
+}

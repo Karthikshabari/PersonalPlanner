@@ -4,6 +4,8 @@ import '../../../core/database/app_database.dart';
 import '../../../core/models/daily_stats.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/task_time_metrics.dart';
+import '../../timer/domain/task_actual_duration_service.dart';
 
 /// Computes per-day aggregates and maintains the `daily_stats_cache` table
 /// (planner.md Chunk 5 #9). Review save currently refreshes the cache; live
@@ -66,19 +68,6 @@ class DailyStatsService {
     );
     final categories = await (_db.select(_db.categories)).get();
     final focusIds = {for (final c in categories) c.id: c.isFocus};
-    final sessions =
-        await (_db.select(_db.timerSessions)..where(
-              (session) =>
-                  session.deletedAt.isNull() &
-                  session.endedAt.isNotNull() &
-                  session.startedAt.isSmallerThanValue(
-                    endExclusive.toUtc().toIso8601String(),
-                  ) &
-                  session.endedAt.isBiggerThanValue(
-                    startInclusive.toUtc().toIso8601String(),
-                  ),
-            ))
-            .get();
     final tasksStartingInRange = tasks
         .where(
           (task) =>
@@ -87,16 +76,10 @@ class DailyStatsService {
               task.startTime!.isBefore(endExclusive),
         )
         .toList(growable: false);
-    final taskIds = tasksStartingInRange.map((task) => task.id).toList();
-    final allCompletedSessions = taskIds.isEmpty
-        ? const <TimerSessionRow>[]
-        : await (_db.select(_db.timerSessions)..where(
-                (session) =>
-                    session.deletedAt.isNull() &
-                    session.endedAt.isNotNull() &
-                    session.taskId.isIn(taskIds),
-              ))
-              .get();
+    final actualByDate = await _actualMinutesByDate(
+      startInclusive,
+      endExclusive,
+    );
     final reviews = await _db.reviewDao.getDailyReviewsBetween(
       isoDateString(startInclusive),
       isoDateString(endExclusive),
@@ -170,45 +153,6 @@ class DailyStatsService {
         }
       }
 
-      final trackedSecondsByDay = <String, int>{};
-      for (final session in sessions) {
-        final overlapStart = session.startedAt.isAfter(day)
-            ? session.startedAt
-            : day;
-        final endedAt = session.endedAt!;
-        final overlapEnd = endedAt.isBefore(dayEnd) ? endedAt : dayEnd;
-        if (overlapEnd.isAfter(overlapStart)) {
-          trackedSecondsByDay[isoDateString(day)] =
-              (trackedSecondsByDay[isoDateString(day)] ?? 0) +
-              overlapEnd.difference(overlapStart).inSeconds;
-        }
-      }
-      final dayTaskIds = dayTasksStarting.map((task) => task.id).toSet();
-      final totalSessionSecondsByTask = <String, int>{};
-      for (final session in allCompletedSessions) {
-        if (!dayTaskIds.contains(session.taskId)) continue;
-        totalSessionSecondsByTask.update(
-          session.taskId,
-          (seconds) => seconds + session.durationSec,
-          ifAbsent: () => session.durationSec,
-        );
-      }
-      var manualAdjustmentMin = 0;
-      for (final task in dayTasksStarting) {
-        final sessionMinutes =
-            (totalSessionSecondsByTask[task.id] ?? 0) ~/
-            Duration.secondsPerMinute;
-        final adjustment = task.manualDurationAdjustmentMin != 0
-            ? task.manualDurationAdjustmentMin
-            : task.actualDurationMin == null
-            ? 0
-            : task.actualDurationMin! - sessionMinutes;
-        manualAdjustmentMin += adjustment;
-      }
-      final trackedMinutes = trackedSecondsByDay.values.fold<int>(
-        0,
-        (total, seconds) => total + seconds ~/ Duration.secondsPerMinute,
-      );
       final review = reviewByDate[isoDateString(day)];
       result.add(
         DailyStats(
@@ -222,15 +166,14 @@ class DailyStatsService {
           cancelledTasks: cancelled,
           rescheduledTasks: rescheduled,
           plannedDurationMin: plannedMin,
-          actualDurationMin: (trackedMinutes + manualAdjustmentMin)
-              .clamp(0, 1 << 31)
-              .toInt(),
+          actualDurationMin: actualByDate[isoDateString(day)] ?? 0,
           focusDurationMin: focusMin,
           energyLevel: review?.energyLevel,
           productivityRating: review?.productivityRating,
           planningAccuracyPct: DailyStatsCalculator.planningAccuracyPct(
             dayTasksStarting,
-            estimatedDurationMin: (task) => task.estimatedDurationMin,
+            estimatedDurationMin: (task) =>
+                TaskTimeMetrics.plannedMinutes(task.startTime, task.endTime),
             actualDurationMin: (task) => task.actualDurationMin,
           ),
           computedAt: DateTime.now(),
@@ -262,40 +205,10 @@ class DailyStatsService {
         )
         .toList(growable: false);
 
-    final sessions =
-        await (_db.select(_db.timerSessions)..where(
-              (session) =>
-                  session.deletedAt.isNull() &
-                  session.endedAt.isNotNull() &
-                  session.startedAt.isSmallerThanValue(
-                    endExclusive.toUtc().toIso8601String(),
-                  ) &
-                  session.endedAt.isBiggerThanValue(
-                    startInclusive.toUtc().toIso8601String(),
-                  ),
-            ))
-            .get();
-    // Manual adjustments are applied only to tasks that start in the
-    // requested range. Restrict this lookup to those task IDs instead of
-    // rereading every completed session in the database for each day/bucket.
-    final taskIds = tasksStartingInRange.map((task) => task.id).toList();
-    final allCompletedSessions = taskIds.isEmpty
-        ? const <TimerSessionRow>[]
-        : await (_db.select(_db.timerSessions)..where(
-                (session) =>
-                    session.deletedAt.isNull() &
-                    session.endedAt.isNotNull() &
-                    session.taskId.isIn(taskIds),
-              ))
-              .get();
-    final totalSessionSecondsByTask = <String, int>{};
-    for (final session in allCompletedSessions) {
-      totalSessionSecondsByTask.update(
-        session.taskId,
-        (seconds) => seconds + session.durationSec,
-        ifAbsent: () => session.durationSec,
-      );
-    }
+    final actualByDate = await _actualMinutesByDate(
+      startInclusive,
+      endExclusive,
+    );
     var plannedMin = 0;
     var actualMin = 0;
     var focusMin = 0;
@@ -347,69 +260,7 @@ class DailyStatsService {
       }
     }
 
-    // Tracked time belongs to the planner-local date of the session, not the
-    // task's scheduled date. A session crossing midnight is split by its
-    // intersection with this range; manual task adjustments remain attached
-    // to the task's local start date. Sessions whose task was deleted or is
-    // otherwise unavailable still contribute their measured duration.
-    final trackedSecondsByDay = <String, int>{};
-    var manualAdjustmentMin = 0;
-    for (final session in sessions) {
-      final endedAt = session.endedAt!;
-      final overlapStart = session.startedAt.isAfter(startInclusive)
-          ? session.startedAt
-          : startInclusive;
-      final overlapEnd = endedAt.isBefore(endExclusive)
-          ? endedAt
-          : endExclusive;
-      if (!overlapEnd.isAfter(overlapStart)) continue;
-
-      // Attribute and round at the same day boundary used by
-      // computeForDate. This keeps a range total equal to the sum of its day
-      // buckets for sub-minute sessions crossing midnight.
-      var cursor = startOfDay(overlapStart);
-      while (cursor.isBefore(overlapEnd)) {
-        final dayEnd = addDays(cursor, 1);
-        final segmentStart = overlapStart.isAfter(cursor)
-            ? overlapStart
-            : cursor;
-        final segmentEnd = overlapEnd.isBefore(dayEnd) ? overlapEnd : dayEnd;
-        if (segmentEnd.isAfter(segmentStart)) {
-          final day = isoDateString(cursor);
-          trackedSecondsByDay.update(
-            day,
-            (seconds) =>
-                seconds + segmentEnd.difference(segmentStart).inSeconds,
-            ifAbsent: () => segmentEnd.difference(segmentStart).inSeconds,
-          );
-        }
-        cursor = dayEnd;
-      }
-    }
-    final adjustedTaskIds = <String>{};
-    for (final task in tasksStartingInRange) {
-      if (adjustedTaskIds.add(task.id)) {
-        final sessionMinutes =
-            (totalSessionSecondsByTask[task.id] ?? 0) ~/
-            Duration.secondsPerMinute;
-        // `actual_duration_min` predates the explicit adjustment column. For
-        // those legacy rows, retain the displayed manual value when there are
-        // no sessions (or infer the old delta when sessions exist).
-        final adjustment = task.manualDurationAdjustmentMin != 0
-            ? task.manualDurationAdjustmentMin
-            : task.actualDurationMin == null
-            ? 0
-            : task.actualDurationMin! - sessionMinutes;
-        manualAdjustmentMin += adjustment;
-      }
-    }
-    final trackedMinutes = trackedSecondsByDay.values.fold<int>(
-      0,
-      (total, seconds) => total + seconds ~/ Duration.secondsPerMinute,
-    );
-    actualMin = (trackedMinutes + manualAdjustmentMin)
-        .clamp(0, 1 << 31)
-        .toInt();
+    actualMin = actualByDate.values.fold<int>(0, (sum, value) => sum + value);
 
     final review = await _db.reviewDao.getDailyReviewByDate(
       isoDateString(startInclusive),
@@ -432,11 +283,70 @@ class DailyStatsService {
       productivityRating: review?.productivityRating,
       planningAccuracyPct: DailyStatsCalculator.planningAccuracyPct(
         tasksStartingInRange,
-        estimatedDurationMin: (task) => task.estimatedDurationMin,
+        estimatedDurationMin: (task) =>
+            TaskTimeMetrics.plannedMinutes(task.startTime, task.endTime),
         actualDurationMin: (task) => task.actualDurationMin,
       ),
       computedAt: DateTime.now(),
     );
+  }
+
+  /// Loads each relevant Task's complete finished history once, then delegates
+  /// all day/range allocation to the canonical R12 algorithm. This avoids the
+  /// old wall-span and per-day-floor paths diverging from Task Actual totals.
+  Future<Map<String, int>> _actualMinutesByDate(
+    DateTime startInclusive,
+    DateTime endExclusive,
+  ) async {
+    final overlapping = await (_db.select(_db.timerSessions)..where(
+          (session) =>
+              session.deletedAt.isNull() &
+              session.state.equals('finished') &
+              session.endedAt.isNotNull() &
+              session.startedAt.isSmallerThanValue(
+                endExclusive.toUtc().toIso8601String(),
+              ) &
+              session.endedAt.isBiggerThanValue(
+                startInclusive.toUtc().toIso8601String(),
+              ),
+        ))
+        .get();
+    final taskRows = await (_db.select(_db.tasks)).get();
+    final ids = <String>{for (final session in overlapping) session.taskId};
+    for (final task in taskRows) {
+      if (task.startTime != null &&
+          !task.startTime!.isBefore(startInclusive) &&
+          task.startTime!.isBefore(endExclusive)) {
+        ids.add(task.id);
+      }
+    }
+    if (ids.isEmpty) return const <String, int>{};
+    final history = await (_db.select(_db.timerSessions)..where(
+          (session) =>
+              session.deletedAt.isNull() &
+              session.state.equals('finished') &
+              session.endedAt.isNotNull() &
+              session.taskId.isIn(ids),
+        ))
+        .get();
+    final byTask = <String, List<TimerSessionRow>>{};
+    for (final session in history) {
+      byTask.putIfAbsent(session.taskId, () => <TimerSessionRow>[]).add(session);
+    }
+    final result = <String, int>{};
+    for (final task in taskRows.where((row) => ids.contains(row.id))) {
+      final allocation = TaskActualDurationService.allocateActualByDate(
+        task,
+        byTask[task.id] ?? const <TimerSessionRow>[],
+      );
+      for (final entry in allocation.entries) {
+        if (entry.key.compareTo(isoDateString(startInclusive)) >= 0 &&
+            entry.key.compareTo(isoDateString(endExclusive)) < 0) {
+          result[entry.key] = (result[entry.key] ?? 0) + entry.value;
+        }
+      }
+    }
+    return result;
   }
 }
 

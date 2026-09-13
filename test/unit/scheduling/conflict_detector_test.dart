@@ -173,4 +173,52 @@ void main() {
       expect(lanes['adjacent'], equals(0));
     });
   });
+
+  group('ConflictDetector.componentLaneMetadata', () {
+    test(
+      'includes historical cancelled and rescheduled rows for visual lanes',
+      () {
+        final active = task(
+          'active',
+          start: day.add(const Duration(hours: 9)),
+          end: day.add(const Duration(hours: 10)),
+        );
+        final cancelled = task(
+          'cancelled',
+          start: day.add(const Duration(hours: 9, minutes: 15)),
+          end: day.add(const Duration(hours: 9, minutes: 45)),
+          status: TaskStatus.cancelled,
+        );
+        final rescheduled = task(
+          'rescheduled',
+          start: day.add(const Duration(hours: 9, minutes: 30)),
+          end: day.add(const Duration(hours: 10, minutes: 30)),
+          status: TaskStatus.rescheduled,
+        );
+
+        final visual = ConflictDetector.componentLaneMetadata([
+          active,
+          cancelled,
+          rescheduled,
+        ]);
+        final scheduling = ConflictDetector.componentLaneMetadata([
+          active,
+          cancelled,
+          rescheduled,
+        ], includeInactive: false);
+
+        expect(
+          visual.keys,
+          containsAll(<String>['active', 'cancelled', 'rescheduled']),
+        );
+        expect(
+          visual.values.every((metadata) => metadata.laneCount == 3),
+          isTrue,
+        );
+        expect(scheduling.keys, contains('active'));
+        expect(scheduling.keys, isNot(contains('cancelled')));
+        expect(scheduling.keys, isNot(contains('rescheduled')));
+      },
+    );
+  });
 }

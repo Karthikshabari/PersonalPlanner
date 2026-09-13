@@ -1,6 +1,9 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/utils/task_time_metrics.dart';
+import '../../task_editor/domain/plan_title_history.dart';
+import '../../timer/domain/task_actual_duration_service.dart';
 import '../../timeline/domain/commands/scheduling_command.dart';
 
 /// Snapshot of a recurring rule and every materialized task aggregate that it
@@ -77,23 +80,92 @@ class RecurrenceAggregateSnapshot {
             db.tasks,
           )..where((row) => row.id.isIn(taskIds))).get();
     final currentTaskById = {for (final row in currentTasks) row.id: row};
+    final now = DateTime.now().toUtc();
     for (final entry in beforeTasks.entries) {
       final current = currentTaskById[entry.key];
       final afterRow = afterTasks[entry.key];
-      if (after == null ||
-          current == null ||
-          afterRow == null ||
-          current == afterRow) {
+      if (current == null) {
+        final normalized = entry.value.copyWith(
+          estimatedDurationMin: Value(
+            entry.value.isInbox
+                ? null
+                : TaskTimeMetrics.plannedMinutes(
+                    entry.value.startTime,
+                    entry.value.endTime,
+                  ),
+          ),
+        );
         await db
             .into(db.tasks)
             .insertOnConflictUpdate(
-              entry.value
+              normalized
                   .toCompanion(false)
                   .copyWith(serverVersion: const Value.absent()),
             );
+        continue;
+      }
+      if (after == null || afterRow == null || current == afterRow) {
+        final history = after == null || afterRow == null
+            ? PlanTitleHistory.decodeJson(entry.value.planTitleHistoryJson)
+            : PlanTitleHistory.revertedForUndo(
+                before: PlanTitleHistory.decodeJson(
+                  entry.value.planTitleHistoryJson,
+                ),
+                after: PlanTitleHistory.decodeJson(
+                  afterRow.planTitleHistoryJson,
+                ),
+                current: PlanTitleHistory.decodeJson(
+                  current.planTitleHistoryJson,
+                ),
+                now: now,
+              );
+        final normalized = entry.value.copyWith(
+          estimatedDurationMin: Value(
+            entry.value.isInbox
+                ? null
+                : TaskTimeMetrics.plannedMinutes(
+                    entry.value.startTime,
+                    entry.value.endTime,
+                  ),
+          ),
+          planTitleHistoryJson: PlanTitleHistory.encodeJson(history),
+        );
+        await db
+            .into(db.tasks)
+            .insertOnConflictUpdate(
+              normalized
+                  .toCompanion(false)
+                  .copyWith(serverVersion: const Value.absent()),
+            );
+        continue;
+      }
+
+      // Timer/cache or an unrelated edit may have changed this materialized
+      // row after the aggregate command ran. Restore only the title and its
+      // visible pointer when they are still owned by this command, while
+      // retaining all newer measured/manual data and unioning history.
+      final titleStillOwned =
+          current.title == afterRow.title &&
+          current.displayPlanChangeId == afterRow.displayPlanChangeId;
+      if (titleStillOwned) {
+        final history = PlanTitleHistory.revertedForUndo(
+          before: PlanTitleHistory.decodeJson(entry.value.planTitleHistoryJson),
+          after: PlanTitleHistory.decodeJson(afterRow.planTitleHistoryJson),
+          current: PlanTitleHistory.decodeJson(current.planTitleHistoryJson),
+          now: now,
+        );
+        await db.taskDao.updateTask(
+          current.copyWith(
+            title: entry.value.title,
+            planTitleHistoryJson: PlanTitleHistory.encodeJson(history),
+            displayPlanChangeId: Value(entry.value.displayPlanChangeId),
+            updatedAt: now,
+            syncStatus: 1,
+            revision: current.revision + 1,
+          ),
+        );
       }
     }
-    final now = DateTime.now().toUtc();
     for (final entry in afterTasks.entries) {
       if (beforeTasks.containsKey(entry.key)) continue;
       final current = currentTaskById[entry.key];
@@ -215,6 +287,9 @@ class RecurrenceAggregateSnapshot {
             );
       }
     }
+    // Snapshot rows contain a historical cache value. Restore source/task
+    // identity first, then derive it from all retained finished sessions.
+    await TaskActualDurationService(db).recomputeTasks(taskIds);
   }
 }
 

@@ -8,7 +8,6 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/theme/app_colors.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
-import 'package:personal_planner/features/timeline/presentation/widgets/task_quick_create.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
 
 import '../helpers/test_container.dart';
@@ -21,6 +20,7 @@ void main() {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
     expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('Add day context'), findsOneWidget);
     final context = tester.element(find.byType(Scaffold).first);
     expect(Theme.of(context).brightness, Brightness.dark);
     expect(Theme.of(context).scaffoldBackgroundColor, AppColors.backgroundDark);
@@ -61,16 +61,13 @@ void main() {
     await pumpDesktop(tester, container);
     await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
     await settle(tester);
-    expect(find.text('Task title…'), findsOneWidget);
+    expect(find.text('Create scheduled task'), findsOneWidget);
 
     await tester.enterText(
-      find.descendant(
-        of: find.byType(TaskQuickCreate),
-        matching: find.byType(TextField),
-      ),
+      find.byKey(const ValueKey('quick-create-input')),
       'Deep Work',
     );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.tap(find.byKey(const ValueKey('quick-create-submit')));
     await settle(tester);
 
     expect(
@@ -81,7 +78,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('1h'), findsOneWidget);
-    expect(find.text('Planned'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TaskBlockWidget),
+        matching: find.text('Planned'),
+      ),
+      findsOneWidget,
+    );
 
     final tasks = await runDb(
       tester,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
@@ -14,8 +15,11 @@ import '../helpers/test_container.dart';
 
 final DateTime viewDay = DateTime(2027, 3, 15);
 
-Future<Task> insertTask(WidgetTester tester, ProviderContainer container,
-    Task task) async {
+Future<Task> insertTask(
+  WidgetTester tester,
+  ProviderContainer container,
+  Task task,
+) async {
   final created = await runDb(
     tester,
     () => container.read(taskRepositoryProvider).insertTask(task),
@@ -25,7 +29,9 @@ Future<Task> insertTask(WidgetTester tester, ProviderContainer container,
 }
 
 Future<List<Task>> dayTasks(
-    WidgetTester tester, ProviderContainer container) async {
+  WidgetTester tester,
+  ProviderContainer container,
+) async {
   List<Task>? data;
   for (var i = 0; i < 150; i++) {
     data = container.read(dayTasksProvider).value;
@@ -36,27 +42,35 @@ Future<List<Task>> dayTasks(
   return data ?? const <Task>[];
 }
 
-Future<Task?> taskById(WidgetTester tester, ProviderContainer container,
-    String id) async {
-  final tasks = await runDb(tester,
-      () => container.read(taskRepositoryProvider).getTaskById(id));
+Future<Task?> taskById(
+  WidgetTester tester,
+  ProviderContainer container,
+  String id,
+) async {
+  final tasks = await runDb(
+    tester,
+    () => container.read(taskRepositoryProvider).getTaskById(id),
+  );
   return tasks;
 }
 
 void main() {
   Future<ProviderContainer> pumpDesktop(WidgetTester tester) async {
     final container = await buildTestContainer(tester);
-    container.read(date_provider.selectedDateProvider.notifier).state =
-        viewDay;
+    container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     return container;
   }
 
-  testWidgets('quick-add creates an inbox item shown in the sidebar',
-      (tester) async {
+  testWidgets('quick-add creates an inbox item shown in the sidebar', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
 
-    await tester.enterText(find.byKey(const ValueKey('inbox-quick-add')), 'New idea');
+    await tester.enterText(
+      find.byKey(const ValueKey('inbox-quick-add')),
+      'New idea',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 
@@ -65,8 +79,32 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('overdue scheduled task surfaces with amber badge',
-      (tester) async {
+  testWidgets('quick-add preserves multiline whitespace with Ctrl+Enter', (
+    tester,
+  ) async {
+    final container = await pumpDesktop(tester);
+    const raw = '  First paragraph\n\n\tIndented second paragraph  ';
+
+    await tester.enterText(find.byKey(const ValueKey('inbox-quick-add')), raw);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await settle(tester);
+
+    final item = (await runDb(
+      tester,
+      () => container.read(inboxRepositoryProvider).watchInboxItems().first,
+    )).single;
+    expect(item.task.description, raw);
+    expect(item.task.title, 'Inbox capture');
+    expect(item.displayPreview, 'First paragraph');
+    await finish(tester, container);
+  });
+
+  testWidgets('overdue scheduled task surfaces with amber badge', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
     await insertTask(
@@ -75,8 +113,7 @@ void main() {
       Task(
         id: '',
         title: 'Overdue thing',
-        startTime:
-            DateTime(yesterday.year, yesterday.month, yesterday.day, 8),
+        startTime: DateTime(yesterday.year, yesterday.month, yesterday.day, 8),
         endTime: DateTime(yesterday.year, yesterday.month, yesterday.day, 9),
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
@@ -86,13 +123,41 @@ void main() {
     expect(find.byKey(const ValueKey('overdue-badge')), findsOneWidget);
     expect(find.text('Overdue thing'), findsOneWidget);
     // Badge shows the original date (medium date without year part).
-    expect(find.textContaining(RegExp(r'(Jul|Aug|Sep) \d')),
-        findsAtLeastNWidgets(1));
+    expect(
+      find.textContaining(RegExp(r'(Jul|Aug|Sep) \d')),
+      findsAtLeastNWidgets(1),
+    );
     await finish(tester, container);
   });
 
-  testWidgets('dragging an inbox item onto the timeline schedules it',
-      (tester) async {
+  testWidgets('Inbox due date is shown separately from missed schedule', (
+    tester,
+  ) async {
+    final container = await pumpDesktop(tester);
+    final now = DateTime.now();
+    final due =
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    final item = await runDb(
+      tester,
+      () => container
+          .read(inboxRepositoryProvider)
+          .addToInbox('Due capture', dueDate: due),
+    );
+    await settle(tester);
+
+    expect(find.byKey(const ValueKey('due-date-badge')), findsOneWidget);
+    expect(find.text('Due today'), findsOneWidget);
+    expect(item.startTime, isNull);
+    expect(item.endTime, isNull);
+    expect(find.byKey(const ValueKey('overdue-badge')), findsNothing);
+    await finish(tester, container);
+  });
+
+  testWidgets('dragging an inbox item onto the timeline schedules it', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final item = await runDb(
       tester,
@@ -100,18 +165,19 @@ void main() {
     );
     await settle(tester);
 
-    Finder tileOf(Task t) =>
-        find.byKey(ValueKey('inbox-item-${t.id}'));
+    Finder tileOf(Task t) => find.byKey(ValueKey('inbox-item-${t.id}'));
     expect(tileOf(item), findsOneWidget);
 
     final startPt = tester.getCenter(tileOf(item));
-    final target =
-        tester.getCenter(find.byKey(const ValueKey('timeline-gestures')))
-            .translate(-100, -60);
+    final target = tester
+        .getCenter(find.byKey(const ValueKey('timeline-gestures')))
+        .translate(-100, -60);
     final stepDelta = (target - startPt) / 8;
 
-    final gesture =
-        await tester.startGesture(startPt, kind: PointerDeviceKind.mouse);
+    final gesture = await tester.startGesture(
+      startPt,
+      kind: PointerDeviceKind.mouse,
+    );
     await tester.pump(const Duration(milliseconds: 120));
     for (var i = 0; i < 8; i++) {
       await gesture.moveBy(stepDelta);
@@ -120,11 +186,21 @@ void main() {
     await gesture.up();
     await settle(tester);
 
+    expect(find.text('Schedule Inbox capture'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('quick-create-input')),
+      'Prepare proposal',
+    );
+    await tester.tap(find.byKey(const ValueKey('quick-create-submit')));
+    await settle(tester);
+
     final tasks = await dayTasks(tester, container);
     expect(tasks, hasLength(1));
     final scheduled = tasks.single;
-    expect(scheduled.title, 'Drag me');
+    expect(scheduled.title, 'Prepare proposal');
     expect(scheduled.isInbox, isFalse);
+    expect(scheduled.planTitleHistory, isEmpty);
+    expect(scheduled.displayPlanChangeId, isNull);
     expect(scheduled.startTime!.day, viewDay.day);
     // One grid slot (default 60 min), snapped to the grid boundary.
     expect(scheduled.scheduledDuration, const Duration(hours: 1));
@@ -132,8 +208,9 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('dropping an overdue item reschedules with a linked copy',
-      (tester) async {
+  testWidgets('dropping an overdue item reschedules with a linked copy', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final yesterday = DateTime.now().subtract(const Duration(days: 2));
     final original = await insertTask(
@@ -142,8 +219,7 @@ void main() {
       Task(
         id: '',
         title: 'Stale work',
-        startTime:
-            DateTime(yesterday.year, yesterday.month, yesterday.day, 8),
+        startTime: DateTime(yesterday.year, yesterday.month, yesterday.day, 8),
         endTime: DateTime(yesterday.year, yesterday.month, yesterday.day, 9),
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
@@ -151,17 +227,15 @@ void main() {
     );
     await settle(tester);
 
-    Finder tileOf(Task t) =>
-        find.byKey(ValueKey('inbox-item-${t.id}'));
+    Finder tileOf(Task t) => find.byKey(ValueKey('inbox-item-${t.id}'));
 
     final startPt = tester.getCenter(tileOf(original));
-    final target =
-        tester.getCenter(find.byKey(const ValueKey('timeline-gestures')))
-            .translate(-100, -60);
+    final target = tester
+        .getCenter(find.byKey(const ValueKey('timeline-gestures')))
+        .translate(-100, -60);
     final stepDelta = (target - startPt) / 8;
 
-    final gesture =
-        await tester.startGesture(startPt);
+    final gesture = await tester.startGesture(startPt);
     await tester.pump(const Duration(milliseconds: 120));
     for (var i = 0; i < 8; i++) {
       await gesture.moveBy(stepDelta);
@@ -170,13 +244,19 @@ void main() {
     await gesture.up();
     await settle(tester);
 
-    final reloadedOriginal =
-        await taskById(tester, container, original.id);
+    expect(find.text('Reschedule overdue task'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('quick-create-submit')));
+    await settle(tester);
+
+    final reloadedOriginal = await taskById(tester, container, original.id);
     expect(reloadedOriginal!.status, TaskStatus.rescheduled);
     expect(reloadedOriginal.rescheduledToId, isNotNull);
 
-    final copy =
-        await taskById(tester, container, reloadedOriginal.rescheduledToId!);
+    final copy = await taskById(
+      tester,
+      container,
+      reloadedOriginal.rescheduledToId!,
+    );
     expect(copy, isNotNull);
     expect(copy!.rescheduledFromId, original.id);
     expect(copy.status, TaskStatus.planned);
@@ -195,7 +275,9 @@ void main() {
       tester,
       () => container
           .read(taskRepositoryProvider)
-          .watchTasksForDay(DateTime(yesterday.year, yesterday.month, yesterday.day))
+          .watchTasksForDay(
+            DateTime(yesterday.year, yesterday.month, yesterday.day),
+          )
           .first,
     );
     final shown = originalDayTasks.singleWhere((t) => t.id == original.id);
@@ -211,7 +293,10 @@ void main() {
     await tester.tap(find.text('Inbox').last);
     await settle(tester);
 
-    await tester.enterText(find.byKey(const ValueKey('inbox-quick-add')), 'Mobile idea');
+    await tester.enterText(
+      find.byKey(const ValueKey('inbox-quick-add')),
+      'Mobile idea',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 

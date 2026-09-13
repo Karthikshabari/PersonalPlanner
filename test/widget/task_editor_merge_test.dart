@@ -45,7 +45,10 @@ void main() {
     (widget) => widget is TextField && widget.decoration?.labelText == 'Title',
   );
 
-  Future<void> save(WidgetTester tester) async {
+  Future<void> save(
+    WidgetTester tester, {
+    bool replacePlanChange = true,
+  }) async {
     final button = find.byKey(const ValueKey('save-task-button'));
     // The editor's task, tags and recurrence providers resolve independently
     // after the selected-task state changes. Under a loaded test process the
@@ -81,6 +84,14 @@ void main() {
     await settle(tester);
     await tester.tap(button);
     await settle(tester);
+    // Existing editor tests predate R14. A title edit now requires a
+    // deliberate choice; these unrelated merge/baseline cases retain their
+    // former semantic intent by choosing the non-history replacement path.
+    final replace = find.byKey(const ValueKey('plan-change-replace'));
+    if (replacePlanChange && replace.evaluate().isNotEmpty) {
+      await tester.tap(replace);
+      await settle(tester);
+    }
   }
 
   testWidgets('save merges unrelated external changes', (tester) async {
@@ -435,6 +446,41 @@ void main() {
     await settle(tester);
     await tester.tap(find.text('Discard'));
     await settle(tester);
+    await finish(tester, container);
+  });
+
+  testWidgets('clearing an edited Actual total requires an explicit zero', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
+            Task(
+              id: '',
+              title: 'Actual validation',
+              actualDurationMin: 5,
+              createdAt: date,
+              updatedAt: date,
+            ),
+          ),
+    );
+    container.read(selectedDateProvider.notifier).state = date;
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    await settle(tester);
+    final actualField = find.byKey(const ValueKey('actual-duration-field'));
+    await tester.enterText(actualField, '');
+    await save(tester);
+
+    expect(find.text('Enter total minutes, or 0'), findsWidgets);
+    final reloaded = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(reloaded?.actualDurationMin, 5);
     await finish(tester, container);
   });
 

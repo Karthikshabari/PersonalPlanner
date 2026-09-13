@@ -1849,6 +1849,21 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         requiredDuringInsert: false,
         defaultValue: const Constant(0),
       );
+  static const VerificationMeta _manualActualSetMeta = const VerificationMeta(
+    'manualActualSet',
+  );
+  @override
+  late final GeneratedColumn<bool> manualActualSet = GeneratedColumn<bool>(
+    'manual_actual_set',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("manual_actual_set" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _categoryIdMeta = const VerificationMeta(
     'categoryId',
   );
@@ -1952,6 +1967,28 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _inboxContentVersionMeta =
+      const VerificationMeta('inboxContentVersion');
+  @override
+  late final GeneratedColumn<int> inboxContentVersion = GeneratedColumn<int>(
+    'inbox_content_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _dueDateMeta = const VerificationMeta(
+    'dueDate',
+  );
+  @override
+  late final GeneratedColumn<String> dueDate = GeneratedColumn<String>(
+    'due_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _missedAtMeta = const VerificationMeta(
     'missedAt',
   );
@@ -1963,6 +2000,29 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _planTitleHistoryJsonMeta =
+      const VerificationMeta('planTitleHistoryJson');
+  @override
+  late final GeneratedColumn<String> planTitleHistoryJson =
+      GeneratedColumn<String>(
+        'plan_title_history_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
+  static const VerificationMeta _displayPlanChangeIdMeta =
+      const VerificationMeta('displayPlanChangeId');
+  @override
+  late final GeneratedColumn<String> displayPlanChangeId =
+      GeneratedColumn<String>(
+        'display_plan_change_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -2035,6 +2095,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     estimatedDurationMin,
     actualDurationMin,
     manualDurationAdjustmentMin,
+    manualActualSet,
     categoryId,
     priority,
     status,
@@ -2043,7 +2104,11 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     rescheduledFromId,
     rescheduledToId,
     isInbox,
+    inboxContentVersion,
+    dueDate,
     missedAt,
+    planTitleHistoryJson,
+    displayPlanChangeId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2112,6 +2177,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         ),
       );
     }
+    if (data.containsKey('manual_actual_set')) {
+      context.handle(
+        _manualActualSetMeta,
+        manualActualSet.isAcceptableOrUnknown(
+          data['manual_actual_set']!,
+          _manualActualSetMeta,
+        ),
+      );
+    }
     if (data.containsKey('category_id')) {
       context.handle(
         _categoryIdMeta,
@@ -2169,10 +2243,43 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         isInbox.isAcceptableOrUnknown(data['is_inbox']!, _isInboxMeta),
       );
     }
+    if (data.containsKey('inbox_content_version')) {
+      context.handle(
+        _inboxContentVersionMeta,
+        inboxContentVersion.isAcceptableOrUnknown(
+          data['inbox_content_version']!,
+          _inboxContentVersionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('due_date')) {
+      context.handle(
+        _dueDateMeta,
+        dueDate.isAcceptableOrUnknown(data['due_date']!, _dueDateMeta),
+      );
+    }
     if (data.containsKey('missed_at')) {
       context.handle(
         _missedAtMeta,
         missedAt.isAcceptableOrUnknown(data['missed_at']!, _missedAtMeta),
+      );
+    }
+    if (data.containsKey('plan_title_history_json')) {
+      context.handle(
+        _planTitleHistoryJsonMeta,
+        planTitleHistoryJson.isAcceptableOrUnknown(
+          data['plan_title_history_json']!,
+          _planTitleHistoryJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('display_plan_change_id')) {
+      context.handle(
+        _displayPlanChangeIdMeta,
+        displayPlanChangeId.isAcceptableOrUnknown(
+          data['display_plan_change_id']!,
+          _displayPlanChangeIdMeta,
+        ),
       );
     }
     if (data.containsKey('sync_status')) {
@@ -2241,6 +2348,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.int,
         data['${effectivePrefix}manual_duration_adjustment_min'],
       )!,
+      manualActualSet: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}manual_actual_set'],
+      )!,
       categoryId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}category_id'],
@@ -2273,9 +2384,25 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}is_inbox'],
       )!,
+      inboxContentVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}inbox_content_version'],
+      )!,
+      dueDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}due_date'],
+      ),
       missedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}missed_at'],
+      ),
+      planTitleHistoryJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}plan_title_history_json'],
+      )!,
+      displayPlanChangeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_plan_change_id'],
       ),
       createdAt: $TasksTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
@@ -2336,6 +2463,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final int? estimatedDurationMin;
   final int? actualDurationMin;
   final int manualDurationAdjustmentMin;
+  final bool manualActualSet;
   final String? categoryId;
   final int priority;
   final String status;
@@ -2344,7 +2472,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final String? rescheduledFromId;
   final String? rescheduledToId;
   final bool isInbox;
+  final int inboxContentVersion;
+  final String? dueDate;
   final String? missedAt;
+  final String planTitleHistoryJson;
+  final String? displayPlanChangeId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -2362,6 +2494,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     this.estimatedDurationMin,
     this.actualDurationMin,
     required this.manualDurationAdjustmentMin,
+    required this.manualActualSet,
     this.categoryId,
     required this.priority,
     required this.status,
@@ -2370,7 +2503,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     this.rescheduledFromId,
     this.rescheduledToId,
     required this.isInbox,
+    required this.inboxContentVersion,
+    this.dueDate,
     this.missedAt,
+    required this.planTitleHistoryJson,
+    this.displayPlanChangeId,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -2405,6 +2542,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     map['manual_duration_adjustment_min'] = Variable<int>(
       manualDurationAdjustmentMin,
     );
+    map['manual_actual_set'] = Variable<bool>(manualActualSet);
     if (!nullToAbsent || categoryId != null) {
       map['category_id'] = Variable<String>(categoryId);
     }
@@ -2423,8 +2561,16 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       map['rescheduled_to_id'] = Variable<String>(rescheduledToId);
     }
     map['is_inbox'] = Variable<bool>(isInbox);
+    map['inbox_content_version'] = Variable<int>(inboxContentVersion);
+    if (!nullToAbsent || dueDate != null) {
+      map['due_date'] = Variable<String>(dueDate);
+    }
     if (!nullToAbsent || missedAt != null) {
       map['missed_at'] = Variable<String>(missedAt);
+    }
+    map['plan_title_history_json'] = Variable<String>(planTitleHistoryJson);
+    if (!nullToAbsent || displayPlanChangeId != null) {
+      map['display_plan_change_id'] = Variable<String>(displayPlanChangeId);
     }
     {
       map['created_at'] = Variable<String>(
@@ -2469,6 +2615,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? const Value.absent()
           : Value(actualDurationMin),
       manualDurationAdjustmentMin: Value(manualDurationAdjustmentMin),
+      manualActualSet: Value(manualActualSet),
       categoryId: categoryId == null && nullToAbsent
           ? const Value.absent()
           : Value(categoryId),
@@ -2487,9 +2634,17 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? const Value.absent()
           : Value(rescheduledToId),
       isInbox: Value(isInbox),
+      inboxContentVersion: Value(inboxContentVersion),
+      dueDate: dueDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dueDate),
       missedAt: missedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(missedAt),
+      planTitleHistoryJson: Value(planTitleHistoryJson),
+      displayPlanChangeId: displayPlanChangeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayPlanChangeId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -2521,6 +2676,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       manualDurationAdjustmentMin: serializer.fromJson<int>(
         json['manualDurationAdjustmentMin'],
       ),
+      manualActualSet: serializer.fromJson<bool>(json['manualActualSet']),
       categoryId: serializer.fromJson<String?>(json['categoryId']),
       priority: serializer.fromJson<int>(json['priority']),
       status: serializer.fromJson<String>(json['status']),
@@ -2531,7 +2687,17 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       ),
       rescheduledToId: serializer.fromJson<String?>(json['rescheduledToId']),
       isInbox: serializer.fromJson<bool>(json['isInbox']),
+      inboxContentVersion: serializer.fromJson<int>(
+        json['inboxContentVersion'],
+      ),
+      dueDate: serializer.fromJson<String?>(json['dueDate']),
       missedAt: serializer.fromJson<String?>(json['missedAt']),
+      planTitleHistoryJson: serializer.fromJson<String>(
+        json['planTitleHistoryJson'],
+      ),
+      displayPlanChangeId: serializer.fromJson<String?>(
+        json['displayPlanChangeId'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -2554,6 +2720,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'manualDurationAdjustmentMin': serializer.toJson<int>(
         manualDurationAdjustmentMin,
       ),
+      'manualActualSet': serializer.toJson<bool>(manualActualSet),
       'categoryId': serializer.toJson<String?>(categoryId),
       'priority': serializer.toJson<int>(priority),
       'status': serializer.toJson<String>(status),
@@ -2562,7 +2729,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'rescheduledFromId': serializer.toJson<String?>(rescheduledFromId),
       'rescheduledToId': serializer.toJson<String?>(rescheduledToId),
       'isInbox': serializer.toJson<bool>(isInbox),
+      'inboxContentVersion': serializer.toJson<int>(inboxContentVersion),
+      'dueDate': serializer.toJson<String?>(dueDate),
       'missedAt': serializer.toJson<String?>(missedAt),
+      'planTitleHistoryJson': serializer.toJson<String>(planTitleHistoryJson),
+      'displayPlanChangeId': serializer.toJson<String?>(displayPlanChangeId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -2581,6 +2752,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     Value<int?> estimatedDurationMin = const Value.absent(),
     Value<int?> actualDurationMin = const Value.absent(),
     int? manualDurationAdjustmentMin,
+    bool? manualActualSet,
     Value<String?> categoryId = const Value.absent(),
     int? priority,
     String? status,
@@ -2589,7 +2761,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     Value<String?> rescheduledFromId = const Value.absent(),
     Value<String?> rescheduledToId = const Value.absent(),
     bool? isInbox,
+    int? inboxContentVersion,
+    Value<String?> dueDate = const Value.absent(),
     Value<String?> missedAt = const Value.absent(),
+    String? planTitleHistoryJson,
+    Value<String?> displayPlanChangeId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -2610,6 +2786,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         : this.actualDurationMin,
     manualDurationAdjustmentMin:
         manualDurationAdjustmentMin ?? this.manualDurationAdjustmentMin,
+    manualActualSet: manualActualSet ?? this.manualActualSet,
     categoryId: categoryId.present ? categoryId.value : this.categoryId,
     priority: priority ?? this.priority,
     status: status ?? this.status,
@@ -2624,7 +2801,13 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         ? rescheduledToId.value
         : this.rescheduledToId,
     isInbox: isInbox ?? this.isInbox,
+    inboxContentVersion: inboxContentVersion ?? this.inboxContentVersion,
+    dueDate: dueDate.present ? dueDate.value : this.dueDate,
     missedAt: missedAt.present ? missedAt.value : this.missedAt,
+    planTitleHistoryJson: planTitleHistoryJson ?? this.planTitleHistoryJson,
+    displayPlanChangeId: displayPlanChangeId.present
+        ? displayPlanChangeId.value
+        : this.displayPlanChangeId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -2652,6 +2835,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       manualDurationAdjustmentMin: data.manualDurationAdjustmentMin.present
           ? data.manualDurationAdjustmentMin.value
           : this.manualDurationAdjustmentMin,
+      manualActualSet: data.manualActualSet.present
+          ? data.manualActualSet.value
+          : this.manualActualSet,
       categoryId: data.categoryId.present
           ? data.categoryId.value
           : this.categoryId,
@@ -2668,7 +2854,17 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? data.rescheduledToId.value
           : this.rescheduledToId,
       isInbox: data.isInbox.present ? data.isInbox.value : this.isInbox,
+      inboxContentVersion: data.inboxContentVersion.present
+          ? data.inboxContentVersion.value
+          : this.inboxContentVersion,
+      dueDate: data.dueDate.present ? data.dueDate.value : this.dueDate,
       missedAt: data.missedAt.present ? data.missedAt.value : this.missedAt,
+      planTitleHistoryJson: data.planTitleHistoryJson.present
+          ? data.planTitleHistoryJson.value
+          : this.planTitleHistoryJson,
+      displayPlanChangeId: data.displayPlanChangeId.present
+          ? data.displayPlanChangeId.value
+          : this.displayPlanChangeId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -2693,6 +2889,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('estimatedDurationMin: $estimatedDurationMin, ')
           ..write('actualDurationMin: $actualDurationMin, ')
           ..write('manualDurationAdjustmentMin: $manualDurationAdjustmentMin, ')
+          ..write('manualActualSet: $manualActualSet, ')
           ..write('categoryId: $categoryId, ')
           ..write('priority: $priority, ')
           ..write('status: $status, ')
@@ -2701,7 +2898,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('rescheduledFromId: $rescheduledFromId, ')
           ..write('rescheduledToId: $rescheduledToId, ')
           ..write('isInbox: $isInbox, ')
+          ..write('inboxContentVersion: $inboxContentVersion, ')
+          ..write('dueDate: $dueDate, ')
           ..write('missedAt: $missedAt, ')
+          ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
+          ..write('displayPlanChangeId: $displayPlanChangeId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -2722,6 +2923,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     estimatedDurationMin,
     actualDurationMin,
     manualDurationAdjustmentMin,
+    manualActualSet,
     categoryId,
     priority,
     status,
@@ -2730,7 +2932,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     rescheduledFromId,
     rescheduledToId,
     isInbox,
+    inboxContentVersion,
+    dueDate,
     missedAt,
+    planTitleHistoryJson,
+    displayPlanChangeId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2751,6 +2957,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.actualDurationMin == this.actualDurationMin &&
           other.manualDurationAdjustmentMin ==
               this.manualDurationAdjustmentMin &&
+          other.manualActualSet == this.manualActualSet &&
           other.categoryId == this.categoryId &&
           other.priority == this.priority &&
           other.status == this.status &&
@@ -2759,7 +2966,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.rescheduledFromId == this.rescheduledFromId &&
           other.rescheduledToId == this.rescheduledToId &&
           other.isInbox == this.isInbox &&
+          other.inboxContentVersion == this.inboxContentVersion &&
+          other.dueDate == this.dueDate &&
           other.missedAt == this.missedAt &&
+          other.planTitleHistoryJson == this.planTitleHistoryJson &&
+          other.displayPlanChangeId == this.displayPlanChangeId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -2777,6 +2988,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<int?> estimatedDurationMin;
   final Value<int?> actualDurationMin;
   final Value<int> manualDurationAdjustmentMin;
+  final Value<bool> manualActualSet;
   final Value<String?> categoryId;
   final Value<int> priority;
   final Value<String> status;
@@ -2785,7 +2997,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<String?> rescheduledFromId;
   final Value<String?> rescheduledToId;
   final Value<bool> isInbox;
+  final Value<int> inboxContentVersion;
+  final Value<String?> dueDate;
   final Value<String?> missedAt;
+  final Value<String> planTitleHistoryJson;
+  final Value<String?> displayPlanChangeId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -2802,6 +3018,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.estimatedDurationMin = const Value.absent(),
     this.actualDurationMin = const Value.absent(),
     this.manualDurationAdjustmentMin = const Value.absent(),
+    this.manualActualSet = const Value.absent(),
     this.categoryId = const Value.absent(),
     this.priority = const Value.absent(),
     this.status = const Value.absent(),
@@ -2810,7 +3027,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.rescheduledFromId = const Value.absent(),
     this.rescheduledToId = const Value.absent(),
     this.isInbox = const Value.absent(),
+    this.inboxContentVersion = const Value.absent(),
+    this.dueDate = const Value.absent(),
     this.missedAt = const Value.absent(),
+    this.planTitleHistoryJson = const Value.absent(),
+    this.displayPlanChangeId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -2828,6 +3049,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.estimatedDurationMin = const Value.absent(),
     this.actualDurationMin = const Value.absent(),
     this.manualDurationAdjustmentMin = const Value.absent(),
+    this.manualActualSet = const Value.absent(),
     this.categoryId = const Value.absent(),
     this.priority = const Value.absent(),
     this.status = const Value.absent(),
@@ -2836,7 +3058,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.rescheduledFromId = const Value.absent(),
     this.rescheduledToId = const Value.absent(),
     this.isInbox = const Value.absent(),
+    this.inboxContentVersion = const Value.absent(),
+    this.dueDate = const Value.absent(),
     this.missedAt = const Value.absent(),
+    this.planTitleHistoryJson = const Value.absent(),
+    this.displayPlanChangeId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -2857,6 +3083,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<int>? estimatedDurationMin,
     Expression<int>? actualDurationMin,
     Expression<int>? manualDurationAdjustmentMin,
+    Expression<bool>? manualActualSet,
     Expression<String>? categoryId,
     Expression<int>? priority,
     Expression<String>? status,
@@ -2865,7 +3092,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? rescheduledFromId,
     Expression<String>? rescheduledToId,
     Expression<bool>? isInbox,
+    Expression<int>? inboxContentVersion,
+    Expression<String>? dueDate,
     Expression<String>? missedAt,
+    Expression<String>? planTitleHistoryJson,
+    Expression<String>? displayPlanChangeId,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -2885,6 +3116,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (actualDurationMin != null) 'actual_duration_min': actualDurationMin,
       if (manualDurationAdjustmentMin != null)
         'manual_duration_adjustment_min': manualDurationAdjustmentMin,
+      if (manualActualSet != null) 'manual_actual_set': manualActualSet,
       if (categoryId != null) 'category_id': categoryId,
       if (priority != null) 'priority': priority,
       if (status != null) 'status': status,
@@ -2893,7 +3125,14 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (rescheduledFromId != null) 'rescheduled_from_id': rescheduledFromId,
       if (rescheduledToId != null) 'rescheduled_to_id': rescheduledToId,
       if (isInbox != null) 'is_inbox': isInbox,
+      if (inboxContentVersion != null)
+        'inbox_content_version': inboxContentVersion,
+      if (dueDate != null) 'due_date': dueDate,
       if (missedAt != null) 'missed_at': missedAt,
+      if (planTitleHistoryJson != null)
+        'plan_title_history_json': planTitleHistoryJson,
+      if (displayPlanChangeId != null)
+        'display_plan_change_id': displayPlanChangeId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -2913,6 +3152,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<int?>? estimatedDurationMin,
     Value<int?>? actualDurationMin,
     Value<int>? manualDurationAdjustmentMin,
+    Value<bool>? manualActualSet,
     Value<String?>? categoryId,
     Value<int>? priority,
     Value<String>? status,
@@ -2921,7 +3161,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<String?>? rescheduledFromId,
     Value<String?>? rescheduledToId,
     Value<bool>? isInbox,
+    Value<int>? inboxContentVersion,
+    Value<String?>? dueDate,
     Value<String?>? missedAt,
+    Value<String>? planTitleHistoryJson,
+    Value<String?>? displayPlanChangeId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -2940,6 +3184,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       actualDurationMin: actualDurationMin ?? this.actualDurationMin,
       manualDurationAdjustmentMin:
           manualDurationAdjustmentMin ?? this.manualDurationAdjustmentMin,
+      manualActualSet: manualActualSet ?? this.manualActualSet,
       categoryId: categoryId ?? this.categoryId,
       priority: priority ?? this.priority,
       status: status ?? this.status,
@@ -2948,7 +3193,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       rescheduledFromId: rescheduledFromId ?? this.rescheduledFromId,
       rescheduledToId: rescheduledToId ?? this.rescheduledToId,
       isInbox: isInbox ?? this.isInbox,
+      inboxContentVersion: inboxContentVersion ?? this.inboxContentVersion,
+      dueDate: dueDate ?? this.dueDate,
       missedAt: missedAt ?? this.missedAt,
+      planTitleHistoryJson: planTitleHistoryJson ?? this.planTitleHistoryJson,
+      displayPlanChangeId: displayPlanChangeId ?? this.displayPlanChangeId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -2992,6 +3241,9 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         manualDurationAdjustmentMin.value,
       );
     }
+    if (manualActualSet.present) {
+      map['manual_actual_set'] = Variable<bool>(manualActualSet.value);
+    }
     if (categoryId.present) {
       map['category_id'] = Variable<String>(categoryId.value);
     }
@@ -3016,8 +3268,24 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     if (isInbox.present) {
       map['is_inbox'] = Variable<bool>(isInbox.value);
     }
+    if (inboxContentVersion.present) {
+      map['inbox_content_version'] = Variable<int>(inboxContentVersion.value);
+    }
+    if (dueDate.present) {
+      map['due_date'] = Variable<String>(dueDate.value);
+    }
     if (missedAt.present) {
       map['missed_at'] = Variable<String>(missedAt.value);
+    }
+    if (planTitleHistoryJson.present) {
+      map['plan_title_history_json'] = Variable<String>(
+        planTitleHistoryJson.value,
+      );
+    }
+    if (displayPlanChangeId.present) {
+      map['display_plan_change_id'] = Variable<String>(
+        displayPlanChangeId.value,
+      );
     }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
@@ -3060,6 +3328,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('estimatedDurationMin: $estimatedDurationMin, ')
           ..write('actualDurationMin: $actualDurationMin, ')
           ..write('manualDurationAdjustmentMin: $manualDurationAdjustmentMin, ')
+          ..write('manualActualSet: $manualActualSet, ')
           ..write('categoryId: $categoryId, ')
           ..write('priority: $priority, ')
           ..write('status: $status, ')
@@ -3068,7 +3337,633 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('rescheduledFromId: $rescheduledFromId, ')
           ..write('rescheduledToId: $rescheduledToId, ')
           ..write('isInbox: $isInbox, ')
+          ..write('inboxContentVersion: $inboxContentVersion, ')
+          ..write('dueDate: $dueDate, ')
           ..write('missedAt: $missedAt, ')
+          ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
+          ..write('displayPlanChangeId: $displayPlanChangeId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $DayContextsTable extends DayContexts
+    with TableInfo<$DayContextsTable, DayContextRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DayContextsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  @override
+  late final GeneratedColumn<String> date = GeneratedColumn<String>(
+    'date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _customLabelMeta = const VerificationMeta(
+    'customLabel',
+  );
+  @override
+  late final GeneratedColumn<String> customLabel = GeneratedColumn<String>(
+    'custom_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($DayContextsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($DayContextsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($DayContextsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    date,
+    kind,
+    customLabel,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'day_contexts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DayContextRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('date')) {
+      context.handle(
+        _dateMeta,
+        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_dateMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('custom_label')) {
+      context.handle(
+        _customLabelMeta,
+        customLabel.isAcceptableOrUnknown(
+          data['custom_label']!,
+          _customLabelMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {date},
+  ];
+  @override
+  DayContextRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DayContextRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      date: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}date'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      customLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}custom_label'],
+      ),
+      createdAt: $DayContextsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $DayContextsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $DayContextsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
+    );
+  }
+
+  @override
+  $DayContextsTable createAlias(String alias) {
+    return $DayContextsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class DayContextRow extends DataClass implements Insertable<DayContextRow> {
+  final String id;
+  final String date;
+  final String kind;
+  final String? customLabel;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  final int? serverVersion;
+  const DayContextRow({
+    required this.id,
+    required this.date,
+    required this.kind,
+    this.customLabel,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+    this.serverVersion,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['date'] = Variable<String>(date);
+    map['kind'] = Variable<String>(kind);
+    if (!nullToAbsent || customLabel != null) {
+      map['custom_label'] = Variable<String>(customLabel);
+    }
+    {
+      map['created_at'] = Variable<String>(
+        $DayContextsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $DayContextsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $DayContextsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
+    return map;
+  }
+
+  DayContextsCompanion toCompanion(bool nullToAbsent) {
+    return DayContextsCompanion(
+      id: Value(id),
+      date: Value(date),
+      kind: Value(kind),
+      customLabel: customLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customLabel),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
+    );
+  }
+
+  factory DayContextRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DayContextRow(
+      id: serializer.fromJson<String>(json['id']),
+      date: serializer.fromJson<String>(json['date']),
+      kind: serializer.fromJson<String>(json['kind']),
+      customLabel: serializer.fromJson<String?>(json['customLabel']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'date': serializer.toJson<String>(date),
+      'kind': serializer.toJson<String>(kind),
+      'customLabel': serializer.toJson<String?>(customLabel),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
+    };
+  }
+
+  DayContextRow copyWith({
+    String? id,
+    String? date,
+    String? kind,
+    Value<String?> customLabel = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+    Value<int?> serverVersion = const Value.absent(),
+  }) => DayContextRow(
+    id: id ?? this.id,
+    date: date ?? this.date,
+    kind: kind ?? this.kind,
+    customLabel: customLabel.present ? customLabel.value : this.customLabel,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
+  );
+  DayContextRow copyWithCompanion(DayContextsCompanion data) {
+    return DayContextRow(
+      id: data.id.present ? data.id.value : this.id,
+      date: data.date.present ? data.date.value : this.date,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      customLabel: data.customLabel.present
+          ? data.customLabel.value
+          : this.customLabel,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DayContextRow(')
+          ..write('id: $id, ')
+          ..write('date: $date, ')
+          ..write('kind: $kind, ')
+          ..write('customLabel: $customLabel, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    date,
+    kind,
+    customLabel,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DayContextRow &&
+          other.id == this.id &&
+          other.date == this.date &&
+          other.kind == this.kind &&
+          other.customLabel == this.customLabel &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
+}
+
+class DayContextsCompanion extends UpdateCompanion<DayContextRow> {
+  final Value<String> id;
+  final Value<String> date;
+  final Value<String> kind;
+  final Value<String?> customLabel;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int?> serverVersion;
+  final Value<int> rowid;
+  const DayContextsCompanion({
+    this.id = const Value.absent(),
+    this.date = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.customLabel = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DayContextsCompanion.insert({
+    required String id,
+    required String date,
+    required String kind,
+    this.customLabel = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       date = Value(date),
+       kind = Value(kind),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<DayContextRow> custom({
+    Expression<String>? id,
+    Expression<String>? date,
+    Expression<String>? kind,
+    Expression<String>? customLabel,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? serverVersion,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (date != null) 'date': date,
+      if (kind != null) 'kind': kind,
+      if (customLabel != null) 'custom_label': customLabel,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DayContextsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? date,
+    Value<String>? kind,
+    Value<String?>? customLabel,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int?>? serverVersion,
+    Value<int>? rowid,
+  }) {
+    return DayContextsCompanion(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      kind: kind ?? this.kind,
+      customLabel: customLabel ?? this.customLabel,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (date.present) {
+      map['date'] = Variable<String>(date.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (customLabel.present) {
+      map['custom_label'] = Variable<String>(customLabel.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $DayContextsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $DayContextsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $DayContextsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DayContextsCompanion(')
+          ..write('id: $id, ')
+          ..write('date: $date, ')
+          ..write('kind: $kind, ')
+          ..write('customLabel: $customLabel, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -8454,6 +9349,49 @@ class $TimerSessionsTable extends TimerSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _stateMeta = const VerificationMeta('state');
+  @override
+  late final GeneratedColumn<String> state = GeneratedColumn<String>(
+    'state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('finished'),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> runningSince =
+      GeneratedColumn<String>(
+        'running_since',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($TimerSessionsTable.$converterrunningSince);
+  static const VerificationMeta _workIntervalsJsonMeta = const VerificationMeta(
+    'workIntervalsJson',
+  );
+  @override
+  late final GeneratedColumn<String> workIntervalsJson =
+      GeneratedColumn<String>(
+        'work_intervals_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
+  static const VerificationMeta _ownerDeviceIdMeta = const VerificationMeta(
+    'ownerDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> ownerDeviceId = GeneratedColumn<String>(
+    'owner_device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -8523,6 +9461,10 @@ class $TimerSessionsTable extends TimerSessions
     startedAt,
     endedAt,
     durationSec,
+    state,
+    runningSince,
+    workIntervalsJson,
+    ownerDeviceId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -8561,6 +9503,30 @@ class $TimerSessionsTable extends TimerSessions
         durationSec.isAcceptableOrUnknown(
           data['duration_sec']!,
           _durationSecMeta,
+        ),
+      );
+    }
+    if (data.containsKey('state')) {
+      context.handle(
+        _stateMeta,
+        state.isAcceptableOrUnknown(data['state']!, _stateMeta),
+      );
+    }
+    if (data.containsKey('work_intervals_json')) {
+      context.handle(
+        _workIntervalsJsonMeta,
+        workIntervalsJson.isAcceptableOrUnknown(
+          data['work_intervals_json']!,
+          _workIntervalsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('owner_device_id')) {
+      context.handle(
+        _ownerDeviceIdMeta,
+        ownerDeviceId.isAcceptableOrUnknown(
+          data['owner_device_id']!,
+          _ownerDeviceIdMeta,
         ),
       );
     }
@@ -8618,6 +9584,24 @@ class $TimerSessionsTable extends TimerSessions
         DriftSqlType.int,
         data['${effectivePrefix}duration_sec'],
       )!,
+      state: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}state'],
+      )!,
+      runningSince: $TimerSessionsTable.$converterrunningSince.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}running_since'],
+        ),
+      ),
+      workIntervalsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}work_intervals_json'],
+      )!,
+      ownerDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}owner_device_id'],
+      ),
       createdAt: $TimerSessionsTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -8660,6 +9644,8 @@ class $TimerSessionsTable extends TimerSessions
       const DateTimeUtcConverter();
   static TypeConverter<DateTime?, String?> $converterendedAt =
       const NullableDateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterrunningSince =
+      const NullableDateTimeUtcConverter();
   static TypeConverter<DateTime, String> $convertercreatedAt =
       const DateTimeUtcConverter();
   static TypeConverter<DateTime, String> $converterupdatedAt =
@@ -8676,6 +9662,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
   /// Null while the timer is running (architecture.md §3 TIMER_SESSIONS).
   final DateTime? endedAt;
   final int durationSec;
+  final String state;
+  final DateTime? runningSince;
+  final String workIntervalsJson;
+  final String? ownerDeviceId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -8688,6 +9678,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     required this.startedAt,
     this.endedAt,
     required this.durationSec,
+    required this.state,
+    this.runningSince,
+    required this.workIntervalsJson,
+    this.ownerDeviceId,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -8711,6 +9705,16 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       );
     }
     map['duration_sec'] = Variable<int>(durationSec);
+    map['state'] = Variable<String>(state);
+    if (!nullToAbsent || runningSince != null) {
+      map['running_since'] = Variable<String>(
+        $TimerSessionsTable.$converterrunningSince.toSql(runningSince),
+      );
+    }
+    map['work_intervals_json'] = Variable<String>(workIntervalsJson);
+    if (!nullToAbsent || ownerDeviceId != null) {
+      map['owner_device_id'] = Variable<String>(ownerDeviceId);
+    }
     {
       map['created_at'] = Variable<String>(
         $TimerSessionsTable.$convertercreatedAt.toSql(createdAt),
@@ -8743,6 +9747,14 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           ? const Value.absent()
           : Value(endedAt),
       durationSec: Value(durationSec),
+      state: Value(state),
+      runningSince: runningSince == null && nullToAbsent
+          ? const Value.absent()
+          : Value(runningSince),
+      workIntervalsJson: Value(workIntervalsJson),
+      ownerDeviceId: ownerDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ownerDeviceId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -8767,6 +9779,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       startedAt: serializer.fromJson<DateTime>(json['startedAt']),
       endedAt: serializer.fromJson<DateTime?>(json['endedAt']),
       durationSec: serializer.fromJson<int>(json['durationSec']),
+      state: serializer.fromJson<String>(json['state']),
+      runningSince: serializer.fromJson<DateTime?>(json['runningSince']),
+      workIntervalsJson: serializer.fromJson<String>(json['workIntervalsJson']),
+      ownerDeviceId: serializer.fromJson<String?>(json['ownerDeviceId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -8784,6 +9800,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       'startedAt': serializer.toJson<DateTime>(startedAt),
       'endedAt': serializer.toJson<DateTime?>(endedAt),
       'durationSec': serializer.toJson<int>(durationSec),
+      'state': serializer.toJson<String>(state),
+      'runningSince': serializer.toJson<DateTime?>(runningSince),
+      'workIntervalsJson': serializer.toJson<String>(workIntervalsJson),
+      'ownerDeviceId': serializer.toJson<String?>(ownerDeviceId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -8799,6 +9819,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     DateTime? startedAt,
     Value<DateTime?> endedAt = const Value.absent(),
     int? durationSec,
+    String? state,
+    Value<DateTime?> runningSince = const Value.absent(),
+    String? workIntervalsJson,
+    Value<String?> ownerDeviceId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -8811,6 +9835,12 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     startedAt: startedAt ?? this.startedAt,
     endedAt: endedAt.present ? endedAt.value : this.endedAt,
     durationSec: durationSec ?? this.durationSec,
+    state: state ?? this.state,
+    runningSince: runningSince.present ? runningSince.value : this.runningSince,
+    workIntervalsJson: workIntervalsJson ?? this.workIntervalsJson,
+    ownerDeviceId: ownerDeviceId.present
+        ? ownerDeviceId.value
+        : this.ownerDeviceId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -8829,6 +9859,16 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
       durationSec: data.durationSec.present
           ? data.durationSec.value
           : this.durationSec,
+      state: data.state.present ? data.state.value : this.state,
+      runningSince: data.runningSince.present
+          ? data.runningSince.value
+          : this.runningSince,
+      workIntervalsJson: data.workIntervalsJson.present
+          ? data.workIntervalsJson.value
+          : this.workIntervalsJson,
+      ownerDeviceId: data.ownerDeviceId.present
+          ? data.ownerDeviceId.value
+          : this.ownerDeviceId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -8850,6 +9890,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
           ..write('durationSec: $durationSec, ')
+          ..write('state: $state, ')
+          ..write('runningSince: $runningSince, ')
+          ..write('workIntervalsJson: $workIntervalsJson, ')
+          ..write('ownerDeviceId: $ownerDeviceId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -8867,6 +9911,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
     startedAt,
     endedAt,
     durationSec,
+    state,
+    runningSince,
+    workIntervalsJson,
+    ownerDeviceId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -8883,6 +9931,10 @@ class TimerSessionRow extends DataClass implements Insertable<TimerSessionRow> {
           other.startedAt == this.startedAt &&
           other.endedAt == this.endedAt &&
           other.durationSec == this.durationSec &&
+          other.state == this.state &&
+          other.runningSince == this.runningSince &&
+          other.workIntervalsJson == this.workIntervalsJson &&
+          other.ownerDeviceId == this.ownerDeviceId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -8897,6 +9949,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
   final Value<DateTime> startedAt;
   final Value<DateTime?> endedAt;
   final Value<int> durationSec;
+  final Value<String> state;
+  final Value<DateTime?> runningSince;
+  final Value<String> workIntervalsJson;
+  final Value<String?> ownerDeviceId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -8910,6 +9966,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     this.startedAt = const Value.absent(),
     this.endedAt = const Value.absent(),
     this.durationSec = const Value.absent(),
+    this.state = const Value.absent(),
+    this.runningSince = const Value.absent(),
+    this.workIntervalsJson = const Value.absent(),
+    this.ownerDeviceId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -8924,6 +9984,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     required DateTime startedAt,
     this.endedAt = const Value.absent(),
     this.durationSec = const Value.absent(),
+    this.state = const Value.absent(),
+    this.runningSince = const Value.absent(),
+    this.workIntervalsJson = const Value.absent(),
+    this.ownerDeviceId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -8942,6 +10006,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     Expression<String>? startedAt,
     Expression<String>? endedAt,
     Expression<int>? durationSec,
+    Expression<String>? state,
+    Expression<String>? runningSince,
+    Expression<String>? workIntervalsJson,
+    Expression<String>? ownerDeviceId,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -8956,6 +10024,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
       if (startedAt != null) 'started_at': startedAt,
       if (endedAt != null) 'ended_at': endedAt,
       if (durationSec != null) 'duration_sec': durationSec,
+      if (state != null) 'state': state,
+      if (runningSince != null) 'running_since': runningSince,
+      if (workIntervalsJson != null) 'work_intervals_json': workIntervalsJson,
+      if (ownerDeviceId != null) 'owner_device_id': ownerDeviceId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -8972,6 +10044,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     Value<DateTime>? startedAt,
     Value<DateTime?>? endedAt,
     Value<int>? durationSec,
+    Value<String>? state,
+    Value<DateTime?>? runningSince,
+    Value<String>? workIntervalsJson,
+    Value<String?>? ownerDeviceId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -8986,6 +10062,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
       startedAt: startedAt ?? this.startedAt,
       endedAt: endedAt ?? this.endedAt,
       durationSec: durationSec ?? this.durationSec,
+      state: state ?? this.state,
+      runningSince: runningSince ?? this.runningSince,
+      workIntervalsJson: workIntervalsJson ?? this.workIntervalsJson,
+      ownerDeviceId: ownerDeviceId ?? this.ownerDeviceId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -9017,6 +10097,20 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
     }
     if (durationSec.present) {
       map['duration_sec'] = Variable<int>(durationSec.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(state.value);
+    }
+    if (runningSince.present) {
+      map['running_since'] = Variable<String>(
+        $TimerSessionsTable.$converterrunningSince.toSql(runningSince.value),
+      );
+    }
+    if (workIntervalsJson.present) {
+      map['work_intervals_json'] = Variable<String>(workIntervalsJson.value);
+    }
+    if (ownerDeviceId.present) {
+      map['owner_device_id'] = Variable<String>(ownerDeviceId.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
@@ -9056,6 +10150,10 @@ class TimerSessionsCompanion extends UpdateCompanion<TimerSessionRow> {
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
           ..write('durationSec: $durationSec, ')
+          ..write('state: $state, ')
+          ..write('runningSince: $runningSince, ')
+          ..write('workIntervalsJson: $workIntervalsJson, ')
+          ..write('ownerDeviceId: $ownerDeviceId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -10688,6 +11786,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CategoriesTable categories = $CategoriesTable(this);
   late final $RecurringRulesTable recurringRules = $RecurringRulesTable(this);
   late final $TasksTable tasks = $TasksTable(this);
+  late final $DayContextsTable dayContexts = $DayContextsTable(this);
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
   late final $SubtasksTable subtasks = $SubtasksTable(this);
   late final $TagsTable tags = $TagsTable(this);
@@ -10722,6 +11821,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     categories,
     recurringRules,
     tasks,
+    dayContexts,
     appSettings,
     subtasks,
     tags,
@@ -12150,6 +13250,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<int?> estimatedDurationMin,
       Value<int?> actualDurationMin,
       Value<int> manualDurationAdjustmentMin,
+      Value<bool> manualActualSet,
       Value<String?> categoryId,
       Value<int> priority,
       Value<String> status,
@@ -12158,7 +13259,11 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<String?> rescheduledFromId,
       Value<String?> rescheduledToId,
       Value<bool> isInbox,
+      Value<int> inboxContentVersion,
+      Value<String?> dueDate,
       Value<String?> missedAt,
+      Value<String> planTitleHistoryJson,
+      Value<String?> displayPlanChangeId,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -12177,6 +13282,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<int?> estimatedDurationMin,
       Value<int?> actualDurationMin,
       Value<int> manualDurationAdjustmentMin,
+      Value<bool> manualActualSet,
       Value<String?> categoryId,
       Value<int> priority,
       Value<String> status,
@@ -12185,7 +13291,11 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<String?> rescheduledFromId,
       Value<String?> rescheduledToId,
       Value<bool> isInbox,
+      Value<int> inboxContentVersion,
+      Value<String?> dueDate,
       Value<String?> missedAt,
+      Value<String> planTitleHistoryJson,
+      Value<String?> displayPlanChangeId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -12376,6 +13486,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get manualActualSet => $composableBuilder(
+    column: $table.manualActualSet,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get priority => $composableBuilder(
     column: $table.priority,
     builder: (column) => ColumnFilters(column),
@@ -12396,8 +13511,28 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<int> get inboxContentVersion => $composableBuilder(
+    column: $table.inboxContentVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dueDate => $composableBuilder(
+    column: $table.dueDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get missedAt => $composableBuilder(
     column: $table.missedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get planTitleHistoryJson => $composableBuilder(
+    column: $table.planTitleHistoryJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayPlanChangeId => $composableBuilder(
+    column: $table.displayPlanChangeId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12651,6 +13786,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get manualActualSet => $composableBuilder(
+    column: $table.manualActualSet,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get priority => $composableBuilder(
     column: $table.priority,
     builder: (column) => ColumnOrderings(column),
@@ -12671,8 +13811,28 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get inboxContentVersion => $composableBuilder(
+    column: $table.inboxContentVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dueDate => $composableBuilder(
+    column: $table.dueDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get missedAt => $composableBuilder(
     column: $table.missedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get planTitleHistoryJson => $composableBuilder(
+    column: $table.planTitleHistoryJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayPlanChangeId => $composableBuilder(
+    column: $table.displayPlanChangeId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -12840,6 +14000,11 @@ class $$TasksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get manualActualSet => $composableBuilder(
+    column: $table.manualActualSet,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get priority =>
       $composableBuilder(column: $table.priority, builder: (column) => column);
 
@@ -12852,8 +14017,26 @@ class $$TasksTableAnnotationComposer
   GeneratedColumn<bool> get isInbox =>
       $composableBuilder(column: $table.isInbox, builder: (column) => column);
 
+  GeneratedColumn<int> get inboxContentVersion => $composableBuilder(
+    column: $table.inboxContentVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get dueDate =>
+      $composableBuilder(column: $table.dueDate, builder: (column) => column);
+
   GeneratedColumn<String> get missedAt =>
       $composableBuilder(column: $table.missedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get planTitleHistoryJson => $composableBuilder(
+    column: $table.planTitleHistoryJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get displayPlanChangeId => $composableBuilder(
+    column: $table.displayPlanChangeId,
+    builder: (column) => column,
+  );
 
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -13089,6 +14272,7 @@ class $$TasksTableTableManager
                 Value<int?> estimatedDurationMin = const Value.absent(),
                 Value<int?> actualDurationMin = const Value.absent(),
                 Value<int> manualDurationAdjustmentMin = const Value.absent(),
+                Value<bool> manualActualSet = const Value.absent(),
                 Value<String?> categoryId = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -13097,7 +14281,11 @@ class $$TasksTableTableManager
                 Value<String?> rescheduledFromId = const Value.absent(),
                 Value<String?> rescheduledToId = const Value.absent(),
                 Value<bool> isInbox = const Value.absent(),
+                Value<int> inboxContentVersion = const Value.absent(),
+                Value<String?> dueDate = const Value.absent(),
                 Value<String?> missedAt = const Value.absent(),
+                Value<String> planTitleHistoryJson = const Value.absent(),
+                Value<String?> displayPlanChangeId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -13114,6 +14302,7 @@ class $$TasksTableTableManager
                 estimatedDurationMin: estimatedDurationMin,
                 actualDurationMin: actualDurationMin,
                 manualDurationAdjustmentMin: manualDurationAdjustmentMin,
+                manualActualSet: manualActualSet,
                 categoryId: categoryId,
                 priority: priority,
                 status: status,
@@ -13122,7 +14311,11 @@ class $$TasksTableTableManager
                 rescheduledFromId: rescheduledFromId,
                 rescheduledToId: rescheduledToId,
                 isInbox: isInbox,
+                inboxContentVersion: inboxContentVersion,
+                dueDate: dueDate,
                 missedAt: missedAt,
+                planTitleHistoryJson: planTitleHistoryJson,
+                displayPlanChangeId: displayPlanChangeId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -13141,6 +14334,7 @@ class $$TasksTableTableManager
                 Value<int?> estimatedDurationMin = const Value.absent(),
                 Value<int?> actualDurationMin = const Value.absent(),
                 Value<int> manualDurationAdjustmentMin = const Value.absent(),
+                Value<bool> manualActualSet = const Value.absent(),
                 Value<String?> categoryId = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -13149,7 +14343,11 @@ class $$TasksTableTableManager
                 Value<String?> rescheduledFromId = const Value.absent(),
                 Value<String?> rescheduledToId = const Value.absent(),
                 Value<bool> isInbox = const Value.absent(),
+                Value<int> inboxContentVersion = const Value.absent(),
+                Value<String?> dueDate = const Value.absent(),
                 Value<String?> missedAt = const Value.absent(),
+                Value<String> planTitleHistoryJson = const Value.absent(),
+                Value<String?> displayPlanChangeId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -13166,6 +14364,7 @@ class $$TasksTableTableManager
                 estimatedDurationMin: estimatedDurationMin,
                 actualDurationMin: actualDurationMin,
                 manualDurationAdjustmentMin: manualDurationAdjustmentMin,
+                manualActualSet: manualActualSet,
                 categoryId: categoryId,
                 priority: priority,
                 status: status,
@@ -13174,7 +14373,11 @@ class $$TasksTableTableManager
                 rescheduledFromId: rescheduledFromId,
                 rescheduledToId: rescheduledToId,
                 isInbox: isInbox,
+                inboxContentVersion: inboxContentVersion,
+                dueDate: dueDate,
                 missedAt: missedAt,
+                planTitleHistoryJson: planTitleHistoryJson,
+                displayPlanChangeId: displayPlanChangeId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -13371,6 +14574,310 @@ typedef $$TasksTableProcessedTableManager =
         bool taskTagsRefs,
         bool timerSessionsRefs,
       })
+    >;
+typedef $$DayContextsTableCreateCompanionBuilder =
+    DayContextsCompanion Function({
+      required String id,
+      required String date,
+      required String kind,
+      Value<String?> customLabel,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+typedef $$DayContextsTableUpdateCompanionBuilder =
+    DayContextsCompanion Function({
+      Value<String> id,
+      Value<String> date,
+      Value<String> kind,
+      Value<String?> customLabel,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+
+class $$DayContextsTableFilterComposer
+    extends Composer<_$AppDatabase, $DayContextsTable> {
+  $$DayContextsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customLabel => $composableBuilder(
+    column: $table.customLabel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DayContextsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DayContextsTable> {
+  $$DayContextsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get date => $composableBuilder(
+    column: $table.date,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customLabel => $composableBuilder(
+    column: $table.customLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DayContextsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DayContextsTable> {
+  $$DayContextsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get date =>
+      $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get customLabel => $composableBuilder(
+    column: $table.customLabel,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+}
+
+class $$DayContextsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DayContextsTable,
+          DayContextRow,
+          $$DayContextsTableFilterComposer,
+          $$DayContextsTableOrderingComposer,
+          $$DayContextsTableAnnotationComposer,
+          $$DayContextsTableCreateCompanionBuilder,
+          $$DayContextsTableUpdateCompanionBuilder,
+          (
+            DayContextRow,
+            BaseReferences<_$AppDatabase, $DayContextsTable, DayContextRow>,
+          ),
+          DayContextRow,
+          PrefetchHooks Function()
+        > {
+  $$DayContextsTableTableManager(_$AppDatabase db, $DayContextsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DayContextsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DayContextsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DayContextsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> date = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String?> customLabel = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DayContextsCompanion(
+                id: id,
+                date: date,
+                kind: kind,
+                customLabel: customLabel,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String date,
+                required String kind,
+                Value<String?> customLabel = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DayContextsCompanion.insert(
+                id: id,
+                date: date,
+                kind: kind,
+                customLabel: customLabel,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DayContextsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DayContextsTable,
+      DayContextRow,
+      $$DayContextsTableFilterComposer,
+      $$DayContextsTableOrderingComposer,
+      $$DayContextsTableAnnotationComposer,
+      $$DayContextsTableCreateCompanionBuilder,
+      $$DayContextsTableUpdateCompanionBuilder,
+      (
+        DayContextRow,
+        BaseReferences<_$AppDatabase, $DayContextsTable, DayContextRow>,
+      ),
+      DayContextRow,
+      PrefetchHooks Function()
     >;
 typedef $$AppSettingsTableCreateCompanionBuilder =
     AppSettingsCompanion Function({
@@ -16478,6 +17985,10 @@ typedef $$TimerSessionsTableCreateCompanionBuilder =
       required DateTime startedAt,
       Value<DateTime?> endedAt,
       Value<int> durationSec,
+      Value<String> state,
+      Value<DateTime?> runningSince,
+      Value<String> workIntervalsJson,
+      Value<String?> ownerDeviceId,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -16493,6 +18004,10 @@ typedef $$TimerSessionsTableUpdateCompanionBuilder =
       Value<DateTime> startedAt,
       Value<DateTime?> endedAt,
       Value<int> durationSec,
+      Value<String> state,
+      Value<DateTime?> runningSince,
+      Value<String> workIntervalsJson,
+      Value<String?> ownerDeviceId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -16558,6 +18073,27 @@ class $$TimerSessionsTableFilterComposer
 
   ColumnFilters<int> get durationSec => $composableBuilder(
     column: $table.durationSec,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String>
+  get runningSince => $composableBuilder(
+    column: $table.runningSince,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get workIntervalsJson => $composableBuilder(
+    column: $table.workIntervalsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ownerDeviceId => $composableBuilder(
+    column: $table.ownerDeviceId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -16647,6 +18183,26 @@ class $$TimerSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get runningSince => $composableBuilder(
+    column: $table.runningSince,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get workIntervalsJson => $composableBuilder(
+    column: $table.workIntervalsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ownerDeviceId => $composableBuilder(
+    column: $table.ownerDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -16721,6 +18277,25 @@ class $$TimerSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get durationSec => $composableBuilder(
     column: $table.durationSec,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get runningSince =>
+      $composableBuilder(
+        column: $table.runningSince,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get workIntervalsJson => $composableBuilder(
+    column: $table.workIntervalsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ownerDeviceId => $composableBuilder(
+    column: $table.ownerDeviceId,
     builder: (column) => column,
   );
 
@@ -16803,6 +18378,10 @@ class $$TimerSessionsTableTableManager
                 Value<DateTime> startedAt = const Value.absent(),
                 Value<DateTime?> endedAt = const Value.absent(),
                 Value<int> durationSec = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                Value<DateTime?> runningSince = const Value.absent(),
+                Value<String> workIntervalsJson = const Value.absent(),
+                Value<String?> ownerDeviceId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -16816,6 +18395,10 @@ class $$TimerSessionsTableTableManager
                 startedAt: startedAt,
                 endedAt: endedAt,
                 durationSec: durationSec,
+                state: state,
+                runningSince: runningSince,
+                workIntervalsJson: workIntervalsJson,
+                ownerDeviceId: ownerDeviceId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -16831,6 +18414,10 @@ class $$TimerSessionsTableTableManager
                 required DateTime startedAt,
                 Value<DateTime?> endedAt = const Value.absent(),
                 Value<int> durationSec = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                Value<DateTime?> runningSince = const Value.absent(),
+                Value<String> workIntervalsJson = const Value.absent(),
+                Value<String?> ownerDeviceId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -16844,6 +18431,10 @@ class $$TimerSessionsTableTableManager
                 startedAt: startedAt,
                 endedAt: endedAt,
                 durationSec: durationSec,
+                state: state,
+                runningSince: runningSince,
+                workIntervalsJson: workIntervalsJson,
+                ownerDeviceId: ownerDeviceId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -17727,6 +19318,8 @@ class $AppDatabaseManager {
       $$RecurringRulesTableTableManager(_db, _db.recurringRules);
   $$TasksTableTableManager get tasks =>
       $$TasksTableTableManager(_db, _db.tasks);
+  $$DayContextsTableTableManager get dayContexts =>
+      $$DayContextsTableTableManager(_db, _db.dayContexts);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
   $$SubtasksTableTableManager get subtasks =>

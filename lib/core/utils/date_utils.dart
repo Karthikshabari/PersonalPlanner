@@ -36,6 +36,22 @@ DateTime parseIsoDate(String value) {
   );
 }
 
+/// Returns true only for a real, zero-padded calendar date. Date-only values
+/// must not be interpreted as UTC instants because that can shift the date.
+bool isValidIsoDate(String value) {
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
+  if (match == null) return false;
+  final year = int.tryParse(match.group(1)!);
+  final month = int.tryParse(match.group(2)!);
+  final day = int.tryParse(match.group(3)!);
+  if (year == null || month == null || day == null) return false;
+  final parsed = DateTime.tryParse('${value}T00:00:00Z');
+  return parsed != null &&
+      parsed.year == year &&
+      parsed.month == month &&
+      parsed.day == day;
+}
+
 /// Local midnight of the Monday of the week containing [dateTime]
 /// (Mon–Sun weeks, planner.md Chunk 5 #6).
 DateTime startOfWeek(DateTime dateTime) {

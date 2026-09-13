@@ -14,13 +14,28 @@ import 'core/utils/date_utils.dart';
 import 'core/widgets/error_panel.dart';
 import 'features/recurring/providers/recurring_providers.dart';
 import 'features/settings/providers/notification_settings_providers.dart';
+import 'features/sync/data/auth_repository.dart';
 import 'features/sync/data/secure_session_storage.dart';
+import 'features/sync/domain/auth_session_controller.dart';
 import 'features/sync/domain/sync_engine.dart';
 import 'features/sync/providers/sync_providers.dart';
 import 'features/timer/domain/notification_service.dart';
+import 'features/timer/domain/timer_service.dart';
 import 'features/timer/platform/android_foreground_timer.dart';
 import 'features/timer/providers/timer_providers.dart';
 import 'platform/desktop/window_manager.dart';
+
+_SupabaseBootstrapResources? _supabaseBootstrap;
+
+class _SupabaseBootstrapResources {
+  const _SupabaseBootstrapResources({
+    required this.authRepository,
+    required this.authController,
+  });
+
+  final AuthRepository authRepository;
+  final AuthSessionController authController;
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,15 +65,52 @@ StackTrace _demangleStackTrace(StackTrace stack) {
 
 Future<void> _initializeSupabaseIfConfigured() async {
   if (!SupabaseConfig.isConfigured) return;
+  final collector = SecureSessionBootstrapCollector();
+  final storage = SecureSupabaseLocalStorage(onOutcome: collector.record);
   await Supabase.initialize(
     url: SupabaseConfig.url,
     publishableKey: SupabaseConfig.publishableKey,
     authOptions: FlutterAuthClientOptions(
       autoRefreshToken: true,
-      localStorage: SecureSupabaseLocalStorage(),
+      localStorage: storage,
       pkceAsyncStorage: SecureSupabasePkceStorage(),
     ),
   );
+  // supabase_flutter catches storage-read failures during recovery. Do not let
+  // that caught error look like a valid empty session and open anonymous data.
+  if (collector.requiresRetry) {
+    try {
+      await Supabase.instance.dispose();
+    } catch (_) {
+      // The retry path below still creates a fresh adapter and collector.
+    }
+    requireSecureSessionBootstrapReady(collector);
+  }
+  final repository = AuthRepository(
+    Supabase.instance.client,
+    sessionStorage: storage,
+  );
+  final controller = AuthSessionController(repository);
+  storage.onOutcome = controller.recordStorageOutcome;
+  await controller.start();
+  _supabaseBootstrap = _SupabaseBootstrapResources(
+    authRepository: repository,
+    authController: controller,
+  );
+}
+
+Future<void> _disposeSupabaseBootstrapResources() async {
+  final resources = _supabaseBootstrap;
+  _supabaseBootstrap = null;
+  await resources?.authController.dispose();
+  if (SupabaseConfig.isConfigured) {
+    try {
+      await Supabase.instance.dispose();
+    } catch (_) {
+      // It is valid for initialization to have failed before a singleton was
+      // fully allocated. The next initialization remains authoritative.
+    }
+  }
 }
 
 class _PlannerBootstrap extends StatefulWidget {
@@ -75,7 +127,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   AppDatabase? _database;
   ProviderContainer? _container;
   SyncEngine? _syncEngine;
-  StreamSubscription<AuthState>? _authSubscription;
+  StreamSubscription<AuthSessionState>? _authSubscription;
   String? _accountId;
   String? _requestedAccountId;
   Future<void>? _databaseSwitch;
@@ -93,6 +145,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _supabaseBootstrap?.authController.recordLifecycle(state);
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshPlannerTimezone());
     }
@@ -129,12 +182,21 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
 
   void _startDatabaseScope() {
     if (SupabaseConfig.isConfigured) {
-      final client = Supabase.instance.client;
-      _authSubscription = client.auth.onAuthStateChange.listen((state) {
-        final nextAccount = state.session?.user.id;
-        _requestDatabaseSwitch(nextAccount);
+      final resources = _supabaseBootstrap;
+      if (resources == null) {
+        setState(() {
+          _bootstrapError = const SecureSessionBootstrapException(
+            'initialization_missing',
+          );
+          _switching = false;
+        });
+        return;
+      }
+      unawaited(_authSubscription?.cancel());
+      _authSubscription = resources.authController.states.listen((state) {
+        _requestDatabaseSwitch(state.session?.user.id);
       });
-      _accountId = client.auth.currentSession?.user.id;
+      _accountId = resources.authController.session?.user.id;
     }
     _requestedAccountId = _accountId;
     _requestDatabaseSwitch(_accountId);
@@ -173,12 +235,9 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       // finishes. Dispose that failed attempt so Retry can genuinely repeat
       // initialization rather than silently returning a half-ready client.
       if (SupabaseConfig.isConfigured) {
-        try {
-          await Supabase.instance.dispose();
-        } catch (_) {
-          // It is also valid for the first attempt to fail before a client was
-          // allocated; initialization below remains the source of truth.
-        }
+        await _authSubscription?.cancel();
+        _authSubscription = null;
+        await _disposeSupabaseBootstrapResources();
         await _initializeSupabaseIfConfigured();
       }
       if (!mounted) return;
@@ -228,8 +287,18 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       database = await AppDatabase.open(accountId: accountId);
       AndroidForegroundTimer.setAccountScope(accountId);
       final openedDatabase = database;
+      final resources = _supabaseBootstrap;
       container = ProviderContainer(
-        overrides: [appDatabaseProvider.overrideWithValue(openedDatabase)],
+        overrides: [
+          appDatabaseProvider.overrideWithValue(openedDatabase),
+          openAccountIdProvider.overrideWithValue(accountId),
+          if (resources != null) ...[
+            authRepositoryProvider.overrideWithValue(resources.authRepository),
+            authSessionControllerProvider.overrideWithValue(
+              resources.authController,
+            ),
+          ],
+        ],
       );
       final openedContainer = container;
       engine = await _initializeLocalServices(
@@ -278,6 +347,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_authSubscription?.cancel());
+    unawaited(_disposeSupabaseBootstrapResources());
     final container = _container;
     final database = _database;
     final engine = _syncEngine;
@@ -416,32 +486,109 @@ Future<SyncEngine?> _initializeLocalServices(
   try {
     await AndroidForegroundTimer().init();
     Future<void> handleTimerAction(PendingForegroundTimerAction pending) async {
-      final active = await container
-          .read(appDatabaseProvider)
-          .timerDao
-          .getActiveTimer();
+      final database = container.read(appDatabaseProvider);
+      final owner = await container
+          .read(timerRepositoryProvider)
+          .localDeviceId();
+      final active = pending.sessionId == null
+          ? null
+          : await database.timerDao.getSessionById(pending.sessionId!);
       if (pending.accountId != AndroidForegroundTimer.accountScope ||
           active == null ||
           active.id != pending.sessionId ||
-          active.taskId != pending.taskId) {
-        // The envelope is stale (for example after account switching or a
-        // timer switch). Clear native state without touching the database.
-        await AndroidForegroundTimer().stop();
+          active.taskId != pending.taskId ||
+          active.ownerDeviceId != owner ||
+          active.ownerDeviceId != pending.ownerDeviceId ||
+          active.state != 'running' ||
+          active.runningSince != pending.expectedRunningSince ||
+          active.durationSec != pending.expectedDurationSec ||
+          active.revision != pending.expectedStateRevision) {
+        // The envelope is stale (account switch, resumed segment, or another
+        // notification). Acknowledge it only: clearing by session here could
+        // stop a newer segment that intentionally reuses the logical ID.
+        await AndroidForegroundTimer().acknowledgePendingAction(
+          pending.actionId,
+        );
         return;
       }
       final service = container.read(timerServiceProvider);
-      final occurredAt = pending.occurredAt.toLocal();
+      TimerTransitionResult result;
       if (pending.action == AndroidForegroundTimer.pauseButtonId) {
-        await service.pauseAt(occurredAt);
+        result = await service.pauseSession(
+          active.id,
+          expectedOwnerDeviceId: owner,
+          occurredAt: pending.occurredAt,
+          expectedRunningSince: pending.expectedRunningSince,
+        );
       } else if (pending.action == AndroidForegroundTimer.stopButtonId) {
-        await service.stopAt(occurredAt);
+        result = await service.stopSession(
+          active.id,
+          expectedOwnerDeviceId: owner,
+          occurredAt: pending.occurredAt,
+          expectedRunningSince: pending.expectedRunningSince,
+        );
+      } else {
+        await AndroidForegroundTimer().acknowledgePendingAction(
+          pending.actionId,
+        );
+        return;
       }
-      await AndroidForegroundTimer().stop();
+      await AndroidForegroundTimer().acknowledgePendingAction(pending.actionId);
+      if (result.session != null) {
+        await AndroidForegroundTimer().clearSession(result.session!.id);
+      }
     }
 
-    AndroidForegroundTimer.onButtonAction = handleTimerAction;
+    AndroidForegroundTimer.onButtonAction = (pending) async {
+      try {
+        await handleTimerAction(pending);
+      } catch (error, stack) {
+        // Leave the durable envelope intact. A later app start retries the
+        // exact action timestamp instead of pretending the transition won.
+        FlutterError.reportError(
+          FlutterErrorDetails(exception: error, stack: stack),
+        );
+      }
+    };
     final pendingAction = await AndroidForegroundTimer.takePendingAction();
-    if (pendingAction != null) await handleTimerAction(pendingAction);
+    if (pendingAction != null) {
+      try {
+        await handleTimerAction(pendingAction);
+      } catch (error, stack) {
+        FlutterError.reportError(
+          FlutterErrorDetails(exception: error, stack: stack),
+        );
+      }
+    }
+    // A stale envelope may have been safely acknowledged above. Read the
+    // durable store again before deciding whether a newer persisted segment
+    // needs its notification restored.
+    final stillPending = await AndroidForegroundTimer.takePendingAction();
+    if (stillPending == null) {
+      final repository = container.read(timerRepositoryProvider);
+      final owner = await repository.localDeviceId();
+      final running = await container
+          .read(appDatabaseProvider)
+          .timerDao
+          .getRunningForOwner(owner);
+      if (running != null && running.runningSince != null) {
+        final task = await container
+            .read(appDatabaseProvider)
+            .taskDao
+            .getTaskById(running.taskId);
+        if (task != null && task.deletedAt == null) {
+          await AndroidForegroundTimer().start(
+            taskTitle: task.title,
+            taskId: running.taskId,
+            sessionId: running.id,
+            ownerDeviceId: owner,
+            runningSince: running.runningSince!,
+            durationSec: running.durationSec,
+            stateRevision: running.revision,
+          );
+        }
+      }
+    }
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
@@ -478,13 +625,21 @@ Future<void> _shutdownLocalServices(
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
+  TimerTransitionResult paused;
   try {
-    await container.read(timerServiceProvider).pauseAt(DateTime.now());
+    paused = await container.read(timerServiceProvider).pauseAt(DateTime.now());
   } catch (err, stack) {
+    // Do not close this account database after a failed persisted transition:
+    // doing so would silently lose the user's recorded running segment.
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
+    rethrow;
   }
   try {
-    await AndroidForegroundTimer().stop();
+    if (paused.session != null) {
+      await AndroidForegroundTimer().clearSession(paused.session!.id);
+    } else {
+      await AndroidForegroundTimer().stopService();
+    }
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }

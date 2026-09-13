@@ -21,8 +21,11 @@ import 'daos/task_dao.dart';
 import 'daos/template_dao.dart';
 import 'daos/timer_dao.dart';
 import 'converters.dart';
+import '../utils/task_time_metrics.dart';
+import '../utils/uuid.dart';
 import 'tables/app_settings_table.dart';
 import 'tables/categories_table.dart';
+import 'tables/day_contexts_table.dart';
 import 'tables/daily_reviews_table.dart';
 import 'tables/daily_stats_cache_table.dart';
 import 'tables/recurring_rules_table.dart';
@@ -40,6 +43,7 @@ part 'app_database.g.dart';
   tables: [
     Tasks,
     Categories,
+    DayContexts,
     AppSettings,
     Subtasks,
     Tags,
@@ -82,6 +86,7 @@ class AppDatabase extends _$AppDatabase {
     for (final table in const [
       'tasks',
       'categories',
+      'day_contexts',
       'subtasks',
       'tags',
       'task_tags',
@@ -126,7 +131,7 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -164,6 +169,16 @@ class AppDatabase extends _$AppDatabase {
       if (from < 7) {
         await _migrateToV7(m, from);
       }
+      if (from < 8) {
+        await _migrateToV8(m);
+      }
+      if (from < 9) {
+        await _migrateToV9(m);
+      }
+      // Some earlier v8 clients shipped before the parentless Day Context
+      // table was guarded in beforeOpen. Restore that idempotently before
+      // creating its index during a later v9 upgrade.
+      await _ensureDayContextTable();
       // Indexes are idempotent — always ensure they exist.
       await _createIndexes();
       await _createSyncIndexes();
@@ -171,7 +186,16 @@ class AppDatabase extends _$AppDatabase {
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      // R3 adds a parentless table without advancing the already-established
+      // v8 number. This idempotent guard upgrades databases that were opened
+      // by the earlier v8 client before Day Context existed.
+      await _ensureDayContextTable();
+      await _ensureTimeAccountingSchema();
+      await _createIndexes();
+      await _createSyncIndexes();
+      await _createSyncTriggers();
       await _normalizeExistingInstants();
+      await _normalizeExistingTaskEstimates();
     },
   );
 
@@ -232,6 +256,12 @@ class AppDatabase extends _$AppDatabase {
       'timer_sessions': {
         'started_at': 'instant',
         'ended_at': 'instant',
+        'running_since': 'instant',
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'day_contexts': {
         'created_at': 'instant',
         'updated_at': 'instant',
         'deleted_at': 'instant',
@@ -253,6 +283,9 @@ class AppDatabase extends _$AppDatabase {
             Map<String, Object?> row,
           })
         >[];
+    final previousApplyMode = await customSelect(
+      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
+    ).getSingleOrNull();
     await customStatement(
       "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
     );
@@ -302,7 +335,7 @@ class AppDatabase extends _$AppDatabase {
       if (malformed.isEmpty || hasRecovery == null) return;
       for (final item in malformed) {
         await customStatement(
-          'INSERT OR REPLACE INTO planner_migration_recovery '
+          'INSERT OR IGNORE INTO planner_migration_recovery '
           '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
           'VALUES (?, ?, ?, ?, ?, ?)',
           [
@@ -320,9 +353,16 @@ class AppDatabase extends _$AppDatabase {
         );
       }
     } finally {
-      await customStatement(
-        "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
-      );
+      if (previousApplyMode == null) {
+        await customStatement(
+          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+        );
+      } else {
+        await customStatement(
+          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
+          [previousApplyMode.read<String>('value')],
+        );
+      }
     }
   }
 
@@ -338,7 +378,17 @@ class AppDatabase extends _$AppDatabase {
     await m.alterTable(
       TableMigration(
         tasks,
-        newColumns: [tasks.manualDurationAdjustmentMin, tasks.serverVersion],
+        // These fields were introduced after the v1-v5 task schema too. They
+        // must be declared as new during this table rebuild; otherwise SQLite
+        // treats an absent double-quoted column as a string literal and the
+        // v8 check constraint rejects the legacy copy before normalization.
+        newColumns: [
+          tasks.manualDurationAdjustmentMin,
+          tasks.manualActualSet,
+          tasks.inboxContentVersion,
+          tasks.dueDate,
+          tasks.serverVersion,
+        ],
       ),
     );
     // Tables introduced while upgrading directly from an older version were
@@ -401,7 +451,13 @@ class AppDatabase extends _$AppDatabase {
       await m.alterTable(
         TableMigration(
           timerSessions,
-          newColumns: [timerSessions.serverVersion],
+          newColumns: [
+            timerSessions.state,
+            timerSessions.runningSince,
+            timerSessions.workIntervalsJson,
+            timerSessions.ownerDeviceId,
+            timerSessions.serverVersion,
+          ],
         ),
       );
     }
@@ -484,6 +540,301 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Schema-v8 installs the Inbox content/due-date contract and repairs the
+  /// existing schedule projection. Legacy explicit Inbox rows are transformed
+  /// once, including tombstones, with their exact source retained in the
+  /// recovery ledger so an interrupted upgrade is retryable and auditable.
+  Future<void> _migrateToV8(Migrator m) async {
+    await m.createTable(dayContexts);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxContentVersion);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.dueDate);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.manualActualSet);
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.state,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.runningSince,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.workIntervalsJson,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.ownerDeviceId,
+    );
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    final previousApplyMode = await customSelect(
+      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
+    ).getSingleOrNull();
+    await customStatement(
+      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
+    );
+    try {
+      // v7 databases already have triggers. Recreate them after this method
+      // so migration repairs cannot create semantic sync operations.
+      await _dropSyncTriggers();
+      final legacyRows = await customSelect(
+        'SELECT id, title, description, is_inbox, inbox_content_version, '
+        'deleted_at FROM tasks WHERE is_inbox = 1 AND inbox_content_version = 0',
+      ).get();
+      for (final row in legacyRows) {
+        final id = row.read<String>('id');
+        final title = row.read<String>('title');
+        final description = row.readNullable<String>('description');
+        final migratedDescription = description == null || description.isEmpty
+            ? title
+            : description == title
+            ? description
+            : '$title\n\n$description';
+        await customStatement(
+          'INSERT OR IGNORE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'v8:tasks:$id',
+            'tasks',
+            id,
+            jsonEncode({
+              'id': id,
+              'title': title,
+              'description': description,
+              'is_inbox': row.read<int>('is_inbox'),
+              'inbox_content_version': row.read<int>('inbox_content_version'),
+              'deleted_at': row.readNullable<String>('deleted_at'),
+            }),
+            'Migrated legacy explicit Inbox content without trimming',
+            DateTime.now().toUtc().toIso8601String(),
+          ],
+        );
+        await customStatement(
+          'UPDATE tasks SET description = ?, inbox_content_version = 1 '
+          'WHERE id = ? AND inbox_content_version = 0',
+          [migratedDescription, id],
+        );
+        await _enqueueV8TaskReconciliation(id);
+      }
+    } finally {
+      if (previousApplyMode == null) {
+        await customStatement(
+          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+        );
+      } else {
+        await customStatement(
+          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
+          [previousApplyMode.read<String>('value')],
+        );
+      }
+    }
+  }
+
+  /// R14 follows the partial v8 rollout already shipped by this repository.
+  /// Existing titles are not retroactively interpreted as intentional plan
+  /// changes: every old row starts with an empty history and no decoration.
+  Future<void> _migrateToV9(Migrator m) async {
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
+  }
+
+  /// Queues the post-transform task snapshot once, after all legacy content
+  /// has been normalized. The deterministic operation ID makes a retried
+  /// upgrade idempotent while leaving every historical outbox row untouched.
+  Future<void> _enqueueV8TaskReconciliation(String taskId) async {
+    final row = await customSelect(
+      'SELECT * FROM tasks WHERE id = ?',
+      variables: [Variable<String>(taskId)],
+    ).getSingleOrNull();
+    if (row == null) return;
+
+    final operationId = generateDeterministicUuid('v8-reconcile:tasks:$taskId');
+    final priorOperations = await customSelect(
+      'SELECT operation_id FROM sync_log '
+      'WHERE table_name = ? AND record_id = ? LIMIT 1',
+      variables: [Variable<String>('tasks'), Variable<String>(taskId)],
+    ).get();
+    final serverVersion = row.readNullable<int>('server_version');
+    final deletedAt = row.readNullable<String>('deleted_at');
+    final operation = deletedAt != null
+        ? (serverVersion == null && priorOperations.isEmpty
+              ? 'insert'
+              : 'delete')
+        : (serverVersion == null && priorOperations.isEmpty
+              ? 'insert'
+              : 'update');
+
+    final latest = await customSelect(
+      'SELECT MAX(created_at) AS latest_created_at FROM sync_log '
+      'WHERE table_name = ? AND record_id = ?',
+      variables: [Variable<String>('tasks'), Variable<String>(taskId)],
+    ).getSingle();
+    var createdAt = DateTime.now().toUtc();
+    final latestRaw = latest.readNullable<String>('latest_created_at');
+    final latestAt = DateTime.tryParse(latestRaw ?? '')?.toUtc();
+    if (latestAt != null && !createdAt.isAfter(latestAt)) {
+      createdAt = latestAt.add(const Duration(microseconds: 1));
+    }
+    final payloadMap = Map<String, Object?>.from(row.data)
+      ..['_planner_payload_version'] = 2;
+    final payload = jsonEncode(payloadMap);
+    await customStatement(
+      'INSERT OR IGNORE INTO sync_log('
+      'operation_id, table_name, record_id, operation, expected_server_version, '
+      'payload, state, attempt_count, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        operationId,
+        'tasks',
+        taskId,
+        operation,
+        serverVersion,
+        payload,
+        'pending',
+        0,
+        createdAt.toIso8601String(),
+        createdAt.toIso8601String(),
+      ],
+    );
+  }
+
+  Future<void> _addColumnIfMissing(
+    Migrator m,
+    String tableName,
+    TableInfo table,
+    GeneratedColumn column,
+  ) async {
+    final columns = await customSelect('PRAGMA table_info("$tableName")').get();
+    if (!columns.any((row) => row.read<String>('name') == column.$name)) {
+      await m.addColumn(table, column);
+    }
+  }
+
+  /// Repairs stale compatibility estimates whenever a database is opened.
+  /// This covers interrupted imports and legacy rows as well as the v7 -> v8
+  /// migration, without changing task revisions or generating sync outbox
+  /// entries for a cache-only field.
+  Future<void> _normalizeExistingTaskEstimates() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    final previousApplyMode = await customSelect(
+      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
+    ).getSingleOrNull();
+    await customStatement(
+      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
+    );
+    try {
+      final rows = await customSelect(
+        'SELECT id, start_time, end_time, estimated_duration_min, is_inbox '
+        'FROM tasks',
+      ).get();
+      for (final row in rows) {
+        final id = row.read<String>('id');
+        final rawStart = row.readNullable<String>('start_time');
+        final rawEnd = row.readNullable<String>('end_time');
+        final oldEstimate = row.readNullable<int>('estimated_duration_min');
+        final isInbox = row.read<int>('is_inbox') == 1;
+        final start = DateTime.tryParse(rawStart ?? '');
+        final end = DateTime.tryParse(rawEnd ?? '');
+        final expected = isInbox
+            ? null
+            : TaskTimeMetrics.plannedMinutes(start, end);
+        final clearsInboxSchedule =
+            isInbox && (rawStart != null || rawEnd != null);
+        if (!clearsInboxSchedule && oldEstimate == expected) continue;
+
+        await customStatement(
+          'INSERT OR IGNORE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'v8:tasks:$id',
+            'tasks',
+            id,
+            jsonEncode({
+              'id': id,
+              'start_time': rawStart,
+              'end_time': rawEnd,
+              'estimated_duration_min': oldEstimate,
+              'is_inbox': isInbox,
+            }),
+            'Repaired task scheduling projection during schema normalization',
+            DateTime.now().toUtc().toIso8601String(),
+          ],
+        );
+        if (isInbox) {
+          await customStatement(
+            'UPDATE tasks SET start_time = NULL, end_time = NULL, '
+            'estimated_duration_min = NULL WHERE id = ?',
+            [id],
+          );
+        } else {
+          await customStatement(
+            'UPDATE tasks SET estimated_duration_min = ? WHERE id = ?',
+            [expected, id],
+          );
+        }
+      }
+    } finally {
+      if (previousApplyMode == null) {
+        await customStatement(
+          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+        );
+      } else {
+        await customStatement(
+          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
+          [previousApplyMode.read<String>('value')],
+        );
+      }
+    }
+  }
+
+  Future<void> _dropSyncTriggers() async {
+    const tables = [
+      'tasks',
+      'categories',
+      'subtasks',
+      'tags',
+      'task_tags',
+      'recurring_rules',
+      'task_templates',
+      'daily_reviews',
+      'weekly_reviews',
+      'timer_sessions',
+      'day_contexts',
+    ];
+    for (final table in tables) {
+      await customStatement('DROP TRIGGER IF EXISTS sync_${table}_insert');
+      await customStatement('DROP TRIGGER IF EXISTS sync_${table}_update');
+      await customStatement('DROP TRIGGER IF EXISTS sync_${table}_delete');
+    }
+  }
+
   Future<void> _addServerVersionIfMissing(
     Migrator m,
     String tableName,
@@ -491,11 +842,17 @@ class AppDatabase extends _$AppDatabase {
     GeneratedColumn<int> column,
   ) async {
     final columns = await customSelect('PRAGMA table_info("$tableName")').get();
-    final exists = columns.any(
-      (row) => row.read<String>('name') == column.$name,
-    );
-    if (!exists) {
-      await m.alterTable(TableMigration(table, newColumns: [column]));
+    final existing = columns.map((row) => row.read<String>('name')).toSet();
+    // A v6 database can be upgraded directly to v7 while still lacking the
+    // v8 task fields. Include every absent current column in the same rebuild
+    // so legacy values are supplied by their declared defaults/nullability.
+    final missing = [
+      for (final candidate in table.$columns)
+        if (!existing.contains(candidate.$name)) candidate,
+    ];
+    if (missing.isNotEmpty &&
+        missing.any((candidate) => candidate.$name == column.$name)) {
+      await m.alterTable(TableMigration(table, newColumns: missing));
     }
   }
 
@@ -773,10 +1130,20 @@ class AppDatabase extends _$AppDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_reviews_week_active ON weekly_reviews (week_start_date) WHERE deleted_at IS NULL',
     );
     await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_task_tags_task_active ON task_tags (task_id, tag_id) WHERE deleted_at IS NULL',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_day_contexts_date ON day_contexts (date)',
     );
     await customStatement(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_timer_one_active ON timer_sessions ((1)) WHERE ended_at IS NULL AND deleted_at IS NULL',
+      'CREATE INDEX IF NOT EXISTS idx_task_tags_task_active ON task_tags (task_id, tag_id) WHERE deleted_at IS NULL',
+    );
+    await customStatement('DROP INDEX IF EXISTS idx_timer_one_active');
+    await customStatement(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_timer_one_running_owner ON timer_sessions (owner_device_id) WHERE state = 'running' AND deleted_at IS NULL AND owner_device_id IS NOT NULL",
+    );
+    await customStatement(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_timer_one_unfinished_owner_task ON timer_sessions (owner_device_id, task_id) WHERE state IN ('running', 'paused') AND deleted_at IS NULL AND owner_device_id IS NOT NULL",
+    );
+    await customStatement(
+      "CREATE INDEX IF NOT EXISTS idx_timer_owner_state ON timer_sessions (owner_device_id, state, updated_at) WHERE deleted_at IS NULL",
     );
   }
 
@@ -836,6 +1203,9 @@ class AppDatabase extends _$AppDatabase {
   /// commands that write more than one domain table. The marker is set by
   /// SyncDao for remote apply, so pulled rows never echo into the outbox.
   Future<void> _createSyncTriggers() async {
+    // CREATE TRIGGER IF NOT EXISTS cannot replace a previously installed
+    // body. The source/cache split therefore recreates these known triggers.
+    await _dropSyncTriggers();
     const guard =
         "NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'sync.apply_mode' AND value = '1')";
     const operationId =
@@ -853,6 +1223,12 @@ class AppDatabase extends _$AppDatabase {
       required String jsonOld,
       required String updateColumns,
     }) async {
+      final payloadJson =
+          "json_set(json_set($jsonNew, '\$._planner_payload_version', 2), "
+          "'\$._planner_revision', NEW.revision)";
+      final tombstoneJson =
+          "json_set(json_set($jsonOld, '\$._planner_payload_version', 2), "
+          "'\$._planner_revision', OLD.revision)";
       await customStatement('''
 CREATE TRIGGER IF NOT EXISTS sync_${table}_insert
 AFTER INSERT ON $table
@@ -864,7 +1240,7 @@ BEGIN
     payload, state, attempt_count, created_at, updated_at
   ) VALUES (
     $operationId, '$tableName', $recordIdNew, 'insert', NEW.server_version,
-    $jsonNew, 'pending', 0, $now, $now
+    $payloadJson, 'pending', 0, $now, $now
   );
 END;
 ''');
@@ -884,7 +1260,7 @@ BEGIN
     $operationId, '$tableName', $recordIdNew,
     CASE WHEN NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL
       THEN 'delete' ELSE 'update' END,
-    NEW.server_version, $jsonNew, 'pending', 0, $now, $now
+    NEW.server_version, $payloadJson, 'pending', 0, $now, $now
   );
 END;
 ''');
@@ -898,7 +1274,7 @@ BEGIN
     payload, state, attempt_count, created_at, updated_at
   ) VALUES (
     $operationId, '$tableName', $recordIdOld, 'delete', OLD.server_version,
-    $jsonOld, 'pending', 0, $now, $now
+    $tombstoneJson, 'pending', 0, $now, $now
   );
 END;
 ''');
@@ -911,8 +1287,10 @@ END;
       primaryKeyOld: 'id = OLD.id',
       recordIdNew: 'NEW.id',
       recordIdOld: 'OLD.id',
-      updateColumns: 'id, title, description, start_time, end_time, estimated_duration_min, actual_duration_min, manual_duration_adjustment_min, category_id, priority, status, notes, recurring_rule_id, rescheduled_from_id, rescheduled_to_id, is_inbox, missed_at, created_at, updated_at, deleted_at',
-      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'missed_at', NEW.missed_at, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      // estimated_duration_min is a compatibility projection. Updating it
+      // alone must not create a semantic sync operation.
+      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
@@ -1019,10 +1397,192 @@ END;
       primaryKeyOld: 'id = OLD.id',
       recordIdNew: 'NEW.id',
       recordIdOld: 'OLD.id',
-      updateColumns: 'id, task_id, started_at, ended_at, duration_sec, created_at, updated_at, deleted_at',
-      jsonNew: "json_object('id', NEW.id, 'task_id', NEW.task_id, 'started_at', NEW.started_at, 'ended_at', NEW.ended_at, 'duration_sec', NEW.duration_sec, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      updateColumns: 'id, task_id, started_at, ended_at, duration_sec, state, running_since, work_intervals_json, owner_device_id, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'task_id', NEW.task_id, 'started_at', NEW.started_at, 'ended_at', NEW.ended_at, 'duration_sec', NEW.duration_sec, 'state', NEW.state, 'running_since', NEW.running_since, 'work_intervals_json', NEW.work_intervals_json, 'owner_device_id', NEW.owner_device_id, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'task_id', OLD.task_id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
+    await createForTable(
+      table: 'day_contexts',
+      tableName: 'day_contexts',
+      primaryKeyNew: 'id = NEW.id',
+      primaryKeyOld: 'id = OLD.id',
+      recordIdNew: 'NEW.id',
+      recordIdOld: 'OLD.id',
+      updateColumns:
+          'id, date, kind, custom_label, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'date', NEW.date, 'kind', NEW.kind, 'custom_label', NEW.custom_label, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonOld:
+          "json_object('id', OLD.id, 'date', OLD.date, 'kind', OLD.kind, 'custom_label', OLD.custom_label, 'created_at', OLD.created_at, 'updated_at', OLD.updated_at, 'deleted_at', $now, 'server_version', OLD.server_version)",
+    );
+  }
+
+  Future<void> _ensureDayContextTable() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS day_contexts (
+        id TEXT NOT NULL PRIMARY KEY,
+        date TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL,
+        custom_label TEXT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT NULL,
+        sync_status INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 1,
+        server_version INTEGER NULL,
+        CHECK (length(date) = 10 AND date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND date(date) = date),
+        CHECK (kind IN ('office', 'holiday', 'leave', 'travel', 'custom')),
+        CHECK ((kind = 'custom' AND custom_label IS NOT NULL AND length(trim(custom_label)) BETWEEN 1 AND 80) OR (kind <> 'custom' AND custom_label IS NULL))
+      )
+    ''');
+  }
+
+  /// The already released local v8 number is shared by several Astra batches.
+  /// Clients that opened the earlier v8 shape must receive the R12/R15
+  /// columns and one-time source inference without a reset or schema relabel.
+  Future<void> _ensureTimeAccountingSchema() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    final taskColumns = await customSelect('PRAGMA table_info(tasks)').get();
+    final timerColumns = await customSelect('PRAGMA table_info(timer_sessions)')
+        .get();
+    final taskNames = taskColumns
+        .map((row) => row.read<String>('name'))
+        .toSet();
+    final timerNames = timerColumns
+        .map((row) => row.read<String>('name'))
+        .toSet();
+    if (!taskNames.contains('manual_actual_set')) {
+      await customStatement(
+        'ALTER TABLE tasks ADD COLUMN manual_actual_set INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!timerNames.contains('state')) {
+      await customStatement(
+        "ALTER TABLE timer_sessions ADD COLUMN state TEXT NOT NULL DEFAULT 'finished'",
+      );
+    }
+    if (!timerNames.contains('running_since')) {
+      await customStatement(
+        'ALTER TABLE timer_sessions ADD COLUMN running_since TEXT',
+      );
+    }
+    if (!timerNames.contains('work_intervals_json')) {
+      await customStatement(
+        "ALTER TABLE timer_sessions ADD COLUMN work_intervals_json TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    if (!timerNames.contains('owner_device_id')) {
+      await customStatement(
+        'ALTER TABLE timer_sessions ADD COLUMN owner_device_id TEXT',
+      );
+    }
+
+    final previousApplyMode = await customSelect(
+      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
+    ).getSingleOrNull();
+    await customStatement(
+      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
+    );
+    try {
+      final anomalousOpen = await customSelect(
+        "SELECT id, task_id, started_at, duration_sec FROM timer_sessions WHERE ended_at IS NULL AND duration_sec > 0 AND deleted_at IS NULL",
+      ).get();
+      for (final row in anomalousOpen) {
+        final id = row.read<String>('id');
+        await customStatement(
+          'INSERT OR IGNORE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'v8:timer_sessions:$id',
+            'timer_sessions',
+            id,
+            jsonEncode(row.data),
+            'Open legacy timer retained unclaimed; nonzero duration excluded from Actual Duration',
+            DateTime.now().toUtc().toIso8601String(),
+          ],
+        );
+      }
+      // Preserve every legacy row/ID. Finished rows retain their recorded
+      // duration; open rows become unclaimed running sessions, never silently
+      // finalized or counted.
+      await customStatement(
+        "UPDATE timer_sessions SET state = 'finished', running_since = NULL, work_intervals_json = COALESCE(work_intervals_json, '[]') WHERE ended_at IS NOT NULL AND (state IS NULL OR state <> 'finished' OR running_since IS NOT NULL)",
+      );
+      await customStatement(
+        "UPDATE timer_sessions SET state = 'running', running_since = COALESCE(running_since, started_at), work_intervals_json = COALESCE(work_intervals_json, '[]'), owner_device_id = NULL WHERE ended_at IS NULL AND (state IS NULL OR state = 'finished')",
+      );
+
+      final legacyTasks = await customSelect(
+        'SELECT id, actual_duration_min, manual_duration_adjustment_min, manual_actual_set '
+        'FROM tasks WHERE manual_actual_set = 0 AND '
+        '(actual_duration_min IS NOT NULL OR manual_duration_adjustment_min != 0)',
+      ).get();
+      for (final task in legacyTasks) {
+        final id = task.read<String>('id');
+        final actual = task.readNullable<int>('actual_duration_min');
+        final adjustment = task.read<int>('manual_duration_adjustment_min');
+        final completed = await customSelect(
+          "SELECT COALESCE(SUM(duration_sec), 0) AS total FROM timer_sessions WHERE task_id = ? AND state = 'finished' AND ended_at IS NOT NULL AND deleted_at IS NULL",
+          variables: [Variable<String>(id)],
+        ).getSingle();
+        final minutes = completed.read<int>('total') ~/ 60;
+        final inferred = actual == null ? adjustment : actual - minutes;
+        await customStatement(
+          'INSERT OR IGNORE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'v8:tasks:$id',
+            'tasks',
+            id,
+            jsonEncode(task.data),
+            'Inferred one-time manual actual source from legacy displayed cache',
+            DateTime.now().toUtc().toIso8601String(),
+          ],
+        );
+        await customStatement(
+          'UPDATE tasks SET manual_duration_adjustment_min = ?, manual_actual_set = 1 WHERE id = ?',
+          [inferred, id],
+        );
+      }
+      // Cache refresh stays non-semantic under the sync guard and happens
+      // after every timer source row has its migrated state.
+      await customStatement('''
+        UPDATE tasks
+        SET actual_duration_min = CASE
+          WHEN manual_actual_set = 0 AND NOT EXISTS (
+            SELECT 1 FROM timer_sessions s
+            WHERE s.task_id = tasks.id AND s.state = 'finished'
+              AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
+          ) THEN NULL
+          ELSE MAX(0, manual_duration_adjustment_min + COALESCE((
+            SELECT SUM(s.duration_sec) / 60 FROM timer_sessions s
+            WHERE s.task_id = tasks.id AND s.state = 'finished'
+              AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
+          ), 0))
+        END
+      ''');
+    } finally {
+      if (previousApplyMode == null) {
+        await customStatement(
+          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+        );
+      } else {
+        await customStatement(
+          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
+          [previousApplyMode.read<String>('value')],
+        );
+      }
+    }
   }
 }

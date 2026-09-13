@@ -181,6 +181,10 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('scope-all-future')));
     await settle(tester);
+    // R14 asks after scope resolution. Replacement retains this pre-R14
+    // scope test's intent without creating title-history evidence.
+    await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
+    await settle(tester);
 
     final saved = await runDb(
       tester,
@@ -225,6 +229,8 @@ void main() {
     await saveTask(tester);
 
     await tester.tap(find.byKey(const ValueKey('scope-this-occurrence')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
     await settle(tester);
 
     final saved = await runDb(

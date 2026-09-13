@@ -10,18 +10,159 @@ part 'timer_dao.g.dart';
 class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
   TimerDao(super.db);
 
-  /// The currently running session (if any) together with its task title,
-  /// for the overlay / block display.
-  Stream<ActiveTimerRow?> watchActiveTimerWithTask() {
+  /// Locally owned running session with the fields needed by timer chrome.
+  Stream<ActiveTimerRow?> watchActiveTimerWithTask([String? ownerDeviceId]) {
     final query =
         select(timerSessions)
             .join([innerJoin(tasks, tasks.id.equalsExp(timerSessions.taskId))])
           ..where(
-            timerSessions.endedAt.isNull() &
+            timerSessions.state.equals('running') &
                 timerSessions.deletedAt.isNull() &
                 tasks.deletedAt.isNull(),
           )
-          ..orderBy([OrderingTerm.desc(timerSessions.startedAt)])
+          ..orderBy([OrderingTerm.desc(timerSessions.updatedAt)])
+          ..limit(1);
+    if (ownerDeviceId != null) {
+      query.where(timerSessions.ownerDeviceId.equals(ownerDeviceId));
+    }
+    return query.watchSingleOrNull().map(
+      (row) => row == null
+          ? null
+          : ActiveTimerRow(
+              session: row.readTable(timerSessions),
+              taskTitle: row.read(tasks.title)!,
+              taskStatus: row.read(tasks.status)!,
+            ),
+    );
+  }
+
+  Future<TimerSessionRow?> getRunningForOwner(String ownerDeviceId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.ownerDeviceId.equals(ownerDeviceId) &
+                  s.state.equals('running') &
+                  s.deletedAt.isNull(),
+            )
+            ..limit(1))
+          .getSingleOrNull();
+
+  Future<TimerSessionRow?> getUnfinishedForOwnerTask(
+    String ownerDeviceId,
+    String taskId,
+  ) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.ownerDeviceId.equals(ownerDeviceId) &
+                  s.taskId.equals(taskId) &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..limit(1))
+          .getSingleOrNull();
+
+  Stream<TimerSessionRow?> watchUnfinishedForTask(
+    String taskId,
+    String ownerDeviceId,
+  ) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.ownerDeviceId.equals(ownerDeviceId) &
+                  s.taskId.equals(taskId) &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .watchSingleOrNull();
+
+  /// An imported or legacy unfinished session can be claimed only through an
+  /// explicit Recover action. It is intentionally separate from local and
+  /// foreign ownership reads so no ordinary Start path can take it over.
+  Stream<TimerSessionRow?> watchRecoverableForTask(String taskId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.ownerDeviceId.isNull() &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .watchSingleOrNull();
+
+  Stream<TimerSessionRow?> watchForeignUnfinishedForTask(
+    String taskId,
+    String ownerDeviceId,
+  ) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.ownerDeviceId.isNotNull() &
+                  s.ownerDeviceId.equals(ownerDeviceId).not() &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .watchSingleOrNull();
+
+  Future<TimerSessionRow?> getRecoverableForTask(String taskId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.ownerDeviceId.isNull() &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  Future<TimerSessionRow?> getForeignUnfinishedForTask(
+    String taskId,
+    String ownerDeviceId,
+  ) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.ownerDeviceId.isNotNull() &
+                  s.ownerDeviceId.equals(ownerDeviceId).not() &
+                  s.state.isIn(const ['running', 'paused']) &
+                  s.deletedAt.isNull(),
+            )
+            ..limit(1))
+          .getSingleOrNull();
+
+  Stream<TimerSessionRow?> watchLatestPausedForOwner(String ownerDeviceId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.ownerDeviceId.equals(ownerDeviceId) &
+                  s.state.equals('paused') &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .watchSingleOrNull();
+
+  Stream<ActiveTimerRow?> watchLatestPausedWithTask(String ownerDeviceId) {
+    final query =
+        select(timerSessions)
+            .join([innerJoin(tasks, tasks.id.equalsExp(timerSessions.taskId))])
+          ..where(
+            timerSessions.ownerDeviceId.equals(ownerDeviceId) &
+                timerSessions.state.equals('paused') &
+                timerSessions.deletedAt.isNull() &
+                tasks.deletedAt.isNull(),
+          )
+          ..orderBy([OrderingTerm.desc(timerSessions.updatedAt)])
           ..limit(1);
     return query.watchSingleOrNull().map(
       (row) => row == null
@@ -34,26 +175,49 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
     );
   }
 
+  Future<TimerSessionRow?> getLatestPausedForOwner(String ownerDeviceId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.ownerDeviceId.equals(ownerDeviceId) &
+                  s.state.equals('paused') &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.desc(s.updatedAt)])
+            ..limit(1))
+          .getSingleOrNull();
+
+  // Compatibility read helpers. New transitions must use owner-scoped APIs.
   Future<TimerSessionRow?> getActiveTimerForTask(String taskId) =>
-      (select(timerSessions)..where(
-            (s) =>
-                s.taskId.equals(taskId) &
-                s.endedAt.isNull() &
-                s.deletedAt.isNull(),
-          ))
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.state.equals('running') &
+                  s.deletedAt.isNull(),
+            )
+            ..limit(1))
           .getSingleOrNull();
 
   Future<TimerSessionRow?> getActiveTimer() =>
       (select(timerSessions)
-            ..where((s) => s.endedAt.isNull() & s.deletedAt.isNull())
+            ..where((s) => s.state.equals('running') & s.deletedAt.isNull())
             ..limit(1))
           .getSingleOrNull();
 
-  /// Closes the active session for one task as part of the caller's
-  /// transaction. This is deliberately task-scoped so deleting task A can
-  /// never stop a timer that was started for task B while a dialog was open.
+  /// Compatibility task-terminal helper. New code uses the shared state
+  /// machine, but this stays idempotent for older command paths.
   Future<bool> finalizeActiveForTask(String taskId, DateTime endedAt) async {
-    final session = await getActiveTimerForTask(taskId);
+    final session =
+        await (select(timerSessions)
+              ..where(
+                (s) =>
+                    s.taskId.equals(taskId) &
+                    s.state.isIn(const ['running', 'paused']) &
+                    s.deletedAt.isNull(),
+              )
+              ..limit(1))
+            .getSingleOrNull();
     if (session == null) return false;
     final end = endedAt.isBefore(session.startedAt)
         ? session.startedAt
@@ -61,10 +225,16 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
     await updateSession(
       session.copyWith(
         endedAt: Value(end),
-        durationSec: end
-            .difference(session.startedAt)
-            .inSeconds
-            .clamp(0, 1 << 31),
+        durationSec: session.state == 'paused'
+            ? session.durationSec
+            : end
+                      .difference(session.runningSince ?? session.startedAt)
+                      .inSeconds
+                      .clamp(0, 1 << 31)
+                      .toInt() +
+                  session.durationSec,
+        state: 'finished',
+        runningSince: const Value(null),
         updatedAt: end,
       ),
     );
@@ -77,13 +247,29 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
             ..orderBy([(s) => OrderingTerm.asc(s.startedAt)]))
           .get();
 
-  /// Sum of all finished-session durations for [taskId], in seconds.
+  Future<List<TimerSessionRow>> getFinishedSessionsForTask(String taskId) =>
+      (select(timerSessions)
+            ..where(
+              (s) =>
+                  s.taskId.equals(taskId) &
+                  s.state.equals('finished') &
+                  s.endedAt.isNotNull() &
+                  s.deletedAt.isNull(),
+            )
+            ..orderBy([(s) => OrderingTerm.asc(s.startedAt)]))
+          .get();
+
+  /// Sum only committed finished sources. Paused work cannot leak into Task
+  /// Actual Duration.
   Future<int> getTotalDurationSecForTask(String taskId) async {
     final durationSum = timerSessions.durationSec.sum();
     final query = selectOnly(timerSessions)
       ..addColumns([durationSum])
       ..where(
-        timerSessions.taskId.equals(taskId) & timerSessions.deletedAt.isNull(),
+        timerSessions.taskId.equals(taskId) &
+            timerSessions.state.equals('finished') &
+            timerSessions.endedAt.isNotNull() &
+            timerSessions.deletedAt.isNull(),
       );
     final row = await query.getSingleOrNull();
     return row?.read(durationSum) ?? 0;
@@ -119,7 +305,6 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
   }
 }
 
-/// The running session plus the fields of its task needed by the UI.
 class ActiveTimerRow {
   final TimerSessionRow session;
   final String taskTitle;
