@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/inbox_item.dart';
 import '../data/inbox_repository.dart';
 import '../../../core/providers/database_provider.dart';
+import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
 
 final inboxRepositoryProvider = Provider<InboxRepository>((ref) {
@@ -76,3 +77,36 @@ final inboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
   }
   return repo.watchInboxItems(asOf);
 });
+
+/// Focused Inbox projection used only by the Day/Today surface. The full
+/// Inbox intentionally continues to consume [inboxProvider].
+final todayInboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
+  final clock = ref.watch(inboxClockProvider);
+  final inbox = ref.watch(inboxProvider);
+  if (clock.hasError) {
+    return Stream<List<InboxItem>>.error(clock.error!, clock.stackTrace);
+  }
+  if (inbox.hasError) {
+    return Stream<List<InboxItem>>.error(inbox.error!, inbox.stackTrace);
+  }
+  if (!clock.hasValue || !inbox.hasValue) {
+    return const Stream<List<InboxItem>>.empty();
+  }
+  final now = clock.requireValue;
+  return Stream.value(
+    inbox.requireValue
+        .where((item) => isInboxItemVisibleInToday(item, now))
+        .toList(growable: false),
+  );
+});
+
+/// Date-only comparison against the application's canonical Monday–Sunday
+/// week containing planner-local today.
+bool isInboxItemVisibleInToday(InboxItem item, DateTime now) {
+  final dueDate = item.task.dueDate;
+  if (dueDate == null) return true;
+  final weekStart = startOfWeek(PlannerTimeZone.toPlannerLocal(now));
+  final weekEnd = addDays(weekStart, 7);
+  final due = parseIsoDate(dueDate);
+  return !due.isBefore(weekStart) && due.isBefore(weekEnd);
+}

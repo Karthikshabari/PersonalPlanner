@@ -330,7 +330,8 @@ class MigrationSchema {
     ''');
   }
 
-  /// Released v8 shape before R14's forward-only title-history migration.
+  /// Partial development v8 shape used to prove the idempotent Foundation
+  /// repair path. The release schema remains v8 and includes title history.
   static void _createV8(Database db) {
     db.execute(
       'ALTER TABLE tasks ADD COLUMN inbox_content_version INTEGER NOT NULL DEFAULT 0',

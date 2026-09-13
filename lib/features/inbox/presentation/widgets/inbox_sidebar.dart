@@ -23,7 +23,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
 
   @override
   Widget build(BuildContext context) {
-    final itemsAsync = ref.watch(inboxProvider);
+    final itemsAsync = ref.watch(todayInboxProvider);
     final items = itemsAsync.value ?? const <InboxItem>[];
     final tokens = AppThemeTokens.of(context);
 
@@ -83,7 +83,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
                     child: itemsAsync.hasError
                         ? ErrorPanel(
                             message: friendlyErrorMessage(itemsAsync.error!),
-                            onRetry: () => ref.invalidate(inboxProvider),
+                            onRetry: () => ref.invalidate(todayInboxProvider),
                             compact: true,
                           )
                         : !itemsAsync.hasValue

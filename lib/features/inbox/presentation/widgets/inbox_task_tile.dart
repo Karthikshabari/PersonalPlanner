@@ -181,6 +181,9 @@ class InboxTaskTile extends ConsumerWidget {
           if (value == 'skip') _skip(context, ref);
           if (value == 'edit') _edit(context, ref);
           if (value == 'schedule') _schedule(context, ref);
+          if (value == 'delete') {
+            TimelineActions.deleteWithConfirmation(context, ref, task);
+          }
         },
         itemBuilder: (_) => [
           const PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -188,6 +191,7 @@ class InboxTaskTile extends ConsumerWidget {
             value: 'schedule',
             child: Text(item.isOverdue ? 'Reschedule' : 'Schedule'),
           ),
+          const PopupMenuItem(value: 'delete', child: Text('Delete')),
           if (item.isOverdue)
             const PopupMenuItem(value: 'skip', child: Text('Mark as Skipped')),
         ],

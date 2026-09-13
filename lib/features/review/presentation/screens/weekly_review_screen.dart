@@ -5,18 +5,17 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/models/weekly_review.dart';
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
-import '../../../../core/layout/adaptive_layout.dart';
-import '../../../../core/utils/duration_utils.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_surface.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
-import '../widgets/rating_picker.dart';
-import '../widgets/string_list_editor.dart';
+import '../../providers/review_providers.dart';
+import '../widgets/review_mode_switcher.dart';
+import '../widgets/review_sections.dart';
 
 class WeeklyReviewScreen extends ConsumerWidget {
   const WeeklyReviewScreen({super.key});
@@ -25,27 +24,15 @@ class WeeklyReviewScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final weekStart = ref.watch(selectedWeekStartProvider);
     final statsAsync = ref.watch(weeklyStatsProvider(weekStart));
+    final insightsAsync = ref.watch(weeklyReviewInsightsProvider(weekStart));
     final tokens = AppThemeTokens.of(context);
+    final currentWeek = startOfWeek(DateTime.now());
+    final future = weekStart.isAfter(currentWeek);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Weekly Review'),
-        actions: [
-          IconButton(
-            key: const ValueKey('open-daily-review'),
-            tooltip: 'Daily review',
-            icon: const Icon(Icons.calendar_view_day_outlined),
-            onPressed: () {
-              ref.read(selectedReviewDateProvider.notifier).state = weekStart;
-              if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
-                context.go('/review');
-              } else {
-                context.push('/review');
-              }
-            },
-          ),
-          const SyncStatusAction(),
-        ],
+        actions: const [SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,
@@ -55,8 +42,27 @@ class WeeklyReviewScreen extends ConsumerWidget {
               constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
             ),
             children: [
+              ReviewModeSwitcher(
+                weekly: true,
+                onChanged: (mode) {
+                  if (mode != 'daily') return;
+                  ref.read(selectedReviewDateProvider.notifier).state =
+                      weekStart;
+                  if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+                    context.go('/review');
+                  } else {
+                    context.push('/review');
+                  }
+                },
+              ),
+              const SizedBox(height: AppSpacing.sm),
               _buildWeekNav(context, ref, weekStart),
-              _AggregateStatsCard(statsAsync: statsAsync),
+              const SizedBox(height: AppSpacing.md),
+              _buildSummary(statsAsync, insightsAsync, future),
+              const SizedBox(height: AppSpacing.md),
+              _buildChanges(insightsAsync, future),
+              const SizedBox(height: AppSpacing.md),
+              _buildCarryover(insightsAsync),
               const SizedBox(height: AppSpacing.md),
               _WeeklyReviewForm(
                 key: ValueKey('weekly-form-$weekStart'),
@@ -76,7 +82,6 @@ class WeeklyReviewScreen extends ConsumerWidget {
   ) {
     final notifier = ref.read(selectedWeekStartProvider.notifier);
     final weekEnd = addDays(weekStart, 6);
-    final fmt = DateFormat('MMM d');
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: AppSpacing.xs,
@@ -89,7 +94,7 @@ class WeeklyReviewScreen extends ConsumerWidget {
           onPressed: () => notifier.state = addDays(weekStart, -7),
         ),
         Text(
-          '${fmt.format(weekStart)} – ${DateFormat('MMM d, yyyy').format(weekEnd)}',
+          '${DateFormat('MMM d').format(weekStart)} – ${DateFormat('MMM d, yyyy').format(weekEnd)}',
           style: Theme.of(context).textTheme.titleLarge,
         ),
         IconButton(
@@ -100,82 +105,51 @@ class WeeklyReviewScreen extends ConsumerWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         OutlinedButton(
+          key: const ValueKey('week-this-week'),
           onPressed: () => notifier.state = startOfWeek(DateTime.now()),
           child: const Text('This Week'),
         ),
       ],
     );
   }
-}
 
-/// Sum/average of the seven daily aggregates (planner.md Chunk 5 #6).
-class _AggregateStatsCard extends StatelessWidget {
-  final AsyncValue<DailyStats> statsAsync;
-
-  const _AggregateStatsCard({required this.statsAsync});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('This week', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          statsAsync.when(
-            data: (stats) {
-              final rate = stats.completionRatePct;
-              return Wrap(
-                spacing: AppSpacing.xl,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  _stat(
-                    context,
-                    'Completion rate',
-                    rate == null ? '—' : '${rate.round()}%',
-                  ),
-                  _stat(
-                    context,
-                    'Completed',
-                    '${stats.completedTasks}/${stats.totalTasks} tasks',
-                  ),
-                  _stat(context, 'Planned', '${stats.plannedTasks}'),
-                  _stat(context, 'In progress', '${stats.inProgressTasks}'),
-                  _stat(
-                    context,
-                    'Planned time',
-                    Duration(minutes: stats.plannedDurationMin).shortLabel,
-                  ),
-                  _stat(
-                    context,
-                    'Actual',
-                    Duration(minutes: stats.actualDurationMin).shortLabel,
-                  ),
-                  _stat(
-                    context,
-                    'Focus',
-                    Duration(minutes: stats.focusDurationMin).shortLabel,
-                  ),
-                  _stat(context, 'Missed', '${stats.missedTasks}'),
-                ],
-              );
-            },
-            loading: () => const CircularProgressIndicator(),
-            error: (error, _) =>
-                ErrorPanel(message: friendlyErrorMessage(error), compact: true),
-          ),
-        ],
-      ),
+  Widget _buildSummary(
+    AsyncValue<DailyStats> stats,
+    AsyncValue<dynamic> insights,
+    bool future,
+  ) {
+    if (stats.hasError) {
+      return ErrorPanel(message: friendlyErrorMessage(stats.error!));
+    }
+    if (insights.hasError) {
+      return ErrorPanel(message: friendlyErrorMessage(insights.error!));
+    }
+    if (!stats.hasValue || !insights.hasValue) {
+      return const AppSurface(child: LinearProgressIndicator());
+    }
+    return ReviewSummarySection(
+      stats: stats.requireValue,
+      insights: insights.requireValue,
+      future: future,
+      heading: 'This week',
     );
   }
 
-  Widget _stat(BuildContext context, String label, String value) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(value, style: Theme.of(context).textTheme.titleLarge),
-      Text(label, style: Theme.of(context).textTheme.bodySmall),
-    ],
-  );
+  Widget _buildChanges(AsyncValue<dynamic> insights, bool future) {
+    if (!insights.hasValue) return const SizedBox.shrink();
+    return ReviewChangesSection(
+      insights: insights.requireValue,
+      future: future,
+    );
+  }
+
+  Widget _buildCarryover(AsyncValue<dynamic> insights) {
+    if (!insights.hasValue) return const SizedBox.shrink();
+    return ReviewCarryoverSection(
+      heading: 'Next week',
+      items: insights.requireValue.carryover,
+    );
+  }
 }
 
 class _WeeklyReviewForm extends ConsumerStatefulWidget {
@@ -188,11 +162,8 @@ class _WeeklyReviewForm extends ConsumerStatefulWidget {
 }
 
 class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
-  final _reflectionController = TextEditingController();
-  int? _overall;
-  List<String> _goalsMet = [];
-  List<String> _goalsMissed = [];
-  List<String> _nextFocus = [];
+  final _noteController = TextEditingController();
+  WeeklyReview? _existing;
   bool _saving = false;
   bool _hydrated = false;
   bool _hydrating = true;
@@ -206,7 +177,7 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
 
   @override
   void dispose() {
-    _reflectionController.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
@@ -223,13 +194,8 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
           .getWeeklyReviewForWeek(widget.weekStart);
       if (!mounted) return;
       setState(() {
-        if (existing != null) {
-          _reflectionController.text = existing.reflection ?? '';
-          _overall = existing.overallRating;
-          _goalsMet = [...existing.goalsMet];
-          _goalsMissed = [...existing.goalsMissed];
-          _nextFocus = [...existing.nextWeekFocus];
-        }
+        _existing = existing;
+        _noteController.text = existing?.reflection ?? '';
         _hydrated = true;
         _hydrating = false;
       });
@@ -251,22 +217,25 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
       _error = null;
     });
     try {
-      final repo = ref.read(reviewRepositoryProvider);
-      await repo.saveWeeklyReview(
-        WeeklyReview(
-          id: '',
-          weekStartDate: widget.weekStart,
-          reflection: _reflectionController.text.trim().isEmpty
-              ? null
-              : _reflectionController.text.trim(),
-          overallRating: _overall,
-          goalsMet: _goalsMet,
-          goalsMissed: _goalsMissed,
-          nextWeekFocus: _nextFocus,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      );
+      final old = _existing;
+      await ref
+          .read(reviewRepositoryProvider)
+          .saveWeeklyReview(
+            WeeklyReview(
+              id: old?.id ?? '',
+              weekStartDate: widget.weekStart,
+              reflection: _noteController.text.trim().isEmpty
+                  ? null
+                  : _noteController.text.trim(),
+              // Keep legacy weekly fields intact while the simplified UI is used.
+              overallRating: old?.overallRating,
+              goalsMet: old?.goalsMet ?? const [],
+              goalsMissed: old?.goalsMissed ?? const [],
+              nextWeekFocus: old?.nextWeekFocus ?? const [],
+              createdAt: old?.createdAt ?? DateTime.now(),
+              updatedAt: DateTime.now(),
+            ),
+          );
       if (!mounted) return;
       setState(() => _saving = false);
       showAppToast(context, 'Weekly review saved');
@@ -286,7 +255,15 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Review', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Anything worth remembering?',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Anything from this week that would help you plan the next one?',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: AppSpacing.sm),
           if (_hydrating) const LinearProgressIndicator(),
           if (_error != null)
@@ -296,38 +273,12 @@ class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
             child: Column(
               children: [
                 TextField(
-                  key: const ValueKey('weekly-reflection'),
-                  controller: _reflectionController,
+                  key: const ValueKey('weekly-note'),
+                  controller: _noteController,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    hintText: 'How did the week go?',
-                    labelText: 'Reflection',
+                    hintText: 'Anything from this week that would help you plan the next one?',
                   ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                RatingPicker(
-                  label: 'Overall rating',
-                  value: _overall,
-                  onChanged: (v) => setState(() => _overall = v),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                StringListEditor(
-                  key: const ValueKey('weekly-goals-met'),
-                  label: 'Goals met',
-                  items: _goalsMet,
-                  onChanged: (items) => setState(() => _goalsMet = items),
-                ),
-                StringListEditor(
-                  key: const ValueKey('weekly-goals-missed'),
-                  label: 'Goals missed',
-                  items: _goalsMissed,
-                  onChanged: (items) => setState(() => _goalsMissed = items),
-                ),
-                StringListEditor(
-                  key: const ValueKey('weekly-next-focus'),
-                  label: 'Next week focus',
-                  items: _nextFocus,
-                  onChanged: (items) => setState(() => _nextFocus = items),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 FilledButton(

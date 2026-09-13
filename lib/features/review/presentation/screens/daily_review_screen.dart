@@ -5,23 +5,17 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/daily_review.dart';
 import '../../../../core/models/daily_stats.dart';
-import '../../../../core/models/enums/task_status.dart';
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
-import '../../../../core/utils/duration_utils.dart';
 import '../../../../core/utils/date_utils.dart';
-import '../../../../core/layout/adaptive_layout.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/app_surface.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/status_badge.dart';
-import '../../../categories/providers/category_providers.dart';
-import '../../../timeline/presentation/providers/day_tasks_provider.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../providers/review_providers.dart';
-import '../widgets/day_summary_timeline.dart';
-import '../widgets/rating_picker.dart';
-import '../widgets/string_list_editor.dart';
+import '../widgets/review_mode_switcher.dart';
+import '../widgets/review_sections.dart';
 
 class DailyReviewScreen extends ConsumerWidget {
   const DailyReviewScreen({super.key});
@@ -29,32 +23,15 @@ class DailyReviewScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final date = ref.watch(selectedReviewDateProvider);
-    final tasksAsync = ref.watch(dayTasksForDateProvider(date));
-    final categoriesAsync = ref.watch(categoriesProvider);
     final statsAsync = ref.watch(dailyStatsProvider(date));
+    final insightsAsync = ref.watch(dailyReviewInsightsProvider(date));
     final tokens = AppThemeTokens.of(context);
+    final future = startOfDay(date).isAfter(startOfDay(DateTime.now()));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Daily Review'),
-        actions: [
-          IconButton(
-            key: const ValueKey('open-weekly-review'),
-            tooltip: 'Weekly review',
-            icon: const Icon(Icons.calendar_view_week_outlined),
-            onPressed: () {
-              ref.read(selectedWeekStartProvider.notifier).state = startOfWeek(
-                date,
-              );
-              if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
-                context.go('/review/weekly');
-              } else {
-                context.push('/review/weekly');
-              }
-            },
-          ),
-          const SyncStatusAction(),
-        ],
+        actions: const [SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,
@@ -64,49 +41,27 @@ class DailyReviewScreen extends ConsumerWidget {
               constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
             ),
             children: [
-              _buildDateNav(context, ref, date),
-              _StatsCard(statsAsync: statsAsync),
-              AppSurface(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Today's blocks",
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    if (tasksAsync.hasError)
-                      ErrorPanel(
-                        message: friendlyErrorMessage(tasksAsync.error!),
-                        onRetry: () =>
-                            ref.invalidate(dayTasksForDateProvider(date)),
-                        compact: true,
-                      ),
-                    if (!tasksAsync.hasError && categoriesAsync.hasError)
-                      ErrorPanel(
-                        message: friendlyErrorMessage(categoriesAsync.error!),
-                        onRetry: () => ref.invalidate(categoriesProvider),
-                        compact: true,
-                      ),
-                    if (!tasksAsync.hasError &&
-                        !categoriesAsync.hasError &&
-                        (!tasksAsync.hasValue || !categoriesAsync.hasValue))
-                      const Padding(
-                        padding: EdgeInsets.only(top: AppSpacing.sm),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    if (!tasksAsync.hasError &&
-                        !categoriesAsync.hasError &&
-                        tasksAsync.hasValue &&
-                        categoriesAsync.hasValue)
-                      DaySummaryTimeline(
-                        tasks: tasksAsync.requireValue,
-                        categories: categoriesAsync.requireValue,
-                        date: date,
-                      ),
-                  ],
-                ),
+              ReviewModeSwitcher(
+                weekly: false,
+                onChanged: (mode) {
+                  if (mode != 'weekly') return;
+                  ref.read(selectedWeekStartProvider.notifier).state =
+                      startOfWeek(date);
+                  if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+                    context.go('/review/weekly');
+                  } else {
+                    context.push('/review/weekly');
+                  }
+                },
               ),
+              const SizedBox(height: AppSpacing.sm),
+              _buildDateNav(context, ref, date),
+              const SizedBox(height: AppSpacing.md),
+              _buildSummary(statsAsync, insightsAsync, future),
+              const SizedBox(height: AppSpacing.md),
+              _buildChanges(insightsAsync, future),
+              const SizedBox(height: AppSpacing.md),
+              _buildCarryover(insightsAsync),
               const SizedBox(height: AppSpacing.md),
               _DailyReviewForm(key: ValueKey('review-form-$date'), date: date),
             ],
@@ -141,117 +96,51 @@ class DailyReviewScreen extends ConsumerWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         OutlinedButton(
-          onPressed: () {
-            final now = DateTime.now();
-            notifier.state = startOfDay(now);
-          },
+          key: const ValueKey('review-today'),
+          onPressed: () => notifier.state = startOfDay(DateTime.now()),
           child: const Text('Today'),
         ),
       ],
     );
   }
-}
 
-class _StatsCard extends StatelessWidget {
-  final AsyncValue<DailyStats> statsAsync;
-
-  const _StatsCard({required this.statsAsync});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Auto-computed stats',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          statsAsync.when(
-            data: (stats) {
-              final rate = stats.completionRatePct;
-              final breakdown = <Widget>[
-                for (final status in TaskStatus.values)
-                  if (_countFor(stats, status) > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(right: AppSpacing.md),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          StatusBadge(status: status),
-                          const SizedBox(width: AppSpacing.xs),
-                          Text('${_countFor(stats, status)}'),
-                        ],
-                      ),
-                    ),
-              ];
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: AppSpacing.xl,
-                    runSpacing: AppSpacing.sm,
-                    children: [
-                      _stat(
-                        context,
-                        'Completion rate',
-                        rate == null ? '—' : '${rate.round()}%',
-                      ),
-                      const SizedBox(width: AppSpacing.xl),
-                      _stat(
-                        context,
-                        'Planned',
-                        Duration(minutes: stats.plannedDurationMin).shortLabel,
-                      ),
-                      const SizedBox(width: AppSpacing.xl),
-                      _stat(
-                        context,
-                        'Actual',
-                        Duration(minutes: stats.actualDurationMin).shortLabel,
-                      ),
-                    ],
-                  ),
-                  if (breakdown.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    Wrap(children: breakdown),
-                  ],
-                  if (stats.planningAccuracyPct != null) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Planning accuracy: ${stats.planningAccuracyPct!.round()}% '
-                      '(actual vs estimated)',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ],
-              );
-            },
-            loading: () => const CircularProgressIndicator(),
-            error: (error, _) =>
-                ErrorPanel(message: friendlyErrorMessage(error), compact: true),
-          ),
-        ],
-      ),
+  Widget _buildSummary(
+    AsyncValue<DailyStats> stats,
+    AsyncValue<dynamic> insights,
+    bool future,
+  ) {
+    if (stats.hasError) {
+      return ErrorPanel(message: friendlyErrorMessage(stats.error!));
+    }
+    if (insights.hasError) {
+      return ErrorPanel(message: friendlyErrorMessage(insights.error!));
+    }
+    if (!stats.hasValue || !insights.hasValue) {
+      return const AppSurface(child: LinearProgressIndicator());
+    }
+    return ReviewSummarySection(
+      stats: stats.requireValue,
+      insights: insights.requireValue,
+      future: future,
+      heading: 'Today / Day at a glance',
     );
   }
 
-  int _countFor(DailyStats stats, TaskStatus status) => switch (status) {
-    TaskStatus.completed => stats.completedTasks,
-    TaskStatus.planned => stats.plannedTasks,
-    TaskStatus.inProgress => stats.inProgressTasks,
-    TaskStatus.skipped => stats.skippedTasks,
-    TaskStatus.cancelled => stats.cancelledTasks,
-    TaskStatus.rescheduled => stats.rescheduledTasks,
-  };
+  Widget _buildChanges(AsyncValue<dynamic> insights, bool future) {
+    if (!insights.hasValue) return const SizedBox.shrink();
+    return ReviewChangesSection(
+      insights: insights.requireValue,
+      future: future,
+    );
+  }
 
-  Widget _stat(BuildContext context, String label, String value) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(value, style: Theme.of(context).textTheme.titleLarge),
-      Text(label, style: Theme.of(context).textTheme.bodySmall),
-    ],
-  );
+  Widget _buildCarryover(AsyncValue<dynamic> insights) {
+    if (!insights.hasValue) return const SizedBox.shrink();
+    return ReviewCarryoverSection(
+      heading: 'Tomorrow',
+      items: insights.requireValue.carryover,
+    );
+  }
 }
 
 class _DailyReviewForm extends ConsumerStatefulWidget {
@@ -264,12 +153,8 @@ class _DailyReviewForm extends ConsumerStatefulWidget {
 }
 
 class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
-  final _reflectionController = TextEditingController();
-  int? _energy;
-  int? _productivity;
-  int? _accuracy;
-  List<String> _wins = [];
-  List<String> _improvements = [];
+  final _noteController = TextEditingController();
+  DailyReview? _existing;
   bool _saving = false;
   bool _hydrated = false;
   bool _hydrating = true;
@@ -283,7 +168,7 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
 
   @override
   void dispose() {
-    _reflectionController.dispose();
+    _noteController.dispose();
     super.dispose();
   }
 
@@ -300,7 +185,8 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
           .getReviewForDate(widget.date);
       if (!mounted) return;
       setState(() {
-        if (existing != null) _apply(existing);
+        _existing = existing;
+        _noteController.text = existing?.reflection ?? '';
         _hydrated = true;
         _hydrating = false;
       });
@@ -315,15 +201,6 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
     }
   }
 
-  void _apply(DailyReview review) {
-    _reflectionController.text = review.reflection ?? '';
-    _energy = review.energyLevel;
-    _productivity = review.productivityRating;
-    _accuracy = review.planningAccuracyRating;
-    _wins = [...review.wins];
-    _improvements = [...review.improvements];
-  }
-
   Future<void> _save() async {
     if (_saving || !_hydrated) return;
     setState(() {
@@ -331,24 +208,27 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
       _error = null;
     });
     try {
-      final repo = ref.read(reviewRepositoryProvider);
-      await repo.saveDailyReview(
-        DailyReview(
-          id: '',
-          date: widget.date,
-          reflection: _reflectionController.text.trim().isEmpty
-              ? null
-              : _reflectionController.text.trim(),
-          energyLevel: _energy,
-          productivityRating: _productivity,
-          planningAccuracyRating: _accuracy,
-          wins: _wins,
-          improvements: _improvements,
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        ),
-      );
-      // Refresh the persisted daily snapshot for history/export consumers.
+      final old = _existing;
+      await ref
+          .read(reviewRepositoryProvider)
+          .saveDailyReview(
+            DailyReview(
+              id: old?.id ?? '',
+              date: widget.date,
+              reflection: _noteController.text.trim().isEmpty
+                  ? null
+                  : _noteController.text.trim(),
+              // Preserve legacy fields even though the new UI no longer edits
+              // them. Existing saved reviews must not lose information on edit.
+              energyLevel: old?.energyLevel,
+              productivityRating: old?.productivityRating,
+              planningAccuracyRating: old?.planningAccuracyRating,
+              wins: old?.wins ?? const [],
+              improvements: old?.improvements ?? const [],
+              createdAt: old?.createdAt ?? DateTime.now(),
+              updatedAt: DateTime.now(),
+            ),
+          );
       await ref.read(dailyStatsServiceProvider).computeAndCache(widget.date);
       if (!mounted) return;
       setState(() => _saving = false);
@@ -369,7 +249,15 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Review', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Anything worth remembering?',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'What affected today’s plan, or what would you do differently next time?',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: AppSpacing.sm),
           if (_hydrating) const LinearProgressIndicator(),
           if (_error != null)
@@ -379,44 +267,12 @@ class _DailyReviewFormState extends ConsumerState<_DailyReviewForm> {
             child: Column(
               children: [
                 TextField(
-                  key: const ValueKey('review-reflection'),
-                  controller: _reflectionController,
+                  key: const ValueKey('review-note'),
+                  controller: _noteController,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    hintText: 'How did the day go?',
-                    labelText: 'Reflection',
+                    hintText: 'What affected today’s plan, or what would you do differently next time?',
                   ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                RatingPicker(
-                  label: 'Energy level',
-                  value: _energy,
-                  onChanged: (v) => setState(() => _energy = v),
-                ),
-                RatingPicker(
-                  label: 'Productivity',
-                  value: _productivity,
-                  onChanged: (v) => setState(() => _productivity = v),
-                ),
-                RatingPicker(
-                  label: 'Planning accuracy',
-                  value: _accuracy,
-                  onChanged: (v) => setState(() => _accuracy = v),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                StringListEditor(
-                  key: const ValueKey('review-wins'),
-                  label: 'Wins',
-                  items: _wins,
-                  hint: 'What went well?',
-                  onChanged: (items) => setState(() => _wins = items),
-                ),
-                StringListEditor(
-                  key: const ValueKey('review-improvements'),
-                  label: 'Improvements',
-                  items: _improvements,
-                  hint: 'What to do better?',
-                  onChanged: (items) => setState(() => _improvements = items),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 FilledButton(

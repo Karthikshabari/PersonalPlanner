@@ -59,7 +59,7 @@ void main() {
   TimerRepository timerRepoOf(ProviderContainer c) =>
       c.read(timerRepositoryProvider);
 
-  testWidgets('start shows ticking chip + overlay and auto-sets In Progress', (
+  testWidgets('start keeps title clean, shows overlay, and sets In Progress', (
     tester,
   ) async {
     await setUpScaffolding(tester);
@@ -72,9 +72,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('timer-start-button')));
     await settle(tester);
 
-    // Overlay appears on desktop; block shows the ticking chip.
+    // The dedicated lower overlay remains; the task block does not duplicate
+    // timer status beside or underneath its title.
     expect(find.byKey(const ValueKey('timer-overlay')), findsOneWidget);
-    expect(find.byKey(const ValueKey('block-timer-chip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('block-timer-chip')), findsNothing);
     expect(find.text('00:00:00'), findsWidgets);
 
     // Widget frame time is not the persisted wall clock. R15 deliberately
@@ -98,9 +99,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('pause then resume retains one logical session', (
-    tester,
-  ) async {
+  testWidgets('pause then resume retains one logical session', (tester) async {
     await setUpScaffolding(tester);
     await selectTask(tester, alpha);
     await tester.ensureVisible(

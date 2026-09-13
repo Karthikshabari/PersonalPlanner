@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/layout/adaptive_layout.dart';
+import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/widgets/adaptive_shell.dart';
+import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 
 import '../helpers/test_container.dart';
 
@@ -45,6 +48,40 @@ void main() {
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byType(AdaptiveShell), findsOneWidget);
     expect(find.text('Day'), findsWidgets);
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('desktop Home shortcut uses the existing Day destination', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+    expect(rail.destinations, hasLength(8));
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
+    expect(find.byIcon(Icons.home_outlined), findsOneWidget);
+    expect(find.byTooltip('Home'), findsOneWidget);
+
+    final selected = addDays(DateTime.now(), 3);
+    container.read(selectedDateProvider.notifier).state = selected;
+    appRouter.go('/week');
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('home-navigation-shortcut')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('timeline-gestures')), findsOneWidget);
+    expect(isSameDay(container.read(selectedDateProvider), selected), isTrue);
+
+    appRouter.go('/week');
+    await settle(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Day'),
+      ),
+    );
+    await settle(tester);
+    expect(find.byKey(const ValueKey('timeline-gestures')), findsOneWidget);
+    expect(isSameDay(container.read(selectedDateProvider), selected), isTrue);
     await teardownApp(tester, container);
   });
 

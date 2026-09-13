@@ -131,7 +131,7 @@ class AppDatabase extends _$AppDatabase {
       );
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -172,12 +172,8 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await _migrateToV8(m);
       }
-      if (from < 9) {
-        await _migrateToV9(m);
-      }
-      // Some earlier v8 clients shipped before the parentless Day Context
-      // table was guarded in beforeOpen. Restore that idempotently before
-      // creating its index during a later v9 upgrade.
+      // Some development v8 clients opened before every Foundation table and
+      // column was present. Restore the coordinated v8 shape idempotently.
       await _ensureDayContextTable();
       // Indexes are idempotent — always ensure they exist.
       await _createIndexes();
@@ -387,6 +383,8 @@ class AppDatabase extends _$AppDatabase {
           tasks.manualActualSet,
           tasks.inboxContentVersion,
           tasks.dueDate,
+          tasks.planTitleHistoryJson,
+          tasks.displayPlanChangeId,
           tasks.serverVersion,
         ],
       ),
@@ -549,6 +547,8 @@ class AppDatabase extends _$AppDatabase {
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxContentVersion);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.dueDate);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.manualActualSet);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
     await _addColumnIfMissing(
       m,
       'timer_sessions',
@@ -631,7 +631,6 @@ class AppDatabase extends _$AppDatabase {
           'WHERE id = ? AND inbox_content_version = 0',
           [migratedDescription, id],
         );
-        await _enqueueV8TaskReconciliation(id);
       }
     } finally {
       if (previousApplyMode == null) {
@@ -647,14 +646,6 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// R14 follows the partial v8 rollout already shipped by this repository.
-  /// Existing titles are not retroactively interpreted as intentional plan
-  /// changes: every old row starts with an empty history and no decoration.
-  Future<void> _migrateToV9(Migrator m) async {
-    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
-    await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
-  }
-
   /// Queues the post-transform task snapshot once, after all legacy content
   /// has been normalized. The deterministic operation ID makes a retried
   /// upgrade idempotent while leaving every historical outbox row untouched.
@@ -665,7 +656,9 @@ class AppDatabase extends _$AppDatabase {
     ).getSingleOrNull();
     if (row == null) return;
 
-    final operationId = generateDeterministicUuid('v8-reconcile:tasks:$taskId');
+    final operationId = generateDeterministicUuid(
+      'v8-foundation-final:tasks:$taskId',
+    );
     final priorOperations = await customSelect(
       'SELECT operation_id FROM sync_log '
       'WHERE table_name = ? AND record_id = ? LIMIT 1',
@@ -1437,9 +1430,9 @@ END;
     ''');
   }
 
-  /// The already released local v8 number is shared by several Astra batches.
-  /// Clients that opened the earlier v8 shape must receive the R12/R15
-  /// columns and one-time source inference without a reset or schema relabel.
+  /// Development builds used the v8 number while the coordinated Foundation
+  /// was still being completed. Repair any partial v8 shape in place without
+  /// a reset or schema relabel.
   Future<void> _ensureTimeAccountingSchema() async {
     await customStatement('''
       CREATE TABLE IF NOT EXISTS planner_migration_recovery (
@@ -1463,6 +1456,16 @@ END;
     if (!taskNames.contains('manual_actual_set')) {
       await customStatement(
         'ALTER TABLE tasks ADD COLUMN manual_actual_set INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!taskNames.contains('plan_title_history_json')) {
+      await customStatement(
+        "ALTER TABLE tasks ADD COLUMN plan_title_history_json TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    if (!taskNames.contains('display_plan_change_id')) {
+      await customStatement(
+        'ALTER TABLE tasks ADD COLUMN display_plan_change_id TEXT',
       );
     }
     if (!timerNames.contains('state')) {
@@ -1572,6 +1575,19 @@ END;
           ), 0))
         END
       ''');
+      // Queue one canonical post-transform snapshot after Inbox conversion,
+      // timer-state migration, manual-source inference and cache rebuild have
+      // all completed. The recovery ledger is durable across a process stop;
+      // the deterministic operation ID makes reopening retry-safe.
+      final reconciliationTasks = await customSelect(
+        "SELECT DISTINCT row_id FROM planner_migration_recovery "
+        "WHERE table_name = 'tasks' AND ("
+        "reason LIKE 'Migrated legacy explicit Inbox content%' OR "
+        "reason LIKE 'Inferred one-time manual actual source%')",
+      ).get();
+      for (final row in reconciliationTasks) {
+        await _enqueueV8TaskReconciliation(row.read<String>('row_id'));
+      }
     } finally {
       if (previousApplyMode == null) {
         await customStatement(

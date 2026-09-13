@@ -182,7 +182,18 @@ void main() {
       ),
     );
 
-    await mouseDrag(tester, blockOf(longTask), const Offset(0, -64));
+    final blockRect = tester.getRect(blockOf(longTask));
+    final gesture = await tester.startGesture(
+      blockRect.topCenter + const Offset(0, 24),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    for (var i = 0; i < 6; i++) {
+      await gesture.moveBy(const Offset(0, -64 / 6));
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await gesture.up();
+    await tester.pump();
     await settle(tester);
 
     final fetched = await runDb(
@@ -484,7 +495,14 @@ void main() {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     await insertTask(tester, container, taskSpec('TouchMenu', 480, 540));
 
-    await tester.longPress(find.text('TouchMenu'));
+    final gesture = await tester.startGesture(
+      tester.getCenter(
+        blockOf((await streamedDayTasks(tester, container)).single),
+      ),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture.up();
     await settle(tester);
     expect(find.text('Duplicate'), findsOneWidget);
     expect(find.text('Change Status ›'), findsOneWidget);

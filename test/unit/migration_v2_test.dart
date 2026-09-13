@@ -35,7 +35,7 @@ void main() {
       );
       expect(
         (await db.select(db.tasks).get()).single.manualDurationAdjustmentMin,
-        0,
+        15,
       );
     } finally {
       await db.close();

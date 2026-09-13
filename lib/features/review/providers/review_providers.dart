@@ -9,6 +9,7 @@ import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
 import '../data/review_repository.dart';
 import '../domain/daily_stats_service.dart';
+import '../domain/review_insights.dart';
 
 final reviewRepositoryProvider = Provider<ReviewRepository>((ref) {
   return ReviewRepository(ref.watch(appDatabaseProvider));
@@ -16,6 +17,10 @@ final reviewRepositoryProvider = Provider<ReviewRepository>((ref) {
 
 final dailyStatsServiceProvider = Provider<DailyStatsService>((ref) {
   return DailyStatsService(ref.watch(appDatabaseProvider));
+});
+
+final reviewInsightsServiceProvider = Provider<ReviewInsightsService>((ref) {
+  return ReviewInsightsService(ref.watch(appDatabaseProvider));
 });
 
 /// Date shown on the Daily Review screen (defaults to today).
@@ -62,5 +67,23 @@ final weeklyStatsProvider = StreamProvider.autoDispose
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(dailyStatsServiceProvider).computeRange(start, end),
+      );
+    });
+
+final dailyReviewInsightsProvider = StreamProvider.autoDispose
+    .family<ReviewInsights, DateTime>((ref, date) {
+      final normalized = startOfDay(date);
+      return watchReactiveStats(
+        ref.read(appDatabaseProvider),
+        () => ref.read(reviewInsightsServiceProvider).forDay(normalized),
+      );
+    });
+
+final weeklyReviewInsightsProvider = StreamProvider.autoDispose
+    .family<ReviewInsights, DateTime>((ref, weekStart) {
+      final normalized = startOfWeek(weekStart);
+      return watchReactiveStats(
+        ref.read(appDatabaseProvider),
+        () => ref.read(reviewInsightsServiceProvider).forWeek(normalized),
       );
     });

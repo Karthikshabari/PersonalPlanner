@@ -120,9 +120,12 @@ void main() {
               'FROM planner_migration_recovery ORDER BY table_name, row_id',
             )
             .get();
-        expect(recovered, hasLength(3));
+        final orphanRecovery = recovered
+            .where((row) => row.read<String>('reason').contains('Missing'))
+            .toList();
+        expect(orphanRecovery, hasLength(3));
         expect(
-          recovered.map((row) => row.read<String>('row_id')),
+          orphanRecovery.map((row) => row.read<String>('row_id')),
           containsAll(<String>[
             'missing-task:missing-tag',
             'orphan-subtask',
@@ -130,11 +133,11 @@ void main() {
           ]),
         );
         expect(
-          recovered.map((row) => row.read<String>('payload')),
+          orphanRecovery.map((row) => row.read<String>('payload')),
           everyElement(isNotEmpty),
         );
         expect(
-          recovered.map((row) => row.read<String>('reason')),
+          orphanRecovery.map((row) => row.read<String>('reason')),
           everyElement(contains('Missing')),
         );
         expect(await db.select(db.subtasks).get(), hasLength(1));
@@ -192,9 +195,17 @@ void main() {
         expect(indexSql, contains(name));
         expect(indexSql[name], contains('WHERE deleted_at IS NULL'));
       }
-      expect(indexSql, contains('idx_timer_one_active'));
-      expect(indexSql['idx_timer_one_active'], contains('ended_at IS NULL'));
-      expect(indexSql['idx_timer_one_active'], contains('deleted_at IS NULL'));
+      expect(indexSql, isNot(contains('idx_timer_one_active')));
+      expect(indexSql, contains('idx_timer_one_running_owner'));
+      expect(
+        indexSql['idx_timer_one_running_owner'],
+        contains("state = 'running'"),
+      );
+      expect(indexSql, contains('idx_timer_one_unfinished_owner_task'));
+      expect(
+        indexSql['idx_timer_one_unfinished_owner_task'],
+        contains("state IN ('running', 'paused')"),
+      );
 
       final taskForeignKeys = await db
           .customSelect('PRAGMA foreign_key_list(tasks)')

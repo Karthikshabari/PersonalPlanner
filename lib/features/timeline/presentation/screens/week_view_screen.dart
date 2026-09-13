@@ -19,6 +19,7 @@ import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../day_context/presentation/day_context_editor.dart';
+import '../../../inbox/providers/inbox_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -27,6 +28,7 @@ import '../providers/day_tasks_provider.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
+import '../widgets/current_time_indicator.dart';
 import '../widgets/timeline_hour_grid.dart';
 import '../widgets/timeline_overlap_action.dart';
 
@@ -185,6 +187,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
   Widget build(BuildContext context) {
     final weekStart = ref.watch(selectedWeekStartProvider);
     final selectedDate = ref.watch(selectedDateProvider);
+    final now = ref.watch(inboxClockProvider).value ?? DateTime.now();
     final days = _days(weekStart);
     final gridMinutes =
         ref.watch(gridIntervalProvider).value ??
@@ -271,6 +274,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
                         gridMinutes: gridMinutes,
                         gridHeight: gridHeight,
                         selectedDate: selectedDate,
+                        now: now,
                         onSelectDate: (date) => _selectDate(date),
                         onHeaderTap: (date) {
                           _selectDate(date, navigate: false);
@@ -395,6 +399,7 @@ class _WeekPage extends StatelessWidget {
   final int gridMinutes;
   final double gridHeight;
   final DateTime selectedDate;
+  final DateTime now;
   final ValueChanged<DateTime> onSelectDate;
   final ValueChanged<DateTime> onHeaderTap;
   final void Function(Task task, DateTime date) onTaskTap;
@@ -411,6 +416,7 @@ class _WeekPage extends StatelessWidget {
     required this.gridMinutes,
     required this.gridHeight,
     required this.selectedDate,
+    required this.now,
     required this.onSelectDate,
     required this.onHeaderTap,
     required this.onTaskTap,
@@ -467,39 +473,54 @@ class _WeekPage extends StatelessWidget {
               physics: const AlwaysScrollableScrollPhysics(),
               child: SizedBox(
                 height: gridHeight,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Stack(
+                  clipBehavior: Clip.none,
                   children: [
-                    SizedBox(
-                      width: rulerWidth,
-                      child: TimelineHourGrid(
-                        date: days.first,
-                        gridMinutes: gridMinutes,
-                        rulerWidth: rulerWidth,
-                        showRuler: true,
-                      ),
-                    ),
-                    for (var index = 0; index < days.length; index++)
-                      SizedBox(
-                        width: columnWidth,
-                        child: _WeekDayGrid(
-                          date: days[index],
-                          columnWidth: columnWidth,
-                          rulerWidth: rulerWidth,
-                          showInternalRuler:
-                              index > 0 &&
-                              !TimelineHourGrid.equivalentMarkers(
-                                firstAxis,
-                                PlannerDayAxis(days[index]),
-                              ),
-                          gridMinutes: gridMinutes,
-                          onTaskTap: onTaskTap,
-                          onReady: onReady,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: rulerWidth,
+                          child: TimelineHourGrid(
+                            date: days.first,
+                            gridMinutes: gridMinutes,
+                            rulerWidth: rulerWidth,
+                            showRuler: true,
+                          ),
                         ),
+                        for (var index = 0; index < days.length; index++)
+                          SizedBox(
+                            width: columnWidth,
+                            child: _WeekDayGrid(
+                              date: days[index],
+                              columnWidth: columnWidth,
+                              rulerWidth: rulerWidth,
+                              showInternalRuler:
+                                  index > 0 &&
+                                  !TimelineHourGrid.equivalentMarkers(
+                                    firstAxis,
+                                    PlannerDayAxis(days[index]),
+                                  ),
+                              gridMinutes: gridMinutes,
+                              onTaskTap: onTaskTap,
+                              onReady: onReady,
+                            ),
+                          ),
+                        if (days.length < pageCapacity)
+                          for (var i = days.length; i < pageCapacity; i++)
+                            SizedBox(width: columnWidth),
+                      ],
+                    ),
+                    if (days.any((date) => isSameDay(date, now)))
+                      CurrentTimeIndicator(
+                        key: ValueKey(
+                          'week-current-time-${isoDateString(now)}',
+                        ),
+                        pixelsPerMinute: AppConstants.pixelsPerMinute,
+                        day: days.firstWhere((date) => isSameDay(date, now)),
+                        now: now,
+                        left: rulerWidth,
                       ),
-                    if (days.length < pageCapacity)
-                      for (var i = days.length; i < pageCapacity; i++)
-                        SizedBox(width: columnWidth),
                   ],
                 ),
               ),

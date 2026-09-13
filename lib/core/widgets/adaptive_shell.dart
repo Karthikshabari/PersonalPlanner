@@ -80,22 +80,11 @@ class AdaptiveShell extends StatelessWidget {
           top: AppSpacing.md,
           bottom: AppSpacing.lg,
         ),
-        child: Tooltip(
-          message: 'Personal Planner',
-          child: Container(
-            width: 42,
-            height: 42,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: tokens.selected,
-              borderRadius: BorderRadius.circular(tokens.radiusMedium),
-              border: Border.all(color: tokens.outline),
-            ),
-            child: Icon(
-              Icons.auto_awesome_outlined,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
+        child: IconButton(
+          key: const ValueKey('home-navigation-shortcut'),
+          tooltip: 'Home',
+          icon: const Icon(Icons.home_outlined),
+          onPressed: () => _navigate(context, '/day'),
         ),
       ),
       trailing: Padding(
@@ -153,10 +142,6 @@ class AdaptiveShell extends StatelessWidget {
       if (current.startsWith('/review')) {
         container.read(selectedDateProvider.notifier).state = container.read(
           selectedReviewDateProvider,
-        );
-      } else if (current.startsWith('/week')) {
-        container.read(selectedDateProvider.notifier).state = container.read(
-          selectedWeekStartProvider,
         );
       }
     }

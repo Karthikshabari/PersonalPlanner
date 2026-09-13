@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
+import 'package:personal_planner/core/constants/app_constants.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -11,6 +12,7 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/theme/app_colors.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_day_axis.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 
@@ -145,6 +147,93 @@ void main() {
     expect(
       find.byKey(ValueKey('week-column-${isoDateString(selected)}')),
       findsOneWidget,
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('Week paints current time only in today at canonical geometry', (
+    tester,
+  ) async {
+    final fixedNow = DateTime.utc(2026, 9, 16, 6, 15); // 11:45 IST.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    final container = await buildTestContainer(
+      tester,
+      minuteClockFactory: () => Stream.value(fixedNow),
+    );
+    final today = startOfDay(fixedNow);
+    final weekStart = startOfWeek(today);
+    container.read(selectedWeekStartProvider.notifier).state = weekStart;
+    container.read(selectedDateProvider.notifier).state = today;
+    final taskStart = PlannerDayAxis(today).instantAt(9 * 60);
+    final task = await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
+            Task(
+              id: '',
+              title: 'Geometry anchor',
+              startTime: taskStart,
+              endTime: taskStart.add(const Duration(hours: 1)),
+              createdAt: fixedNow,
+              updatedAt: fixedNow,
+            ),
+          ),
+    );
+    appRouter.go('/week');
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+
+    final todayIso = isoDateString(today);
+    final line = find.byKey(ValueKey('week-current-time-$todayIso'));
+    expect(line, findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'week-current-time-',
+            ),
+      ),
+      findsOneWidget,
+    );
+    final grid = find.byKey(ValueKey('week-grid-$todayIso'));
+    final lineOffset = tester.getTopLeft(line).dy - tester.getTopLeft(grid).dy;
+    final expectedLine =
+        PlannerDayAxis(today).elapsedMinutes(fixedNow) *
+            AppConstants.pixelsPerMinute -
+        0.75;
+    expect(lineOffset, closeTo(expectedLine, 0.01));
+
+    final block = find.byKey(ValueKey('week-block-${task.id}'));
+    final blockOffset =
+        tester.getTopLeft(block).dy - tester.getTopLeft(grid).dy;
+    expect(
+      blockOffset,
+      closeTo(9 * 60 * AppConstants.pixelsPerMinute + 1, 0.01),
+    );
+    final mondayGrid = find.byKey(
+      ValueKey('week-grid-${isoDateString(weekStart)}'),
+    );
+    expect(tester.getTopLeft(mondayGrid).dy, tester.getTopLeft(grid).dy);
+    // The indicator is owned by the page-level timeline stack, so its
+    // horizontal span covers every displayed day column while task geometry
+    // remains anchored to its individual column.
+    expect(
+      tester.getSize(line).width,
+      closeTo(tester.getSize(mondayGrid).width * 7, 0.01),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('weekview-next')));
+    await settle(tester);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            (widget.key! as ValueKey<String>).value.startsWith(
+              'week-current-time-',
+            ),
+      ),
+      findsNothing,
     );
     await finish(tester, container);
   });
