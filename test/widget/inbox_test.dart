@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/day_tasks_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart'
@@ -302,6 +303,82 @@ void main() {
 
     expect(find.text('Mobile idea'), findsOneWidget);
     expect(find.byKey(const ValueKey('inbox-quick-add')), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('Today filtering does not remove items from the full Inbox', (
+    tester,
+  ) async {
+    final fixedNow = DateTime.utc(2026, 9, 16, 6, 30);
+    final container = await buildTestContainer(
+      tester,
+      minuteClockFactory: () => Stream.value(fixedNow),
+    );
+    final inbox = container.read(inboxRepositoryProvider);
+    await runDb(tester, () => inbox.addToInbox('No due date'));
+    await runDb(
+      tester,
+      () => inbox.addToInbox('This week', dueDate: '2026-09-20'),
+    );
+    await runDb(
+      tester,
+      () => inbox.addToInbox('Next week', dueDate: '2026-09-21'),
+    );
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+
+    expect(find.text('No due date'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('Next week'), findsNothing);
+
+    appRouter.go('/inbox');
+    await settle(tester);
+    expect(find.text('No due date'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('Next week'), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('Inbox item menu deletes through the task soft-delete flow', (
+    tester,
+  ) async {
+    final container = await pumpDesktop(tester);
+    final first = await runDb(
+      tester,
+      () => container.read(inboxRepositoryProvider).addToInbox('Delete me'),
+    );
+    final second = await runDb(
+      tester,
+      () => container.read(inboxRepositoryProvider).addToInbox('Keep me'),
+    );
+    await settle(tester);
+
+    final firstMenu = find.byKey(ValueKey('inbox-menu-${first.id}'));
+    await tester.tap(firstMenu);
+    await settle(tester);
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Schedule'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+
+    await tester.tap(find.text('Delete'));
+    await settle(tester);
+    expect(find.text('Delete task?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await settle(tester);
+
+    expect(find.byKey(ValueKey('inbox-item-${first.id}')), findsNothing);
+    expect(find.byKey(ValueKey('inbox-item-${second.id}')), findsOneWidget);
+
+    final deleted = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(first.id),
+    );
+    final retained = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(second.id),
+    );
+    expect(deleted?.deletedAt, isNotNull);
+    expect(retained?.deletedAt, isNull);
     await finish(tester, container);
   });
 }

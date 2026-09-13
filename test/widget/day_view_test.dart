@@ -198,6 +198,9 @@ void main() {
     await settle(tester);
     await tester.tap(saveButton);
     await settle(tester);
+    // A semantic title edit now requires an explicit plan-history decision.
+    await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
+    await settle(tester);
 
     final saved = await runDb(
       tester,

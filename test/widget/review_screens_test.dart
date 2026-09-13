@@ -78,26 +78,25 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('daily review shows auto stats and the read-only mini timeline', (
-    tester,
-  ) async {
-    final container = await pumpReview(tester);
-    await seedTwoTasks(tester, container, today());
-    await showReviewForToday(tester, container);
+  testWidgets(
+    'daily review shows factual summary without a duplicate timeline',
+    (tester) async {
+      final container = await pumpReview(tester);
+      await seedTwoTasks(tester, container, today());
+      await showReviewForToday(tester, container);
 
-    expect(find.text('Daily Review'), findsOneWidget);
-    expect(find.text('Auto-computed stats'), findsOneWidget);
-    // Completion rate: 1 completed / (2 − 0 cancelled).
-    expect(find.text('50%'), findsOneWidget);
-    // Planned total: 1h + 1h30m.
-    expect(find.text('2h 30m'), findsOneWidget);
-    // Mini timeline renders both blocks with their statuses.
-    expect(find.byKey(const ValueKey('review-mini-timeline')), findsOneWidget);
-    expect(find.text('Morning run'), findsOneWidget);
-    expect(find.text('Deep work'), findsOneWidget);
-    expect(find.text('Completed'), findsWidgets);
-    await finish(tester, container);
-  });
+      expect(find.text('Daily Review'), findsOneWidget);
+      expect(find.text('Today / Day at a glance'), findsOneWidget);
+      // Factual completion summary: 1 completed out of 2 planned items.
+      expect(find.text('1 / 2 completed'), findsOneWidget);
+      // Planned total: 1h + 1h30m.
+      expect(find.textContaining('2h 30m planned'), findsOneWidget);
+    expect(find.byKey(const ValueKey('review-mini-timeline')), findsNothing);
+    expect(find.text('What changed'), findsOneWidget);
+    expect(find.text('Added during the day'), findsAtLeastNWidgets(1));
+      await finish(tester, container);
+    },
+  );
 
   testWidgets(
     'fill and save the daily review persists it and refreshes stats',
@@ -105,22 +104,8 @@ void main() {
       final container = await pumpReview(tester);
 
       await tester.enterText(
-        find.byKey(const ValueKey('review-reflection')),
+        find.byKey(const ValueKey('review-note')),
         'Solid focus day',
-      );
-      await tester.tap(find.byKey(const ValueKey('rating-Energy level-4')));
-      await tester.enterText(
-        find.descendant(
-          of: find.byKey(const ValueKey('review-wins')),
-          matching: find.byType(TextField),
-        ),
-        'Shipped chunk 5',
-      );
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('review-wins')),
-          matching: find.byIcon(Icons.add),
-        ),
       );
       await settle(tester);
 
@@ -131,8 +116,7 @@ void main() {
       final repo = container.read(reviewRepositoryProvider);
       final saved = await runDb(tester, () => repo.getReviewForDate(today()));
       expect(saved!.reflection, 'Solid focus day');
-      expect(saved.energyLevel, 4);
-      expect(saved.wins, ['Shipped chunk 5']);
+      expect(saved.energyLevel, isNull);
 
       final cached = await runDb(
         tester,
@@ -141,13 +125,13 @@ void main() {
             .statsDao
             .getStatsForDate(isoDateString(today())),
       );
-      expect(cached!.energyLevel, 4);
+      expect(cached!.energyLevel, isNull);
 
       // Re-mounting hydrates the form from the saved row.
       await pumpApp(tester, container, surface: const Size(1400, 1000));
       await settle(tester);
       final field = tester.widget<TextField>(
-        find.byKey(const ValueKey('review-reflection')),
+        find.byKey(const ValueKey('review-note')),
       );
       expect(field.controller!.text, 'Solid focus day');
       await finish(tester, container);
@@ -178,31 +162,22 @@ void main() {
     await seedTwoTasks(tester, container, today());
     await showReviewForToday(tester, container);
 
-    await tester.tap(find.byKey(const ValueKey('open-weekly-review')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-mode-switcher')),
+        matching: find.text('Weekly'),
+      ),
+    );
     await settle(tester);
 
     expect(find.text('Weekly Review'), findsOneWidget);
-    // Aggregate stats card renders computed values for the current week.
-    expect(find.text('Completion rate'), findsOneWidget);
-    expect(find.text('Focus'), findsOneWidget);
+    expect(find.text('This week'), findsOneWidget);
+    expect(find.text('1 / 2 completed'), findsOneWidget);
+    expect(find.text('What changed'), findsOneWidget);
 
     await tester.enterText(
-      find.byKey(const ValueKey('weekly-reflection')),
+      find.byKey(const ValueKey('weekly-note')),
       'Good week overall',
-    );
-    await tester.tap(find.byKey(const ValueKey('rating-Overall rating-5')));
-    await tester.enterText(
-      find.descendant(
-        of: find.byKey(const ValueKey('weekly-goals-met')),
-        matching: find.byType(TextField),
-      ),
-      'Plan every morning',
-    );
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('weekly-goals-met')),
-        matching: find.byIcon(Icons.add),
-      ),
     );
     await settle(tester);
 
@@ -215,8 +190,7 @@ void main() {
       tester,
       () => repo.getWeeklyReviewForWeek(startOfWeek(DateTime.now())),
     );
-    expect(saved!.overallRating, 5);
-    expect(saved.goalsMet, ['Plan every morning']);
+    expect(saved!.reflection, 'Good week overall');
     await finish(tester, container);
   });
 
@@ -224,12 +198,22 @@ void main() {
     tester,
   ) async {
     final container = await pumpReview(tester);
-    await tester.tap(find.byKey(const ValueKey('open-weekly-review')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-mode-switcher')),
+        matching: find.text('Weekly'),
+      ),
+    );
     await settle(tester);
     final selectedWeek = addDays(startOfWeek(today()), -7);
     container.read(selectedWeekStartProvider.notifier).state = selectedWeek;
     await settle(tester);
-    await tester.tap(find.byKey(const ValueKey('open-daily-review')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('review-mode-switcher')),
+        matching: find.text('Daily'),
+      ),
+    );
     await settle(tester);
 
     expect(container.read(selectedReviewDateProvider), selectedWeek);

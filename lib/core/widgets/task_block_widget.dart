@@ -11,7 +11,6 @@ import '../utils/planner_time_zone.dart';
 import 'error_panel.dart';
 import 'task_progress_background.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
-import '../../features/timer/providers/timer_providers.dart';
 import '../../features/timeline/domain/timeline_geometry.dart';
 import 'status_badge.dart';
 
@@ -76,24 +75,7 @@ class TaskBlockWidget extends ConsumerWidget {
         : groupedSubtaskCount!.isEmpty
         ? null
         : groupedSubtaskCount;
-    // Live timer display (Chunk 6 #7): ticks every second while THIS block's
-    // timer runs. The tick stream is only listened to when relevant.
-    final activeTimerAsync = ref.watch(activeTimerProvider);
-    final activeTimer = activeTimerAsync.hasValue
-        ? activeTimerAsync.requireValue
-        : null;
-    final isTimingHere = activeTimer?.session.taskId == task.id;
-    final elapsedAsync = isTimingHere
-        ? ref.watch(activeTimerElapsedProvider(task.id))
-        : null;
-    final timerLabel = isTimingHere && elapsedAsync?.hasValue == true
-        ? formatTimerClock(elapsedAsync!.requireValue)
-        : null;
-    final lookupError = activeTimerAsync.hasError
-        ? friendlyErrorMessage(activeTimerAsync.error!)
-        : elapsedAsync?.hasError == true
-        ? friendlyErrorMessage(elapsedAsync!.error!)
-        : subtaskLookupError
+    final lookupError = subtaskLookupError
         ? friendlyErrorMessage(subtasksAsync!.error!)
         : null;
     final start = task.startTime == null
@@ -351,34 +333,6 @@ class TaskBlockWidget extends ConsumerWidget {
                                 Icons.refresh,
                                 size: 13,
                                 color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          if (timerLabel != null)
-                            Positioned(
-                              bottom: 0,
-                              left: 0,
-                              child: Row(
-                                key: const ValueKey('block-timer-chip'),
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.timer_outlined,
-                                    size: 10,
-                                    color: tokens.pending,
-                                  ),
-                                  const SizedBox(width: 2),
-                                  Text(
-                                    timerLabel,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: tokens.pending,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
-                                    ),
-                                  ),
-                                ],
                               ),
                             ),
                           if (renderedSubtaskCount != null)

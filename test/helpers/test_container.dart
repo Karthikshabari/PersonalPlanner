@@ -7,19 +7,25 @@ import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
+import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 
 import 'sqlite_setup.dart';
 
 Future<ProviderContainer> buildTestContainer(
   WidgetTester tester, {
   AppDatabase? db,
+  MinuteClockFactory? minuteClockFactory,
 }) async {
   setupSqliteForTests();
   late ProviderContainer container;
   await tester.runAsync(() async {
     final database = db ?? AppDatabase(NativeDatabase.memory());
     container = ProviderContainer(
-      overrides: [appDatabaseProvider.overrideWithValue(database)],
+      overrides: [
+        appDatabaseProvider.overrideWithValue(database),
+        if (minuteClockFactory != null)
+          minuteClockProvider.overrideWithValue(minuteClockFactory),
+      ],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
     await database.syncDao.setSetting(onboardingCompletedKey, 'true');

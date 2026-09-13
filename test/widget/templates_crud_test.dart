@@ -299,19 +299,24 @@ void main() {
 
 /// Local copy of the helper used by the recurrence tests (bringIntoView).
 Future<void> bringIntoViewHelper(WidgetTester tester, Finder target) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await settle(tester);
   final editorScrollable = find
       .ancestor(of: target, matching: find.byType(Scrollable))
       .last;
-  for (var attempt = 0; attempt < 12; attempt++) {
-    await settle(tester);
-    final rect = tester.getRect(target);
-    final viewport = tester.getRect(editorScrollable);
-    const margin = 32.0;
-    if (rect.top >= viewport.top + margin &&
-        rect.bottom <= viewport.bottom - margin) {
-      return;
-    }
-    final dy = rect.center.dy > viewport.center.dy ? -100.0 : 100.0;
-    await tester.drag(editorScrollable, Offset(0, dy));
+  final scrollable = tester.state<ScrollableState>(editorScrollable);
+  final before = tester.getRect(target);
+  final viewport = tester.getRect(editorScrollable);
+  final desiredTop = viewport.top + 80;
+  final targetPixels = (scrollable.position.pixels + before.top - desiredTop)
+      .clamp(
+        scrollable.position.minScrollExtent,
+        scrollable.position.maxScrollExtent,
+      );
+  scrollable.position.jumpTo(targetPixels.toDouble());
+  await settle(tester);
+  final rect = tester.getRect(target);
+  if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) {
+    fail('target never became visible: $target');
   }
 }

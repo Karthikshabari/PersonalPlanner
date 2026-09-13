@@ -57,7 +57,11 @@ class _DraggableTaskBlockState extends State<DraggableTaskBlock> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior.deferToChild,
+      // The positioned block owns its complete rectangle, including empty
+      // space below short content in multi-hour/cross-day tasks. Deferring to
+      // descendants lets those blank areas fall through to the timeline's
+      // scroll gesture instead of starting a task interaction.
+      behavior: HitTestBehavior.opaque,
       onSecondaryTapUp: _isTouchPlatform
           ? null
           : (details) => widget.onContextMenuRequested(details.globalPosition),
