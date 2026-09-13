@@ -1,6 +1,9 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
+
+import 'plan_title_change.dart';
 import 'enums/priority.dart';
 import 'enums/task_status.dart';
+import '../utils/task_time_metrics.dart';
 
 part 'task.freezed.dart';
 part 'task.g.dart';
@@ -16,6 +19,9 @@ abstract class Task with _$Task {
     int? estimatedDurationMin,
     int? actualDurationMin,
     @Default(0) int manualDurationAdjustmentMin,
+
+    /// Distinguishes an explicit manual zero from no manually recorded work.
+    @Default(false) bool manualActualSet,
     String? categoryId,
     @Default(Priority.none) Priority priority,
     @Default(TaskStatus.planned) TaskStatus status,
@@ -24,7 +30,11 @@ abstract class Task with _$Task {
     String? rescheduledFromId,
     String? rescheduledToId,
     @Default(false) bool isInbox,
+    @Default(0) int inboxContentVersion,
+    String? dueDate,
     String? missedAt,
+    @Default(<PlanTitleChange>[]) List<PlanTitleChange> planTitleHistory,
+    String? displayPlanChangeId,
     required DateTime createdAt,
     required DateTime updatedAt,
     DateTime? deletedAt,
@@ -35,5 +45,24 @@ abstract class Task with _$Task {
 
 extension TaskX on Task {
   Duration? get scheduledDuration =>
-      startTime != null && endTime != null ? endTime!.difference(startTime!) : null;
+      TaskTimeMetrics.scheduledDuration(startTime, endTime);
+
+  int? get plannedDurationMinutes =>
+      TaskTimeMetrics.plannedMinutes(startTime, endTime);
+
+  /// The one deliberately selected plan-change event for compact timeline
+  /// decoration. Invalid/stale pointers are rejected at every persistence
+  /// boundary, but this remains defensive for in-memory legacy fixtures.
+  PlanTitleChange? get displayPlanChange {
+    final id = displayPlanChangeId;
+    if (id == null) return null;
+    for (final event in planTitleHistory) {
+      if (event.id == id &&
+          event.revertedAt == null &&
+          event.newTitle.trim() == title.trim()) {
+        return event;
+      }
+    }
+    return null;
+  }
 }

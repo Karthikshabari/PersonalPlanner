@@ -174,15 +174,55 @@ void main() {
     test(
       'addToInbox creates an unscheduled inbox item surfaced by the stream',
       () async {
-        await inbox.addToInbox('Buy milk');
+        const raw = '  Buy milk\n\n  with details\n';
+        await inbox.addToInbox(raw, dueDate: '2026-02-28');
         final items = await inbox.watchInboxItems().first;
         expect(items, hasLength(1));
-        expect(items.single.task.title, 'Buy milk');
+        expect(items.single.task.title, 'Inbox capture');
+        expect(items.single.task.description, raw);
+        expect(items.single.task.inboxContentVersion, 1);
+        expect(items.single.task.dueDate, '2026-02-28');
         expect(items.single.isOverdue, isFalse);
         expect(items.single.task.isInbox, isTrue);
         expect(items.single.task.startTime, isNull);
+        expect(items.single.displayPreview, 'Buy milk');
       },
     );
+
+    test('capture rejects blank content and malformed due dates', () async {
+      expect(() => inbox.addToInbox(' \n\t'), throwsArgumentError);
+      expect(
+        () => inbox.addToInbox('Valid', dueDate: '2026-02-30'),
+        throwsArgumentError,
+      );
+    });
+
+    test('due date is independent, editable, removable, and retained on schedule', () async {
+      final item = await inbox.addToInbox('Raw content', dueDate: '2026-09-12');
+      final withDue = await tasks.getTaskWithRevision(item.id);
+      await tasks.updateTask(
+        item.copyWith(dueDate: null),
+        expectedRevision: withDue!.$2,
+      );
+      expect((await tasks.getTaskById(item.id))!.dueDate, isNull);
+
+      final restored = await tasks.getTaskWithRevision(item.id);
+      await tasks.updateTask(
+        (await tasks.getTaskById(item.id))!.copyWith(dueDate: '2026-09-12'),
+        expectedRevision: restored!.$2,
+      );
+      final day = addDays(DateTime.now(), 1);
+      final scheduled = await inbox.scheduleItem(
+        item.id,
+        DateTime(day.year, day.month, day.day, 10),
+        DateTime(day.year, day.month, day.day, 11),
+        title: 'Deliberate title',
+        description: 'Raw content',
+        replaceDescription: true,
+      );
+      expect(scheduled.dueDate, '2026-09-12');
+      expect(scheduled.isInbox, isFalse);
+    });
 
     test(
       'overdue scheduled tasks surface alongside inbox items with stamping',
@@ -216,7 +256,7 @@ void main() {
         final items = await inbox.watchInboxItems().first;
         expect(
           items.map((i) => i.task.title),
-          containsAll(['Idea', 'Past thing']),
+          containsAll(['Inbox capture', 'Past thing']),
         );
         final overdue = items.firstWhere((i) => i.task.title == 'Past thing');
         expect(overdue.isOverdue, isTrue);

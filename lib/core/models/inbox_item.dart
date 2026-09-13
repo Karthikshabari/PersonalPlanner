@@ -24,4 +24,15 @@ sealed class InboxItem with _$InboxItem {
       };
 
   bool get isOverdue => this is OverdueInboxItem;
+
+  /// A deterministic, short presentation value. The stored capture remains
+  /// the complete task description; this getter never writes or normalizes it.
+  String get displayPreview {
+    if (isOverdue) return task.title;
+    final content = task.description ?? '';
+    final firstLine = content
+        .split('\n')
+        .firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
+    return firstLine.trim().isEmpty ? 'Inbox capture' : firstLine.trim();
+  }
 }

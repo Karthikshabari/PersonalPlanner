@@ -13,7 +13,7 @@ void main() {
   setupSqliteForTests();
 
   test(
-    'every exact v1-v5 snapshot upgrades to v7 with valid data intact',
+    'every exact v1-v5 snapshot upgrades to v8 with valid data intact',
     () async {
       final directory = Directory.systemTemp.createTempSync(
         'planner_migration_v6',
@@ -27,8 +27,8 @@ void main() {
             expect(
               (await db.customSelect('PRAGMA user_version').getSingle())
                   .read<int>('user_version'),
-              7,
-              reason: 'v$version did not reach schema v7',
+              8,
+              reason: 'v$version did not reach schema v8',
             );
             expect(
               (await db.select(db.tasks).get()).single.title,

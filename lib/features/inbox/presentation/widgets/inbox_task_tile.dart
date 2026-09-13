@@ -4,14 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
+import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../timeline/presentation/providers/day_view_controller.dart';
+import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../providers/inbox_provider.dart';
+import 'due_date_badge.dart';
+import 'inbox_capture_editor.dart';
 import '../widgets/overdue_badge.dart';
 
 /// A draggable row in the inbox list (desktop strip / mobile tab).
@@ -30,6 +34,45 @@ class InboxTaskTile extends ConsumerWidget {
   }
 
   Future<void> _edit(BuildContext context, WidgetRef ref) async {
+    if (!item.isOverdue) {
+      final taskId = item.task.id;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: InboxCaptureEditor(
+              title: 'Edit Inbox capture',
+              initialContent: item.task.description ?? '',
+              initialDueDate: item.task.dueDate,
+              onSubmit: (content, dueDate) async {
+                final repository = ref.read(taskRepositoryProvider);
+                final snapshot = await repository.getTaskWithRevision(taskId);
+                final current = snapshot?.$1;
+                final revision = snapshot?.$2;
+                if (current == null || revision == null || !current.isInbox) {
+                  throw StateError(
+                    'This Inbox capture changed or was scheduled elsewhere; reload and try again.',
+                  );
+                }
+                await repository.updateTask(
+                  current.copyWith(
+                    description: content,
+                    dueDate: dueDate,
+                    inboxContentVersion: 1,
+                  ),
+                  expectedRevision: revision,
+                );
+              },
+              onCommitted: () => Navigator.of(dialogContext).pop(),
+              onCancel: () => Navigator.of(dialogContext).pop(),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     ref.read(selectedTaskIdProvider.notifier).state = item.task.id;
     if (!isDesktopWidth(MediaQuery.sizeOf(context).width)) {
       await TaskEditorPanel.showAsBottomSheet(context);
@@ -40,7 +83,8 @@ class InboxTaskTile extends ConsumerWidget {
   }
 
   Future<void> _schedule(BuildContext context, WidgetRef ref) async {
-    final initialDate = item.task.startTime ?? DateTime.now();
+    final initialDate =
+        item.task.startTime ?? ref.read(selectedDateProvider) ?? DateTime.now();
     final initialLocal = PlannerTimeZone.toPlannerLocal(initialDate);
     final date = await showDatePicker(
       context: context,
@@ -71,7 +115,7 @@ class InboxTaskTile extends ConsumerWidget {
     );
     final duration = item.task.scheduledDuration?.inMinutes ?? 60;
     final end = start.add(Duration(minutes: duration));
-    final scheduled = await TimelineActions.scheduleInboxItem(
+    final scheduled = await TimelineActions.showInboxSchedulingForm(
       context,
       ref,
       item,
@@ -111,19 +155,24 @@ class InboxTaskTile extends ConsumerWidget {
         ),
       ),
       title: Text(
-        task.title,
-        maxLines: 1,
+        item.displayPreview,
+        maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.labelLarge,
       ),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 2),
-        child: item.isOverdue
-            ? Align(
-                alignment: Alignment.centerLeft,
-                child: OverdueBadge(item: item),
-              )
-            : null,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: item.isOverdue
+              ? OverdueBadge(item: item)
+              : task.dueDate == null
+              ? null
+              : DueDateBadge(
+                  dueDate: task.dueDate!,
+                  today: ref.watch(inboxClockProvider).value ?? DateTime.now(),
+                ),
+        ),
       ),
       trailing: PopupMenuButton<String>(
         key: ValueKey('inbox-menu-${task.id}'),
@@ -150,17 +199,27 @@ class InboxTaskTile extends ConsumerWidget {
       feedback: Material(
         elevation: 4,
         borderRadius: BorderRadius.circular(tokens.radiusSmall),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.6,
           ),
-          decoration: BoxDecoration(
-            color: tokens.surfaceRaised,
-            border: Border.all(color: tokens.warning),
-            borderRadius: BorderRadius.circular(tokens.radiusSmall),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: tokens.surfaceRaised,
+              border: Border.all(color: tokens.warning),
+              borderRadius: BorderRadius.circular(tokens.radiusSmall),
+            ),
+            child: Text(
+              item.displayPreview,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
-          child: Text(task.title, style: Theme.of(context).textTheme.bodySmall),
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.4, child: tile),

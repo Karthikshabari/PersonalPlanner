@@ -7,9 +7,12 @@ import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/features/timeline/domain/commands/batch_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/create_task_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/delete_task_command.dart';
+import 'package:personal_planner/features/timeline/domain/commands/duplicate_task_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/move_task_command.dart';
 import 'package:personal_planner/features/timeline/domain/commands/resize_task_command.dart';
 import 'package:personal_planner/features/timer/domain/timer_service.dart';
+import 'package:personal_planner/features/inbox/data/inbox_repository.dart';
+import 'package:personal_planner/features/inbox/domain/inbox_commands.dart';
 
 import '../../helpers/sqlite_setup.dart' as sqlite_setup;
 
@@ -67,6 +70,39 @@ void main() {
         fetched = await repo.getTaskById('create-test-id');
         expect(fetched!.title, 'Created');
         expect(fetched.deletedAt, isNull);
+      },
+    );
+
+    test(
+      'creation derives exact planned duration from both endpoints',
+      () async {
+        final scheduled =
+            newTask(
+              'Proposal',
+              day.add(const Duration(hours: 16)),
+              day.add(const Duration(hours: 17, minutes: 30)),
+              id: 'proposal-task',
+            ).copyWith(
+              description: 'Details\n\n  with indentation',
+              estimatedDurationMin: 16,
+            );
+        await CreateTaskCommand(repo, scheduled).execute();
+
+        final fetched = await repo.getTaskById(scheduled.id);
+        expect(fetched?.description, 'Details\n\n  with indentation');
+        expect(fetched?.estimatedDurationMin, 90);
+
+        final overnight = newTask(
+          'Overnight',
+          day.add(const Duration(hours: 23, minutes: 30)),
+          day.add(const Duration(days: 1, minutes: 30)),
+          id: 'overnight-task',
+        );
+        await CreateTaskCommand(repo, overnight).execute();
+        expect(
+          (await repo.getTaskById(overnight.id))?.estimatedDurationMin,
+          60,
+        );
       },
     );
   });
@@ -176,10 +212,12 @@ void main() {
       var fetched = await repo.getTaskById(inserted.id);
       expect(fetched!.endTime, newEnd);
       expect(fetched.startTime, inserted.startTime); // start untouched
+      expect(fetched.estimatedDurationMin, 180);
 
       await command.undo();
       fetched = await repo.getTaskById(inserted.id);
       expect(fetched!.endTime, inserted.endTime);
+      expect(fetched.estimatedDurationMin, 60);
     });
 
     test('does not overwrite a concurrent move before resizing', () async {
@@ -295,4 +333,116 @@ void main() {
       expect(fb!.startTime, b.startTime);
     });
   });
+
+  group('Inbox conversion commands', () {
+    test(
+      'converts in place and guarded undo/redo preserve unrelated work',
+      () async {
+        final inbox = InboxRepository(db);
+        final capture = await inbox.addToInbox(
+          '  Raw capture\n\nwith indentation  ',
+          dueDate: '2026-07-30',
+        );
+        final start = day.add(const Duration(hours: 16));
+        final end = day.add(const Duration(hours: 17, minutes: 30));
+        final command = ScheduleInboxItemCommand(
+          repository: inbox,
+          taskId: capture.id,
+          start: start,
+          end: end,
+          title: 'Prepare proposal',
+          description: capture.description,
+          replaceDescription: true,
+        );
+
+        await command.execute();
+        var scheduled = await repo.getTaskById(capture.id);
+        expect(scheduled!.isInbox, isFalse);
+        expect(scheduled.title, 'Prepare proposal');
+        expect(scheduled.description, capture.description);
+        expect(scheduled.scheduledDuration, const Duration(minutes: 90));
+        expect(scheduled.dueDate, '2026-07-30');
+
+        // Manual Actual is an owned timer/accounting source, not an ordinary
+        // task field. It remains intentionally independent of the Inbox undo
+        // and verifies that the conversion does not erase unrelated work.
+        await TimerService(db).setManualActual(capture.id, 10);
+        await command.undo();
+        var restored = await repo.getTaskById(capture.id);
+        expect(restored!.isInbox, isTrue);
+        expect(restored.title, 'Inbox capture');
+        expect(restored.description, capture.description);
+        expect(restored.startTime, isNull);
+        expect(restored.manualDurationAdjustmentMin, 10);
+        expect(restored.dueDate, '2026-07-30');
+
+        await command.execute();
+        scheduled = await repo.getTaskById(capture.id);
+        expect(scheduled!.id, capture.id);
+        expect(scheduled.isInbox, isFalse);
+        expect(scheduled.title, 'Prepare proposal');
+      },
+    );
+
+    test('exact retry is a no-op and guarded undo refuses completed or timed tasks', () async {
+      final inbox = InboxRepository(db);
+      final capture = await inbox.addToInbox('Retry me');
+      final start = day.add(const Duration(hours: 11));
+      final end = day.add(const Duration(hours: 12));
+      final command = ScheduleInboxItemCommand(
+        repository: inbox,
+        taskId: capture.id,
+        start: start,
+        end: end,
+        title: 'Retried task',
+        description: 'Retry me',
+        replaceDescription: true,
+      );
+      await command.execute();
+      expect(command.didMutate, isTrue);
+      final retry = ScheduleInboxItemCommand(
+        repository: inbox,
+        taskId: capture.id,
+        start: start,
+        end: end,
+        title: 'Retried task',
+        description: 'Retry me',
+        replaceDescription: true,
+      );
+      await retry.execute();
+      expect(retry.didMutate, isFalse);
+      expect((await repo.getTaskById(capture.id))!.id, capture.id);
+
+      await repo.updateTask(
+        (await repo.getTaskById(capture.id))!
+            .copyWith(status: TaskStatus.completed),
+      );
+      await expectLater(command.undo(), throwsStateError);
+      expect((await repo.getTaskById(capture.id))!.isInbox, isFalse);
+    });
+  });
+
+  test(
+    'DuplicateTaskCommand clears an Inbox due date on the new plan',
+    () async {
+      final source = await repo.insertTask(
+        newTask(
+          'Duplicate source',
+          day.add(const Duration(hours: 8)),
+          day.add(const Duration(hours: 9)),
+        ).copyWith(dueDate: '2026-07-30'),
+      );
+      final command = DuplicateTaskCommand(
+        repository: repo,
+        source: source,
+        newStart: day.add(const Duration(hours: 10)),
+        newEnd: day.add(const Duration(hours: 11)),
+      );
+      await command.execute();
+
+      final all = await db.taskDao.getTasksForDay(day);
+      final copy = all.singleWhere((row) => row.id != source.id);
+      expect(copy.dueDate, isNull);
+    },
+  );
 }

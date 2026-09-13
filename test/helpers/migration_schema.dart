@@ -2,17 +2,16 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 
-/// Exact hand-written snapshots of the schemas shipped by v1 through v6.
+/// Exact hand-written snapshots of the schemas shipped by v1 through v8.
 ///
-/// Version 6 is represented separately from the current generated schema: it
-/// has the v6 task/tag/stat columns and FTS objects, but deliberately lacks the
-/// v7 sync tables and server-version columns.
+/// Version 7 is represented separately from the current generated schema so
+/// the v7 -> v8 migration is exercised from the exact released shape.
 class MigrationSchema {
   static const timestamp = '2026-01-01T00:00:00.000Z';
 
   static void create(File file, int version) {
-    if (version < 1 || version > 6) {
-      throw ArgumentError.value(version, 'version', 'must be between 1 and 6');
+    if (version < 1 || version > 8) {
+      throw ArgumentError.value(version, 'version', 'must be between 1 and 8');
     }
     final db = sqlite3.open(file.path);
     try {
@@ -23,6 +22,8 @@ class MigrationSchema {
       if (version >= 4) _createV4(db);
       if (version >= 5) _createV5(db);
       if (version >= 6) _createV6(db);
+      if (version >= 7) _createV7(db);
+      if (version >= 8) _createV8(db);
       db.execute('PRAGMA user_version = $version');
       _seed(db, version);
       if (version >= 6) _createV6Fts(db);
@@ -274,6 +275,94 @@ class MigrationSchema {
       END
     ''');
     db.execute("INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild')");
+  }
+
+  static void _createV7(Database db) {
+    for (final table in [
+      'categories',
+      'tasks',
+      'subtasks',
+      'tags',
+      'task_tags',
+      'recurring_rules',
+      'task_templates',
+      'daily_reviews',
+      'weekly_reviews',
+      'timer_sessions',
+    ]) {
+      db.execute('ALTER TABLE $table ADD COLUMN server_version INTEGER NULL');
+    }
+    db.execute('''
+      CREATE TABLE sync_log (
+        operation_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        expected_server_version INTEGER NULL,
+        payload TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NULL,
+        last_error TEXT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    db.execute('''
+      CREATE TABLE sync_conflicts (
+        id TEXT NOT NULL PRIMARY KEY,
+        operation_id TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        expected_server_version INTEGER NULL,
+        actual_server_version INTEGER NULL,
+        local_snapshot TEXT NOT NULL,
+        remote_snapshot TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+    db.execute('''
+      CREATE TABLE sync_state (
+        account_id TEXT NOT NULL PRIMARY KEY,
+        last_change_id INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  /// Released v8 shape before R14's forward-only title-history migration.
+  static void _createV8(Database db) {
+    db.execute(
+      'ALTER TABLE tasks ADD COLUMN inbox_content_version INTEGER NOT NULL DEFAULT 0',
+    );
+    db.execute('ALTER TABLE tasks ADD COLUMN due_date TEXT NULL');
+    db.execute(
+      'ALTER TABLE tasks ADD COLUMN manual_actual_set INTEGER NOT NULL DEFAULT 0',
+    );
+    db.execute(
+      "ALTER TABLE timer_sessions ADD COLUMN state TEXT NOT NULL DEFAULT 'finished'",
+    );
+    db.execute('ALTER TABLE timer_sessions ADD COLUMN running_since TEXT NULL');
+    db.execute(
+      "ALTER TABLE timer_sessions ADD COLUMN work_intervals_json TEXT NOT NULL DEFAULT '[]'",
+    );
+    db.execute(
+      'ALTER TABLE timer_sessions ADD COLUMN owner_device_id TEXT NULL',
+    );
+    db.execute('''
+      CREATE TABLE day_contexts (
+        id TEXT NOT NULL PRIMARY KEY,
+        date TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL,
+        custom_label TEXT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT NULL,
+        sync_status INTEGER NOT NULL DEFAULT 0,
+        revision INTEGER NOT NULL DEFAULT 1,
+        server_version INTEGER NULL
+      )
+    ''');
   }
 
   static void _seed(Database db, int version) {

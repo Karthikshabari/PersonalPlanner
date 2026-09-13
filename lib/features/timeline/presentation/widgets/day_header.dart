@@ -6,10 +6,10 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../../review/providers/review_providers.dart';
+import '../../../day_context/presentation/day_context_editor.dart';
 import '../providers/selected_date_provider.dart';
 
 class DayHeader extends ConsumerWidget {
@@ -22,7 +22,11 @@ class DayHeader extends ConsumerWidget {
     final label = DateFormat('MMM d, yyyy').format(selectedDate);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < AppConstants.desktopBreakpoint;
+        // The shell's rail consumes part of a desktop window. Use the
+        // available header width rather than the outer-window breakpoint so
+        // the full desktop row does not overflow at intermediate desktop
+        // sizes (for example a 1280px window with the editor rail).
+        final compact = constraints.maxWidth < 1200;
         final tokens = AppThemeTokens.of(context);
         return Container(
           decoration: BoxDecoration(
@@ -82,6 +86,7 @@ class DayHeader extends ConsumerWidget {
               ),
             ),
             Text(label, style: Theme.of(context).textTheme.titleLarge),
+            DayContextAction(date: selectedDate, compact: true),
           ],
         ),
         IconButton(
@@ -142,6 +147,10 @@ class DayHeader extends ConsumerWidget {
               onPressed: () => notifier.state = addDays(selectedDate, 1),
             ),
           ],
+        ),
+        Align(
+          alignment: Alignment.center,
+          child: DayContextAction(date: selectedDate, compact: true),
         ),
         Row(
           children: [

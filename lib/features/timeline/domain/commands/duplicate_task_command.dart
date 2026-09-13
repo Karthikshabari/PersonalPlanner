@@ -4,6 +4,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/utils/uuid.dart';
+import '../../../../core/utils/task_time_metrics.dart';
 import '../../data/task_repository.dart';
 import 'scheduling_command.dart';
 import 'task_aggregate_snapshot.dart';
@@ -43,12 +44,17 @@ class DuplicateTaskCommand implements SchedulingCommand {
         startTime: newStart,
         endTime: newEnd,
         actualDurationMin: null,
+        estimatedDurationMin: TaskTimeMetrics.plannedMinutes(newStart, newEnd),
         manualDurationAdjustmentMin: 0,
+        manualActualSet: false,
+        planTitleHistory: const [],
+        displayPlanChangeId: null,
         status: TaskStatus.planned,
         recurringRuleId: null,
         rescheduledFromId: null,
         rescheduledToId: null,
         isInbox: false,
+        dueDate: null,
         missedAt: null,
         createdAt: now,
         updatedAt: now,

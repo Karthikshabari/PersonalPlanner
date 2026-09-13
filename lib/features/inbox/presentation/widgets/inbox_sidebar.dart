@@ -33,7 +33,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
         color: tokens.surfaceSubtle,
         border: Border(top: BorderSide(color: tokens.outline)),
       ),
-      height: _expanded ? 176 : 44,
+      height: _expanded ? 230 : 44,
       child: Column(
         children: [
           Container(
@@ -78,7 +78,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
             Expanded(
               child: Column(
                 children: [
-                  const InboxQuickAdd(),
+                  Flexible(fit: FlexFit.loose, child: InboxQuickAdd()),
                   Expanded(
                     child: itemsAsync.hasError
                         ? ErrorPanel(

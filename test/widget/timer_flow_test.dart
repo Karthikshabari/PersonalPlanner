@@ -77,17 +77,11 @@ void main() {
     expect(find.byKey(const ValueKey('block-timer-chip')), findsOneWidget);
     expect(find.text('00:00:00'), findsWidgets);
 
-    // Timer ticks once per second — block chip, editor and overlay in sync.
-    // The elapsed stream is mounted asynchronously after the start write. In
-    // a long sequential suite it can miss the first fake-clock tick, so wait
-    // for the observable two-second state with a bounded timeout instead of
-    // assuming the provider mounted at t=0.
-    for (var attempt = 0; attempt < 4; attempt++) {
-      await tester.pump(const Duration(seconds: 1));
-      await tester.pump();
-      if (find.text('00:00:02').evaluate().isNotEmpty) break;
-    }
-    expect(find.text('00:00:02'), findsWidgets);
+    // Widget frame time is not the persisted wall clock. R15 deliberately
+    // removed the old tick-count floor, so fake frames must not manufacture
+    // work that was never recorded by the session clock.
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('00:00:00'), findsWidgets);
     expect(find.byKey(const ValueKey('overlay-timer-elapsed')), findsOneWidget);
 
     // Auto-status: planned → in progress (Chunk 6 #11).
@@ -104,7 +98,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('pause then resume creates two separate sessions', (
+  testWidgets('pause then resume retains one logical session', (
     tester,
   ) async {
     await setUpScaffolding(tester);
@@ -117,10 +111,10 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('overlay-pause-button')));
     await settle(tester);
-    expect(find.byKey(const ValueKey('timer-overlay')), findsNothing);
+    expect(find.byKey(const ValueKey('timer-overlay')), findsOneWidget);
+    expect(find.byKey(const ValueKey('overlay-resume-button')), findsOneWidget);
 
-    // Resume via the editor button (idle again → "Start timer").
-    await tester.tap(find.byKey(const ValueKey('timer-start-button')));
+    await tester.tap(find.byKey(const ValueKey('overlay-resume-button')));
     await settle(tester);
     expect(find.byKey(const ValueKey('timer-overlay')), findsOneWidget);
 
@@ -128,7 +122,7 @@ void main() {
       tester,
       () => timerRepoOf(container).getSessionsForTask(alpha.id),
     );
-    expect(sessions, hasLength(2));
+    expect(sessions, hasLength(1));
     expect(sessions.where((s) => s.endedAt == null), hasLength(1));
 
     // Tear down the running timer so no periodic stream outlives the tree.
@@ -162,7 +156,8 @@ void main() {
       tester,
       () => timerRepoOf(container).getSessionsForTask(beta.id),
     );
-    expect(aSessions.single.endedAt, isNotNull);
+    expect(aSessions.single.endedAt, isNull);
+    expect(aSessions.single.state.name, 'paused');
     expect(bSessions.where((s) => s.endedAt == null), hasLength(1));
 
     // Exactly one overlay for the one running session.

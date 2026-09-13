@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
@@ -16,11 +17,14 @@ import 'package:personal_planner/features/timeline/presentation/providers/select
 import '../helpers/test_container.dart';
 
 void main() {
-  Future<ProviderContainer> pumpDay(WidgetTester tester) async {
+  Future<ProviderContainer> pumpDay(
+    WidgetTester tester, {
+    Size surface = const Size(1400, 1000),
+  }) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await buildTestContainer(tester);
     appRouter.go('/day');
-    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    await pumpApp(tester, container, surface: surface);
     return container;
   }
 
@@ -82,6 +86,7 @@ void main() {
     await openWeekView(tester);
 
     expect(find.text('This Week'), findsOneWidget);
+    expect(find.text('Add day context'), findsNWidgets(7));
     for (var i = 0; i < 7; i++) {
       expect(
         weekColumn(isoDateString(monday().add(Duration(days: i)))),
@@ -143,6 +148,150 @@ void main() {
     );
     await finish(tester, container);
   });
+
+  testWidgets('Week renders selected prior plan titles and compact history', (
+    tester,
+  ) async {
+    final container = await pumpDay(tester);
+    final start = monday().add(const Duration(hours: 9));
+    final fullEvent = PlanTitleChange(
+      id: '00000000-0000-7000-8000-000000000101',
+      previousTitle: 'Read book',
+      newTitle: 'Office work',
+      changedAt: DateTime.utc(2026, 9, 13, 10),
+    );
+    final compactEvent = PlanTitleChange(
+      id: '00000000-0000-7000-8000-000000000102',
+      previousTitle: 'Short prior',
+      newTitle: 'Short current',
+      changedAt: DateTime.utc(2026, 9, 13, 11),
+    );
+    final tasks = container.read(taskRepositoryProvider);
+    final full = await runDb(
+      tester,
+      () => tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Office work',
+          startTime: start,
+          endTime: start.add(const Duration(hours: 1)),
+          createdAt: start,
+          updatedAt: start,
+        ),
+      ),
+    );
+    final compact = await runDb(
+      tester,
+      () => tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Short current',
+          startTime: start.add(const Duration(hours: 2)),
+          endTime: start.add(const Duration(hours: 2, minutes: 15)),
+          createdAt: start,
+          updatedAt: start,
+        ),
+      ),
+    );
+    await runDb(
+      tester,
+      () => tasks.updateTask(
+        full.copyWith(
+          planTitleHistory: [fullEvent],
+          displayPlanChangeId: fullEvent.id,
+        ),
+      ),
+    );
+    await runDb(
+      tester,
+      () => tasks.updateTask(
+        compact.copyWith(
+          planTitleHistory: [compactEvent],
+          displayPlanChangeId: compactEvent.id,
+        ),
+      ),
+    );
+    await openWeekView(tester);
+
+    final prior = tester.widget<Text>(find.text('Read book'));
+    expect(prior.style?.decoration, TextDecoration.lineThrough);
+    expect(find.text('Office work'), findsOneWidget);
+    expect(find.byTooltip('Read book → Office work'), findsOneWidget);
+    expect(find.byKey(const ValueKey('plan-change-indicator')), findsOneWidget);
+    expect(find.text('Short current'), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('phone Week uses a single-day page and a seven-date selector', (
+    tester,
+  ) async {
+    final container = await pumpDay(tester, surface: const Size(390, 844));
+    await openWeekView(tester);
+
+    expect(find.byKey(const ValueKey('week-pages')), findsOneWidget);
+    expect(find.byKey(const ValueKey('week-date-selector')), findsOneWidget);
+    expect(
+      find.byKey(
+        ValueKey(
+          'week-grid-${isoDateString(container.read(selectedDateProvider))}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(
+        ValueKey(
+          'week-day-selector-${isoDateString(monday().add(const Duration(days: 6)))}',
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(
+      isSameDay(
+        container.read(selectedDateProvider),
+        monday().add(const Duration(days: 6)),
+      ),
+      isTrue,
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets(
+    'Week frame stays usable across breakpoint and text-scale samples',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final container = await buildTestContainer(tester);
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      for (final entry in <({Size size, double scale})>[
+        (size: const Size(320, 800), scale: 1),
+        (size: const Size(360, 800), scale: 1.3),
+        (size: const Size(390, 844), scale: 2),
+        (size: const Size(430, 844), scale: 1.3),
+        (size: const Size(600, 900), scale: 1),
+        (size: const Size(768, 900), scale: 1.3),
+        (size: const Size(900, 900), scale: 2),
+        (size: const Size(1024, 900), scale: 1.3),
+        (size: const Size(1280, 900), scale: 1),
+        (size: const Size(1440, 900), scale: 2),
+      ]) {
+        tester.view.physicalSize = entry.size;
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = entry.scale;
+        appRouter.go('/day');
+        await pumpApp(tester, container, surface: entry.size);
+        appRouter.go('/week');
+        await settle(tester);
+        expect(
+          find.byKey(const ValueKey('week-pages')),
+          findsOneWidget,
+          reason: 'size=${entry.size}, scale=${entry.scale}',
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await finish(tester, container);
+    },
+  );
 
   testWidgets('tapping a day column navigates to its Day View', (tester) async {
     final container = await pumpDay(tester);

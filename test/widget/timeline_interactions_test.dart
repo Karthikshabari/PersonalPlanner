@@ -15,7 +15,6 @@ import 'package:personal_planner/features/timeline/presentation/providers/select
     as date_provider;
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/ghost_preview.dart';
-import 'package:personal_planner/features/timeline/presentation/widgets/task_quick_create.dart';
 
 import '../helpers/test_container.dart';
 
@@ -518,13 +517,10 @@ void main() {
     await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
     await settle(tester);
     await tester.enterText(
-      find.descendant(
-        of: find.byType(TaskQuickCreate),
-        matching: find.byType(TextField),
-      ),
+      find.byKey(const ValueKey('quick-create-input')),
       'Quarter',
     );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.tap(find.byKey(const ValueKey('quick-create-submit')));
     await settle(tester);
 
     final tasks = await streamedDayTasks(tester, container);

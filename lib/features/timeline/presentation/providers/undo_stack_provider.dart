@@ -23,7 +23,9 @@ class UndoStackNotifier extends Notifier<CommandHistoryState> {
     await _serialized(() async {
       final db = ref.read(appDatabaseProvider);
       await db.transaction(command.execute);
-      state = state.push(command);
+      final didMutate = command is! MutationAwareSchedulingCommand ||
+          (command as MutationAwareSchedulingCommand).didMutate;
+      if (didMutate) state = state.push(command);
     });
   }
 

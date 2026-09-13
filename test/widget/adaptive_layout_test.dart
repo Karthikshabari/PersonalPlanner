@@ -1,10 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/layout/adaptive_layout.dart';
 import 'package:personal_planner/core/widgets/adaptive_shell.dart';
 
 import '../helpers/test_container.dart';
 
 void main() {
+  group('WeekViewportLayout', () {
+    test('uses content capacity at phone, intermediate and desktop widths', () {
+      expect(WeekViewportLayout.capacityFor(320), 1);
+      expect(WeekViewportLayout.capacityFor(599), 1);
+      expect(WeekViewportLayout.capacityFor(600), 3);
+      expect(WeekViewportLayout.capacityFor(768), 3);
+      expect(WeekViewportLayout.capacityFor(1199), 3);
+      expect(WeekViewportLayout.capacityFor(1200), 7);
+      expect(WeekViewportLayout.capacityFor(1440), 7);
+    });
+
+    test('text scaling raises the minimum column width before paging', () {
+      expect(WeekViewportLayout.capacityFor(1200, textScale: 1.5), 3);
+      expect(WeekViewportLayout.capacityFor(1800, textScale: 1.5), 7);
+      expect(
+        WeekViewportLayout.forWidth(1200, textScale: 1.5).minimumDayWidth,
+        240,
+      );
+    });
+
+    test('pages preserve consecutive order and final short page', () {
+      final layout = WeekViewportLayout.forWidth(600);
+      expect(layout.pagesOf([0, 1, 2, 3, 4, 5, 6]), [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6],
+      ]);
+    });
+  });
+
   testWidgets('desktop width shows navigation rail, no bottom bar', (
     tester,
   ) async {

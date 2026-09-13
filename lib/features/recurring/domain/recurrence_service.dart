@@ -4,11 +4,13 @@ import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/priority.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/recurring_rule.dart';
+import '../../../core/models/plan_title_change.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../../core/utils/uuid.dart';
 import '../../timeline/data/task_repository.dart';
+import '../../task_editor/domain/plan_title_history.dart';
 import '../data/recurring_repository.dart';
 import 'rrule_utils.dart';
 
@@ -69,8 +71,13 @@ class RecurrenceService {
   /// Historical states are intentionally left untouched.
   Future<void> reconcileMaterializedFuture(
     RecurringRule rule,
-    DateTime boundary,
-  ) async {
+    DateTime boundary, {
+    String? excludeTaskId,
+    String? planTitleChangeIntentId,
+    DateTime? planTitleChangedAt,
+    bool preservePlanTitleChange = false,
+    bool clearPlanTitleDisplay = false,
+  }) async {
     final boundaryIso = startOfDay(boundary).toUtc().toIso8601String();
     final rows =
         await (_db.select(_db.tasks)..where(
@@ -89,6 +96,7 @@ class RecurrenceService {
       if (tag != null) activeTagIds.add(tagId);
     }
     for (final row in rows) {
+      if (row.id == excludeTaskId) continue;
       final status = TaskStatus.fromDb(row.status);
       if (status != TaskStatus.planned && status != TaskStatus.inProgress) {
         continue;
@@ -115,6 +123,32 @@ class RecurrenceService {
         hour: hour,
         minute: minute,
       );
+      final titleChanged =
+          PlanTitleHistory.normalizeTitle(current.title) !=
+          PlanTitleHistory.normalizeTitle(rule.taskTitle);
+      var history = current.planTitleHistory;
+      var displayPlanChangeId = current.displayPlanChangeId;
+      if (titleChanged && preservePlanTitleChange) {
+        final intentId = planTitleChangeIntentId;
+        final changedAt = planTitleChangedAt;
+        if (intentId == null || changedAt == null) {
+          throw StateError(
+            'Missing stable title-change intent for recurrence update',
+          );
+        }
+        final event = PlanTitleChange(
+          id: generateDeterministicUuid(
+            'plan-title-change:$intentId:${current.id}',
+          ),
+          previousTitle: current.title,
+          newTitle: rule.taskTitle,
+          changedAt: changedAt,
+        );
+        history = PlanTitleHistory.appendOrRestore(history, event);
+        displayPlanChangeId = event.id;
+      } else if (titleChanged && clearPlanTitleDisplay) {
+        displayPlanChangeId = null;
+      }
       final updated = current.copyWith(
         title: rule.taskTitle,
         description: rule.taskDescription,
@@ -123,6 +157,8 @@ class RecurrenceService {
         priority: Priority.fromDb(rule.priority),
         startTime: start,
         endTime: start.add(Duration(minutes: rule.durationMin)),
+        planTitleHistory: history,
+        displayPlanChangeId: displayPlanChangeId,
       );
       await _tasks.updateTask(updated);
       await _replaceTags(current.id, activeTagIds);

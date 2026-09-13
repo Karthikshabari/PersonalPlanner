@@ -281,6 +281,93 @@ void main() {
     },
   );
 
+  test(
+    'all-future title preservation touches only prior unfinished instances',
+    () async {
+      final original = await rules.createRule(
+        dailyRule(startDate: DateTime(2026, 8, 24), title: 'Read book'),
+      );
+      final monday = DateTime(2026, 8, 24, 9);
+      final tuesday = DateTime(2026, 8, 25, 9);
+      final wednesday = DateTime(2026, 8, 26, 9);
+      final selected = await tasks.insertTask(
+        Task(
+          id: 'selected-occurrence',
+          title: 'Read book',
+          startTime: monday,
+          endTime: monday.add(const Duration(minutes: 30)),
+          recurringRuleId: original.id,
+          createdAt: monday,
+          updatedAt: monday,
+        ),
+      );
+      final affected = await tasks.insertTask(
+        Task(
+          id: 'affected-occurrence',
+          title: 'Custom prior title',
+          startTime: tuesday,
+          endTime: tuesday.add(const Duration(minutes: 30)),
+          recurringRuleId: original.id,
+          createdAt: tuesday,
+          updatedAt: tuesday,
+        ),
+      );
+      final completed = await tasks.insertTask(
+        Task(
+          id: 'completed-occurrence',
+          title: 'Completed title',
+          startTime: wednesday,
+          endTime: wednesday.add(const Duration(minutes: 30)),
+          recurringRuleId: original.id,
+          status: TaskStatus.completed,
+          createdAt: wednesday,
+          updatedAt: wednesday,
+        ),
+      );
+      final updated = original.copyWith(taskTitle: 'Office work');
+      await rules.updateRule(updated);
+      final changedAt = DateTime.utc(2026, 9, 13, 10);
+      const intentId = '00000000-0000-7000-8000-0000000000aa';
+
+      await recurrence.reconcileMaterializedFuture(
+        updated,
+        monday,
+        excludeTaskId: selected.id,
+        planTitleChangeIntentId: intentId,
+        planTitleChangedAt: changedAt,
+        preservePlanTitleChange: true,
+      );
+
+      final selectedAfter = (await tasks.getTaskById(selected.id))!;
+      final affectedAfter = (await tasks.getTaskById(affected.id))!;
+      final completedAfter = (await tasks.getTaskById(completed.id))!;
+      final expectedEventId = generateDeterministicUuid(
+        'plan-title-change:$intentId:${affected.id}',
+      );
+      expect(selectedAfter.title, 'Read book');
+      expect(selectedAfter.planTitleHistory, isEmpty);
+      expect(affectedAfter.title, 'Office work');
+      expect(affectedAfter.planTitleHistory, hasLength(1));
+      expect(affectedAfter.planTitleHistory.single.id, expectedEventId);
+      expect(
+        affectedAfter.planTitleHistory.single.previousTitle,
+        'Custom prior title',
+      );
+      expect(affectedAfter.displayPlanChangeId, expectedEventId);
+      expect(completedAfter.title, 'Completed title');
+      expect(completedAfter.planTitleHistory, isEmpty);
+
+      // A new unmaterialized occurrence starts at the rule title and has no
+      // fabricated plan-history event.
+      await recurrence.materializeForDate(DateTime(2026, 8, 27));
+      final fresh =
+          (await tasks.watchTasksForDay(DateTime(2026, 8, 27)).first).single;
+      expect(fresh.title, 'Office work');
+      expect(fresh.planTitleHistory, isEmpty);
+      expect(fresh.displayPlanChangeId, isNull);
+    },
+  );
+
   group('RecurringRepository CRUD', () {
     test('create/update/deactivate/soft-delete + watchActiveRules', () async {
       final created = await rules.createRule(dailyRule());

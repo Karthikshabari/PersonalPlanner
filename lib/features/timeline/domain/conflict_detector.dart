@@ -45,16 +45,32 @@ abstract final class ConflictDetector {
   /// Equal-start intervals cannot share a lane; unrelated components restart
   /// at lane zero.
   static Map<String, int> overlapLanes(List<Task> dayTasks) {
+    final metadata = componentLaneMetadata(dayTasks, includeInactive: false);
+    return {
+      for (final entry in metadata.entries) entry.key: entry.value.laneIndex,
+    };
+  }
+
+  /// Returns deterministic lane and connected-component metadata for visual
+  /// timeline layout. Unlike scheduling conflicts, visual components can
+  /// include cancelled/rescheduled history so those rows cannot conceal a
+  /// live block. Set [includeInactive] to false for the old active-only
+  /// conflict behavior.
+  static Map<String, OverlapLaneMetadata> componentLaneMetadata(
+    List<Task> dayTasks, {
+    bool includeInactive = true,
+  }) {
     final scheduled = dayTasks
         .where(
           (task) =>
               task.startTime != null &&
               task.endTime != null &&
-              !_isInactive(task),
+              task.endTime!.isAfter(task.startTime!) &&
+              (includeInactive || !_isInactive(task)),
         )
         .toList();
     final remaining = {for (final task in scheduled) task.id: task};
-    final result = <String, int>{};
+    final result = <String, OverlapLaneMetadata>{};
     while (remaining.isNotEmpty) {
       final seed = remaining.values.reduce(
         (a, b) => _compareStart(a, b) <= 0 ? a : b,
@@ -64,7 +80,12 @@ abstract final class ConflictDetector {
       for (var index = 0; index < component.length; index++) {
         final current = component[index];
         final connected = remaining.values
-            .where((task) => overlaps(current, task))
+            .where(
+              (task) =>
+                  _intervalsOverlap(current, task) &&
+                  (includeInactive ||
+                      (!_isInactive(current) && !_isInactive(task))),
+            )
             .toList();
         for (final task in connected) {
           remaining.remove(task.id);
@@ -73,6 +94,9 @@ abstract final class ConflictDetector {
       }
       component.sort(_compareStart);
       final laneEnd = <DateTime>[];
+      final componentIds = List<String>.unmodifiable(
+        component.map((task) => task.id),
+      );
       for (final task in component) {
         var lane = 0;
         while (lane < laneEnd.length &&
@@ -84,10 +108,36 @@ abstract final class ConflictDetector {
         } else {
           laneEnd[lane] = task.endTime!;
         }
-        result[task.id] = lane;
+        result[task.id] = OverlapLaneMetadata(
+          laneIndex: lane,
+          laneCount: 0,
+          hasOverlap: component.length > 1,
+          componentTaskIds: componentIds,
+        );
+      }
+      final laneCount = laneEnd.length;
+      for (final task in component) {
+        final current = result[task.id]!;
+        result[task.id] = current.copyWith(laneCount: laneCount);
       }
     }
     return result;
+  }
+
+  /// Alias for callers that describe these assignments as visual lanes.
+  static Map<String, OverlapLaneMetadata> visualLaneMetadata(
+    List<Task> dayTasks,
+  ) => componentLaneMetadata(dayTasks);
+
+  static bool _intervalsOverlap(Task a, Task b) {
+    final aStart = a.startTime;
+    final aEnd = a.endTime;
+    final bStart = b.startTime;
+    final bEnd = b.endTime;
+    if (aStart == null || aEnd == null || bStart == null || bEnd == null) {
+      return false;
+    }
+    return aStart.isBefore(bEnd) && aEnd.isAfter(bStart);
   }
 
   static int _compareStart(Task a, Task b) {
@@ -97,4 +147,26 @@ abstract final class ConflictDetector {
 
   static bool _isInactive(Task t) =>
       t.status == TaskStatus.cancelled || t.status == TaskStatus.rescheduled;
+}
+
+/// Stable visual-lane assignment for one task in an overlap component.
+final class OverlapLaneMetadata {
+  final int laneIndex;
+  final int laneCount;
+  final bool hasOverlap;
+  final List<String> componentTaskIds;
+
+  const OverlapLaneMetadata({
+    required this.laneIndex,
+    required this.laneCount,
+    required this.hasOverlap,
+    required this.componentTaskIds,
+  });
+
+  OverlapLaneMetadata copyWith({int? laneCount}) => OverlapLaneMetadata(
+    laneIndex: laneIndex,
+    laneCount: laneCount ?? this.laneCount,
+    hasOverlap: hasOverlap,
+    componentTaskIds: componentTaskIds,
+  );
 }

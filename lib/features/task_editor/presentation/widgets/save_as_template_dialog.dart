@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/models/task_template.dart';
 import '../../../../core/utils/uuid.dart';
+import '../../../../core/utils/task_time_metrics.dart';
 import '../../../templates/providers/template_providers.dart';
 import '../../providers/tag_providers.dart';
 
@@ -32,7 +33,7 @@ class SaveAsTemplateDraft {
       suggestedName: task.title,
       description: task.description,
       durationMin:
-          task.estimatedDurationMin ?? task.scheduledDuration?.inMinutes ?? 60,
+          TaskTimeMetrics.plannedMinutes(task.startTime, task.endTime) ?? 60,
       categoryId: task.categoryId,
       priority: task.priority.dbValue,
       tagIds: null,
