@@ -65,7 +65,17 @@ void main() {
       isNot(contains('Week')),
     );
     expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
-    expect(find.byIcon(Icons.home_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.home_outlined), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/branding/app_logo.png',
+      ),
+      findsOneWidget,
+    );
     expect(find.byTooltip('Home'), findsOneWidget);
 
     final selected = addDays(DateTime.now(), 3);

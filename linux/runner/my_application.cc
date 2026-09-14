@@ -58,7 +58,7 @@ static void my_application_activate(GApplication* application) {
   if (executable_path != nullptr) {
     g_autofree gchar* executable_dir = g_path_get_dirname(executable_path);
     g_autofree gchar* icon_path =
-        g_build_filename(executable_dir, "data", "personal_planner.svg", nullptr);
+        g_build_filename(executable_dir, "data", "personal_planner.png", nullptr);
     gtk_window_set_icon_from_file(window, icon_path, nullptr);
   }
 

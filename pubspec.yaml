@@ -67,3 +67,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/app_logo.png
+    - assets/branding/app_logo_with_text.png

@@ -4,6 +4,6 @@
     <item android:drawable="@color/splash_background" />
 
     <item
-        android:drawable="@drawable/launch_logo"
+        android:drawable="@drawable/app_logo"
         android:gravity="center" />
 </layer-list>
