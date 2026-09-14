@@ -30,6 +30,7 @@ class TaskBlockWidget extends ConsumerWidget {
   /// in a grouped query. A null value preserves the standalone fallback.
   final String? groupedSubtaskCount;
   final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
   final VoidCallback? onStatusTap;
 
   const TaskBlockWidget({
@@ -42,6 +43,7 @@ class TaskBlockWidget extends ConsumerWidget {
     this.hasOverlap = false,
     this.groupedSubtaskCount,
     this.onTap,
+    this.onDoubleTap,
     this.onStatusTap,
   });
 
@@ -105,12 +107,15 @@ class TaskBlockWidget extends ConsumerWidget {
     return Semantics(
       button: onTap != null,
       label: contextLabel,
-      hint: onTap == null ? null : 'Open task; long press to move',
+      hint: onTap == null
+          ? null
+          : 'Select task; double tap or use Edit to open the editor',
       onTap: onTap,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
+          onDoubleTap: onDoubleTap,
           mouseCursor: onTap == null
               ? SystemMouseCursors.basic
               : SystemMouseCursors.click,

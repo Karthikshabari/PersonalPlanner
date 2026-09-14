@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../../day_context/presentation/day_context_editor.dart';
@@ -27,6 +29,7 @@ class DayHeader extends ConsumerWidget {
         // the full desktop row does not overflow at intermediate desktop
         // sizes (for example a 1280px window with the editor rail).
         final compact = constraints.maxWidth < 1200;
+        final phone = !isDesktopWidth(MediaQuery.sizeOf(context).width);
         final tokens = AppThemeTokens.of(context);
         return Container(
           decoration: BoxDecoration(
@@ -40,7 +43,9 @@ class DayHeader extends ConsumerWidget {
               horizontal: compact ? AppSpacing.sm : AppSpacing.lg,
               vertical: compact ? AppSpacing.xs : AppSpacing.sm,
             ),
-            child: compact
+            child: phone
+                ? _buildPhoneHeader(context, ref, notifier, selectedDate, label)
+                : compact
                 ? _buildCompactHeader(
                     context,
                     ref,
@@ -58,6 +63,74 @@ class DayHeader extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPhoneHeader(
+    BuildContext context,
+    WidgetRef ref,
+    StateController<DateTime> notifier,
+    DateTime selectedDate,
+    String label,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Previous day',
+              icon: const Icon(Icons.chevron_left),
+              onPressed: () => notifier.state = addDays(selectedDate, -1),
+            ),
+            Expanded(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Next day',
+              icon: const Icon(Icons.chevron_right),
+              onPressed: () => notifier.state = addDays(selectedDate, 1),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: DayContextAction(date: selectedDate, compact: true),
+              ),
+            ),
+            const GlobalSearchAction(),
+            IconButton(
+              key: const ValueKey('day-settings-action'),
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => context.push('/settings'),
+            ),
+            const SyncStatusAction(),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => _setToday(notifier),
+                child: const Text('Today'),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            _buildDayWeekSwitcher(context, ref, selectedDate),
+          ],
+        ),
+      ],
     );
   }
 

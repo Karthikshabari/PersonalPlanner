@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/app_constants.dart';
-
 /// Gesture wrapper around a task block that initiates move-drags.
 ///
-/// * Desktop: click + drag (vertical drag recognizer).
-/// * Touch platforms: long-press + drag; releasing a long-press without
-///   meaningful movement requests the context menu instead.
+/// A normal vertical drag recognizer is used on every platform. Flutter's
+/// gesture arena therefore makes a tap, double tap, vertical drag and the
+/// surrounding scroll view mutually exclusive using the framework's normal
+/// movement slop. Touch users do not have to wait for a long press to move a
+/// task; a stationary long press remains available for the context menu.
 ///
 /// [onDragUpdate] reports the total vertical delta in logical pixels since
 /// the drag began.
@@ -46,14 +46,6 @@ class _DraggableTaskBlockState extends State<DraggableTaskBlock> {
     _accumulatedDy = 0;
   }
 
-  void _maybeActivate() {
-    if (_dragActivated) return;
-    if (_accumulatedDy.abs() > AppConstants.longPressMenuSlopPx) {
-      _dragActivated = true;
-      widget.onDragStart();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -65,61 +57,29 @@ class _DraggableTaskBlockState extends State<DraggableTaskBlock> {
       onSecondaryTapUp: _isTouchPlatform
           ? null
           : (details) => widget.onContextMenuRequested(details.globalPosition),
-      // Desktop: immediate click + drag.
-      onVerticalDragStart: _isTouchPlatform
-          ? null
-          : (_) {
-              _reset();
-              widget.onDragStart();
-              _dragActivated = true;
-            },
-      onVerticalDragUpdate: _isTouchPlatform
-          ? null
-          : (details) {
-              if (!_dragActivated) return;
-              _accumulatedDy += details.delta.dy;
-              widget.onDragUpdate(_accumulatedDy);
-            },
-      onVerticalDragEnd: _isTouchPlatform
-          ? null
-          : (_) {
-              final wasActive = _dragActivated;
-              _reset();
-              if (wasActive) widget.onDragEnd();
-            },
-      onVerticalDragCancel: _isTouchPlatform
-          ? null
-          : () {
-              final wasActive = _dragActivated;
-              _reset();
-              if (wasActive) widget.onDragCancel();
-            },
-      // Touch: long-press + drag; plain long-press opens the context menu.
+      onVerticalDragStart: (_) {
+        _reset();
+        widget.onDragStart();
+        _dragActivated = true;
+      },
+      onVerticalDragUpdate: (details) {
+        if (!_dragActivated) return;
+        _accumulatedDy += details.delta.dy;
+        widget.onDragUpdate(_accumulatedDy);
+      },
+      onVerticalDragEnd: (_) {
+        final wasActive = _dragActivated;
+        _reset();
+        if (wasActive) widget.onDragEnd();
+      },
+      onVerticalDragCancel: () {
+        final wasActive = _dragActivated;
+        _reset();
+        if (wasActive) widget.onDragCancel();
+      },
+      // A stationary touch long-press keeps the existing context action.
       onLongPressStart: _isTouchPlatform
-          ? (LongPressStartDetails details) => _reset()
-          : null,
-      onLongPressMoveUpdate: _isTouchPlatform
-          ? (LongPressMoveUpdateDetails details) {
-              _accumulatedDy = details.offsetFromOrigin.dy;
-              _maybeActivate();
-              if (_dragActivated) widget.onDragUpdate(_accumulatedDy);
-            }
-          : null,
-      onLongPressEnd: _isTouchPlatform
-          ? (LongPressEndDetails details) {
-              if (_dragActivated) {
-                widget.onDragEnd();
-              } else {
-                widget.onContextMenuRequested(details.globalPosition);
-              }
-              _reset();
-            }
-          : null,
-      onLongPressCancel: _isTouchPlatform
-          ? () {
-              if (_dragActivated) widget.onDragCancel();
-              _reset();
-            }
+          ? (details) => widget.onContextMenuRequested(details.globalPosition)
           : null,
       child: widget.child,
     );

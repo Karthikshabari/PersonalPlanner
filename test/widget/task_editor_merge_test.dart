@@ -20,6 +20,11 @@ void main() {
 
   final date = DateTime(2027, 3, 15, 9);
 
+  void requestEditor(ProviderContainer container, String taskId) {
+    container.read(selectedTaskIdProvider.notifier).state = taskId;
+    container.read(taskEditorOpenProvider.notifier).state = true;
+  }
+
   Future<Task> insertTask(WidgetTester tester, ProviderContainer container) {
     return runDb(
       tester,
@@ -45,6 +50,8 @@ void main() {
     Task task,
   ) async {
     await tester.tap(find.byKey(ValueKey('task-block-${task.id}')));
+    await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${task.id}')));
     await settle(tester);
     expect(container.read(selectedTaskIdProvider), task.id);
   }
@@ -138,7 +145,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.enterText(titleField(), 'Local title');
@@ -176,7 +183,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     final current = await runDb(
@@ -307,7 +314,7 @@ void main() {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     // Select directly so the regression does not depend on whether a very
     // long block is clipped out of the day timeline's hit-test region.
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
     await tester.enterText(titleField(), 'Renamed long task');
     await save(tester);
@@ -335,7 +342,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.enterText(titleField(), 'Discarded title');
@@ -360,7 +367,7 @@ void main() {
 
     // Reopen the same task: the discarded controller draft must not survive
     // the desktop panel's unmount-free close path.
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
     expect(
       tester.widget<TextField>(titleField()).controller!.text,
@@ -376,7 +383,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.enterText(titleField(), 'Saved title');
@@ -404,7 +411,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.enterText(titleField(), 'First saved title');
@@ -412,7 +419,7 @@ void main() {
     // Re-select after the persistence stream settles. This keeps the
     // regression focused on the persisted baseline even when a test database
     // briefly emits its loading state between two writes.
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
     await tester.enterText(titleField(), 'Second unsaved title');
     await tester.tap(find.byTooltip('Close editor'));
@@ -437,7 +444,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.enterText(titleField(), '');
@@ -477,7 +484,7 @@ void main() {
     );
     container.read(selectedDateProvider.notifier).state = date;
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
     final actualField = find.byKey(const ValueKey('actual-duration-field'));
     await tester.enterText(actualField, '');
@@ -497,7 +504,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     await tester.tap(find.byTooltip('Close editor'));
@@ -514,7 +521,7 @@ void main() {
     final task = await insertTask(tester, container);
     container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
     await pumpApp(tester, container, surface: const Size(1400, 800));
-    container.read(selectedTaskIdProvider.notifier).state = task.id;
+    requestEditor(container, task.id);
     await settle(tester);
 
     final templateButton = find.byKey(
@@ -547,7 +554,7 @@ void main() {
   testWidgets('missing-task state keeps a usable close action', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpApp(tester, container, surface: const Size(1400, 800));
-    container.read(selectedTaskIdProvider.notifier).state = 'missing-task';
+    requestEditor(container, 'missing-task');
     await settle(tester);
 
     expect(

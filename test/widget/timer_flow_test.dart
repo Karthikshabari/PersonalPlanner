@@ -46,10 +46,9 @@ void main() {
   }
 
   Future<void> selectTask(WidgetTester tester, Task task) async {
-    await tester.tap(
-      find.byKey(ValueKey('task-block-${task.id}')),
-      warnIfMissed: false,
-    );
+    await tester.tap(find.byKey(ValueKey('task-block-${task.id}')));
+    await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${task.id}')));
     await settle(tester);
   }
 

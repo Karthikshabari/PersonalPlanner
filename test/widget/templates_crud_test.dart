@@ -181,6 +181,8 @@ void main() {
 
     await tester.tap(find.text('Empty slot'));
     await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${inserted.id}')));
+    await settle(tester);
     expect(container.read(selectedTaskIdProvider), inserted.id);
 
     // Pick the template from the dropdown.
@@ -241,6 +243,8 @@ void main() {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
     await tester.tap(find.text('Weekly review prep'));
+    await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${inserted.id}')));
     await settle(tester);
 
     final titleField = find.byWidgetPredicate(

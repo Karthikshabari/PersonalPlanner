@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/layout/adaptive_layout.dart';
+import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -22,28 +25,27 @@ class DayViewScreen extends ConsumerStatefulWidget {
 }
 
 class _DayViewScreenState extends ConsumerState<DayViewScreen> {
-  bool _editorVisible = false;
+  bool _mobileEditorOpen = false;
+
+  Future<void> _openMobileEditor() async {
+    if (_mobileEditorOpen || !mounted) return;
+    setState(() => _mobileEditorOpen = true);
+    ref.read(taskEditorOpenProvider.notifier).state = true;
+    await TaskEditorPanel.showAsBottomSheet(context);
+    if (mounted) setState(() => _mobileEditorOpen = false);
+  }
+
+  void _requestEdit(Task task, {required bool desktop}) {
+    ref.read(selectedTaskIdProvider.notifier).state = task.id;
+    ref.read(taskEditorOpenProvider.notifier).state = true;
+    if (!desktop) unawaited(_openMobileEditor());
+  }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(selectedTaskIdProvider, (previous, next) {
-      if (next != null && previous != next && mounted) {
-        setState(() => _editorVisible = true);
-      }
-    });
     void closeEditor() {
-      setState(() => _editorVisible = false);
       ref.read(taskEditorOpenProvider.notifier).state = false;
       ref.read(selectedTaskIdProvider.notifier).state = null;
-    }
-
-    Future<void> openMobileEditor() async {
-      await TaskEditorPanel.showAsBottomSheet(
-        context,
-        onClose: () => Navigator.of(context).pop(),
-      );
-      ref.read(taskEditorOpenProvider.notifier).state = false;
-      if (mounted) setState(() => _editorVisible = false);
     }
 
     final selectedDate = ref.read(selectedDateProvider);
@@ -51,42 +53,27 @@ class _DayViewScreenState extends ConsumerState<DayViewScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = isDesktopWidth(constraints.maxWidth);
-        // Selection is written immediately before opening the editor from all
-        // entry points; reading it avoids keeping a legacy StateProvider
-        // subscription alive across route replacement.
-        final selectedTaskId = ref.read(selectedTaskIdProvider);
-        // A selection supplied by Search/Week is an explicit request to
-        // open the editor when this route is entered. Local state keeps
-        // the panel responsive without subscribing to the legacy
-        // selection provider across route/container replacement.
-        if (selectedTaskId != null && !_editorVisible) {
-          _editorVisible = true;
+        final selectedTaskId = ref.watch(selectedTaskIdProvider);
+        final editorRequested = ref.watch(taskEditorOpenProvider);
+        // Search and Week set an explicit editor request before navigating to
+        // Day. Selection alone never opens an editor.
+        if (!isDesktop &&
+            selectedTaskId != null &&
+            editorRequested &&
+            !_mobileEditorOpen) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && ref.read(selectedTaskIdProvider) != null) {
-              ref.read(taskEditorOpenProvider.notifier).state = true;
-            }
+            if (mounted) unawaited(_openMobileEditor());
           });
         }
         final showDesktopEditor =
-            isDesktop && selectedTaskId != null && _editorVisible;
+            isDesktop && selectedTaskId != null && editorRequested;
 
         final timeline = Column(
           children: [
             const _DayMaterializationStatus(),
             Expanded(
               child: TimelineWidget(
-                onEditTask: isDesktop
-                    ? (_) {
-                        setState(() => _editorVisible = true);
-                        ref.read(taskEditorOpenProvider.notifier).state = true;
-                      }
-                    : null,
-                onTaskTap: isDesktop
-                    ? (_) {
-                        setState(() => _editorVisible = true);
-                        ref.read(taskEditorOpenProvider.notifier).state = true;
-                      }
-                    : (_) => openMobileEditor(),
+                onEditTask: (task) => _requestEdit(task, desktop: isDesktop),
               ),
             ),
           ],
