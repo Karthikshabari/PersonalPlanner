@@ -13,13 +13,13 @@ add_executable(${BINARY_NAME}
 )
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/personal_planner.png"
-  DESTINATION "${CMAKE_INSTALL_PREFIX}/data")
+  DESTINATION "data")
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/personal_planner.desktop"
-  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/applications")
+  DESTINATION "share/applications")
 
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/personal_planner.png"
-  DESTINATION "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/512x512/apps")
+  DESTINATION "share/icons/hicolor/512x512/apps")
 
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.

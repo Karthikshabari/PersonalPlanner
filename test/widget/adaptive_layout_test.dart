@@ -125,7 +125,7 @@ void main() {
                 (destination) => (destination as NavigationDestination).label,
               )
               .toList(),
-          ['Day', 'Review', 'Analytics', 'Inbox'],
+          ['Day', 'Review', 'Insights', 'Inbox'],
         );
         expect(find.byTooltip('Search'), findsOneWidget);
         expect(find.byKey(const ValueKey('day-week-switcher')), findsOneWidget);

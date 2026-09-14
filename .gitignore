@@ -48,6 +48,14 @@ app.*.map.json
 # Release-gate reports contain machine-local logs and are not source artifacts.
 /artifacts/release-gate/
 
+# Release bundles and generated distribution artifacts are machine-local.
+/release/
+
+# Keep only the root README in GitHub; other Markdown is local planning/report
+# material and must not be staged accidentally.
+*.md
+!/README.md
+
 # Local environment and credentials
 .env
 .env.*

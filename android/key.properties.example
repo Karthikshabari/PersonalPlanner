@@ -1,0 +1,7 @@
+# Copy to android/key.properties locally after the product identity gate is
+# approved. Keep this file and the referenced keystore outside Git and back up
+# them using the signing owner's approved recovery procedure.
+storeFile=/absolute/path/to/production-upload-key.jks
+storePassword=REPLACE_WITH_SECRET
+keyAlias=REPLACE_WITH_ALIAS
+keyPassword=REPLACE_WITH_SECRET
