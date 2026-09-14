@@ -13,6 +13,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/global_search_action.dart';
 import '../../../day_context/providers/day_context_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_insights.dart';
@@ -35,7 +36,7 @@ class DailyReviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Daily Review'),
-        actions: const [SyncStatusAction()],
+        actions: const [GlobalSearchAction(), SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/global_search_action.dart';
 import '../../providers/inbox_provider.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../widgets/inbox_quick_add.dart';
@@ -19,7 +20,7 @@ class InboxScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inbox'),
-        actions: const [SyncStatusAction()],
+        actions: const [GlobalSearchAction(), SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,

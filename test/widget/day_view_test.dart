@@ -10,6 +10,7 @@ import 'package:personal_planner/core/theme/app_colors.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
+import 'package:personal_planner/features/timeline/presentation/providers/day_tasks_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
 
@@ -139,6 +140,19 @@ void main() {
     expect(tasks.single.status.dbValue, 'planned');
     expect(tasks.single.isInbox, false);
     expect(tasks.single.scheduledDuration, const Duration(hours: 1));
+    expect(container.read(selectedTaskIdProvider), tasks.single.id);
+    expect(container.read(taskEditorOpenProvider), isFalse);
+    expect(find.text('Edit Task'), findsNothing);
+
+    final createdBlock = find.byKey(ValueKey('task-block-${tasks.single.id}'));
+    await tester.tap(createdBlock);
+    await settle(tester);
+    expect(container.read(selectedTaskIdProvider), tasks.single.id);
+    expect(find.text('Edit Task'), findsNothing);
+
+    await doubleTap(tester, createdBlock);
+    await settle(tester);
+    expect(find.text('Edit Task'), findsOneWidget);
     await teardownApp(tester, container);
   });
 
@@ -188,76 +202,121 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('tapping a task opens editor panel and saves edits', (
-    tester,
-  ) async {
-    final container = await buildTestContainer(tester);
-    final now = DateTime.now();
-    final hour = now.hour >= 22 ? 20 : now.hour;
-    final inserted = await runDb(
-      tester,
-      () => container
-          .read(taskRepositoryProvider)
-          .insertTask(
-            Task(
-              id: '',
-              title: 'Editable task',
-              startTime: DateTime(now.year, now.month, now.day, hour),
-              endTime: DateTime(now.year, now.month, now.day, hour + 1),
-              estimatedDurationMin: 60,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
+  testWidgets(
+    'single tap selects and double tap opens editor and saves edits',
+    (tester) async {
+      final container = await buildTestContainer(tester);
+      final now = DateTime.now();
+      final hour = now.hour >= 22 ? 20 : now.hour;
+      final inserted = await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .insertTask(
+              Task(
+                id: '',
+                title: 'Editable task',
+                startTime: DateTime(now.year, now.month, now.day, hour),
+                endTime: DateTime(now.year, now.month, now.day, hour + 1),
+                estimatedDurationMin: 60,
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ),
             ),
-          ),
-    );
-    await pumpDesktop(tester, container);
+      );
+      await pumpDesktop(tester, container);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(TaskBlockWidget),
-        matching: find.text('Editable task'),
-      ),
-    );
-    await settle(tester);
-    expect(container.read(selectedTaskIdProvider), inserted.id);
-    expect(find.text('Edit Task'), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Editable task'),
+        ),
+      );
+      await settle(tester);
+      expect(container.read(selectedTaskIdProvider), inserted.id);
+      expect(container.read(taskEditorOpenProvider), isFalse);
+      expect(find.text('Edit Task'), findsNothing);
+      expect(
+        find.byKey(ValueKey('selected-task-edit-${inserted.id}')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(ValueKey('selected-task-edit-${inserted.id}')),
+      );
+      await settle(tester);
+      expect(find.text('Edit Task'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close editor'));
+      await settle(tester);
 
-    final titleField = find.byWidgetPredicate(
-      (w) => w is TextField && w.decoration?.labelText == 'Title',
-    );
-    expect(titleField, findsOneWidget);
-    await tester.enterText(titleField, 'Renamed via editor');
+      await tester.tap(find.text('Editable task'));
+      await settle(tester);
 
-    final notesField = find.byWidgetPredicate(
-      (w) => w is TextField && w.decoration?.labelText == 'Notes',
-    );
-    await tester.enterText(notesField, 'Some notes');
+      await doubleTap(
+        tester,
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Editable task'),
+        ),
+      );
+      await settle(tester);
+      expect(find.text('Edit Task'), findsOneWidget);
 
-    // Save is in the persistent editor header and remains visible while the
-    // form content scrolls.
-    final saveButton = find.byKey(const ValueKey('save-task-button'));
-    await settle(tester);
-    await tester.tap(saveButton);
-    await settle(tester);
-    // A semantic title edit now requires an explicit plan-history decision.
-    await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
-    await settle(tester);
+      final titleField = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Title',
+      );
+      expect(titleField, findsOneWidget);
+      await tester.enterText(titleField, 'Renamed via editor');
 
-    final saved = await runDb(
-      tester,
-      () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
-    );
-    expect(saved!.title, 'Renamed via editor');
-    expect(saved.notes, 'Some notes');
-    expect(
-      find.descendant(
-        of: find.byType(TaskBlockWidget),
-        matching: find.text('Renamed via editor'),
-      ),
-      findsOneWidget,
-    );
-    await teardownApp(tester, container);
-  });
+      final notesField = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Notes',
+      );
+      await tester.enterText(notesField, 'Some notes');
+
+      // Save is in the persistent editor header and remains visible while the
+      // form content scrolls.
+      final saveButton = find.byKey(const ValueKey('save-task-button'));
+      await settle(tester);
+      await tester.tap(saveButton);
+      await settle(tester);
+      // A semantic title edit now requires an explicit plan-history decision.
+      await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
+      await settle(tester);
+
+      final saved = await runDb(
+        tester,
+        () => container.read(taskRepositoryProvider).getTaskById(inserted.id),
+      );
+      expect(saved!.title, 'Renamed via editor');
+      expect(saved.notes, 'Some notes');
+      expect(
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Renamed via editor'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byTooltip('Close editor'));
+      await settle(tester);
+      appRouter.go('/inbox');
+      await settle(tester);
+      appRouter.go('/day');
+      await settle(tester);
+
+      await tester.tap(find.text('Renamed via editor'));
+      await settle(tester);
+      expect(container.read(selectedTaskIdProvider), inserted.id);
+      expect(find.text('Edit Task'), findsNothing);
+
+      container.invalidate(activeDayTasksProvider);
+      await settle(tester);
+      expect(find.text('Edit Task'), findsNothing);
+      await doubleTap(tester, find.text('Renamed via editor'));
+      await settle(tester);
+      expect(find.text('Edit Task'), findsOneWidget);
+      await teardownApp(tester, container);
+    },
+  );
 
   testWidgets('status cycles Planned -> In Progress -> Completed', (
     tester,

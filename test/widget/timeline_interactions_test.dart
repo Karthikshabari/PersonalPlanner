@@ -93,6 +93,22 @@ Future<void> mouseDrag(WidgetTester tester, Finder finder, Offset delta) async {
   await tester.pump();
 }
 
+Future<void> touchDrag(WidgetTester tester, Finder finder, Offset delta) async {
+  final center = tester.getCenter(finder);
+  final gesture = await tester.startGesture(
+    center,
+    kind: PointerDeviceKind.touch,
+  );
+  await tester.pump(const Duration(milliseconds: 20));
+  const steps = 6.0;
+  for (var i = 0; i < steps; i++) {
+    await gesture.moveBy(delta / steps);
+    await tester.pump(const Duration(milliseconds: 20));
+  }
+  await gesture.up();
+  await tester.pump();
+}
+
 Future<void> pressCtrlZ(WidgetTester tester, {bool shift = false}) async {
   await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
   if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -162,6 +178,62 @@ void main() {
     expect(fetched.endTime!.minute, 0);
     await finish(tester, container);
   });
+
+  testWidgets('mobile intentional movement drags immediately after insertion', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final container = await buildTestContainer(tester);
+    container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
+    await pumpApp(tester, container, surface: const Size(393, 844));
+    final task = await insertTask(
+      tester,
+      container,
+      taskSpec('Touch drag', 480, 540),
+    );
+    await tester.tap(blockOf(task));
+    await settle(tester);
+    expect(container.read(selectedTaskIdProvider), task.id);
+
+    await touchDrag(tester, blockOf(task), const Offset(0, -64));
+    await settle(tester);
+    final fetched = await streamedTaskById(tester, container, task.id);
+    expect(fetched!.startTime, viewDay.add(const Duration(hours: 7)));
+    await finish(tester, container);
+  });
+
+  testWidgets(
+    'mobile drag remains active after navigation and stream rebuild',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final container = await buildTestContainer(tester);
+      container.read(date_provider.selectedDateProvider.notifier).state =
+          viewDay;
+      await pumpApp(tester, container, surface: const Size(393, 844));
+      final task = await insertTask(
+        tester,
+        container,
+        taskSpec('Touch drag after return', 480, 540),
+      );
+      await tester.tap(find.text('Week'));
+      await settle(tester);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('day-week-switcher')),
+          matching: find.text('Day'),
+        ),
+      );
+      await settle(tester);
+      container.invalidate(activeDayTasksProvider);
+      await settle(tester);
+
+      await touchDrag(tester, blockOf(task), const Offset(0, -64));
+      await settle(tester);
+      final fetched = await streamedTaskById(tester, container, task.id);
+      expect(fetched!.startTime, viewDay.add(const Duration(hours: 7)));
+      await finish(tester, container);
+    },
+  );
 
   testWidgets('long block drag preserves duration when moved across midnight', (
     tester,

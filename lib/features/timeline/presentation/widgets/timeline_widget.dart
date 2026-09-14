@@ -76,10 +76,10 @@ class _ResizePreview {
 }
 
 class TimelineWidget extends ConsumerStatefulWidget {
-  final void Function(Task task)? onTaskTap;
+  final void Function(Task task)? onTaskSelected;
   final void Function(Task task)? onEditTask;
 
-  const TimelineWidget({super.key, this.onTaskTap, this.onEditTask});
+  const TimelineWidget({super.key, this.onTaskSelected, this.onEditTask});
 
   @override
   ConsumerState<TimelineWidget> createState() => _TimelineWidgetState();
@@ -184,6 +184,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ref.read(selectedDateProvider.notifier).state = startOfDay(
         saved.startTime!,
       );
+      ref.read(taskEditorOpenProvider.notifier).state = false;
       ref.read(selectedTaskIdProvider.notifier).state = saved.id;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scrollToMinutes(slot);
@@ -252,9 +253,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   void _handleDoubleTapDown(TapDownDetails details) {
     if (_quickCreateSlot != null || _drag != null || _resize != null) return;
     final tasks = _currentTasks();
-    // The gesture detector wraps the scroll viewport, so the tapped content
-    // position is the local y plus the current scroll offset.
-    final contentY = details.localPosition.dy + _scrollController.offset;
+    // The detector is attached to the content-sized background grid, so its
+    // local position is already expressed in timeline-content coordinates.
+    final contentY = details.localPosition.dy;
     final rawMinutes = contentY / _pixelsPerMinute;
     final snapped = snapSlotStart(
       rawMinutes.round(),
@@ -587,6 +588,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ))
         geometry.task.id: geometry,
     };
+    final selectedTask = liveTasks
+        .where((task) => task.id == selectedTaskId)
+        .firstOrNull;
+    final selectedTaskGeometry = selectedTask == null
+        ? null
+        : geometryById[selectedTask.id];
+    const editActionGutter = 56.0;
 
     final dragTaskId = _drag?.task.id;
     final resizeTaskId = _resize?.task.id;
@@ -623,106 +631,115 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       },
       onAcceptWithDetails: (details) =>
           _handleInboxDrop(details.data, details.offset),
-      builder: (context, candidateItems, rejectedItems) => GestureDetector(
+      builder: (context, candidateItems, rejectedItems) => Stack(
         key: const ValueKey('timeline-gestures'),
-        behavior: HitTestBehavior.translucent,
-        onDoubleTapDown: _handleDoubleTapDown,
-        onDoubleTap: () {},
-        child: Stack(
-          children: [
-            RefreshIndicator(
-              onRefresh: refreshSync,
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                child: ColoredBox(
-                  color: AppThemeTokens.of(context).canvas,
-                  child: SizedBox(
-                    height: _totalHeight,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final laneWidth =
+        children: [
+          RefreshIndicator(
+            onRefresh: refreshSync,
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ColoredBox(
+                color: AppThemeTokens.of(context).canvas,
+                child: SizedBox(
+                  height: _totalHeight,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final laneWidth =
                             (constraints.maxWidth -
                                     AppConstants.hourLabelWidth -
                                     8 -
-                                    AppSpacing.md)
-                                .clamp(1.0, double.infinity)
-                                .toDouble();
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            _buildHourGrid(context, grid),
-                            for (final task in tasks)
-                              _buildPositionedBlock(
-                                context,
-                                task,
-                                categoryFor(task),
-                                selectedTaskId == task.id,
-                                geometry: geometryById[task.id],
-                                allTasks: tasks,
-                                availableLaneWidth: laneWidth,
-                                overlapIndex: overlapIndex[task.id] ?? 0,
-                                hasOverlap:
-                                    overlapIds.contains(task.id) ||
-                                    (geometryById[task.id]?.hasOverlap ??
-                                        false),
-                                groupedSubtaskCount: subtaskCountsAsync.hasValue
-                                    ? subtaskCounts[task.id] ?? ''
-                                    : '',
-                                // While being dragged the SAME subtree stays mounted
-                                // (the gesture must survive); only its opacity drops.
-                                dimmed: task.id == dragTaskId,
-                                removing: !liveIds.contains(task.id),
-                                overrideHeightMinutes: task.id == resizeTaskId
-                                    ? _liveResizeMinutes
-                                    : null,
+                                    AppSpacing.md -
+                                    editActionGutter)
+                              .clamp(1.0, double.infinity)
+                              .toDouble();
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onDoubleTapDown: _handleDoubleTapDown,
+                            onDoubleTap: () {},
+                            child: _buildHourGrid(context, grid),
+                          ),
+                          for (final task in tasks)
+                            _buildPositionedBlock(
+                              context,
+                              task,
+                              categoryFor(task),
+                              selectedTaskId == task.id,
+                              geometry: geometryById[task.id],
+                              allTasks: tasks,
+                              availableLaneWidth: laneWidth,
+                              overlapIndex: overlapIndex[task.id] ?? 0,
+                              hasOverlap:
+                                  overlapIds.contains(task.id) ||
+                                  (geometryById[task.id]?.hasOverlap ?? false),
+                              groupedSubtaskCount: subtaskCountsAsync.hasValue
+                                  ? subtaskCounts[task.id] ?? ''
+                                  : '',
+                              // While being dragged the SAME subtree stays mounted
+                              // (the gesture must survive); only its opacity drops.
+                              dimmed: task.id == dragTaskId,
+                              removing: !liveIds.contains(task.id),
+                              overrideHeightMinutes: task.id == resizeTaskId
+                                  ? _liveResizeMinutes
+                                  : null,
+                            ),
+                          if (_drag != null)
+                            GhostPreview(
+                              title: _drag!.task.title,
+                              topPx:
+                                  (_drag!.origStartMinutes * _pixelsPerMinute +
+                                          _drag!.deltaPx)
+                                      .clamp(
+                                        -(_drag!.durationMinutes - _gridMinutes)
+                                                .clamp(
+                                                  0,
+                                                  _dayAxis.durationMinutes,
+                                                ) *
+                                            _pixelsPerMinute,
+                                        _totalHeight -
+                                            _gridMinutes * _pixelsPerMinute,
+                                      ),
+                              heightPx:
+                                  _drag!.durationMinutes * _pixelsPerMinute,
+                              left: AppConstants.hourLabelWidth + 8,
+                              right: AppSpacing.md + editActionGutter,
+                              accentColor: _accentColor(
+                                categoryFor(_drag!.task),
                               ),
-                            if (_drag != null)
-                              GhostPreview(
-                                title: _drag!.task.title,
-                                topPx:
-                                    (_drag!.origStartMinutes *
-                                                _pixelsPerMinute +
-                                            _drag!.deltaPx)
-                                        .clamp(
-                                          -(_drag!.durationMinutes -
-                                                      _gridMinutes)
-                                                  .clamp(
-                                                    0,
-                                                    _dayAxis.durationMinutes,
-                                                  ) *
-                                              _pixelsPerMinute,
-                                          _totalHeight -
-                                              _gridMinutes * _pixelsPerMinute,
-                                        ),
-                                heightPx:
-                                    _drag!.durationMinutes * _pixelsPerMinute,
-                                left: AppConstants.hourLabelWidth + 8,
-                                right: AppSpacing.md,
-                                accentColor: _accentColor(
-                                  categoryFor(_drag!.task),
-                                ),
-                                durationMinutes: _drag!.durationMinutes,
+                              durationMinutes: _drag!.durationMinutes,
+                            ),
+                          if (selectedTask != null &&
+                              selectedTaskGeometry != null)
+                            Positioned(
+                              top: selectedTaskGeometry.topPx + 1,
+                              right: AppSpacing.md,
+                              child: _SelectedTaskEditAction(
+                                task: selectedTask,
+                                onPressed: () =>
+                                    widget.onEditTask?.call(selectedTask),
                               ),
-                            if (showNowLine)
-                              CurrentTimeIndicator(
-                                pixelsPerMinute: _pixelsPerMinute,
-                                day: ref.read(selectedDateProvider),
-                              ),
-                          ],
-                        );
-                      },
-                    ),
+                            ),
+                          if (showNowLine)
+                            CurrentTimeIndicator(
+                              pixelsPerMinute: _pixelsPerMinute,
+                              day: ref.read(selectedDateProvider),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
             ),
-            if (liveTasks.isEmpty && _quickCreateSlot == null)
-              Positioned.fill(
-                child: _EmptyDayState(onAdd: _requestQuickCreateAtCurrentTime),
-              ),
-          ],
-        ),
+          ),
+          if (liveTasks.isEmpty && _quickCreateSlot == null)
+            Positioned.fill(
+              child: _EmptyDayState(onAdd: _requestQuickCreateAtCurrentTime),
+            ),
+        ],
       ),
     );
   }
@@ -833,6 +850,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         displayGeometry.hasOverlap &&
         laneWidth < 84 * MediaQuery.textScalerOf(context).scale(1);
 
+    void selectTask() {
+      ref.read(selectedTaskIdProvider.notifier).state = task.id;
+      widget.onTaskSelected?.call(task);
+    }
+
+    void editTask() {
+      ref.read(selectedTaskIdProvider.notifier).state = task.id;
+      widget.onEditTask?.call(task);
+    }
+
     final block = Stack(
       fit: StackFit.expand,
       children: [
@@ -843,32 +870,36 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           selected: selected,
           hasOverlap: hasOverlap,
           groupedSubtaskCount: groupedSubtaskCount,
-          onTap: () {
-            ref.read(selectedTaskIdProvider.notifier).state = task.id;
-            widget.onTaskTap?.call(task);
-          },
+          onTap: selectTask,
+          onDoubleTap: editTask,
           onStatusTap: () => _cycleStatus(task),
         ),
-        // Bottom-edge resize handle overlays the block content.
-        if (!ResizableHandle.isTouchPlatform || selected)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: ResizableHandle.isTouchPlatform
-                ? ResizableHandle.touchTargetHeight
-                      .clamp(12, visualHeight)
-                      .toDouble()
-                : AppConstants.resizeHandleHeight,
-            child: ResizableHandle(
-              onResizeStart: () => _startResize(task),
-              onResizeUpdate: _updateResize,
-              onResizeEnd: _endResize,
-              onResizeCancel: _cancelResize,
-              onIncrease: () => _resizeBySemantic(task, _gridMinutes),
-              onDecrease: () => _resizeBySemantic(task, -_gridMinutes),
-            ),
+        // Keep the resize recognizer mounted across selection rebuilds. On
+        // touch it occupies one 48px corner target, leaving the rest of the
+        // block available for move-dragging even while selected.
+        Positioned(
+          bottom: 0,
+          left: ResizableHandle.isTouchPlatform ? null : 0,
+          right: 0,
+          width: ResizableHandle.isTouchPlatform
+              ? ResizableHandle.touchTargetHeight
+              : null,
+          height: ResizableHandle.isTouchPlatform
+              ? ResizableHandle.touchTargetHeight
+                    .clamp(12, visualHeight)
+                    .toDouble()
+              : AppConstants.resizeHandleHeight,
+          child: ResizableHandle(
+            onResizeStart: () => _startResize(task),
+            onResizeUpdate: _updateResize,
+            onResizeEnd: _endResize,
+            onResizeCancel: _cancelResize,
+            onIncrease: () => _resizeBySemantic(task, _gridMinutes),
+            onDecrease: () => _resizeBySemantic(task, -_gridMinutes),
+            onTap: selectTask,
+            onDoubleTap: editTask,
           ),
+        ),
         if (dense && laneIndex == 0)
           Positioned.fill(
             child: TimelineOverlapAction(
@@ -877,17 +908,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               date: ref.read(selectedDateProvider),
               onOpen: (openedTask) {
                 ref.read(selectedTaskIdProvider.notifier).state = openedTask.id;
-                widget.onTaskTap?.call(openedTask);
+                widget.onEditTask?.call(openedTask);
               },
             ),
           ),
       ],
     );
-
-    void selectTask() {
-      ref.read(selectedTaskIdProvider.notifier).state = task.id;
-      widget.onTaskTap?.call(task);
-    }
 
     final dragChild = ResizableHandle.isTouchPlatform
         ? Stack(
@@ -897,6 +923,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: selectTask,
+                  onDoubleTap: editTask,
                   child: const SizedBox.expand(),
                 ),
               ),
@@ -918,13 +945,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         onDragUpdate: _updateDrag,
         onDragEnd: _endDrag,
         onDragCancel: _cancelDrag,
-        onContextMenuRequested: (position) => showTaskContextMenu(
-          context,
-          ref,
-          task,
-          position,
-          onEdit: () => widget.onEditTask?.call(task),
-        ),
+        onContextMenuRequested: (position) =>
+            showTaskContextMenu(context, ref, task, position, onEdit: editTask),
         child: dimmed ? Opacity(opacity: 0.35, child: dragChild) : dragChild,
       ),
     );
@@ -983,6 +1005,26 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       return task.scheduledDuration?.inMinutes ?? _gridMinutes;
     }
     return task.endTime!.difference(task.startTime!).inMinutes;
+  }
+}
+
+class _SelectedTaskEditAction extends StatelessWidget {
+  final Task task;
+  final VoidCallback onPressed;
+
+  const _SelectedTaskEditAction({required this.task, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 48,
+      child: IconButton.filledTonal(
+        key: ValueKey('selected-task-edit-${task.id}'),
+        tooltip: 'Edit ${task.title}',
+        onPressed: onPressed,
+        icon: const Icon(Icons.edit_outlined, size: 20),
+      ),
+    );
   }
 }
 

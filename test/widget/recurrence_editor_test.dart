@@ -50,6 +50,8 @@ void main() {
   ) async {
     await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
     await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${inserted.id}')));
+    await settle(tester);
     expect(container.read(selectedTaskIdProvider), inserted.id);
     expect(find.text('Edit Task'), findsOneWidget);
   }
@@ -389,8 +391,7 @@ void main() {
     );
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
-    await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
-    await settle(tester);
+    await openEditor(tester, container, inserted);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
     await settle(tester);
 
@@ -438,8 +439,7 @@ void main() {
     );
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
-    await tester.tap(find.byKey(ValueKey('task-block-${inserted.id}')));
-    await settle(tester);
+    await openEditor(tester, container, inserted);
     await tester.sendKeyEvent(LogicalKeyboardKey.delete);
     await settle(tester);
     await tester.tap(find.text('Delete').last);

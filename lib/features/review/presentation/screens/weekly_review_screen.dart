@@ -12,6 +12,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_insights.dart';
 import '../../providers/review_providers.dart';
@@ -33,7 +34,7 @@ class WeeklyReviewScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Weekly Review'),
-        actions: const [SyncStatusAction()],
+        actions: const [GlobalSearchAction(), SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,

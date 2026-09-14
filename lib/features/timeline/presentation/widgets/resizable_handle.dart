@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 
-/// Bottom-edge drag handle for resizing a task block. Uses vertical drag on
-/// desktop (click + drag) and long-press + drag on touch platforms.
+/// Bottom-edge drag handle for resizing a task block. It uses Flutter's
+/// standard vertical drag recognizer on pointer and touch platforms.
 ///
 /// [onResizeUpdate] reports the total vertical delta in logical pixels since
 /// the resize began.
@@ -16,6 +16,8 @@ class ResizableHandle extends StatefulWidget {
   final VoidCallback onResizeCancel;
   final VoidCallback? onIncrease;
   final VoidCallback? onDecrease;
+  final VoidCallback? onTap;
+  final VoidCallback? onDoubleTap;
 
   const ResizableHandle({
     super.key,
@@ -25,6 +27,8 @@ class ResizableHandle extends StatefulWidget {
     required this.onResizeCancel,
     this.onIncrease,
     this.onDecrease,
+    this.onTap,
+    this.onDoubleTap,
   });
 
   static bool get isTouchPlatform =>
@@ -47,66 +51,29 @@ class _ResizableHandleState extends State<ResizableHandle> {
     return GestureDetector(
       key: const ValueKey('resize-handle'),
       behavior: HitTestBehavior.opaque,
-      onVerticalDragStart: ResizableHandle.isTouchPlatform
-          ? null
-          : (_) {
-              if (_active) return;
-              _active = true;
-              _accumulatedDy = 0;
-              widget.onResizeStart();
-            },
-      onVerticalDragUpdate: ResizableHandle.isTouchPlatform
-          ? null
-          : (details) {
-              if (!_active) return;
-              _accumulatedDy += details.delta.dy;
-              widget.onResizeUpdate(_accumulatedDy);
-            },
-      onVerticalDragEnd: ResizableHandle.isTouchPlatform
-          ? null
-          : (_) {
-              if (!_active) return;
-              _active = false;
-              widget.onResizeEnd();
-            },
-      onVerticalDragCancel: ResizableHandle.isTouchPlatform
-          ? null
-          : () {
-              if (!_active) return;
-              _active = false;
-              widget.onResizeCancel();
-            },
-      onLongPressStart: ResizableHandle.isTouchPlatform
-          ? (details) {
-              if (_active) return;
-              _active = true;
-              _accumulatedDy = 0;
-              widget.onResizeStart();
-            }
-          : null,
-      onLongPressMoveUpdate: ResizableHandle.isTouchPlatform
-          ? (details) {
-              if (!_active) return;
-              _accumulatedDy = details.offsetFromOrigin.dy;
-              widget.onResizeUpdate(_accumulatedDy);
-            }
-          : null,
-      onLongPressEnd: ResizableHandle.isTouchPlatform
-          ? (details) {
-              if (_active) {
-                _active = false;
-                widget.onResizeEnd();
-              }
-            }
-          : null,
-      onLongPressCancel: ResizableHandle.isTouchPlatform
-          ? () {
-              if (_active) {
-                _active = false;
-                widget.onResizeCancel();
-              }
-            }
-          : null,
+      onTap: widget.onTap,
+      onDoubleTap: widget.onDoubleTap,
+      onVerticalDragStart: (_) {
+        if (_active) return;
+        _active = true;
+        _accumulatedDy = 0;
+        widget.onResizeStart();
+      },
+      onVerticalDragUpdate: (details) {
+        if (!_active) return;
+        _accumulatedDy += details.delta.dy;
+        widget.onResizeUpdate(_accumulatedDy);
+      },
+      onVerticalDragEnd: (_) {
+        if (!_active) return;
+        _active = false;
+        widget.onResizeEnd();
+      },
+      onVerticalDragCancel: () {
+        if (!_active) return;
+        _active = false;
+        widget.onResizeCancel();
+      },
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpDown,
         child: Semantics(

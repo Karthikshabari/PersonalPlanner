@@ -18,7 +18,6 @@ class AdaptiveShell extends StatelessWidget {
 
   static const _desktopDestinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
-    ('/week', Icons.view_week_outlined, Icons.view_week, 'Week'),
     ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
     ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
     ('/search', Icons.search_outlined, Icons.search, 'Search'),
@@ -29,10 +28,9 @@ class AdaptiveShell extends StatelessWidget {
 
   static const _mobileDestinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
-    ('/week', Icons.view_week_outlined, Icons.view_week, 'Week'),
-    ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
+    ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
     ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
-    ('/search', Icons.search_outlined, Icons.search, 'Search'),
+    ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
   ];
 
   @override
@@ -61,6 +59,11 @@ class AdaptiveShell extends StatelessWidget {
 
   int? _selectedIndex(BuildContext context, List<_Destination> destinations) {
     final location = GoRouterState.of(context).uri.path;
+    // Week is a Planner sub-view, so both shells keep Day selected while the
+    // existing Day/Week switcher controls the actual routed view.
+    if (location.startsWith('/week')) {
+      return destinations.indexWhere((destination) => destination.$1 == '/day');
+    }
     for (var i = 0; i < destinations.length; i++) {
       if (location.startsWith(destinations[i].$1)) return i;
     }

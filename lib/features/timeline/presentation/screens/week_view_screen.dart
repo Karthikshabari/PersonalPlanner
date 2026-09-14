@@ -16,9 +16,11 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/global_search_action.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../day_context/presentation/day_context_editor.dart';
+import '../../../day_context/providers/day_context_providers.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
@@ -192,6 +194,17 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
     final gridMinutes =
         ref.watch(gridIntervalProvider).value ??
         AppConstants.defaultGridMinutes;
+
+    // PageView temporarily pauses off-screen Consumer elements. Keep each
+    // visible week's shared sources subscribed at the screen level so an
+    // off-screen page cannot lose an auto-disposed subscription while it is
+    // being activated or deactivated during Day/Week navigation.
+    ref.watch(categoriesProvider);
+    for (final day in days) {
+      ref.watch(dayMaterializationProvider(day));
+      ref.watch(activeDayTasksForDateProvider(day));
+      ref.watch(dayContextForDateProvider(day));
+    }
 
     // Keyboard navigation can enter Week without going through DayHeader.
     // Align a stale week selection with the date being viewed once.
@@ -373,6 +386,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
                   if (selection.contains('day')) context.go('/day');
                 },
               ),
+              const GlobalSearchAction(),
               const SyncStatusAction(),
             ],
           ),
@@ -463,6 +477,7 @@ class _WeekPage extends StatelessWidget {
                 SizedBox(
                   width: columnWidth,
                   child: _WeekHeaderCell(
+                    key: ValueKey('week-header-${isoDateString(date)}'),
                     date: date,
                     selected: isSameDay(date, selectedDate),
                     onTap: () => onHeaderTap(date),
@@ -508,6 +523,9 @@ class _WeekPage extends StatelessWidget {
                           SizedBox(
                             width: columnWidth,
                             child: _WeekDayGrid(
+                              key: ValueKey(
+                                'week-day-grid-${isoDateString(days[index])}',
+                              ),
                               date: days[index],
                               columnWidth: columnWidth,
                               rulerWidth: rulerWidth,
@@ -554,6 +572,7 @@ class _WeekHeaderCell extends ConsumerWidget {
   final VoidCallback onTap;
 
   const _WeekHeaderCell({
+    super.key,
     required this.date,
     required this.selected,
     required this.onTap,
@@ -626,7 +645,11 @@ class _WeekHeaderCell extends ConsumerWidget {
             height: 30,
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: DayContextAction(date: date, compact: true),
+              child: DayContextAction(
+                key: ValueKey('week-context-${isoDateString(date)}'),
+                date: date,
+                compact: true,
+              ),
             ),
           ),
         ],
@@ -645,6 +668,7 @@ class _WeekDayGrid extends ConsumerWidget {
   final VoidCallback onReady;
 
   const _WeekDayGrid({
+    super.key,
     required this.date,
     required this.columnWidth,
     required this.rulerWidth,

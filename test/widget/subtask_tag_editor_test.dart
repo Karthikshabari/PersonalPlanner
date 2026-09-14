@@ -12,18 +12,26 @@ import '../helpers/test_container.dart';
 
 final DateTime viewDay = DateTime(2027, 3, 15);
 
-Future<Task> insertTask(WidgetTester tester, ProviderContainer container,
-    String title, {int startHour = 8}) async {
+Future<Task> insertTask(
+  WidgetTester tester,
+  ProviderContainer container,
+  String title, {
+  int startHour = 8,
+}) async {
   final created = await runDb(
     tester,
-    () => container.read(taskRepositoryProvider).insertTask(Task(
-          id: '',
-          title: title,
-          startTime: viewDay.add(Duration(hours: startHour)),
-          endTime: viewDay.add(Duration(hours: startHour + 1)),
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        )),
+    () => container
+        .read(taskRepositoryProvider)
+        .insertTask(
+          Task(
+            id: '',
+            title: title,
+            startTime: viewDay.add(Duration(hours: startHour)),
+            endTime: viewDay.add(Duration(hours: startHour + 1)),
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ),
   );
   await settle(tester);
   return created;
@@ -32,11 +40,13 @@ Future<Task> insertTask(WidgetTester tester, ProviderContainer container,
 Finder blockOf(Task t) => find.byKey(ValueKey('task-block-${t.id}'));
 
 Future<List<Subtask>> subtasksOf(
-    WidgetTester tester, ProviderContainer container, String taskId) {
+  WidgetTester tester,
+  ProviderContainer container,
+  String taskId,
+) {
   return runDb(
     tester,
-    () =>
-        container.read(subtaskRepositoryProvider).getSubtasksForTask(taskId),
+    () => container.read(subtaskRepositoryProvider).getSubtasksForTask(taskId),
   );
 }
 
@@ -45,8 +55,9 @@ Future<List<Subtask>> subtasksOf(
 /// which pushed them close to (or below) the panel's bottom edge, so tests
 /// must bring them into view before tapping/dragging.
 Future<void> bringIntoView(WidgetTester tester, Finder target) async {
-  final editorScrollable =
-      find.ancestor(of: target, matching: find.byType(Scrollable)).last;
+  final editorScrollable = find
+      .ancestor(of: target, matching: find.byType(Scrollable))
+      .last;
   for (var attempt = 0; attempt < 12; attempt++) {
     await settle(tester);
     final rect = tester.getRect(target);
@@ -69,19 +80,32 @@ void main() {
     return container;
   }
 
-  testWidgets('add subtasks in editor and see completion count on the block',
-      (tester) async {
+  Future<void> openEditor(WidgetTester tester, Task task) async {
+    await tester.tap(blockOf(task));
+    await settle(tester);
+    await tester.tap(find.byKey(ValueKey('selected-task-edit-${task.id}')));
+    await settle(tester);
+  }
+
+  testWidgets('add subtasks in editor and see completion count on the block', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final task = await insertTask(tester, container, 'Parent');
 
-    await tester.tap(blockOf(task));
-    await settle(tester);
+    await openEditor(tester, task);
 
     // Two subtasks via the inline field.
-    await tester.enterText(find.byKey(const ValueKey('subtask-input')), 'First');
+    await tester.enterText(
+      find.byKey(const ValueKey('subtask-input')),
+      'First',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
-    await tester.enterText(find.byKey(const ValueKey('subtask-input')), 'Second');
+    await tester.enterText(
+      find.byKey(const ValueKey('subtask-input')),
+      'Second',
+    );
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await settle(tester);
 
@@ -96,8 +120,10 @@ void main() {
     await tester.tap(find.byType(Checkbox).first);
     await settle(tester);
     expect(find.text('1/2'), findsOneWidget);
-    expect((await subtasksOf(tester, container, task.id)).first.isCompleted,
-        isTrue);
+    expect(
+      (await subtasksOf(tester, container, task.id)).first.isCompleted,
+      isTrue,
+    );
     await finish(tester, container);
   });
 
@@ -107,20 +133,23 @@ void main() {
     final repo = container.read(subtaskRepositoryProvider);
     await runDb(
       tester,
-      () => repo.insertSubtask(Subtask(
-            id: '',
-            taskId: task.id,
-            title: 'Doomed child',
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          )),
+      () => repo.insertSubtask(
+        Subtask(
+          id: '',
+          taskId: task.id,
+          title: 'Doomed child',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ),
     );
     await settle(tester);
-    await tester.tap(blockOf(task));
-    await settle(tester);
+    await openEditor(tester, task);
 
     final xButton = find.descendant(
-        of: find.byType(ListTile), matching: find.byIcon(Icons.close));
+      of: find.byType(ListTile),
+      matching: find.byIcon(Icons.close),
+    );
     await bringIntoView(tester, xButton);
     await tester.tap(xButton);
     await settle(tester);
@@ -137,18 +166,19 @@ void main() {
     for (final title in ['A', 'B']) {
       await runDb(
         tester,
-        () => repo.insertSubtask(Subtask(
-              id: '',
-              taskId: task.id,
-              title: title,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            )),
+        () => repo.insertSubtask(
+          Subtask(
+            id: '',
+            taskId: task.id,
+            title: title,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
+        ),
       );
     }
     await settle(tester);
-    await tester.tap(blockOf(task));
-    await settle(tester);
+    await openEditor(tester, task);
 
     // Drag B's handle above A.
     final handle = find.byIcon(Icons.drag_handle).last;
@@ -163,19 +193,22 @@ void main() {
     await gesture.up();
     await settle(tester);
 
-    final order =
-        (await subtasksOf(tester, container, task.id)).map((s) => s.title);
+    final order = (await subtasksOf(
+      tester,
+      container,
+      task.id,
+    )).map((s) => s.title);
     expect(order, ['B', 'A']);
     await finish(tester, container);
   });
 
-  testWidgets('tag picker creates tags inline and multi-selects',
-      (tester) async {
+  testWidgets('tag picker creates tags inline and multi-selects', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final taskA = await insertTask(tester, container, 'Tagged A');
 
-    await tester.tap(blockOf(taskA));
-    await settle(tester);
+    await openEditor(tester, taskA);
 
     // Create two tags by typing + Enter.
     for (final name in ['urgent-ish', 'later']) {
@@ -188,45 +221,48 @@ void main() {
     expect(find.byKey(const ValueKey('tag-chip-later')), findsOneWidget);
     // Both are staged in the editor draft.
     expect(
-        tester
-            .widgetList<FilterChip>(find.byType(FilterChip))
-            .where((c) => c.selected)
-            .length,
-        2);
+      tester
+          .widgetList<FilterChip>(find.byType(FilterChip))
+          .where((c) => c.selected)
+          .length,
+      2,
+    );
 
     // Detach one via its chip.
     await tester.tap(find.byKey(const ValueKey('tag-chip-later')));
     await settle(tester);
     expect(
-        tester
-            .widgetList<FilterChip>(find.byType(FilterChip))
-            .where((c) => c.selected)
-            .length,
-        1);
+      tester
+          .widgetList<FilterChip>(find.byType(FilterChip))
+          .where((c) => c.selected)
+          .length,
+      1,
+    );
     final save = find.byKey(const ValueKey('save-task-button'));
     await tester.tap(save);
     await settle(tester);
     await finish(tester, container);
   });
 
-  testWidgets('second task can select the same tag (multi-select)',
-      (tester) async {
+  testWidgets('second task can select the same tag (multi-select)', (
+    tester,
+  ) async {
     final container = await pumpDesktop(tester);
     final a = await insertTask(tester, container, 'Tagged A');
     final b = await insertTask(tester, container, 'Tagged B', startHour: 10);
 
-    await tester.tap(blockOf(a));
-    await settle(tester);
+    await openEditor(tester, a);
     await tester.enterText(find.byKey(const ValueKey('tag-input')), 'shared');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     // Wait for the real-async DB write to land and the stream to refresh.
     for (var i = 0; i < 50; i++) {
       if (find.byKey(const ValueKey('tag-chip-shared')).evaluate().isNotEmpty &&
           tester
-                  .widgetList<FilterChip>(
-                      find.byKey(const ValueKey('tag-chip-shared')))
-                  .first
-                  .selected) {
+              .widgetList<FilterChip>(
+                find.byKey(const ValueKey('tag-chip-shared')),
+              )
+              .first
+              .selected) {
         break;
       }
       await tester.pump(const Duration(milliseconds: 20));
@@ -250,26 +286,30 @@ void main() {
     );
 
     // B's editor shows the chip as selected.
-    await tester.tap(blockOf(b));
-    await settle(tester);
+    await openEditor(tester, b);
     for (var i = 0; i < 50; i++) {
       final chips = tester.widgetList<FilterChip>(
-          find.byKey(const ValueKey('tag-chip-shared')));
+        find.byKey(const ValueKey('tag-chip-shared')),
+      );
       if (chips.isNotEmpty && chips.first.selected) break;
       await tester.pump(const Duration(milliseconds: 20));
     }
     expect(
-        tester
-            .widgetList<FilterChip>(
-                find.byKey(const ValueKey('tag-chip-shared')))
-            .first
-            .selected,
-        isTrue);
+      tester
+          .widgetList<FilterChip>(find.byKey(const ValueKey('tag-chip-shared')))
+          .first
+          .selected,
+      isTrue,
+    );
 
     final tagsForA = await runDb(
-        tester, () => container.read(tagRepositoryProvider).getTagsForTask(a.id));
+      tester,
+      () => container.read(tagRepositoryProvider).getTagsForTask(a.id),
+    );
     final tagsForB = await runDb(
-        tester, () => container.read(tagRepositoryProvider).getTagsForTask(b.id));
+      tester,
+      () => container.read(tagRepositoryProvider).getTagsForTask(b.id),
+    );
     expect(tagsForA.single.name, 'shared');
     expect(tagsForB.single.name, 'shared');
     await finish(tester, container);

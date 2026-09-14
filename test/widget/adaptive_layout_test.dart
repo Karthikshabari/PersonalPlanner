@@ -57,7 +57,13 @@ void main() {
     final container = await buildTestContainer(tester);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
-    expect(rail.destinations, hasLength(8));
+    expect(rail.destinations, hasLength(7));
+    expect(
+      rail.destinations
+          .map((destination) => (destination.label as Text).data)
+          .toList(),
+      isNot(contains('Week')),
+    );
     expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
     expect(find.byIcon(Icons.home_outlined), findsOneWidget);
     expect(find.byTooltip('Home'), findsOneWidget);
@@ -92,6 +98,58 @@ void main() {
     expect(find.byType(NavigationRail), findsNothing);
     await teardownApp(tester, container);
   });
+
+  testWidgets(
+    'compact phones keep four stable destinations and global Search',
+    (tester) async {
+      for (final width in <double>[320, 360, 393, 412]) {
+        final container = await buildTestContainer(tester);
+        appRouter.go('/day');
+        await pumpApp(tester, container, surface: Size(width, 844));
+
+        final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+        expect(bar.destinations, hasLength(4));
+        expect(
+          bar.destinations
+              .map(
+                (destination) => (destination as NavigationDestination).label,
+              )
+              .toList(),
+          ['Day', 'Review', 'Analytics', 'Inbox'],
+        );
+        expect(find.byTooltip('Search'), findsOneWidget);
+        expect(find.byKey(const ValueKey('day-week-switcher')), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: 'overflow at ${width}px',
+        );
+
+        await teardownApp(tester, container);
+      }
+    },
+  );
+
+  testWidgets(
+    'Week stays inside Planner and keeps Day selected in mobile nav',
+    (tester) async {
+      final container = await buildTestContainer(tester);
+      appRouter.go('/day');
+      await pumpApp(tester, container, surface: const Size(393, 844));
+
+      await tester.tap(find.text('Week'));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('week-pages')), findsOneWidget);
+      final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+      expect(bar.selectedIndex, 0);
+      expect(bar.destinations, hasLength(4));
+
+      await tester.tap(find.text('Day').last);
+      await settle(tester);
+      expect(find.byKey(const ValueKey('timeline-gestures')), findsOneWidget);
+      await teardownApp(tester, container);
+    },
+  );
 
   testWidgets(
     'mobile navigation keeps primary destinations and settings reachable',

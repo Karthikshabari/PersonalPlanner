@@ -128,6 +128,18 @@ void main() {
 
     expect(badge, findsOneWidget);
     expect(find.text('Office'), findsOneWidget);
+
+    await runDb(
+      tester,
+      () => container
+          .read(dayContextRepositoryProvider)
+          .save(isoDateString(date), DayContextKind.travel, null),
+    );
+    await settle(tester);
+
+    expect(badge, findsOneWidget);
+    expect(find.text('Travel'), findsOneWidget);
+    expect(find.text('Office'), findsNothing);
     await finish(tester, container);
   });
 
