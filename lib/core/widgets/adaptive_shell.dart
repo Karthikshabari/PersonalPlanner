@@ -86,7 +86,14 @@ class AdaptiveShell extends StatelessWidget {
         child: IconButton(
           key: const ValueKey('home-navigation-shortcut'),
           tooltip: 'Home',
-          icon: const Icon(Icons.home_outlined),
+          icon: SizedBox.square(
+            dimension: 24,
+            child: Image.asset(
+              'assets/branding/app_logo.png',
+              fit: BoxFit.contain,
+              excludeFromSemantics: true,
+            ),
+          ),
           onPressed: () => _navigate(context, '/day'),
         ),
       ),
