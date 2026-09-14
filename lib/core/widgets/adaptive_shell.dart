@@ -19,7 +19,12 @@ class AdaptiveShell extends StatelessWidget {
   static const _desktopDestinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
     ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
-    ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
+    (
+      '/analytics',
+      Icons.bar_chart_outlined,
+      Icons.bar_chart_rounded,
+      'Insights',
+    ),
     ('/search', Icons.search_outlined, Icons.search, 'Search'),
     ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
     ('/categories', Icons.label_outline, Icons.label, 'Categories'),
@@ -29,7 +34,12 @@ class AdaptiveShell extends StatelessWidget {
   static const _mobileDestinations = [
     ('/day', Icons.calendar_today_outlined, Icons.calendar_today, 'Day'),
     ('/review', Icons.rate_review_outlined, Icons.rate_review, 'Review'),
-    ('/analytics', Icons.insights_outlined, Icons.insights, 'Analytics'),
+    (
+      '/analytics',
+      Icons.bar_chart_outlined,
+      Icons.bar_chart_rounded,
+      'Insights',
+    ),
     ('/inbox', Icons.inbox_outlined, Icons.inbox, 'Inbox'),
   ];
 

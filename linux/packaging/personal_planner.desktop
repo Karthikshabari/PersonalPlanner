@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Personal Planner
+Comment=Plan your days, weeks, and tasks
+Exec=personal_planner
+Icon=personal_planner
+Terminal=false
+Type=Application
+Categories=Office;Utility;
+StartupNotify=true
