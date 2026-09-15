@@ -2,6 +2,18 @@ import 'backup_codec.dart';
 import 'backup_format.dart';
 import 'backup_validator.dart';
 
+typedef BackupRowEquivalence = bool Function(
+  String table,
+  Map<String, dynamic> local,
+  Map<String, dynamic> incoming,
+);
+
+typedef BackupSettingEquivalence = bool Function(
+  String key,
+  String local,
+  String incoming,
+);
+
 /// A write-free result of comparing an incoming backup with the current local
 /// domain. The complete plan is built before the transaction mutates SQLite.
 class BackupMergePlan {
@@ -26,6 +38,8 @@ class BackupMergePlanner {
   BackupMergePlan build({
     required Map<String, dynamic> incoming,
     required Map<String, dynamic> local,
+    BackupRowEquivalence? rowEquivalence,
+    BackupSettingEquivalence? settingEquivalence,
   }) {
     final localRows = <String, Map<String, Map<String, dynamic>>>{};
     for (final table in BackupValidator.tableNames) {
@@ -61,7 +75,8 @@ class BackupMergePlanner {
         if (old == null) {
           candidates[table]!.add(row);
         } else if (BackupCodec.canonicalJson(old) ==
-            BackupCodec.canonicalJson(row)) {
+                BackupCodec.canonicalJson(row) ||
+            rowEquivalence?.call(table, old, row) == true) {
           skipped++;
         } else {
           directConflicts.add(_key(table, id));
@@ -92,7 +107,8 @@ class BackupMergePlanner {
       );
       if (old == null) {
         settingsToInsert[entry.key] = value;
-      } else if (old == value) {
+      } else if (old == value ||
+          settingEquivalence?.call(entry.key, old, value) == true) {
         skipped++;
       } else {
         addConflict('settings', entry.key, BackupConflictKind.differing);

@@ -1,4 +1,6 @@
 import '../../../core/database/app_database.dart';
+import '../../categories/data/category_repository.dart';
+import '../../onboarding/providers/onboarding_provider.dart';
 import '../../settings/data/backup_codec.dart';
 import '../../settings/data/backup_database_applier.dart';
 import '../../settings/data/backup_merge_planner.dart';
@@ -109,7 +111,12 @@ class AnonymousDataAdoptionService {
           'PRAGMA defer_foreign_keys = ON',
         );
         final local = await BackupCodec.exportData(_accountDatabase);
-        plan = BackupMergePlanner().build(incoming: incoming, local: local);
+        plan = BackupMergePlanner().build(
+          incoming: incoming,
+          local: local,
+          rowEquivalence: _adoptionRowEquivalence,
+          settingEquivalence: _adoptionSettingEquivalence,
+        );
         if (plan.conflicts.isNotEmpty) {
           final first = plan.conflicts.first;
           throw AnonymousDataAdoptionException(
@@ -118,6 +125,7 @@ class AnonymousDataAdoptionService {
           );
         }
         await BackupDatabaseApplier(_accountDatabase).applyMerge(plan);
+        await _retainSourceOnboardingCompletion(incoming);
         await _accountDatabase
             .into(_accountDatabase.appSettings)
             .insertOnConflictUpdate(
@@ -157,5 +165,58 @@ class AnonymousDataAdoptionService {
               ..where((setting) => setting.key.equals(_adoptionDecisionKey)))
             .getSingleOrNull();
     return row?.value;
+  }
+
+  static bool _adoptionRowEquivalence(
+    String table,
+    Map<String, dynamic> local,
+    Map<String, dynamic> incoming,
+  ) {
+    if (table != 'categories') return false;
+
+    final id = incoming['id'];
+    if (id is! String || local['id'] != id) return false;
+    for (final definition in CategoryRepository.defaultCategoryDefinitions) {
+      if (CategoryRepository.defaultCategoryId(definition.key) != id) {
+        continue;
+      }
+      return _isUntouchedDefault(local, definition) &&
+          _isUntouchedDefault(incoming, definition);
+    }
+    return false;
+  }
+
+  static bool _isUntouchedDefault(
+    Map<String, dynamic> row,
+    ({String key, String name, String colorHex, int sortOrder, bool isFocus})
+    definition,
+  ) =>
+      row['id'] == CategoryRepository.defaultCategoryId(definition.key) &&
+      row['name'] == definition.name &&
+      row['color_hex'] == definition.colorHex &&
+      row['sort_order'] == definition.sortOrder &&
+      row['is_focus'] == definition.isFocus &&
+      row['deleted_at'] == null;
+
+  static bool _adoptionSettingEquivalence(
+    String key,
+    String local,
+    String incoming,
+  ) =>
+      key == onboardingCompletedKey &&
+      const {'true', 'false'}.contains(local) &&
+      const {'true', 'false'}.contains(incoming);
+
+  Future<void> _retainSourceOnboardingCompletion(
+    Map<String, dynamic> incoming,
+  ) async {
+    final settings = incoming['settings'];
+    if (settings is! Map || settings[onboardingCompletedKey] != 'true') {
+      return;
+    }
+    if (await _accountDatabase.syncDao.getSetting(onboardingCompletedKey) !=
+        'true') {
+      await _accountDatabase.syncDao.setSetting(onboardingCompletedKey, 'true');
+    }
   }
 }
