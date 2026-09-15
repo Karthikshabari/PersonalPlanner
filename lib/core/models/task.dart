@@ -27,6 +27,7 @@ abstract class Task with _$Task {
     @Default(TaskStatus.planned) TaskStatus status,
     String? notes,
     String? recurringRuleId,
+    String? recurrenceRemovalReason,
     String? rescheduledFromId,
     String? rescheduledToId,
     @Default(false) bool isInbox,

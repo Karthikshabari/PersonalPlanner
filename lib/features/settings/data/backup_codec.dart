@@ -102,7 +102,9 @@ class BackupCodec {
       throw const BackupValidationException('Unsupported backup format.');
     }
     final documentVersion = root['schema_version'];
-    if (documentVersion != 1 && documentVersion != plannerBackupSchemaVersion) {
+    if (documentVersion is! int ||
+        documentVersion < 1 ||
+        documentVersion > plannerBackupSchemaVersion) {
       throw const BackupValidationException(
         'Unsupported backup schema version.',
       );
@@ -145,7 +147,7 @@ class BackupCodec {
     if (documentVersion == 1) {
       BackupValidator.validateOriginalV1Structure(data);
     }
-    return _adaptImportedData(data, documentVersion as int);
+    return _adaptImportedData(data, documentVersion);
   }
 
   /// v1 was checksum-verified above before this adapter changes anything.
@@ -211,6 +213,10 @@ class BackupCodec {
           raw['inbox_content_version'] = markerValue;
         }
         raw['due_date'] = raw.containsKey('due_date') ? raw['due_date'] : null;
+        raw['recurrence_removal_reason'] =
+            raw.containsKey('recurrence_removal_reason')
+            ? raw['recurrence_removal_reason']
+            : null;
         final portableHistory = raw['plan_title_history'];
         if (portableHistory is! List) {
           final legacyJson = raw['plan_title_history_json'];
@@ -267,7 +273,7 @@ class BackupCodec {
     }
     // Keep the parameter explicit so a future v3 adapter cannot accidentally
     // be treated as a v1 document by this path.
-    if (version != 1 && version != plannerBackupSchemaVersion) {
+    if (version < 1 || version > plannerBackupSchemaVersion) {
       throw const BackupValidationException(
         'Unsupported backup schema version.',
       );
@@ -357,6 +363,7 @@ class BackupCodec {
     'status': row.status,
     'notes': row.notes,
     'recurring_rule_id': row.recurringRuleId,
+    'recurrence_removal_reason': row.recurrenceRemovalReason,
     'rescheduled_from_id': row.rescheduledFromId,
     'rescheduled_to_id': row.rescheduledToId,
     'is_inbox': row.isInbox,

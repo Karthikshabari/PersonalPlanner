@@ -136,6 +136,12 @@ class BackupDatabaseApplier {
                 recurringRuleId: Value(
                   BackupValidator.nullableId(row, 'recurring_rule_id'),
                 ),
+                recurrenceRemovalReason: Value(
+                  BackupValidator.nullableString(
+                    row,
+                    'recurrence_removal_reason',
+                  ),
+                ),
                 rescheduledFromId: Value(
                   BackupValidator.nullableId(row, 'rescheduled_from_id'),
                 ),

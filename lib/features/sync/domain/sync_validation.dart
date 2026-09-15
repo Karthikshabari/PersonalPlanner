@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../../core/models/timer_session.dart';
+import '../../../core/models/enums/recurrence_removal_reason.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/missed_at.dart';
 import '../../recurring/domain/rrule_utils.dart';
@@ -108,6 +109,14 @@ abstract final class SyncPayloadValidator {
         _intInRange(p, 'manual_actual_set', 0, 1);
         _nullableId(p, 'category_id');
         _nullableId(p, 'recurring_rule_id');
+        final removalReason = p['recurrence_removal_reason'];
+        if (removalReason != null &&
+            (removalReason is! String ||
+                !RecurrenceRemovalReason.values.contains(removalReason))) {
+          throw const SyncValidationException(
+            'Invalid recurrence removal reason',
+          );
+        }
         _nullableId(p, 'rescheduled_from_id');
         _nullableId(p, 'rescheduled_to_id');
         final isInbox = _int(p['is_inbox']) == 1;

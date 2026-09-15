@@ -1,8 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:personal_planner/core/models/category.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dart';
 import 'package:personal_planner/core/models/recurring_rule.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/models/task_template.dart';
@@ -12,6 +17,8 @@ import 'package:personal_planner/features/recurring/domain/recurrence_service.da
 import 'package:personal_planner/features/templates/data/template_repository.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
+import 'package:personal_planner/features/sync/data/remote_apply.dart';
+import 'package:personal_planner/features/sync/domain/sync_models.dart';
 
 import '../../helpers/sqlite_setup.dart';
 
@@ -249,7 +256,9 @@ void main() {
       final tuesday = DateTime(2026, 8, 25, 9);
       final mondayTask = await tasks.insertTask(
         Task(
-          id: 'future-monday',
+          id: generateDeterministicUuid(
+            'recurring-occurrence:${original.id}:2026-08-24',
+          ),
           title: 'Old title',
           startTime: monday,
           endTime: monday.add(const Duration(minutes: 30)),
@@ -260,7 +269,9 @@ void main() {
       );
       final tuesdayTask = await tasks.insertTask(
         Task(
-          id: 'future-tuesday',
+          id: generateDeterministicUuid(
+            'recurring-occurrence:${original.id}:2026-08-25',
+          ),
           title: 'Obsolete title',
           startTime: tuesday,
           endTime: tuesday.add(const Duration(minutes: 30)),
@@ -278,8 +289,273 @@ void main() {
       expect(kept!.deletedAt, isNull);
       expect(kept.title, updated.taskTitle);
       expect(removed!.deletedAt, isNotNull);
+      expect(
+        removed.recurrenceRemovalReason,
+        RecurrenceRemovalReason.ruleExcluded,
+      );
     },
   );
+
+  test(
+    'daily to Monday-only to daily reactivates one original Tuesday identity',
+    () async {
+      final monday = DateTime(2026, 9, 14);
+      final tuesday = DateTime(2026, 9, 15);
+      final original = await rules.createRule(dailyRule(startDate: monday));
+      expect(await recurrence.materializeForDate(tuesday), 1);
+      final occurrenceId = generateDeterministicUuid(
+        'recurring-occurrence:${original.id}:2026-09-15',
+      );
+
+      final mondayOnly = await rules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+      expect(
+        (await db.taskDao.getTaskById(occurrenceId))?.deletedAt,
+        isNotNull,
+      );
+
+      final daily = await rules.updateRule(
+        mondayOnly.copyWith(rrule: 'FREQ=DAILY'),
+      );
+      await recurrence.reconcileMaterializedFuture(daily, monday);
+      expect(await recurrence.materializeForDate(tuesday), 1);
+      expect(await recurrence.materializeForDate(tuesday), 0);
+      expect(await recurrence.materializeForDate(tuesday), 0);
+
+      final all = await (db.select(
+        db.tasks,
+      )..where((row) => row.id.equals(occurrenceId))).get();
+      expect(all, hasLength(1));
+      expect(all.single.deletedAt, isNull);
+      expect(all.single.recurrenceRemovalReason, isNull);
+    },
+  );
+
+  test('explicit deletion and recurrence exception never reactivate', () async {
+    final monday = DateTime(2026, 9, 14);
+    final tuesday = DateTime(2026, 9, 15);
+    final original = await rules.createRule(dailyRule(startDate: monday));
+    await recurrence.materializeForDate(tuesday);
+    final occurrence = (await tasks.watchTasksForDay(tuesday).first).single;
+    await tasks.deleteTask(occurrence.id);
+    await rules.addException(original.id, tuesday);
+
+    final mondayOnly = await rules.updateRule(
+      (await rules.getRuleById(original.id))!
+          .copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+    );
+    await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+    final daily = await rules.updateRule(
+      mondayOnly.copyWith(rrule: 'FREQ=DAILY'),
+    );
+    await recurrence.reconcileMaterializedFuture(daily, monday);
+
+    expect(await recurrence.materializeForDate(tuesday), 0);
+    final deleted = await db.taskDao.getTaskById(occurrence.id);
+    expect(deleted?.deletedAt, isNotNull);
+    expect(deleted?.recurrenceRemovalReason, isNull);
+  });
+
+  test('an exception blocks a rule-excluded tombstone from reactivation', () async {
+    final monday = DateTime(2026, 9, 14);
+    final tuesday = DateTime(2026, 9, 15);
+    final original = await rules.createRule(dailyRule(startDate: monday));
+    await recurrence.materializeForDate(tuesday);
+    final occurrenceId = generateDeterministicUuid(
+      'recurring-occurrence:${original.id}:2026-09-15',
+    );
+    final mondayOnly = await rules.updateRule(
+      original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+    );
+    await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+    await rules.addException(original.id, tuesday);
+    final withException = (await rules.getRuleById(original.id))!;
+    await rules.updateRule(withException.copyWith(rrule: 'FREQ=DAILY'));
+
+    expect(await recurrence.materializeForDate(tuesday), 0);
+    final row = await db.taskDao.getTaskById(occurrenceId);
+    expect(row?.deletedAt, isNotNull);
+    expect(row?.recurrenceRemovalReason, 'rule_excluded');
+  });
+
+  test(
+    'completed skipped and cancelled occurrences are never revived',
+    () async {
+      final monday = DateTime(2026, 9, 14);
+      final original = await rules.createRule(dailyRule(startDate: monday));
+      final statuses = [
+        TaskStatus.completed,
+        TaskStatus.skipped,
+        TaskStatus.cancelled,
+      ];
+      for (var i = 0; i < statuses.length; i++) {
+        final day = monday.add(Duration(days: i + 1));
+        await recurrence.materializeForDate(day);
+        final task = (await tasks.watchTasksForDay(day).first).single;
+        await tasks.updateTask(task.copyWith(status: statuses[i]));
+      }
+
+      final mondayOnly = await rules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+      final daily = await rules.updateRule(
+        mondayOnly.copyWith(rrule: 'FREQ=DAILY'),
+      );
+      await recurrence.reconcileMaterializedFuture(daily, monday);
+
+      final rows = await (db.select(
+        db.tasks,
+      )..where((row) => row.recurringRuleId.equals(original.id))).get();
+      expect(
+        rows.map((row) => TaskStatus.fromDb(row.status)),
+        containsAll(statuses),
+      );
+      expect(rows.every((row) => row.deletedAt == null), isTrue);
+      expect(rows.every((row) => row.recurrenceRemovalReason == null), isTrue);
+    },
+  );
+
+  test(
+    'a moved occurrence is not tombstoned or duplicated at its original slot',
+    () async {
+      final monday = DateTime(2026, 9, 14);
+      final tuesday = DateTime(2026, 9, 15);
+      final original = await rules.createRule(dailyRule(startDate: monday));
+      await recurrence.materializeForDate(tuesday);
+      final occurrence = (await tasks.watchTasksForDay(tuesday).first).single;
+      final movedStart = DateTime(2026, 9, 16, 14);
+      await tasks.updateTask(
+        occurrence.copyWith(
+          startTime: movedStart,
+          endTime: movedStart.add(const Duration(minutes: 30)),
+        ),
+      );
+
+      final mondayOnly = await rules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+      final daily = await rules.updateRule(
+        mondayOnly.copyWith(rrule: 'FREQ=DAILY'),
+      );
+      await recurrence.reconcileMaterializedFuture(daily, monday);
+      expect(await recurrence.materializeForDate(tuesday), 0);
+
+      final rows = await (db.select(
+        db.tasks,
+      )..where((row) => row.id.equals(occurrence.id))).get();
+      expect(rows, hasLength(1));
+      expect(rows.single.deletedAt, isNull);
+      expect(
+        rows.single.startTime?.millisecondsSinceEpoch,
+        movedStart.millisecondsSinceEpoch,
+      );
+    },
+  );
+
+  test('rule-exclusion provenance survives a sync round trip', () async {
+    final target = AppDatabase(NativeDatabase.memory());
+    try {
+      final monday = DateTime(2026, 9, 14);
+      final tuesday = DateTime(2026, 9, 15);
+      final original = await rules.createRule(dailyRule(startDate: monday));
+      await recurrence.materializeForDate(tuesday);
+      final occurrenceId = generateDeterministicUuid(
+        'recurring-occurrence:${original.id}:2026-09-15',
+      );
+      final sourceRule = await db.recurringRuleDao.getRuleById(original.id);
+      final sourceTask = await db.taskDao.getTaskById(occurrenceId);
+      await target
+          .into(target.recurringRules)
+          .insert(sourceRule!.toCompanion(false));
+      await target.into(target.tasks).insert(sourceTask!.toCompanion(false));
+
+      final mondayOnly = await rules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+      final operation =
+          await (db.select(db.syncLog)
+                ..where((row) => row.recordId.equals(occurrenceId))
+                ..orderBy([(row) => OrderingTerm.desc(row.createdAt)])
+                ..limit(1))
+              .getSingle();
+      final payload = Map<String, dynamic>.from(
+        jsonDecode(operation.payload) as Map,
+      );
+      expect(operation.operation, 'update');
+      expect(
+        payload['recurrence_removal_reason'],
+        RecurrenceRemovalReason.ruleExcluded,
+      );
+      await SyncRemoteApplier(target).apply(
+        SyncRemoteChange(
+          changeId: 1,
+          operationId: operation.operationId,
+          tableName: 'tasks',
+          recordId: occurrenceId,
+          operation: 'update',
+          serverVersion: 7,
+          serverTimestamp: DateTime.now().toUtc(),
+          payload: payload,
+        ),
+      );
+      final received = await target.taskDao.getTaskById(occurrenceId);
+      expect(received?.deletedAt, isNotNull);
+      expect(
+        received?.recurrenceRemovalReason,
+        RecurrenceRemovalReason.ruleExcluded,
+      );
+    } finally {
+      await target.close();
+    }
+  });
+
+  test('reactivation remains stable across two database reopens', () async {
+    final directory = Directory.systemTemp.createTempSync(
+      'planner_f04_restart',
+    );
+    final file = File('${directory.path}/planner.sqlite3');
+    try {
+      var reopened = AppDatabase(NativeDatabase(file));
+      final reopenedRules = RecurringRepository(reopened);
+      var reopenedService = RecurrenceService(reopened);
+      final monday = DateTime(2026, 9, 14);
+      final tuesday = DateTime(2026, 9, 15);
+      final original = await reopenedRules.createRule(
+        dailyRule(startDate: monday),
+      );
+      await reopenedService.materializeForDate(tuesday);
+      final mondayOnly = await reopenedRules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await reopenedService.reconcileMaterializedFuture(mondayOnly, monday);
+      await reopenedRules.updateRule(mondayOnly.copyWith(rrule: 'FREQ=DAILY'));
+      await reopened.close();
+
+      reopened = AppDatabase(NativeDatabase(file));
+      reopenedService = RecurrenceService(reopened);
+      expect(await reopenedService.materializeForDate(tuesday), 1);
+      await reopened.close();
+
+      reopened = AppDatabase(NativeDatabase(file));
+      reopenedService = RecurrenceService(reopened);
+      expect(await reopenedService.materializeForDate(tuesday), 0);
+      final occurrenceId = generateDeterministicUuid(
+        'recurring-occurrence:${original.id}:2026-09-15',
+      );
+      expect(
+        (await reopened.taskDao.getTaskById(occurrenceId))?.deletedAt,
+        isNull,
+      );
+      await reopened.close();
+    } finally {
+      if (directory.existsSync()) directory.deleteSync(recursive: true);
+    }
+  });
 
   test(
     'all-future title preservation touches only prior unfinished instances',
@@ -292,7 +568,9 @@ void main() {
       final wednesday = DateTime(2026, 8, 26, 9);
       final selected = await tasks.insertTask(
         Task(
-          id: 'selected-occurrence',
+          id: generateDeterministicUuid(
+            'recurring-occurrence:${original.id}:2026-08-24',
+          ),
           title: 'Read book',
           startTime: monday,
           endTime: monday.add(const Duration(minutes: 30)),
@@ -303,7 +581,9 @@ void main() {
       );
       final affected = await tasks.insertTask(
         Task(
-          id: 'affected-occurrence',
+          id: generateDeterministicUuid(
+            'recurring-occurrence:${original.id}:2026-08-25',
+          ),
           title: 'Custom prior title',
           startTime: tuesday,
           endTime: tuesday.add(const Duration(minutes: 30)),
@@ -314,7 +594,9 @@ void main() {
       );
       final completed = await tasks.insertTask(
         Task(
-          id: 'completed-occurrence',
+          id: generateDeterministicUuid(
+            'recurring-occurrence:${original.id}:2026-08-26',
+          ),
           title: 'Completed title',
           startTime: wednesday,
           endTime: wednesday.add(const Duration(minutes: 30)),
