@@ -6,8 +6,7 @@ import '../../../../core/widgets/async_value_view.dart';
 import '../../../templates/providers/template_providers.dart';
 
 /// "Use template" dropdown in the task editor (planner.md Chunk 4 #12):
-/// selecting a template pre-fills title, description, duration, category,
-/// priority and tags.
+/// selecting a template pre-fills title, description, duration and category.
 class UseTemplateDropdown extends ConsumerWidget {
   final ValueChanged<TaskTemplate> onSelected;
 

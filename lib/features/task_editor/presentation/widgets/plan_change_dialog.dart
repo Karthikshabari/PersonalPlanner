@@ -4,7 +4,7 @@ enum PlanChangeDecision { preserve, replace }
 
 /// Deliberate acknowledgement before a persisted scheduled plan changes name.
 /// Returning null is cancellation: the surrounding editor must not write any
-/// task, tag, recurrence or scheduling mutation.
+/// task, recurrence or scheduling mutation.
 Future<PlanChangeDecision?> showPlanChangeDialog(
   BuildContext context, {
   required String previousTitle,

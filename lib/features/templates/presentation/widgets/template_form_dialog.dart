@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/models/enums/priority.dart';
 import '../../../../core/models/task_template.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -37,7 +36,6 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _durationController;
   String? _categoryId;
-  Priority _priority = Priority.none;
   bool _saving = false;
   String? _error;
 
@@ -51,7 +49,6 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
       text: t?.durationMin.toString() ?? '60',
     );
     _categoryId = t?.categoryId;
-    _priority = Priority.fromDb(t?.priority ?? 0);
   }
 
   @override
@@ -92,7 +89,6 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
                   : _descriptionController.text.trim(),
               durationMin: duration,
               categoryId: _categoryId,
-              priority: _priority.dbValue,
             );
     final repo = ref.read(templateRepositoryProvider);
     setState(() {
@@ -176,18 +172,6 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
                   ],
                   onChanged: (c) => setState(() => _categoryId = c),
                 ),
-              const SizedBox(height: AppSpacing.md),
-              DropdownButtonFormField<Priority>(
-                initialValue: _priority,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Priority'),
-                items: [
-                  for (final p in Priority.values)
-                    DropdownMenuItem(value: p, child: Text(p.label)),
-                ],
-                onChanged: (p) =>
-                    setState(() => _priority = p ?? Priority.none),
-              ),
             ],
           ),
         ),

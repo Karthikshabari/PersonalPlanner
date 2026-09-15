@@ -25,7 +25,6 @@ import '../../providers/notification_settings_providers.dart';
 import '../../data/backup_service.dart';
 import '../../data/backup_input.dart';
 import '../../../task_editor/providers/subtask_providers.dart';
-import '../../../task_editor/providers/tag_providers.dart';
 import '../../../templates/providers/template_providers.dart';
 import '../../../timeline/presentation/providers/day_tasks_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
@@ -97,17 +96,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: const Text('Manage categories and colors'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _openSecondary(context, '/categories'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: ListTile(
-                key: const ValueKey('tags-tile'),
-                leading: const Icon(Icons.sell_outlined),
-                title: const Text('Tags'),
-                subtitle: const Text('Manage task tags'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/settings/tags'),
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -517,8 +505,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(weeklyReviewProvider);
     ref.invalidate(dailyStatsProvider);
     ref.invalidate(weeklyStatsProvider);
-    ref.invalidate(tagsProvider);
-    ref.invalidate(tagsForTaskProvider);
     ref.invalidate(subtasksForTaskProvider);
     ref.invalidate(subtaskCountsProvider);
     ref.invalidate(templatesProvider);

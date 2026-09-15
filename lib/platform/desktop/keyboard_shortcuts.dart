@@ -6,9 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
-import '../../core/models/enums/priority.dart';
 import '../../core/models/task.dart';
-import '../../core/providers/database_provider.dart';
 import '../../core/router/app_router.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
@@ -16,7 +14,6 @@ import '../../core/widgets/status_badge.dart';
 import '../../features/inbox/presentation/widgets/inbox_quick_add.dart';
 import '../../features/task_editor/presentation/screens/task_editor_panel.dart';
 import '../../features/task_editor/providers/task_editor_action_provider.dart';
-import '../../features/timeline/domain/commands/change_priority_command.dart';
 import '../../features/timeline/domain/snap_to_grid.dart';
 import '../../features/timeline/presentation/providers/day_tasks_provider.dart';
 import '../../features/timeline/presentation/providers/grid_settings_provider.dart';
@@ -46,10 +43,6 @@ enum PlannerShortcutAction {
   moveDown,
   resizeUp,
   resizeDown,
-  priorityLow,
-  priorityMedium,
-  priorityHigh,
-  priorityUrgent,
   saveAndClose,
   escape,
   week,
@@ -191,30 +184,6 @@ abstract final class PlannerShortcutRegistry {
       shortcut: 'Shift+↓',
       description: 'Lengthen the selected task by one grid slot',
       activators: [SingleActivator(LogicalKeyboardKey.arrowDown, shift: true)],
-    ),
-    PlannerShortcutDefinition(
-      action: PlannerShortcutAction.priorityLow,
-      shortcut: '1',
-      description: 'Set priority to Low',
-      activators: [SingleActivator(LogicalKeyboardKey.digit1)],
-    ),
-    PlannerShortcutDefinition(
-      action: PlannerShortcutAction.priorityMedium,
-      shortcut: '2',
-      description: 'Set priority to Medium',
-      activators: [SingleActivator(LogicalKeyboardKey.digit2)],
-    ),
-    PlannerShortcutDefinition(
-      action: PlannerShortcutAction.priorityHigh,
-      shortcut: '3',
-      description: 'Set priority to High',
-      activators: [SingleActivator(LogicalKeyboardKey.digit3)],
-    ),
-    PlannerShortcutDefinition(
-      action: PlannerShortcutAction.priorityUrgent,
-      shortcut: '4',
-      description: 'Set priority to Urgent',
-      activators: [SingleActivator(LogicalKeyboardKey.digit4)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.saveAndClose,
@@ -471,14 +440,6 @@ class _KeyboardShortcutHandlerState
         if (task != null && navigatorContext != null) {
           await TimelineActions.resizeByGrid(navigatorContext, ref, task, 1);
         }
-      case PlannerShortcutAction.priorityLow:
-        await _setPriority(Priority.low);
-      case PlannerShortcutAction.priorityMedium:
-        await _setPriority(Priority.medium);
-      case PlannerShortcutAction.priorityHigh:
-        await _setPriority(Priority.high);
-      case PlannerShortcutAction.priorityUrgent:
-        await _setPriority(Priority.urgent);
       case PlannerShortcutAction.saveAndClose:
         ref.read(taskEditorSaveRequestProvider.notifier).state++;
       case PlannerShortcutAction.escape:
@@ -529,20 +490,6 @@ class _KeyboardShortcutHandlerState
         ? (delta > 0 ? 0 : tasks.length - 1)
         : (currentIndex + delta).clamp(0, tasks.length - 1).toInt();
     ref.read(selectedTaskIdProvider.notifier).state = tasks[nextIndex].id;
-  }
-
-  Future<void> _setPriority(Priority priority) async {
-    final task = _selectedTask();
-    if (task == null || task.priority == priority) return;
-    await ref
-        .read(undoStackProvider.notifier)
-        .execute(
-          ChangePriorityCommand(
-            repository: ref.read(taskRepositoryProvider),
-            original: task,
-            newPriority: priority,
-          ),
-        );
   }
 
   Future<void> _undo() async {

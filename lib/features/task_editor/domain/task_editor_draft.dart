@@ -1,45 +1,29 @@
 import '../../../core/models/task.dart';
-import '../../../core/models/enums/priority.dart';
 import '../../../core/models/enums/task_status.dart';
 
 /// The complete persisted state that an editor Save accepts as its new
-/// baseline.  It deliberately contains the task and staged tag membership;
-/// the editor keeps recurrence configuration alongside the task because the
-/// existing recurrence aggregate owns that write.
+/// baseline. The editor keeps recurrence configuration alongside the task
+/// because the existing recurrence aggregate owns that write.
 class TaskEditorPersistedState {
   final Task task;
-  final Set<String> tagIds;
   final String? recurrenceSignature;
 
-  TaskEditorPersistedState({
-    required this.task,
-    required Set<String> tagIds,
-    this.recurrenceSignature,
-  }) : tagIds = Set.unmodifiable(tagIds);
+  TaskEditorPersistedState({required this.task, this.recurrenceSignature});
 }
 
 /// A normalized snapshot used for dirty-state comparison.  This is editor
 /// memory only; it is never serialized or synchronized.
 class TaskEditorBaseline {
   final Task task;
-  final Set<String> tagIds;
   final String? recurrenceSignature;
 
-  TaskEditorBaseline({
-    required this.task,
-    required Set<String> tagIds,
-    this.recurrenceSignature,
-  }) : tagIds = Set.unmodifiable(tagIds);
+  TaskEditorBaseline({required this.task, this.recurrenceSignature});
 
-  TaskEditorBaseline copyWith({
-    Task? task,
-    Set<String>? tagIds,
-    String? recurrenceSignature,
-  }) => TaskEditorBaseline(
-    task: task ?? this.task,
-    tagIds: tagIds ?? this.tagIds,
-    recurrenceSignature: recurrenceSignature ?? this.recurrenceSignature,
-  );
+  TaskEditorBaseline copyWith({Task? task, String? recurrenceSignature}) =>
+      TaskEditorBaseline(
+        task: task ?? this.task,
+        recurrenceSignature: recurrenceSignature ?? this.recurrenceSignature,
+      );
 
   static String normalizeTitle(String value) => value.trim();
 
@@ -51,9 +35,6 @@ class TaskEditorBaseline {
     return normalized.isEmpty ? null : normalized;
   }
 
-  bool hasSameTags(Set<String> ids) =>
-      tagIds.length == ids.length && tagIds.containsAll(ids);
-
   bool hasSameTaskValues(Task other) {
     final leftDescription = task.description;
     final rightDescription = other.description;
@@ -61,7 +42,6 @@ class TaskEditorBaseline {
         leftDescription == rightDescription &&
         normalizeNotes(task.notes ?? '') == normalizeNotes(other.notes ?? '') &&
         task.categoryId == other.categoryId &&
-        task.priority == other.priority &&
         task.status == other.status &&
         task.startTime == other.startTime &&
         task.endTime == other.endTime &&
@@ -81,7 +61,6 @@ class TaskEditorDraft {
   final String? description;
   final String? notes;
   final String? categoryId;
-  final Priority priority;
   final TaskStatus status;
   final DateTime? startTime;
   final DateTime? endTime;
@@ -95,7 +74,6 @@ class TaskEditorDraft {
     required this.description,
     required this.notes,
     required this.categoryId,
-    required this.priority,
     required this.status,
     required this.startTime,
     required this.endTime,
@@ -125,7 +103,6 @@ class TaskEditorDraft {
     check('Description', description, baseline.description, latest.description);
     check('Notes', notes, baseline.notes, latest.notes);
     check('Category', categoryId, baseline.categoryId, latest.categoryId);
-    check('Priority', priority, baseline.priority, latest.priority);
     check('Status', status, baseline.status, latest.status);
     check('Start time', startTime, baseline.startTime, latest.startTime);
     check('End time', endTime, baseline.endTime, latest.endTime);
@@ -161,7 +138,6 @@ class TaskEditorDraft {
       ),
       notes: choose(notes, baseline.notes, latest.notes),
       categoryId: choose(categoryId, baseline.categoryId, latest.categoryId),
-      priority: choose(priority, baseline.priority, latest.priority),
       status: choose(status, baseline.status, latest.status),
       startTime: choose(startTime, baseline.startTime, latest.startTime),
       endTime: choose(endTime, baseline.endTime, latest.endTime),

@@ -99,6 +99,70 @@ abstract final class TimelineGeometry {
     ]);
   }
 
+  /// Allocates temporary horizontal lanes only when rendering minimum heights
+  /// would make otherwise adjacent cards overlap. The returned lanes affect
+  /// painting only; scheduling geometry and conflict detection stay unchanged.
+  static Map<String, ({int index, int count})> visualLanesForMinimumHeight({
+    required Iterable<TimelineTaskGeometry> geometries,
+    required double thresholdPx,
+    required double minimumHeightPx,
+  }) {
+    final intervals =
+        geometries.where((geometry) => geometry.laneCount == 1).map((geometry) {
+          final needsMinimum = geometry.heightPx < thresholdPx;
+          final renderedHeight = needsMinimum
+              ? math.max(minimumHeightPx, geometry.heightPx)
+              : geometry.heightPx;
+          final extra = needsMinimum
+              ? (renderedHeight - geometry.heightPx) / 2
+              : 0.0;
+          return _VisualInterval(
+            taskId: geometry.task.id,
+            start: geometry.topPx - extra,
+            end: geometry.topPx + geometry.heightPx + extra,
+          );
+        }).toList()..sort((a, b) {
+          final byStart = a.start.compareTo(b.start);
+          return byStart == 0 ? a.end.compareTo(b.end) : byStart;
+        });
+
+    final lanes = <String, ({int index, int count})>{};
+    var component = <_VisualInterval>[];
+    var componentEnd = double.negativeInfinity;
+
+    void allocateComponent(List<_VisualInterval> intervals) {
+      if (intervals.length < 2) return;
+      final active = <_ActiveVisualLane>[];
+      final assigned = <String, int>{};
+      var laneCount = 0;
+      for (final interval in intervals) {
+        active.removeWhere((entry) => entry.end <= interval.start);
+        var lane = 0;
+        while (active.any((entry) => entry.lane == lane)) {
+          lane++;
+        }
+        active.add(_ActiveVisualLane(end: interval.end, lane: lane));
+        assigned[interval.taskId] = lane;
+        laneCount = math.max(laneCount, lane + 1);
+      }
+      for (final entry in assigned.entries) {
+        lanes[entry.key] = (index: entry.value, count: laneCount);
+      }
+    }
+
+    for (final interval in intervals) {
+      if (component.isNotEmpty && interval.start >= componentEnd) {
+        allocateComponent(component);
+        component = <_VisualInterval>[];
+        componentEnd = double.negativeInfinity;
+      }
+      component.add(interval);
+      componentEnd = math.max(componentEnd, interval.end);
+    }
+    allocateComponent(component);
+    return lanes;
+  }
+
   static TimelineTaskGeometry _forTask(
     Task task, {
     required PlannerDayAxis axis,
@@ -153,4 +217,23 @@ abstract final class TimelineGeometry {
     final byStart = a.startTime!.compareTo(b.startTime!);
     return byStart == 0 ? a.id.compareTo(b.id) : byStart;
   }
+}
+
+final class _VisualInterval {
+  final String taskId;
+  final double start;
+  final double end;
+
+  const _VisualInterval({
+    required this.taskId,
+    required this.start,
+    required this.end,
+  });
+}
+
+final class _ActiveVisualLane {
+  final double end;
+  final int lane;
+
+  const _ActiveVisualLane({required this.end, required this.lane});
 }

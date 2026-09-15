@@ -8,7 +8,6 @@ import '../../features/review/presentation/screens/daily_review_screen.dart';
 import '../../features/review/presentation/screens/weekly_review_screen.dart';
 import '../../features/settings/presentation/screens/notifications_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
-import '../../features/settings/presentation/screens/tags_screen.dart';
 import '../../features/templates/presentation/screens/task_templates_screen.dart';
 import '../../features/timeline/presentation/screens/day_view_screen.dart';
 import '../../features/timeline/presentation/screens/week_view_screen.dart';
@@ -65,10 +64,6 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/settings/sync',
           builder: (context, state) => const SyncSettingsScreen(),
-        ),
-        GoRoute(
-          path: '/settings/tags',
-          builder: (context, state) => const TagsScreen(),
         ),
         GoRoute(
           path: '/categories',

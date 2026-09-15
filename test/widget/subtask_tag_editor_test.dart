@@ -5,7 +5,6 @@ import 'package:personal_planner/core/models/subtask.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/task_editor/providers/subtask_providers.dart';
-import 'package:personal_planner/features/task_editor/providers/tag_providers.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 
 import '../helpers/test_container.dart';
@@ -51,9 +50,8 @@ Future<List<Subtask>> subtasksOf(
 }
 
 /// Scrolls the editor panel so [target] sits fully inside its viewport.
-/// Chunk 4 added the recurrence picker above the subtasks/tags sections,
-/// which pushed them close to (or below) the panel's bottom edge, so tests
-/// must bring them into view before tapping/dragging.
+/// The recurrence picker and subtasks can sit close to the panel's bottom
+/// edge, so tests must bring them into view before tapping/dragging.
 Future<void> bringIntoView(WidgetTester tester, Finder target) async {
   final editorScrollable = find
       .ancestor(of: target, matching: find.byType(Scrollable))
@@ -199,119 +197,6 @@ void main() {
       task.id,
     )).map((s) => s.title);
     expect(order, ['B', 'A']);
-    await finish(tester, container);
-  });
-
-  testWidgets('tag picker creates tags inline and multi-selects', (
-    tester,
-  ) async {
-    final container = await pumpDesktop(tester);
-    final taskA = await insertTask(tester, container, 'Tagged A');
-
-    await openEditor(tester, taskA);
-
-    // Create two tags by typing + Enter.
-    for (final name in ['urgent-ish', 'later']) {
-      await tester.enterText(find.byKey(const ValueKey('tag-input')), name);
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await settle(tester);
-    }
-
-    expect(find.byKey(const ValueKey('tag-chip-urgent-ish')), findsOneWidget);
-    expect(find.byKey(const ValueKey('tag-chip-later')), findsOneWidget);
-    // Both are staged in the editor draft.
-    expect(
-      tester
-          .widgetList<FilterChip>(find.byType(FilterChip))
-          .where((c) => c.selected)
-          .length,
-      2,
-    );
-
-    // Detach one via its chip.
-    await tester.tap(find.byKey(const ValueKey('tag-chip-later')));
-    await settle(tester);
-    expect(
-      tester
-          .widgetList<FilterChip>(find.byType(FilterChip))
-          .where((c) => c.selected)
-          .length,
-      1,
-    );
-    final save = find.byKey(const ValueKey('save-task-button'));
-    await tester.tap(save);
-    await settle(tester);
-    await finish(tester, container);
-  });
-
-  testWidgets('second task can select the same tag (multi-select)', (
-    tester,
-  ) async {
-    final container = await pumpDesktop(tester);
-    final a = await insertTask(tester, container, 'Tagged A');
-    final b = await insertTask(tester, container, 'Tagged B', startHour: 10);
-
-    await openEditor(tester, a);
-    await tester.enterText(find.byKey(const ValueKey('tag-input')), 'shared');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    // Wait for the real-async DB write to land and the stream to refresh.
-    for (var i = 0; i < 50; i++) {
-      if (find.byKey(const ValueKey('tag-chip-shared')).evaluate().isNotEmpty &&
-          tester
-              .widgetList<FilterChip>(
-                find.byKey(const ValueKey('tag-chip-shared')),
-              )
-              .first
-              .selected) {
-        break;
-      }
-      await tester.pump(const Duration(milliseconds: 20));
-    }
-    await settle(tester);
-
-    // Tag selection is part of the explicit editor Save contract.
-    final save = find.byKey(const ValueKey('save-task-button'));
-    await tester.tap(save);
-    await settle(tester);
-
-    // Attach the same tag to task B through the repository (the picker's
-    // data source); multi-select means two tasks can share one tag.
-    final shared = await runDb(
-      tester,
-      () => container.read(tagRepositoryProvider).getOrCreateByName('shared'),
-    );
-    await runDb(
-      tester,
-      () => container.read(tagRepositoryProvider).addTagToTask(b.id, shared.id),
-    );
-
-    // B's editor shows the chip as selected.
-    await openEditor(tester, b);
-    for (var i = 0; i < 50; i++) {
-      final chips = tester.widgetList<FilterChip>(
-        find.byKey(const ValueKey('tag-chip-shared')),
-      );
-      if (chips.isNotEmpty && chips.first.selected) break;
-      await tester.pump(const Duration(milliseconds: 20));
-    }
-    expect(
-      tester
-          .widgetList<FilterChip>(find.byKey(const ValueKey('tag-chip-shared')))
-          .first
-          .selected,
-      isTrue,
-    );
-
-    final tagsForA = await runDb(
-      tester,
-      () => container.read(tagRepositoryProvider).getTagsForTask(a.id),
-    );
-    final tagsForB = await runDb(
-      tester,
-      () => container.read(tagRepositoryProvider).getTagsForTask(b.id),
-    );
-    expect(tagsForA.single.name, 'shared');
-    expect(tagsForB.single.name, 'shared');
     await finish(tester, container);
   });
 }

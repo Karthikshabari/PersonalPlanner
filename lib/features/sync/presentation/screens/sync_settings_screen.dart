@@ -366,7 +366,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         content: const Text(
           'This copies the offline-only records into this signed-in account. '
           'The offline-only database is kept as a recovery copy. Any existing '
-          'tag or review conflicts must be resolved before import.',
+          'metadata or review conflicts must be resolved before import.',
         ),
         actions: [
           TextButton(
@@ -550,7 +550,7 @@ class _QuarantineCard extends StatelessWidget {
     final table = switch (change.tableName) {
       'tasks' => 'Task',
       'categories' => 'Category',
-      'tags' => 'Tag',
+      'tags' => 'Legacy metadata',
       'subtasks' => 'Subtask',
       'recurring_rules' => 'Recurring rule',
       'task_templates' => 'Template',
@@ -558,7 +558,7 @@ class _QuarantineCard extends StatelessWidget {
       'weekly_reviews' => 'Weekly review',
       'timer_sessions' => 'Timer session',
       'day_contexts' => 'Day context',
-      'task_tags' => 'Task tag',
+      'task_tags' => 'Legacy metadata link',
       _ => 'Remote record',
     };
     final identity = change.recordId == null || change.recordId!.isEmpty
@@ -630,14 +630,14 @@ class _PermanentFailureCard extends StatelessWidget {
     final table = switch (operation.entityTableName) {
       'tasks' => 'Task',
       'categories' => 'Category',
-      'tags' => 'Tag',
+      'tags' => 'Legacy metadata',
       'subtasks' => 'Subtask',
       'recurring_rules' => 'Recurring rule',
       'task_templates' => 'Template',
       'daily_reviews' => 'Daily review',
       'weekly_reviews' => 'Weekly review',
       'timer_sessions' => 'Timer session',
-      'task_tags' => 'Task tag',
+      'task_tags' => 'Legacy metadata link',
       _ => 'Record',
     };
     return '$table · ${operation.recordId}';
@@ -761,14 +761,14 @@ String _conflictTitle(SyncConflictRow conflict) {
   final label = switch (conflict.entityTableName) {
     'tasks' => 'Task',
     'categories' => 'Category',
-    'tags' => 'Tag',
+    'tags' => 'Legacy metadata',
     'subtasks' => 'Subtask',
     'recurring_rules' => 'Recurring rule',
     'task_templates' => 'Template',
     'daily_reviews' => 'Daily review',
     'weekly_reviews' => 'Weekly review',
     'timer_sessions' => 'Timer session',
-    'task_tags' => 'Task tag',
+    'task_tags' => 'Legacy metadata link',
     _ => 'Record',
   };
   final name = value == null
@@ -834,12 +834,17 @@ String _snapshotState(Map<String, dynamic> snapshot) {
   return status == null ? 'active' : status.toString().replaceAll('_', ' ');
 }
 
-String _fieldLabel(String key) => key
-    .replaceAll('_', ' ')
-    .replaceFirstMapped(
-      RegExp(r'^.'),
-      (match) => match.group(0)!.toUpperCase(),
-    );
+String _fieldLabel(String key) {
+  if (const {'priority', 'tags_json', 'tag_id'}.contains(key)) {
+    return 'Legacy metadata';
+  }
+  return key
+      .replaceAll('_', ' ')
+      .replaceFirstMapped(
+        RegExp(r'^.'),
+        (match) => match.group(0)!.toUpperCase(),
+      );
+}
 
 class _AuthForm extends ConsumerStatefulWidget {
   const _AuthForm();

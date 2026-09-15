@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/models/enums/priority.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
@@ -87,8 +86,7 @@ class TaskTemplatesScreen extends ConsumerWidget {
                   title: Text(template.name),
                   subtitle: Text(
                     '${template.durationMin} min'
-                    '${category == null ? '' : ' · ${category.name}'}'
-                    ' · ${Priority.fromDb(template.priority).label}',
+                    '${category == null ? '' : ' · ${category.name}'}',
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

@@ -6,7 +6,6 @@ import '../../../../core/models/task_template.dart';
 import '../../../../core/utils/uuid.dart';
 import '../../../../core/utils/task_time_metrics.dart';
 import '../../../templates/providers/template_providers.dart';
-import '../../providers/tag_providers.dart';
 
 @immutable
 class SaveAsTemplateDraft {
@@ -14,18 +13,12 @@ class SaveAsTemplateDraft {
   final String? description;
   final int durationMin;
   final String? categoryId;
-  final int priority;
-  final Set<String>? tagIds;
-  final String? sourceTaskId;
 
   const SaveAsTemplateDraft({
     required this.suggestedName,
     required this.description,
     required this.durationMin,
     required this.categoryId,
-    required this.priority,
-    required this.tagIds,
-    this.sourceTaskId,
   });
 
   factory SaveAsTemplateDraft.fromPersistedTask(Task task) {
@@ -35,9 +28,6 @@ class SaveAsTemplateDraft {
       durationMin:
           TaskTimeMetrics.plannedMinutes(task.startTime, task.endTime) ?? 60,
       categoryId: task.categoryId,
-      priority: task.priority.dbValue,
-      tagIds: null,
-      sourceTaskId: task.id,
     );
   }
 }
@@ -56,14 +46,6 @@ Future<void> saveAsTemplate(
   );
   if (name == null) return;
 
-  var effectiveTagIds = draft.tagIds?.toList() ?? <String>[];
-  if (draft.tagIds == null && draft.sourceTaskId != null) {
-    final tags = await ref
-        .read(tagRepositoryProvider)
-        .getTagsForTask(draft.sourceTaskId!);
-    effectiveTagIds = tags.map((t) => t.id).toList();
-  }
-
   await ref
       .read(templateRepositoryProvider)
       .insertTemplate(
@@ -73,8 +55,6 @@ Future<void> saveAsTemplate(
           description: draft.description,
           durationMin: draft.durationMin,
           categoryId: draft.categoryId,
-          priority: draft.priority,
-          tags: effectiveTagIds,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         ),
