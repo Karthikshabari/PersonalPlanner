@@ -99,6 +99,67 @@ void main() {
     }
   });
 
+  test(
+    'remote missed markers interpret legacy UTC minutes exactly once',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      try {
+        final now = DateTime.utc(2026, 1, 1, 9);
+        final task = await TaskRepository(db).insertTask(
+          Task(id: '', title: 'Remote marker', createdAt: now, updatedAt: now),
+        );
+        final payload = <String, dynamic>{
+          'id': task.id,
+          'title': task.title,
+          'description': null,
+          'start_time': null,
+          'end_time': null,
+          'estimated_duration_min': null,
+          'actual_duration_min': null,
+          'manual_duration_adjustment_min': 0,
+          'manual_actual_set': 0,
+          'category_id': null,
+          'priority': 0,
+          'status': 'planned',
+          'notes': null,
+          'recurring_rule_id': null,
+          'rescheduled_from_id': null,
+          'rescheduled_to_id': null,
+          'is_inbox': 0,
+          'inbox_content_version': 0,
+          'due_date': null,
+          'missed_at': '2026-09-14T18:30',
+          'created_at': now.toIso8601String(),
+          'updated_at': now.toIso8601String(),
+          'deleted_at': null,
+        };
+        final applier = SyncRemoteApplier(db);
+        for (var version = 1; version <= 2; version++) {
+          await db.syncDao.runWithoutOutbound(
+            () => applier.apply(
+              SyncRemoteChange(
+                changeId: version,
+                operationId: 'remote-marker-$version',
+                tableName: 'tasks',
+                recordId: task.id,
+                operation: 'update',
+                serverVersion: version,
+                serverTimestamp: now,
+                payload: Map<String, dynamic>.from(payload),
+              ),
+            ),
+          );
+          expect(
+            (await db.taskDao.getTaskById(task.id))?.missedAt,
+            '2026-09-14T18:30',
+          );
+        }
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
   test('remote task application derives estimate from its interval', () async {
     final db = AppDatabase(NativeDatabase.memory());
     try {

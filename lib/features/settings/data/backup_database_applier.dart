@@ -150,7 +150,7 @@ class BackupDatabaseApplier {
                   BackupValidator.nullableDateOnly(row, 'due_date'),
                 ),
                 missedAt: Value(
-                  BackupValidator.nullableString(row, 'missed_at'),
+                  BackupValidator.nullableMissedAt(row, 'missed_at'),
                 ),
                 planTitleHistoryJson: Value(
                   PlanTitleHistory.encodeJson(

@@ -6,6 +6,7 @@ import '../../../core/models/inbox_item.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/missed_at.dart';
 import '../../timeline/data/task_repository.dart';
 
 /// Inbox data access per architecture.md §3 "Inbox representation" and the
@@ -103,7 +104,7 @@ class InboxRepository {
   /// Format: `YYYY-MM-DDTHH:mm` (UTC), per architecture.md §3.
   Future<int> stampOverdue([DateTime? asOf]) async {
     final now = (asOf ?? DateTime.now()).toUtc();
-    final stamp = now.toIso8601String().substring(0, 16);
+    final stamp = MissedAtCodec.formatUtcMinute(now);
     return _db.customUpdate(
       'UPDATE tasks SET missed_at = ?, updated_at = ?, sync_status = 1, '
       'revision = revision + 1 WHERE deleted_at IS NULL AND is_inbox = 0 '

@@ -16,8 +16,10 @@ import '../../task_editor/domain/plan_title_history.dart';
 
 class TaskRepository {
   final AppDatabase _db;
+  final DateTime Function() _clock;
 
-  TaskRepository(this._db);
+  TaskRepository(this._db, {DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   TaskDao get _dao => _db.taskDao;
 
@@ -27,7 +29,7 @@ class TaskRepository {
       _db.transaction(action);
 
   Future<Task> insertTask(Task task) async {
-    final now = DateTime.now();
+    final now = _clock();
     // A caller that supplies an initial Actual value is creating a manual
     // source, not a second writable cache. This preserves older import/test
     // callers while keeping the source/cache invariant from the first row.
@@ -73,7 +75,7 @@ class TaskRepository {
     bool allowStatusTransition = false,
     int? expectedRevision,
   }) async {
-    final now = DateTime.now();
+    final now = _clock();
     final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
     _validate(effective);
     final terminalStatus = _isTerminalStatus(effective.status);
@@ -119,14 +121,26 @@ class TaskRepository {
         await TimerService(_db)
             .stopOwnedTaskInTransaction(canonical.id, ownerDeviceId, now);
       }
+      // Stop recomputes the derived Actual cache from the now-finished timer
+      // source. Reload it before the full task write so this status update
+      // cannot replay the pre-stop cache captured above.
+      final accounting = await _dao.getTaskById(effective.id) ?? current;
+      final finalTask = canonical.copyWith(
+        actualDurationMin: accounting.actualDurationMin,
+        manualDurationAdjustmentMin: accounting.manualDurationAdjustmentMin,
+        manualActualSet: accounting.manualActualSet,
+      );
       await _dao.updateTask(
-        _toRow(canonical, syncStatus: 1, revision: row.revision + 1),
+        _toRow(finalTask, syncStatus: 1, revision: row.revision + 1),
       );
       await _invalidateStatsForIntervals([
         (row.startTime, row.endTime),
         (canonical.startTime, canonical.endTime),
       ]);
-      persisted = canonical;
+      persisted = fromRow(
+        await _dao.getTaskById(effective.id) ??
+            _toRow(finalTask, syncStatus: 1, revision: row.revision + 1),
+      );
     });
     return persisted;
   }
@@ -134,7 +148,7 @@ class TaskRepository {
   Future<void> deleteTask(String taskId) async {
     final row = await _dao.getTaskById(taskId);
     if (row == null || row.deletedAt != null) return;
-    final now = DateTime.now();
+    final now = _clock();
     final ownerDeviceId = await TimerRepository(_db).localDeviceId();
     await _db.transaction(() async {
       await TimerService(_db)

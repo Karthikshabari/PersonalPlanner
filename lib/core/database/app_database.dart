@@ -23,6 +23,7 @@ import 'daos/timer_dao.dart';
 import 'converters.dart';
 import '../utils/task_time_metrics.dart';
 import '../utils/uuid.dart';
+import '../utils/missed_at.dart';
 import 'tables/app_settings_table.dart';
 import 'tables/categories_table.dart';
 import 'tables/day_contexts_table.dart';
@@ -297,8 +298,10 @@ class AppDatabase extends _$AppDatabase {
           for (final field in columns.entries) {
             final raw = row.readNullable<String>(field.key);
             if (raw == null) continue;
-            final parsed = DateTime.tryParse(raw);
-            if (parsed == null) {
+            final canonical = field.value == 'minute'
+                ? MissedAtCodec.normalize(raw)
+                : DateTime.tryParse(raw)?.toUtc().toIso8601String();
+            if (canonical == null) {
               malformed.add((
                 table: table,
                 key: key,
@@ -308,10 +311,6 @@ class AppDatabase extends _$AppDatabase {
               ));
               continue;
             }
-            final canonicalUtc = parsed.toUtc().toIso8601String();
-            final canonical = field.value == 'minute'
-                ? canonicalUtc.substring(0, 16)
-                : canonicalUtc;
             if (canonical == raw) continue;
             final where = primaryKeys[table] ?? 'id = ?';
             final variables = table == 'task_tags'
@@ -632,6 +631,10 @@ class AppDatabase extends _$AppDatabase {
           [migratedDescription, id],
         );
       }
+      // This is the only legacy-cache-to-manual conversion boundary. It is
+      // reached from an actual pre-v8 schema upgrade, never from an ordinary
+      // open of a database that already advertises schema v8.
+      await _migrateLegacyTimeAccounting();
     } finally {
       if (previousApplyMode == null) {
         await customStatement(
@@ -643,6 +646,47 @@ class AppDatabase extends _$AppDatabase {
           [previousApplyMode.read<String>('value')],
         );
       }
+    }
+  }
+
+  Future<void> _migrateLegacyTimeAccounting() async {
+    final legacyTasks = await customSelect(
+      'SELECT id, actual_duration_min, manual_duration_adjustment_min, '
+      'manual_actual_set FROM tasks WHERE manual_actual_set = 0 AND '
+      '(actual_duration_min IS NOT NULL OR manual_duration_adjustment_min != 0)',
+    ).get();
+    for (final task in legacyTasks) {
+      final id = task.read<String>('id');
+      final actual = task.readNullable<int>('actual_duration_min');
+      final adjustment = task.read<int>('manual_duration_adjustment_min');
+      final completed = await customSelect(
+        "SELECT COALESCE(SUM(duration_sec), 0) AS total FROM timer_sessions "
+        "WHERE task_id = ? AND state = 'finished' AND ended_at IS NOT NULL "
+        'AND deleted_at IS NULL',
+        variables: [Variable<String>(id)],
+      ).getSingle();
+      final minutes = completed.read<int>('total') ~/ 60;
+      // In the old representation Actual was the displayed total. Recover
+      // only the signed source that explains that total over measured work.
+      final inferred = actual == null ? adjustment : actual - minutes;
+      await customStatement(
+        'INSERT OR IGNORE INTO planner_migration_recovery '
+        '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          'v8:tasks:$id',
+          'tasks',
+          id,
+          jsonEncode(task.data),
+          'Inferred one-time manual actual source from legacy displayed cache',
+          DateTime.now().toUtc().toIso8601String(),
+        ],
+      );
+      await customStatement(
+        'UPDATE tasks SET manual_duration_adjustment_min = ?, '
+        'manual_actual_set = 1 WHERE id = ?',
+        [inferred, id],
+      );
     }
   }
 
@@ -1525,45 +1569,12 @@ END;
         "UPDATE timer_sessions SET state = 'running', running_since = COALESCE(running_since, started_at), work_intervals_json = COALESCE(work_intervals_json, '[]'), owner_device_id = NULL WHERE ended_at IS NULL AND (state IS NULL OR state = 'finished')",
       );
 
-      final legacyTasks = await customSelect(
-        'SELECT id, actual_duration_min, manual_duration_adjustment_min, manual_actual_set '
-        'FROM tasks WHERE manual_actual_set = 0 AND '
-        '(actual_duration_min IS NOT NULL OR manual_duration_adjustment_min != 0)',
-      ).get();
-      for (final task in legacyTasks) {
-        final id = task.read<String>('id');
-        final actual = task.readNullable<int>('actual_duration_min');
-        final adjustment = task.read<int>('manual_duration_adjustment_min');
-        final completed = await customSelect(
-          "SELECT COALESCE(SUM(duration_sec), 0) AS total FROM timer_sessions WHERE task_id = ? AND state = 'finished' AND ended_at IS NOT NULL AND deleted_at IS NULL",
-          variables: [Variable<String>(id)],
-        ).getSingle();
-        final minutes = completed.read<int>('total') ~/ 60;
-        final inferred = actual == null ? adjustment : actual - minutes;
-        await customStatement(
-          'INSERT OR IGNORE INTO planner_migration_recovery '
-          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
-          'VALUES (?, ?, ?, ?, ?, ?)',
-          [
-            'v8:tasks:$id',
-            'tasks',
-            id,
-            jsonEncode(task.data),
-            'Inferred one-time manual actual source from legacy displayed cache',
-            DateTime.now().toUtc().toIso8601String(),
-          ],
-        );
-        await customStatement(
-          'UPDATE tasks SET manual_duration_adjustment_min = ?, manual_actual_set = 1 WHERE id = ?',
-          [inferred, id],
-        );
-      }
       // Cache refresh stays non-semantic under the sync guard and happens
       // after every timer source row has its migrated state.
       await customStatement('''
         UPDATE tasks
         SET actual_duration_min = CASE
-          WHEN manual_actual_set = 0 AND NOT EXISTS (
+          WHEN manual_actual_set = 0 AND actual_duration_min IS NULL AND NOT EXISTS (
             SELECT 1 FROM timer_sessions s
             WHERE s.task_id = tasks.id AND s.state = 'finished'
               AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL

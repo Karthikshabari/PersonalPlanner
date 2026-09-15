@@ -172,6 +172,36 @@ void main() {
     },
   );
 
+  test('backup round trip preserves the canonical missed marker', () async {
+    final task = await TaskRepository(database).insertTask(
+      Task(
+        id: '00000000-0000-7000-8000-0000000000f4',
+        title: 'Missed backup',
+        missedAt: '2026-09-14T18:30',
+        createdAt: _time,
+        updatedAt: _time,
+      ),
+    );
+    final source = await BackupService(database).exportJson();
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+
+    await BackupService(restored).importJson(source, ownershipConfirmed: true);
+    expect(
+      (await TaskRepository(restored).getTaskById(task.id))?.missedAt,
+      '2026-09-14T18:30',
+    );
+    final exportedAgain = await BackupService(restored).exportJson();
+    final data =
+        ((jsonDecode(exportedAgain) as Map<String, dynamic>)['content']
+                as Map<String, dynamic>)['data']
+            as Map<String, dynamic>;
+    final row = (data['tasks'] as List).cast<Map>().singleWhere(
+      (value) => value['id'] == task.id,
+    );
+    expect(row['missed_at'], '2026-09-14T18:30');
+  });
+
   test(
     'export freezes unfinished running work as portable paused data',
     () async {
