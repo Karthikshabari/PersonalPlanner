@@ -25,7 +25,7 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     now = DateTime.utc(2026, 1, 1, 9);
     timer = TimerService(db, clock: () => now);
-    tasks = TaskRepository(db);
+    tasks = TaskRepository(db, clock: () => now);
     await CategoryRepository(db).seedDefaultsIfEmpty();
   });
 
@@ -112,6 +112,160 @@ void main() {
     expect(second.didFinish, isFalse);
     expect(first.session?.durationSec, 95);
     expect((await tasks.getTaskById(task.id))?.actualDurationMin, 1);
+  });
+
+  test(
+    'terminal task update stops a running timer without overwriting Actual',
+    () async {
+      final task = await seedTask('Complete directly');
+      await timer.start(task.id);
+      now = now.add(const Duration(minutes: 5));
+
+      final returned = await tasks.updateTask(
+        task.copyWith(status: TaskStatus.completed),
+      );
+      final persisted = await tasks.getTaskById(task.id);
+      final session = (await db.timerDao.getSessionsForTask(task.id)).single;
+
+      expect(returned.actualDurationMin, 5);
+      expect(persisted?.actualDurationMin, 5);
+      expect(session.state, TimerSessionState.finished.dbValue);
+      expect(session.durationSec, const Duration(minutes: 5).inSeconds);
+      expect(persisted?.manualActualSet, isFalse);
+      expect(persisted?.manualDurationAdjustmentMin, 0);
+    },
+  );
+
+  test(
+    'two timer intervals remain stable across repeated database opens',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'planner_timer_actual_',
+      );
+      final file = File('${directory.path}/planner.sqlite');
+      AppDatabase? currentDb;
+      try {
+        var clock = DateTime.utc(2026, 1, 2, 9);
+        currentDb = AppDatabase(NativeDatabase(file));
+        final repository = TaskRepository(currentDb, clock: () => clock);
+        final service = TimerService(currentDb, clock: () => clock);
+        final task = await repository.insertTask(
+          Task(
+            id: '',
+            title: 'Stable Actual',
+            createdAt: clock,
+            updatedAt: clock,
+          ),
+        );
+        await service.start(task.id);
+        clock = clock.add(const Duration(minutes: 2));
+        await service.stop();
+        await service.start(task.id);
+        clock = clock.add(const Duration(minutes: 5));
+
+        final completed = await repository.updateTask(
+          task.copyWith(status: TaskStatus.completed),
+        );
+        expect(completed.actualDurationMin, 7);
+        expect(completed.manualActualSet, isFalse);
+        expect(completed.manualDurationAdjustmentMin, 0);
+        await currentDb.close();
+        currentDb = null;
+
+        for (var reopen = 0; reopen < 2; reopen++) {
+          currentDb = AppDatabase(NativeDatabase(file));
+          final reopened = await TaskRepository(currentDb).getTaskById(task.id);
+          expect(reopened?.actualDurationMin, 7);
+          expect(reopened?.manualActualSet, isFalse);
+          expect(reopened?.manualDurationAdjustmentMin, 0);
+          await currentDb.close();
+          currentDb = null;
+        }
+      } finally {
+        await currentDb?.close();
+        await directory.delete(recursive: true);
+      }
+    },
+  );
+
+  test('terminal task update preserves an existing manual source', () async {
+    final cases = <({int desired, int expectedAdjustment})>[
+      (desired: 0, expectedAdjustment: 0),
+      (desired: 3, expectedAdjustment: 3),
+    ];
+    for (final testCase in cases) {
+      final task = await seedTask('Manual ${testCase.desired}');
+      await timer.setManualActual(task.id, testCase.desired);
+      await timer.start(task.id);
+      now = now.add(const Duration(minutes: 5));
+      final returned = await tasks.updateTask(
+        task.copyWith(status: TaskStatus.completed),
+      );
+
+      expect(returned.manualActualSet, isTrue);
+      expect(returned.manualDurationAdjustmentMin, testCase.expectedAdjustment);
+      expect(returned.actualDurationMin, testCase.desired + 5);
+    }
+
+    final measured = await seedTask('Manual negative');
+    await db
+        .into(db.timerSessions)
+        .insert(
+          TimerSessionsCompanion.insert(
+            id: 'manual-negative-source',
+            taskId: measured.id,
+            startedAt: now,
+            endedAt: Value(now.add(const Duration(minutes: 10))),
+            durationSec: const Value(10 * 60),
+            state: const Value('finished'),
+            workIntervalsJson: const Value('[]'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+    await timer.syncActualDuration(measured.id);
+    await timer.setManualActual(measured.id, 7);
+    await timer.start(measured.id);
+    now = now.add(const Duration(minutes: 5));
+    final returned = await tasks.updateTask(
+      measured.copyWith(status: TaskStatus.cancelled),
+    );
+    expect(returned.manualActualSet, isTrue);
+    expect(returned.manualDurationAdjustmentMin, -3);
+    expect(returned.actualDurationMin, 12);
+  });
+
+  test(
+    'terminal skipped and cancelled paths finish owned paused work',
+    () async {
+      for (final status in [TaskStatus.skipped, TaskStatus.cancelled]) {
+        final task = await seedTask(status.label);
+        final started = await timer.start(task.id);
+        now = now.add(const Duration(minutes: 2));
+        await timer.pauseSession(started.session!.id);
+        now = now.add(const Duration(minutes: 3));
+
+        final returned = await tasks.updateTask(task.copyWith(status: status));
+        final session = (await db.timerDao.getSessionsForTask(task.id)).single;
+        expect(returned.status, status);
+        expect(returned.actualDurationMin, 2);
+        expect(session.state, TimerSessionState.finished.dbValue);
+        expect(session.durationSec, const Duration(minutes: 2).inSeconds);
+      }
+    },
+  );
+
+  test('terminal reschedule finishes its owned timer', () async {
+    final task = await seedTask('Reschedule source');
+    final successor = await seedTask('Reschedule successor');
+    await timer.start(task.id);
+    now = now.add(const Duration(minutes: 4));
+
+    final returned = await tasks.markRescheduled(task.id, successor.id);
+    final session = (await db.timerDao.getSessionsForTask(task.id)).single;
+    expect(returned.status, TaskStatus.rescheduled);
+    expect(returned.actualDurationMin, 4);
+    expect(session.state, TimerSessionState.finished.dbValue);
   });
 
   test(

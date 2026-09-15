@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../core/models/timer_session.dart';
 import '../../../core/utils/uuid.dart';
+import '../../../core/utils/missed_at.dart';
 import '../../recurring/domain/rrule_utils.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import 'sync_models.dart';
@@ -505,7 +506,20 @@ abstract final class SyncPayloadValidator {
       keys.add('ended_at');
     }
     for (final key in keys) {
-      if (p.containsKey(key)) _dateTime(p[key]);
+      if (p.containsKey(key)) {
+        if (key == 'missed_at') {
+          final value = p[key];
+          if (value != null &&
+              (value is! String || MissedAtCodec.parse(value) == null)) {
+            throw const SyncValidationException('Invalid missed_at');
+          }
+          if (value is String) {
+            p[key] = MissedAtCodec.normalize(value);
+          }
+        } else {
+          _dateTime(p[key]);
+        }
+      }
     }
   }
 

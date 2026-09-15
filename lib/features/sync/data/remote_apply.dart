@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/acyclic_links.dart';
 import '../../../core/utils/task_time_metrics.dart';
+import '../../../core/utils/missed_at.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import '../domain/sync_models.dart';
 import '../domain/sync_validation.dart';
@@ -358,14 +359,17 @@ ON CONFLICT(${definition.primaryKey}) DO UPDATE SET $updates
     for (final field in fields[table] ?? const <String>{}) {
       final value = result[field];
       if (value == null) continue;
-      final parsed = DateTime.tryParse(value.toString());
-      if (parsed == null) continue;
-      final canonical = parsed.toUtc().toIso8601String();
       // missed_at is intentionally stored at minute precision (the inbox
       // badge and local stamping contract use YYYY-MM-DDTHH:mm).
-      result[field] = field == 'missed_at'
-          ? canonical.substring(0, 16)
-          : canonical;
+      if (field == 'missed_at') {
+        final canonical = MissedAtCodec.normalize(value.toString());
+        if (canonical != null) result[field] = canonical;
+      } else {
+        final parsed = DateTime.tryParse(value.toString());
+        if (parsed != null) {
+          result[field] = parsed.toUtc().toIso8601String();
+        }
+      }
     }
     if (table == 'tasks') {
       final isInbox =

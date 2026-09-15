@@ -3,10 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/inbox_item.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
+import 'package:personal_planner/features/inbox/presentation/widgets/overdue_badge.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/day_tasks_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart'
     as date_provider;
@@ -133,6 +136,26 @@ void main() {
       findsAtLeastNWidgets(1),
     );
     await finish(tester, container);
+  });
+
+  testWidgets('overdue badge renders missed UTC minute in planner timezone', (
+    tester,
+  ) async {
+    PlannerTimeZone.initialize(identifier: 'Asia/Kolkata');
+    final task = Task(
+      id: 'badge-task',
+      title: 'Badge task',
+      missedAt: '2026-09-14T18:30',
+      createdAt: DateTime.utc(2026, 9, 14),
+      updatedAt: DateTime.utc(2026, 9, 14),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: OverdueBadge(item: InboxItem.overdue(task))),
+      ),
+    );
+
+    expect(find.text('Missed Sep 15 00:00'), findsOneWidget);
   });
 
   testWidgets('Inbox due date is shown separately from missed schedule', (

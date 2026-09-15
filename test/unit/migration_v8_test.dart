@@ -378,6 +378,11 @@ void main() {
           final task = await db.taskDao.getTaskById('task-1');
           expect(task?.planTitleHistoryJson, '[]');
           expect(task?.displayPlanChangeId, isNull);
+          // A database already advertising v8 has no migration provenance.
+          // Its ambiguous cache is not promoted to a manual source on open.
+          expect(task?.actualDurationMin, 15);
+          expect(task?.manualDurationAdjustmentMin, 0);
+          expect(task?.manualActualSet, isFalse);
         } finally {
           await db.close();
         }

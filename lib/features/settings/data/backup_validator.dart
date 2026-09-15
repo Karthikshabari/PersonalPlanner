@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:personal_planner/features/settings/data/backup_format.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
+import 'package:personal_planner/core/utils/missed_at.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 
 /// Validates the complete portable payload before a write transaction starts.
@@ -372,6 +373,17 @@ class BackupValidator {
   static String? nullableDateOnly(Map<String, dynamic> row, String field) =>
       row[field] == null ? null : dateOnly(row, field);
 
+  static String? nullableMissedAt(Map<String, dynamic> row, String field) {
+    final value = row[field];
+    if (value == null) return null;
+    if (value is! String || MissedAtCodec.parse(value) == null) {
+      throw BackupValidationException('$field must be a valid timestamp.');
+    }
+    final normalized = MissedAtCodec.normalize(value);
+    row[field] = normalized;
+    return normalized;
+  }
+
   static String timeOfDay(Map<String, dynamic> row, String field) {
     final value = _string(row[field], field);
     final match = RegExp(r'^(\d{2}):(\d{2})$').firstMatch(value);
@@ -494,7 +506,7 @@ class BackupValidator {
             'Inbox tasks must not have a schedule.',
           );
         }
-        nullableString(row, 'missed_at');
+        nullableMissedAt(row, 'missed_at');
         _validateAuditDates(row);
       case 'subtasks':
         id(row, 'id');
