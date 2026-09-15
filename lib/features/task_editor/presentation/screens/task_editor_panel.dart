@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/models/enums/priority.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/recurring_rule.dart';
 import '../../../../core/models/task.dart';
@@ -31,7 +30,6 @@ import '../../../timeline/domain/conflict_resolver.dart';
 import '../../../timeline/domain/scheduling_conflict_service.dart';
 import '../../../timeline/presentation/widgets/conflict_resolution_dialog.dart';
 import '../../../../core/models/task_template.dart';
-import '../../providers/tag_providers.dart';
 import '../../providers/task_editor_action_provider.dart';
 import '../../domain/task_editor_save_command.dart';
 import '../../domain/task_editor_draft.dart';
@@ -42,7 +40,6 @@ import '../widgets/category_dropdown.dart';
 import '../widgets/recurrence_picker.dart';
 import '../widgets/save_as_template_dialog.dart';
 import '../widgets/subtask_editor.dart';
-import '../widgets/tag_picker.dart';
 import '../widgets/use_template_dropdown.dart';
 import '../widgets/plan_change_dialog.dart';
 import '../../../timeline/presentation/widgets/schedule_fields.dart';
@@ -125,16 +122,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   Task? _originalTask;
   Task? _conflictBaselineTask;
   TaskEditorBaseline? _baseline;
-  Set<String>? _originalTagIds;
   TimeOfDay? _startTime;
   DateTime? _startInstant;
   DateTime? _endInstant;
   String? _dueDate;
   bool _scheduleDirty = false;
   String? _categoryId;
-  Priority _priority = Priority.none;
   TaskStatus _status = TaskStatus.planned;
-  Set<String>? _stagedTagIds;
   bool _saving = false;
   String? _errorMessage;
   Task? _activeTask;
@@ -208,7 +202,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       _actualController.text.trim() !=
           (baseline.actualDurationMin?.toString() ?? '') ||
       _categoryId != baseline.categoryId ||
-      _priority != baseline.priority ||
       _status != baseline.status ||
       _dueDate != baseline.dueDate ||
       _scheduleInputsChanged;
@@ -229,7 +222,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         _actualController.text.trim() !=
         (previous.actualDurationMin?.toString() ?? '');
     final categoryDirty = _categoryId != previous.categoryId;
-    final priorityDirty = _priority != previous.priority;
     final statusDirty = _status != previous.status;
     final dueDateDirty = _dueDate != previous.dueDate;
     final scheduleDirty = _scheduleInputsChanged;
@@ -248,7 +240,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       );
     }
     if (!categoryDirty) _categoryId = latest.categoryId;
-    if (!priorityDirty) _priority = latest.priority;
     if (!statusDirty) _status = latest.status;
     if (!dueDateDirty) _dueDate = latest.dueDate;
     if (!scheduleDirty) {
@@ -270,7 +261,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       categoryId: categoryDirty
           ? conflictBaseline.categoryId
           : latest.categoryId,
-      priority: priorityDirty ? conflictBaseline.priority : latest.priority,
       status: statusDirty ? conflictBaseline.status : latest.status,
       startTime: scheduleDirty ? conflictBaseline.startTime : latest.startTime,
       endTime: scheduleDirty ? conflictBaseline.endTime : latest.endTime,
@@ -282,7 +272,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _originalTask = latest;
     _baseline = TaskEditorBaseline(
       task: latest,
-      tagIds: _originalTagIds ?? _baseline!.tagIds,
       recurrenceSignature: _baseline!.recurrenceSignature,
     );
   }
@@ -303,10 +292,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _editingTaskId = id;
     _originalTask = task;
     _conflictBaselineTask = task;
-    _baseline = task == null
-        ? null
-        : TaskEditorBaseline(task: task, tagIds: const <String>{});
-    _originalTagIds = null;
+    _baseline = task == null ? null : TaskEditorBaseline(task: task);
     _setControllerText(_titleController, task?.title ?? '');
     _setControllerText(_descriptionController, task?.description ?? '');
     _setControllerText(_notesController, task?.notes ?? '');
@@ -315,9 +301,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       task?.actualDurationMin?.toString() ?? '',
     );
     _categoryId = task?.categoryId;
-    _priority = task?.priority ?? Priority.none;
     _status = task?.status ?? TaskStatus.planned;
-    _stagedTagIds = null;
     final start = task?.startTime;
     final end = task?.endTime;
     _startTime = start == null
@@ -353,18 +337,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     setState(() => _dueDate = isoDateString(picked));
   }
 
-  bool _sameIds(Set<String> left, Set<String> right) =>
-      left.length == right.length && left.containsAll(right);
-
   bool get _hasDraftChanges {
     final original = _baseline?.task ?? _originalTask;
     if (original == null) return false;
     if (_taskFieldsChangedAgainst(original)) {
-      return true;
-    }
-    if (_stagedTagIds != null &&
-        _originalTagIds != null &&
-        !_sameIds(_stagedTagIds!, _originalTagIds!)) {
       return true;
     }
     if (_originalRuleId == null) {
@@ -452,7 +428,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         .clamp(1, 10000);
   }
 
-  SaveAsTemplateDraft? _currentTemplateDraft(Task task, Set<String> tagIds) {
+  SaveAsTemplateDraft? _currentTemplateDraft() {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       _showValidationError('Title must not be blank');
@@ -470,17 +446,11 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       description: description.isEmpty ? null : description,
       durationMin: _effectiveDurationMinutes,
       categoryId: _categoryId,
-      priority: _priority.dbValue,
-      tagIds: Set.unmodifiable(tagIds),
-      sourceTaskId: task.id,
     );
   }
 
-  Future<void> _saveCurrentDraftAsTemplate(
-    Task task,
-    Set<String> tagIds,
-  ) async {
-    final draft = _currentTemplateDraft(task, tagIds);
+  Future<void> _saveCurrentDraftAsTemplate() async {
+    final draft = _currentTemplateDraft();
     if (draft == null || !mounted) return;
     try {
       await saveAsTemplate(context, ref, draft);
@@ -521,20 +491,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     if (saved == null) {
       throw StateError('Task $taskId not found after save');
     }
-    final tagIds =
-        (await ref.read(tagRepositoryProvider).getTagsForTask(taskId))
-            .map((tag) => tag.id)
-            .toSet();
-    return TaskEditorPersistedState(task: saved, tagIds: tagIds);
+    return TaskEditorPersistedState(task: saved);
   }
 
   void _acceptPersistedState(TaskEditorPersistedState persisted) {
     _syncFromTask(persisted.task, force: true);
-    _originalTagIds = persisted.tagIds;
-    _stagedTagIds = persisted.tagIds;
     _baseline = TaskEditorBaseline(
       task: persisted.task,
-      tagIds: persisted.tagIds,
       recurrenceSignature: persisted.recurrenceSignature,
     );
     _errorMessage = null;
@@ -661,12 +624,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       }
     }
 
-    final stagedTagIds =
-        _stagedTagIds ??
-        (await ref.read(tagRepositoryProvider).getTagsForTask(task.id))
-            .map((tag) => tag.id)
-            .toSet();
-
     // Read the current row immediately before writing. The editor keeps the
     // original snapshot from when it opened, so changes made elsewhere can
     // be merged field-by-field instead of silently being overwritten.
@@ -680,11 +637,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
     final conflictBaseline = _conflictBaselineTask ?? _originalTask ?? task;
     final mergeBaseline = _baseline?.task ?? conflictBaseline;
-    final latestTagIds =
-        (await ref.read(tagRepositoryProvider).getTagsForTask(task.id))
-            .map((tag) => tag.id)
-            .toSet();
-    final originalTagIds = _originalTagIds ?? stagedTagIds;
     final normalizedDescription = _descriptionController.text;
     final normalizedNotes = _notesController.text.trim();
     final actualDirty =
@@ -695,7 +647,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       description: normalizedDescription.isEmpty ? null : normalizedDescription,
       notes: normalizedNotes.isEmpty ? null : normalizedNotes,
       categoryId: _categoryId,
-      priority: _priority,
       status: _status,
       startTime: start,
       endTime: end,
@@ -707,10 +658,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     );
 
     final conflicts = draft.conflictingFields(conflictBaseline, latest);
-    final tagsDirty = !_sameIds(stagedTagIds, originalTagIds);
-    if (tagsDirty && !_sameIds(latestTagIds, originalTagIds)) {
-      conflicts.add('Tags');
-    }
 
     if (conflicts.isNotEmpty) {
       final choice = await _showExternalConflictDialog(conflicts);
@@ -718,8 +665,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         _syncFromTask(latest, force: true);
         if (mounted) {
           setState(() {
-            _originalTagIds = latestTagIds;
-            _stagedTagIds = latestTagIds;
             _saving = false;
           });
         }
@@ -732,7 +677,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
 
     var editedTask = draft.mergeOnto(mergeBaseline, latest);
-    final tagsToSave = tagsDirty ? stagedTagIds : latestTagIds;
 
     // A title history decision is intentionally made after a field-level
     // external merge chose the exact persisted row we are about to replace.
@@ -900,8 +844,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     : editedTask.description,
                 durationMin: _effectiveDurationMinutes,
                 categoryId: _categoryId,
-                priority: _priority.dbValue,
-                tags: tagsToSave.toList(),
+                // Legacy priority and tag values are preserved on the rule;
+                // this editor no longer exposes or changes either field.
+                priority: liveRule.priority,
+                tags: liveRule.tags,
                 startTimeOfDay: _startTime == null
                     ? liveRule.startTimeOfDay
                     : _formatTimeOfDay(_startTime!),
@@ -951,9 +897,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                 .read(timerServiceProvider)
                 .setManualActual(task.id, actual);
           }
-          await ref
-              .read(tagRepositoryProvider)
-              .replaceTagsForTask(task.id, tagsToSave);
         },
       );
       await ref.read(undoStackProvider.notifier).execute(command);
@@ -977,8 +920,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                         : editedTask.description,
                     durationMin: _effectiveDurationMinutes,
                     categoryId: _categoryId,
-                    priority: _priority.dbValue,
-                    tags: stagedTagIds.toList(),
+                    // New recurring rules keep legacy metadata empty. The
+                    // fields remain in storage for older rules and backups.
+                    priority: 0,
+                    tags: const [],
                     startTimeOfDay: _startTime == null
                         ? '09:00'
                         : _formatTimeOfDay(_startTime!),
@@ -998,9 +943,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                       .read(timerServiceProvider)
                       .setManualActual(task.id, actual);
                 }
-                await ref
-                    .read(tagRepositoryProvider)
-                    .replaceTagsForTask(task.id, tagsToSave);
                 return _readPersistedState(task.id);
               });
     } else {
@@ -1019,9 +961,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                       .read(timerServiceProvider)
                       .setManualActual(task.id, actual);
                 }
-                await ref
-                    .read(tagRepositoryProvider)
-                    .replaceTagsForTask(task.id, tagsToSave);
                 return _readPersistedState(task.id);
               });
     }
@@ -1053,8 +992,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       _titleController.text = template.name;
       _descriptionController.text = template.description ?? '';
       _categoryId = template.categoryId;
-      _priority = Priority.fromDb(template.priority);
-      _stagedTagIds = template.tags.toSet();
       if (_startInstant != null) {
         _scheduleDirty = true;
         _endInstant = _startInstant!.add(
@@ -1258,24 +1195,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         ),
       );
     }
-    final selectedTaskId = task.id;
-
-    final taskTagsAsync = ref.watch(tagsForTaskProvider(selectedTaskId));
-    final persistedTagIds =
-        taskTagsAsync.value?.map((tag) => tag.id).toSet() ??
-        _stagedTagIds ??
-        <String>{};
-    if (_stagedTagIds == null && taskTagsAsync.hasValue) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _stagedTagIds == null) {
-          setState(() {
-            _originalTagIds ??= persistedTagIds;
-            _stagedTagIds = persistedTagIds;
-          });
-        }
-      });
-    }
-
     // Resolve the attached rule (if any) to display its preset.
     RecurringRule? rule;
     AsyncValue<RecurringRule?>? ruleAsync;
@@ -1322,15 +1241,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                 const SizedBox(height: AppSpacing.sm),
                 if (_errorMessage != null)
                   ErrorPanel(message: _errorMessage!, compact: true),
-                if (taskTagsAsync.hasError)
-                  ErrorPanel(
-                    message: friendlyErrorMessage(taskTagsAsync.error!),
-                    onRetry: () =>
-                        ref.invalidate(tagsForTaskProvider(selectedTaskId)),
-                    compact: true,
-                  ),
-                if (!taskTagsAsync.hasValue && _stagedTagIds == null)
-                  const Center(child: CircularProgressIndicator()),
                 if (ruleAsync?.hasError ?? false)
                   ErrorPanel(
                     message: friendlyErrorMessage(ruleAsync!.error!),
@@ -1392,18 +1302,6 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   onChanged: (c) => setState(() => _categoryId = c),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                DropdownButtonFormField<Priority>(
-                  initialValue: _priority,
-                  decoration: const InputDecoration(labelText: 'Priority'),
-                  isExpanded: true,
-                  items: [
-                    for (final p in Priority.values)
-                      DropdownMenuItem(value: p, child: Text(p.label)),
-                  ],
-                  onChanged: (p) =>
-                      setState(() => _priority = p ?? Priority.none),
-                ),
-                const SizedBox(height: AppSpacing.sm),
                 DropdownButtonFormField<TaskStatus>(
                   initialValue: _status,
                   decoration: const InputDecoration(labelText: 'Status'),
@@ -1541,36 +1439,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   child: SubtaskEditor(taskId: task.id),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                const AppSectionHeader(
-                  title: 'Tags',
-                  icon: Icons.sell_outlined,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Tag selection is saved with the task; new tag names are created immediately.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: tokens.textMuted),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                AppSurface(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  child: TagPicker(
-                    taskId: task.id,
-                    selectedIds: _stagedTagIds ?? persistedTagIds,
-                    onChanged: (ids) => setState(() => _stagedTagIds = ids),
-                  ),
-                ),
                 const SizedBox(height: AppSpacing.xl),
                 OutlinedButton.icon(
                   key: const ValueKey('save-as-template-button'),
                   icon: const Icon(Icons.bookmark_add_outlined),
                   label: const Text('Save as template'),
-                  onPressed: _saving
-                      ? null
-                      : () => _saveCurrentDraftAsTemplate(
-                          task!,
-                          _stagedTagIds ?? persistedTagIds,
-                        ),
+                  onPressed: _saving ? null : _saveCurrentDraftAsTemplate,
                 ),
               ],
             ),

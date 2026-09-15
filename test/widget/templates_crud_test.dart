@@ -5,7 +5,6 @@ import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/models/task_template.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
-import 'package:personal_planner/features/task_editor/providers/tag_providers.dart';
 import 'package:personal_planner/features/templates/providers/template_providers.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 
@@ -193,7 +192,7 @@ void main() {
     await tester.tap(find.text('Gym session').last);
     await settle(tester);
 
-    // Fields pre-filled (title/description/duration/category/priority).
+    // Fields pre-filled (title/description/duration/category).
     final titleField = find.byWidgetPredicate(
       (w) => w is TextField && w.decoration?.labelText == 'Title',
     );
@@ -209,7 +208,8 @@ void main() {
       'Warmup + strength',
     );
     expect(find.text('Planned duration: 45 minutes'), findsOneWidget);
-    expect(find.text('Medium'), findsWidgets); // priority dropdown value
+    expect(find.text('Priority'), findsNothing);
+    expect(find.text('Tags'), findsNothing);
 
     await finish(tester, container);
   });
@@ -218,11 +218,6 @@ void main() {
     tester,
   ) async {
     final container = await buildTestContainer(tester);
-    final draftTag = await runDb(
-      tester,
-      () =>
-          container.read(tagRepositoryProvider).getOrCreateByName('draft-only'),
-    );
     final inserted = await runDb(tester, () {
       final now = DateTime.now();
       return container
@@ -258,11 +253,6 @@ void main() {
     await tester.enterText(titleField, 'Unsaved focus plan');
     await tester.enterText(descriptionField, 'Draft details');
 
-    final draftTagChip = find.byKey(const ValueKey('tag-chip-draft-only'));
-    await bringIntoViewHelper(tester, draftTagChip);
-    await tester.tap(draftTagChip);
-    await settle(tester);
-
     final button = find.byKey(const ValueKey('save-as-template-button'));
     await bringIntoViewHelper(tester, button);
     await tester.tap(button);
@@ -283,7 +273,6 @@ void main() {
     expect(templates.single.name, 'Unsaved focus plan');
     expect(templates.single.description, 'Draft details');
     expect(templates.single.durationMin, 60);
-    expect(templates.single.tags, [draftTag.id]);
     // Sanity: source task still exists and is untouched.
     final source = await runDb(
       tester,
@@ -292,11 +281,6 @@ void main() {
     expect(source!.title, 'Weekly review prep');
     expect(source.description, isNull);
     expect(source.estimatedDurationMin, 60);
-    final sourceTags = await runDb(
-      tester,
-      () => container.read(tagRepositoryProvider).getTagsForTask(inserted.id),
-    );
-    expect(sourceTags, isEmpty);
     await finish(tester, container);
   });
 }

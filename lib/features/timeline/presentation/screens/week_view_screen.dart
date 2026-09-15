@@ -708,6 +708,11 @@ class _WeekDayGrid extends ConsumerWidget {
     final tasks = tasksAsync.requireValue;
     final categories = categoriesAsync.requireValue;
     final geometries = TimelineGeometry.layoutForDay(tasks: tasks, date: date);
+    final compactVisualLanes = TimelineGeometry.visualLanesForMinimumHeight(
+      geometries: geometries,
+      thresholdPx: TaskBlockWidget.compactHeightThreshold,
+      minimumHeightPx: TaskBlockWidget.compactMinHeight,
+    );
     final categoriesById = {
       for (final category in categories) category.id: category,
     };
@@ -732,6 +737,7 @@ class _WeekDayGrid extends ConsumerWidget {
             available,
             onTaskTap,
             tasks,
+            compactVisualLanes[geometry.task.id],
           ),
       ],
     );
@@ -744,16 +750,20 @@ class _WeekDayGrid extends ConsumerWidget {
     double availableWidth,
     void Function(Task task, DateTime date) onTaskTap,
     List<Task> allTasks,
+    ({int index, int count})? compactVisualLane,
   ) {
-    final laneWidth = availableWidth / geometry.laneCount;
+    final laneCount = compactVisualLane?.count ?? geometry.laneCount;
+    final laneIndex = compactVisualLane?.index ?? geometry.laneIndex;
+    final laneWidth = availableWidth / laneCount;
     final dense =
         geometry.hasOverlap &&
         laneWidth < 84 * MediaQuery.textScalerOf(context).scale(1);
     final left =
-        (showInternalRuler ? rulerWidth : 0) +
-        geometry.laneIndex * laneWidth +
-        2;
+        (showInternalRuler ? rulerWidth : 0) + laneIndex * laneWidth + 2;
     final width = math.max(2, laneWidth - 4).toDouble();
+    final renderedHeight = math
+        .max(TaskBlockWidget.compactMinHeight, geometry.heightPx - 2)
+        .toDouble();
     final taskBlock = Semantics(
       label: dense
           ? '${geometry.task.title}, ${geometry.componentTaskIds.length} overlapping tasks'
@@ -768,7 +778,7 @@ class _WeekDayGrid extends ConsumerWidget {
         onTap: () => onTaskTap(geometry.task, date),
       ),
     );
-    final child = dense && geometry.laneIndex == 0
+    final child = dense && laneIndex == 0
         ? Stack(
             fit: StackFit.expand,
             children: [
@@ -787,7 +797,7 @@ class _WeekDayGrid extends ConsumerWidget {
       top: geometry.topPx + 1,
       left: left,
       width: width,
-      height: math.max(1, geometry.heightPx - 2).toDouble(),
+      height: renderedHeight,
       child: child,
     );
   }

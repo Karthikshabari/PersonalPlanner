@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/core/models/enums/priority.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/features/task_editor/domain/task_editor_draft.dart';
@@ -10,7 +9,6 @@ void main() {
     title: 'Original',
     description: 'Original description',
     notes: 'Original notes',
-    priority: Priority.none,
     status: TaskStatus.planned,
     estimatedDurationMin: 30,
     createdAt: DateTime.utc(2026, 1, 1),
@@ -23,7 +21,6 @@ void main() {
       description: base.description,
       notes: base.notes,
       categoryId: base.categoryId,
-      priority: base.priority,
       status: base.status,
       startTime: base.startTime,
       endTime: base.endTime,
@@ -44,7 +41,6 @@ void main() {
       description: base.description,
       notes: base.notes,
       categoryId: base.categoryId,
-      priority: base.priority,
       status: base.status,
       startTime: base.startTime,
       endTime: base.endTime,
@@ -62,7 +58,6 @@ void main() {
       description: base.description,
       notes: base.notes,
       categoryId: base.categoryId,
-      priority: base.priority,
       status: base.status,
       startTime: base.startTime,
       endTime: base.endTime,
@@ -86,8 +81,8 @@ void main() {
     expect(TaskEditorBaseline.normalizeNotes('  note  '), 'note');
   });
 
-  test('baseline compares all persisted task fields and tags', () {
-    final baseline = TaskEditorBaseline(task: base, tagIds: {'work', 'focus'});
+  test('baseline compares persisted task fields', () {
+    final baseline = TaskEditorBaseline(task: base);
 
     expect(
       baseline.hasSameTaskValues(base.copyWith(title: '  Original  ')),
@@ -97,8 +92,6 @@ void main() {
       baseline.hasSameTaskValues(base.copyWith(notes: 'changed')),
       isFalse,
     );
-    expect(baseline.hasSameTags({'focus', 'work'}), isTrue);
-    expect(baseline.hasSameTags({'work'}), isFalse);
   });
 
   test('due date participates in dirty merge and conflicts', () {
@@ -107,7 +100,6 @@ void main() {
       description: base.description,
       notes: base.notes,
       categoryId: base.categoryId,
-      priority: base.priority,
       status: base.status,
       startTime: base.startTime,
       endTime: base.endTime,

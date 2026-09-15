@@ -248,7 +248,12 @@ void main() {
       await tester.tap(find.byTooltip('Close editor'));
       await settle(tester);
 
-      await tester.tap(find.text('Editable task'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Editable task'),
+        ),
+      );
       await settle(tester);
 
       await doubleTap(
@@ -303,7 +308,12 @@ void main() {
       appRouter.go('/day');
       await settle(tester);
 
-      await tester.tap(find.text('Renamed via editor'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Renamed via editor'),
+        ),
+      );
       await settle(tester);
       expect(container.read(selectedTaskIdProvider), inserted.id);
       expect(find.text('Edit Task'), findsNothing);
@@ -311,7 +321,13 @@ void main() {
       container.invalidate(activeDayTasksProvider);
       await settle(tester);
       expect(find.text('Edit Task'), findsNothing);
-      await doubleTap(tester, find.text('Renamed via editor'));
+      await doubleTap(
+        tester,
+        find.descendant(
+          of: find.byType(TaskBlockWidget),
+          matching: find.text('Renamed via editor'),
+        ),
+      );
       await settle(tester);
       expect(find.text('Edit Task'), findsOneWidget);
       await teardownApp(tester, container);

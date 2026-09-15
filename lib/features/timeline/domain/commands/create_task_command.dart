@@ -4,7 +4,7 @@ import 'scheduling_command.dart';
 import 'task_aggregate_snapshot.dart';
 
 /// Creation Undo is a reversible aggregate tombstone. Redo restores the same
-/// task id and any subtasks/tags attached before Undo.
+/// task id and any subtasks attached before Undo.
 class CreateTaskCommand implements SchedulingCommand {
   final TaskRepository repository;
   final Task _task;

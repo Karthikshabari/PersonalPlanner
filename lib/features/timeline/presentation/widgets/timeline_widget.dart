@@ -588,6 +588,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ))
         geometry.task.id: geometry,
     };
+    final compactVisualLanes = TimelineGeometry.visualLanesForMinimumHeight(
+      geometries: geometryById.values,
+      thresholdPx: TaskBlockWidget.compactHeightThreshold,
+      minimumHeightPx: TaskBlockWidget.compactMinHeight,
+    );
     final selectedTask = liveTasks
         .where((task) => task.id == selectedTaskId)
         .firstOrNull;
@@ -646,11 +651,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final laneWidth =
-                            (constraints.maxWidth -
-                                    AppConstants.hourLabelWidth -
-                                    8 -
-                                    AppSpacing.md -
-                                    editActionGutter)
+                          (constraints.maxWidth -
+                                  AppConstants.hourLabelWidth -
+                                  8 -
+                                  AppSpacing.md -
+                                  editActionGutter)
                               .clamp(1.0, double.infinity)
                               .toDouble();
                       return Stack(
@@ -685,6 +690,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                               overrideHeightMinutes: task.id == resizeTaskId
                                   ? _liveResizeMinutes
                                   : null,
+                              compactVisualLane: compactVisualLanes[task.id],
                             ),
                           if (_drag != null)
                             GhostPreview(
@@ -809,6 +815,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     required String groupedSubtaskCount,
     required bool removing,
     double? overrideHeightMinutes,
+    ({int index, int count})? compactVisualLane,
   }) {
     final previewTask = overrideHeightMinutes == null || task.startTime == null
         ? task
@@ -831,20 +838,26 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       _totalHeight - displayGeometry.topPx,
     );
     final visualHeight = height.toDouble();
+    final compactCard = visualHeight < TaskBlockWidget.compactHeightThreshold;
     final renderedHeight = ResizableHandle.isTouchPlatform
         ? visualHeight
               .clamp(ResizableHandle.touchTargetHeight, double.infinity)
               .toDouble()
+        : compactCard
+        ? visualHeight
+              .clamp(TaskBlockWidget.compactMinHeight, double.infinity)
+              .toDouble()
         : visualHeight;
-    final outerTop = ResizableHandle.isTouchPlatform
+    final centerVisualMinimum = ResizableHandle.isTouchPlatform || compactCard;
+    final outerTop = centerVisualMinimum
         ? (startMinutes * _pixelsPerMinute -
                   (renderedHeight - visualHeight) / 2)
               .clamp(0.0, double.infinity)
               .toDouble()
         : startMinutes * _pixelsPerMinute;
     final visualTop = startMinutes * _pixelsPerMinute - outerTop;
-    final laneCount = displayGeometry.laneCount;
-    final laneIndex = displayGeometry.laneIndex;
+    final laneCount = compactVisualLane?.count ?? displayGeometry.laneCount;
+    final laneIndex = compactVisualLane?.index ?? displayGeometry.laneIndex;
     final laneWidth = availableLaneWidth / laneCount;
     final dense =
         displayGeometry.hasOverlap &&
@@ -868,6 +881,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           geometry: displayGeometry,
           category: category,
           selected: selected,
+          compact: compactCard,
           hasOverlap: hasOverlap,
           groupedSubtaskCount: groupedSubtaskCount,
           onTap: selectTask,
