@@ -1574,11 +1574,7 @@ END;
       await customStatement('''
         UPDATE tasks
         SET actual_duration_min = CASE
-          WHEN manual_actual_set = 0 AND actual_duration_min IS NULL AND NOT EXISTS (
-            SELECT 1 FROM timer_sessions s
-            WHERE s.task_id = tasks.id AND s.state = 'finished'
-              AND s.ended_at IS NOT NULL AND s.deleted_at IS NULL
-          ) THEN NULL
+          WHEN manual_actual_set = 0 THEN actual_duration_min
           ELSE MAX(0, manual_duration_adjustment_min + COALESCE((
             SELECT SUM(s.duration_sec) / 60 FROM timer_sessions s
             WHERE s.task_id = tasks.id AND s.state = 'finished'

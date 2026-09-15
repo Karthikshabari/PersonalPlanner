@@ -18,6 +18,49 @@ class CategoryRepository {
     'learning',
   ];
 
+  /// The complete semantic definition of each built-in category. These
+  /// values are also the adoption boundary: timestamps are initialization
+  /// metadata, while these fields describe the category users see and edit.
+  static const defaultCategoryDefinitions =
+      <
+        ({
+          String key,
+          String name,
+          String colorHex,
+          int sortOrder,
+          bool isFocus,
+        })
+      >[
+        (
+          key: 'work',
+          name: 'Work',
+          colorHex: '#4285F4',
+          sortOrder: 0,
+          isFocus: false,
+        ),
+        (
+          key: 'personal',
+          name: 'Personal',
+          colorHex: '#34A853',
+          sortOrder: 1,
+          isFocus: false,
+        ),
+        (
+          key: 'health',
+          name: 'Health',
+          colorHex: '#EA4335',
+          sortOrder: 2,
+          isFocus: false,
+        ),
+        (
+          key: 'learning',
+          name: 'Learning',
+          colorHex: '#FBBC04',
+          sortOrder: 3,
+          isFocus: false,
+        ),
+      ];
+
   static String defaultCategoryId(String key) =>
       generateDeterministicUuid('default-category:$key');
 
@@ -132,15 +175,8 @@ class CategoryRepository {
       final marker = await (_db.select(
         _db.appSettings,
       )..where((s) => s.key.equals(_defaultsSeededKey))).getSingleOrNull();
-      const defaults = [
-        (key: 'work', name: 'Work', color: '#4285F4'),
-        (key: 'personal', name: 'Personal', color: '#34A853'),
-        (key: 'health', name: 'Health', color: '#EA4335'),
-        (key: 'learning', name: 'Learning', color: '#FBBC04'),
-      ];
       final now = DateTime.now();
-      for (var i = 0; i < defaults.length; i++) {
-        final definition = defaults[i];
+      for (final definition in defaultCategoryDefinitions) {
         final stableId = defaultCategoryId(definition.key);
         final stable = await _dao.getCategoryById(stableId);
         if (stable != null) continue;
@@ -154,7 +190,7 @@ class CategoryRepository {
               await (_db.select(_db.categories)..where(
                     (category) =>
                         category.name.equals(definition.name) &
-                        category.colorHex.equals(definition.color) &
+                        category.colorHex.equals(definition.colorHex) &
                         category.deletedAt.isNull(),
                   ))
                   .get();
@@ -168,9 +204,9 @@ class CategoryRepository {
           CategoriesCompanion.insert(
             id: stableId,
             name: definition.name,
-            colorHex: definition.color,
-            sortOrder: Value(i),
-            isFocus: const Value(false),
+            colorHex: definition.colorHex,
+            sortOrder: Value(definition.sortOrder),
+            isFocus: Value(definition.isFocus),
             createdAt: now,
             updatedAt: now,
             syncStatus: const Value(1),
