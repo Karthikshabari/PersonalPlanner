@@ -65,6 +65,9 @@ Stream<T> watchReactiveStats<T>(
     subscriptions.add(
       database.select(database.weeklyReviews).watch().listen(schedule),
     );
+    subscriptions.add(
+      database.select(database.dayContexts).watch().listen(schedule),
+    );
     schedule();
 
     controller.onCancel = () async {

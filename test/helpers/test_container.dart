@@ -8,6 +8,7 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
+import 'package:personal_planner/features/analytics/providers/analytics_providers.dart';
 
 import 'sqlite_setup.dart';
 
@@ -15,6 +16,7 @@ Future<ProviderContainer> buildTestContainer(
   WidgetTester tester, {
   AppDatabase? db,
   MinuteClockFactory? minuteClockFactory,
+  InsightsNowFactory? insightsNowFactory,
 }) async {
   setupSqliteForTests();
   late ProviderContainer container;
@@ -25,6 +27,8 @@ Future<ProviderContainer> buildTestContainer(
         appDatabaseProvider.overrideWithValue(database),
         if (minuteClockFactory != null)
           minuteClockProvider.overrideWithValue(minuteClockFactory),
+        if (insightsNowFactory != null)
+          insightsNowFactoryProvider.overrideWithValue(insightsNowFactory),
       ],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
