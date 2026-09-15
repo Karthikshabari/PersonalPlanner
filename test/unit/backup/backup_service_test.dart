@@ -93,6 +93,58 @@ void main() {
     },
   );
 
+  test('backup round trips recurrence rule-exclusion provenance', () async {
+    await _seedDatabase(database);
+    await (database.update(
+      database.tasks,
+    )..where((row) => row.id.equals(_taskId))).write(
+      TasksCompanion(
+        recurrenceRemovalReason: const Value('rule_excluded'),
+        deletedAt: Value(_time.add(const Duration(days: 1))),
+      ),
+    );
+    final source = await BackupService(database).exportJson();
+    final document = jsonDecode(source) as Map<String, dynamic>;
+    final tasks =
+        ((document['content'] as Map)['data'] as Map)['tasks'] as List;
+    final exported = tasks.cast<Map>().firstWhere(
+      (row) => row['id'] == _taskId,
+    );
+    expect(exported['recurrence_removal_reason'], 'rule_excluded');
+
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+    await BackupService(restored).importJson(source, ownershipConfirmed: true);
+    final row = await restored.taskDao.getTaskById(_taskId);
+    expect(row?.deletedAt, isNotNull);
+    expect(row?.recurrenceRemovalReason, 'rule_excluded');
+  });
+
+  test('v2 backup imports with conservative null recurrence provenance', () async {
+    await _seedDatabase(database);
+    final document = jsonDecode(
+      await BackupService(database).exportJson(),
+    ) as Map<String, dynamic>;
+    final content = document['content'] as Map<String, dynamic>;
+    final data = content['data'] as Map<String, dynamic>;
+    for (final raw in data['tasks'] as List) {
+      (raw as Map<String, dynamic>).remove('recurrence_removal_reason');
+    }
+    document['schema_version'] = 2;
+    content['schema_version'] = 2;
+    document['content_checksum'] = BackupCodec.checksum(content);
+
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+    await BackupService(restored).importJson(
+      jsonEncode(document),
+      ownershipConfirmed: true,
+    );
+
+    final task = await restored.taskDao.getTaskById(_taskId);
+    expect(task?.recurrenceRemovalReason, isNull);
+  });
+
   test(
     'backup round trips structured plan history and rejects corrupt events',
     () async {
@@ -423,8 +475,8 @@ void main() {
       await BackupService(database).exportJson(),
     ) as Map<String, dynamic>;
     final content = document['content'] as Map<String, dynamic>;
-    document['schema_version'] = 3;
-    content['schema_version'] = 3;
+    document['schema_version'] = plannerBackupSchemaVersion + 1;
+    content['schema_version'] = plannerBackupSchemaVersion + 1;
     document['content_checksum'] = BackupCodec.checksum(content);
     final restored = AppDatabase(NativeDatabase.memory());
     addTearDown(restored.close);

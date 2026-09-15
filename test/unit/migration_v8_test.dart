@@ -99,7 +99,7 @@ void main() {
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          8,
+          9,
         );
         expect(
           (await db
@@ -373,7 +373,7 @@ void main() {
           expect(
             (await db.customSelect('PRAGMA user_version').getSingle())
                 .read<int>('user_version'),
-            8,
+            9,
           );
           final task = await db.taskDao.getTaskById('task-1');
           expect(task?.planTitleHistoryJson, '[]');

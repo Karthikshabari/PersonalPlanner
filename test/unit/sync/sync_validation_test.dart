@@ -106,6 +106,22 @@ void main() {
     expect(legacy['due_date'], isNull);
   });
 
+  test('validates recurrence removal provenance', () {
+    final valid = _taskPayload()
+      ..['recurrence_removal_reason'] = 'rule_excluded';
+    expect(
+      () => SyncPayloadValidator.validate(_change('tasks', valid)),
+      returnsNormally,
+    );
+
+    final invalid = _taskPayload()
+      ..['recurrence_removal_reason'] = 'user_deleted';
+    expect(
+      () => SyncPayloadValidator.validate(_change('tasks', invalid)),
+      throwsA(isA<SyncValidationException>()),
+    );
+  });
+
   test('validates RRULE, end date and JSON list contents', () {
     final invalidRule = _recurrencePayload()..['rrule'] = 'FREQ=NOT_A_FREQ';
     expect(

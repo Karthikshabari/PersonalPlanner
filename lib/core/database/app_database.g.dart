@@ -1923,6 +1923,19 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
       'REFERENCES recurring_rules (id) ON DELETE SET NULL',
     ),
   );
+  static const VerificationMeta _recurrenceRemovalReasonMeta =
+      const VerificationMeta('recurrenceRemovalReason');
+  @override
+  late final GeneratedColumn<String>
+  recurrenceRemovalReason = GeneratedColumn<String>(
+    'recurrence_removal_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints:
+        'CHECK (recurrence_removal_reason IS NULL OR recurrence_removal_reason = \'rule_excluded\')',
+  );
   static const VerificationMeta _rescheduledFromIdMeta = const VerificationMeta(
     'rescheduledFromId',
   );
@@ -2101,6 +2114,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     status,
     notes,
     recurringRuleId,
+    recurrenceRemovalReason,
     rescheduledFromId,
     rescheduledToId,
     isInbox,
@@ -2216,6 +2230,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         recurringRuleId.isAcceptableOrUnknown(
           data['recurring_rule_id']!,
           _recurringRuleIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurrence_removal_reason')) {
+      context.handle(
+        _recurrenceRemovalReasonMeta,
+        recurrenceRemovalReason.isAcceptableOrUnknown(
+          data['recurrence_removal_reason']!,
+          _recurrenceRemovalReasonMeta,
         ),
       );
     }
@@ -2372,6 +2395,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.string,
         data['${effectivePrefix}recurring_rule_id'],
       ),
+      recurrenceRemovalReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurrence_removal_reason'],
+      ),
       rescheduledFromId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}rescheduled_from_id'],
@@ -2469,6 +2496,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final String status;
   final String? notes;
   final String? recurringRuleId;
+
+  /// Set only while an unfinished deterministic occurrence is tombstoned
+  /// because its rule temporarily stopped producing the original slot.
+  /// Ordinary user deletion deliberately leaves this null.
+  final String? recurrenceRemovalReason;
   final String? rescheduledFromId;
   final String? rescheduledToId;
   final bool isInbox;
@@ -2500,6 +2532,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     required this.status,
     this.notes,
     this.recurringRuleId,
+    this.recurrenceRemovalReason,
     this.rescheduledFromId,
     this.rescheduledToId,
     required this.isInbox,
@@ -2553,6 +2586,11 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     }
     if (!nullToAbsent || recurringRuleId != null) {
       map['recurring_rule_id'] = Variable<String>(recurringRuleId);
+    }
+    if (!nullToAbsent || recurrenceRemovalReason != null) {
+      map['recurrence_removal_reason'] = Variable<String>(
+        recurrenceRemovalReason,
+      );
     }
     if (!nullToAbsent || rescheduledFromId != null) {
       map['rescheduled_from_id'] = Variable<String>(rescheduledFromId);
@@ -2627,6 +2665,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       recurringRuleId: recurringRuleId == null && nullToAbsent
           ? const Value.absent()
           : Value(recurringRuleId),
+      recurrenceRemovalReason: recurrenceRemovalReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceRemovalReason),
       rescheduledFromId: rescheduledFromId == null && nullToAbsent
           ? const Value.absent()
           : Value(rescheduledFromId),
@@ -2682,6 +2723,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       status: serializer.fromJson<String>(json['status']),
       notes: serializer.fromJson<String?>(json['notes']),
       recurringRuleId: serializer.fromJson<String?>(json['recurringRuleId']),
+      recurrenceRemovalReason: serializer.fromJson<String?>(
+        json['recurrenceRemovalReason'],
+      ),
       rescheduledFromId: serializer.fromJson<String?>(
         json['rescheduledFromId'],
       ),
@@ -2726,6 +2770,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'status': serializer.toJson<String>(status),
       'notes': serializer.toJson<String?>(notes),
       'recurringRuleId': serializer.toJson<String?>(recurringRuleId),
+      'recurrenceRemovalReason': serializer.toJson<String?>(
+        recurrenceRemovalReason,
+      ),
       'rescheduledFromId': serializer.toJson<String?>(rescheduledFromId),
       'rescheduledToId': serializer.toJson<String?>(rescheduledToId),
       'isInbox': serializer.toJson<bool>(isInbox),
@@ -2758,6 +2805,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     String? status,
     Value<String?> notes = const Value.absent(),
     Value<String?> recurringRuleId = const Value.absent(),
+    Value<String?> recurrenceRemovalReason = const Value.absent(),
     Value<String?> rescheduledFromId = const Value.absent(),
     Value<String?> rescheduledToId = const Value.absent(),
     bool? isInbox,
@@ -2794,6 +2842,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     recurringRuleId: recurringRuleId.present
         ? recurringRuleId.value
         : this.recurringRuleId,
+    recurrenceRemovalReason: recurrenceRemovalReason.present
+        ? recurrenceRemovalReason.value
+        : this.recurrenceRemovalReason,
     rescheduledFromId: rescheduledFromId.present
         ? rescheduledFromId.value
         : this.rescheduledFromId,
@@ -2847,6 +2898,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       recurringRuleId: data.recurringRuleId.present
           ? data.recurringRuleId.value
           : this.recurringRuleId,
+      recurrenceRemovalReason: data.recurrenceRemovalReason.present
+          ? data.recurrenceRemovalReason.value
+          : this.recurrenceRemovalReason,
       rescheduledFromId: data.rescheduledFromId.present
           ? data.rescheduledFromId.value
           : this.rescheduledFromId,
@@ -2895,6 +2949,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('status: $status, ')
           ..write('notes: $notes, ')
           ..write('recurringRuleId: $recurringRuleId, ')
+          ..write('recurrenceRemovalReason: $recurrenceRemovalReason, ')
           ..write('rescheduledFromId: $rescheduledFromId, ')
           ..write('rescheduledToId: $rescheduledToId, ')
           ..write('isInbox: $isInbox, ')
@@ -2929,6 +2984,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     status,
     notes,
     recurringRuleId,
+    recurrenceRemovalReason,
     rescheduledFromId,
     rescheduledToId,
     isInbox,
@@ -2963,6 +3019,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.status == this.status &&
           other.notes == this.notes &&
           other.recurringRuleId == this.recurringRuleId &&
+          other.recurrenceRemovalReason == this.recurrenceRemovalReason &&
           other.rescheduledFromId == this.rescheduledFromId &&
           other.rescheduledToId == this.rescheduledToId &&
           other.isInbox == this.isInbox &&
@@ -2994,6 +3051,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<String> status;
   final Value<String?> notes;
   final Value<String?> recurringRuleId;
+  final Value<String?> recurrenceRemovalReason;
   final Value<String?> rescheduledFromId;
   final Value<String?> rescheduledToId;
   final Value<bool> isInbox;
@@ -3024,6 +3082,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.status = const Value.absent(),
     this.notes = const Value.absent(),
     this.recurringRuleId = const Value.absent(),
+    this.recurrenceRemovalReason = const Value.absent(),
     this.rescheduledFromId = const Value.absent(),
     this.rescheduledToId = const Value.absent(),
     this.isInbox = const Value.absent(),
@@ -3055,6 +3114,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.status = const Value.absent(),
     this.notes = const Value.absent(),
     this.recurringRuleId = const Value.absent(),
+    this.recurrenceRemovalReason = const Value.absent(),
     this.rescheduledFromId = const Value.absent(),
     this.rescheduledToId = const Value.absent(),
     this.isInbox = const Value.absent(),
@@ -3089,6 +3149,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? status,
     Expression<String>? notes,
     Expression<String>? recurringRuleId,
+    Expression<String>? recurrenceRemovalReason,
     Expression<String>? rescheduledFromId,
     Expression<String>? rescheduledToId,
     Expression<bool>? isInbox,
@@ -3122,6 +3183,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (status != null) 'status': status,
       if (notes != null) 'notes': notes,
       if (recurringRuleId != null) 'recurring_rule_id': recurringRuleId,
+      if (recurrenceRemovalReason != null)
+        'recurrence_removal_reason': recurrenceRemovalReason,
       if (rescheduledFromId != null) 'rescheduled_from_id': rescheduledFromId,
       if (rescheduledToId != null) 'rescheduled_to_id': rescheduledToId,
       if (isInbox != null) 'is_inbox': isInbox,
@@ -3158,6 +3221,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<String>? status,
     Value<String?>? notes,
     Value<String?>? recurringRuleId,
+    Value<String?>? recurrenceRemovalReason,
     Value<String?>? rescheduledFromId,
     Value<String?>? rescheduledToId,
     Value<bool>? isInbox,
@@ -3190,6 +3254,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       status: status ?? this.status,
       notes: notes ?? this.notes,
       recurringRuleId: recurringRuleId ?? this.recurringRuleId,
+      recurrenceRemovalReason:
+          recurrenceRemovalReason ?? this.recurrenceRemovalReason,
       rescheduledFromId: rescheduledFromId ?? this.rescheduledFromId,
       rescheduledToId: rescheduledToId ?? this.rescheduledToId,
       isInbox: isInbox ?? this.isInbox,
@@ -3258,6 +3324,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     }
     if (recurringRuleId.present) {
       map['recurring_rule_id'] = Variable<String>(recurringRuleId.value);
+    }
+    if (recurrenceRemovalReason.present) {
+      map['recurrence_removal_reason'] = Variable<String>(
+        recurrenceRemovalReason.value,
+      );
     }
     if (rescheduledFromId.present) {
       map['rescheduled_from_id'] = Variable<String>(rescheduledFromId.value);
@@ -3334,6 +3405,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('status: $status, ')
           ..write('notes: $notes, ')
           ..write('recurringRuleId: $recurringRuleId, ')
+          ..write('recurrenceRemovalReason: $recurrenceRemovalReason, ')
           ..write('rescheduledFromId: $rescheduledFromId, ')
           ..write('rescheduledToId: $rescheduledToId, ')
           ..write('isInbox: $isInbox, ')
@@ -13256,6 +13328,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<String> status,
       Value<String?> notes,
       Value<String?> recurringRuleId,
+      Value<String?> recurrenceRemovalReason,
       Value<String?> rescheduledFromId,
       Value<String?> rescheduledToId,
       Value<bool> isInbox,
@@ -13288,6 +13361,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<String> status,
       Value<String?> notes,
       Value<String?> recurringRuleId,
+      Value<String?> recurrenceRemovalReason,
       Value<String?> rescheduledFromId,
       Value<String?> rescheduledToId,
       Value<bool> isInbox,
@@ -13503,6 +13577,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<String> get notes => $composableBuilder(
     column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurrenceRemovalReason => $composableBuilder(
+    column: $table.recurrenceRemovalReason,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13806,6 +13885,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get recurrenceRemovalReason => $composableBuilder(
+    column: $table.recurrenceRemovalReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get isInbox => $composableBuilder(
     column: $table.isInbox,
     builder: (column) => ColumnOrderings(column),
@@ -14013,6 +14097,11 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<String> get notes =>
       $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get recurrenceRemovalReason => $composableBuilder(
+    column: $table.recurrenceRemovalReason,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<bool> get isInbox =>
       $composableBuilder(column: $table.isInbox, builder: (column) => column);
@@ -14278,6 +14367,7 @@ class $$TasksTableTableManager
                 Value<String> status = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> recurringRuleId = const Value.absent(),
+                Value<String?> recurrenceRemovalReason = const Value.absent(),
                 Value<String?> rescheduledFromId = const Value.absent(),
                 Value<String?> rescheduledToId = const Value.absent(),
                 Value<bool> isInbox = const Value.absent(),
@@ -14308,6 +14398,7 @@ class $$TasksTableTableManager
                 status: status,
                 notes: notes,
                 recurringRuleId: recurringRuleId,
+                recurrenceRemovalReason: recurrenceRemovalReason,
                 rescheduledFromId: rescheduledFromId,
                 rescheduledToId: rescheduledToId,
                 isInbox: isInbox,
@@ -14340,6 +14431,7 @@ class $$TasksTableTableManager
                 Value<String> status = const Value.absent(),
                 Value<String?> notes = const Value.absent(),
                 Value<String?> recurringRuleId = const Value.absent(),
+                Value<String?> recurrenceRemovalReason = const Value.absent(),
                 Value<String?> rescheduledFromId = const Value.absent(),
                 Value<String?> rescheduledToId = const Value.absent(),
                 Value<bool> isInbox = const Value.absent(),
@@ -14370,6 +14462,7 @@ class $$TasksTableTableManager
                 status: status,
                 notes: notes,
                 recurringRuleId: recurringRuleId,
+                recurrenceRemovalReason: recurrenceRemovalReason,
                 rescheduledFromId: rescheduledFromId,
                 rescheduledToId: rescheduledToId,
                 isInbox: isInbox,

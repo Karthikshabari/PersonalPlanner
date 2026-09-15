@@ -330,6 +330,7 @@ void main() {
       'manual_actual_source',
       'timer_state_machine',
       'day_contexts',
+      'recurrence_removal_provenance',
     ];
     for (final missing in requiredCapabilities) {
       final db = AppDatabase(NativeDatabase.memory());
@@ -2037,6 +2038,7 @@ class _FakeGateway implements SyncRemoteGateway {
     'manual_actual_source': true,
     'timer_state_machine': true,
     'day_contexts': true,
+    'recurrence_removal_provenance': true,
   };
   final appliedTables = <String>[];
   final responses = <Object?>[];

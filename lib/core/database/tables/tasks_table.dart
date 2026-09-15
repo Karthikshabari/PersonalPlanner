@@ -32,6 +32,13 @@ class Tasks extends Table {
     #id,
     onDelete: KeyAction.setNull,
   )();
+
+  /// Set only while an unfinished deterministic occurrence is tombstoned
+  /// because its rule temporarily stopped producing the original slot.
+  /// Ordinary user deletion deliberately leaves this null.
+  TextColumn get recurrenceRemovalReason => text().nullable().customConstraint(
+    "CHECK (recurrence_removal_reason IS NULL OR recurrence_removal_reason = 'rule_excluded')",
+  )();
   TextColumn get rescheduledFromId =>
       text().nullable().references(Tasks, #id, onDelete: KeyAction.setNull)();
   TextColumn get rescheduledToId =>

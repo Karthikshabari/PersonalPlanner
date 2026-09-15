@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/priority.dart';
+import '../../../core/models/enums/recurrence_removal_reason.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/recurring_rule.dart';
 import '../../../core/models/plan_title_change.dart';
@@ -46,13 +47,16 @@ class RecurrenceService {
         continue;
       }
       final inserted = await _db.transaction(() async {
-        final occurrenceId = generateDeterministicUuid(
-          'recurring-occurrence:${rule.id}:$dateIso',
-        );
+        final occurrenceId = _occurrenceId(rule.id, dateIso);
         // A user may move an occurrence away from its original date. The
         // current start-day query then misses it, so identity must be checked
         // by the stable rule/date ID before creating a replacement.
-        if (await _db.taskDao.getTaskById(occurrenceId) != null) return false;
+        final identified = await _db.taskDao.getTaskById(occurrenceId);
+        if (identified != null) {
+          if (!await _canReactivate(identified, rule)) return false;
+          await _reactivateInstance(identified, rule, dayStart);
+          return true;
+        }
         final existing = await _db.recurringRuleDao.getInstancesForDay(
           rule.id,
           dayStartUtcIso,
@@ -104,6 +108,10 @@ class RecurrenceService {
       final current = TaskRepository.fromRow(row);
       final day = startOfDay(current.startTime!);
       final dayIso = isoDateString(day);
+      // A moved occurrence retains the deterministic identity of its original
+      // slot. Never infer that identity from its displayed day and never let a
+      // series reconciliation move or tombstone it as if it belonged there.
+      if (row.id != _occurrenceId(rule.id, dayIso)) continue;
       final stillInSeries =
           !rule.exceptions.contains(dayIso) &&
           (rule.endDate == null ||
@@ -112,7 +120,10 @@ class RecurrenceService {
       if (!stillInSeries) {
         // The new rule no longer produces this future slot. Keep the row as a
         // tombstone so history and sync identity remain intact.
-        await _tasks.deleteTask(current.id);
+        await _tasks.deleteTask(
+          current.id,
+          recurrenceRemovalReason: RecurrenceRemovalReason.ruleExcluded,
+        );
         continue;
       }
       final (hour, minute) = _parseStartTimeOfDay(rule.startTimeOfDay);
@@ -159,6 +170,7 @@ class RecurrenceService {
         endTime: start.add(Duration(minutes: rule.durationMin)),
         planTitleHistory: history,
         displayPlanChangeId: displayPlanChangeId,
+        recurrenceRemovalReason: null,
       );
       await _tasks.updateTask(updated);
       await _replaceTags(current.id, activeTagIds);
@@ -220,9 +232,7 @@ class RecurrenceService {
         // Rule/date is the logical occurrence identity. Existing materialized
         // rows are found by date above and are never renamed, so this only
         // makes new local/remote materializations converge.
-        id: generateDeterministicUuid(
-          'recurring-occurrence:${rule.id}:${isoDateString(dayStart)}',
-        ),
+        id: _occurrenceId(rule.id, isoDateString(dayStart)),
         title: rule.taskTitle,
         description: rule.taskDescription,
         startTime: startTime,
@@ -249,6 +259,79 @@ class RecurrenceService {
     }
     return instance;
   }
+
+  Future<bool> _canReactivate(TaskRow row, RecurringRule rule) async {
+    if (row.deletedAt == null ||
+        row.recurrenceRemovalReason != RecurrenceRemovalReason.ruleExcluded ||
+        row.recurringRuleId != rule.id ||
+        row.rescheduledFromId != null ||
+        row.rescheduledToId != null) {
+      return false;
+    }
+    final status = TaskStatus.fromDb(row.status);
+    if (status != TaskStatus.planned && status != TaskStatus.inProgress) {
+      return false;
+    }
+    if (row.actualDurationMin != null ||
+        row.manualActualSet ||
+        row.manualDurationAdjustmentMin != 0) {
+      return false;
+    }
+    final timer =
+        await (_db.select(_db.timerSessions)
+              ..where((session) => session.taskId.equals(row.id))
+              ..limit(1))
+            .getSingleOrNull();
+    return timer == null;
+  }
+
+  Future<void> _reactivateInstance(
+    TaskRow row,
+    RecurringRule rule,
+    DateTime originalDay,
+  ) async {
+    final (hour, minute) = _parseStartTimeOfDay(rule.startTimeOfDay);
+    final start = PlannerTimeZone.calendarDate(
+      originalDay.year,
+      originalDay.month,
+      originalDay.day,
+      hour: hour,
+      minute: minute,
+    );
+    final current = TaskRepository.fromRow(row);
+    await _tasks.updateTask(
+      current.copyWith(
+        title: rule.taskTitle,
+        description: rule.taskDescription,
+        startTime: start,
+        endTime: start.add(Duration(minutes: rule.durationMin)),
+        estimatedDurationMin: rule.durationMin,
+        categoryId: rule.categoryId,
+        priority: Priority.fromDb(rule.priority),
+        recurringRuleId: rule.id,
+        recurrenceRemovalReason: null,
+        displayPlanChangeId: current.title == rule.taskTitle
+            ? current.displayPlanChangeId
+            : null,
+        deletedAt: null,
+      ),
+      allowStatusTransition: true,
+    );
+    final activeTagIds = <String>{};
+    for (final tagId in rule.tags) {
+      final tag =
+          await (_db.select(_db.tags)..where(
+                (candidate) =>
+                    candidate.id.equals(tagId) & candidate.deletedAt.isNull(),
+              ))
+              .getSingleOrNull();
+      if (tag != null) activeTagIds.add(tagId);
+    }
+    await _replaceTags(row.id, activeTagIds);
+  }
+
+  static String _occurrenceId(String ruleId, String dateIso) =>
+      generateDeterministicUuid('recurring-occurrence:$ruleId:$dateIso');
 
   static (int, int) _parseStartTimeOfDay(String value) {
     final parts = value.split(':');

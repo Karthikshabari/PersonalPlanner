@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/task_dao.dart';
 import '../../../core/models/enums/priority.dart';
+import '../../../core/models/enums/recurrence_removal_reason.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/acyclic_links.dart';
@@ -145,7 +146,18 @@ class TaskRepository {
     return persisted;
   }
 
-  Future<void> deleteTask(String taskId) async {
+  Future<void> deleteTask(
+    String taskId, {
+    String? recurrenceRemovalReason,
+  }) async {
+    if (recurrenceRemovalReason != null &&
+        !RecurrenceRemovalReason.values.contains(recurrenceRemovalReason)) {
+      throw ArgumentError.value(
+        recurrenceRemovalReason,
+        'recurrenceRemovalReason',
+        'is not supported',
+      );
+    }
     final row = await _dao.getTaskById(taskId);
     if (row == null || row.deletedAt != null) return;
     final now = _clock();
@@ -158,6 +170,7 @@ class TaskRepository {
       await _dao.updateTask(
         refreshed.copyWith(
           deletedAt: Value(now),
+          recurrenceRemovalReason: Value(recurrenceRemovalReason),
           updatedAt: now,
           syncStatus: 1,
           revision: refreshed.revision + 1,
@@ -275,6 +288,7 @@ class TaskRepository {
     status: TaskStatus.fromDb(row.status),
     notes: row.notes,
     recurringRuleId: row.recurringRuleId,
+    recurrenceRemovalReason: row.recurrenceRemovalReason,
     rescheduledFromId: row.rescheduledFromId,
     rescheduledToId: row.rescheduledToId,
     isInbox: row.isInbox,
@@ -303,6 +317,7 @@ class TaskRepository {
     status: Value(t.status.dbValue),
     notes: Value(t.notes),
     recurringRuleId: Value(t.recurringRuleId),
+    recurrenceRemovalReason: Value(t.recurrenceRemovalReason),
     rescheduledFromId: Value(t.rescheduledFromId),
     rescheduledToId: Value(t.rescheduledToId),
     isInbox: Value(t.isInbox),
@@ -350,6 +365,16 @@ class TaskRepository {
         task.dueDate,
         'dueDate',
         'must be a valid yyyy-MM-dd date',
+      );
+    }
+    if (task.recurrenceRemovalReason != null &&
+        !RecurrenceRemovalReason.values.contains(
+          task.recurrenceRemovalReason,
+        )) {
+      throw ArgumentError.value(
+        task.recurrenceRemovalReason,
+        'recurrenceRemovalReason',
+        'is not supported',
       );
     }
     PlanTitleHistory.validate(
@@ -445,6 +470,7 @@ class TaskRepository {
         status: t.status.dbValue,
         notes: t.notes,
         recurringRuleId: t.recurringRuleId,
+        recurrenceRemovalReason: t.recurrenceRemovalReason,
         rescheduledFromId: t.rescheduledFromId,
         rescheduledToId: t.rescheduledToId,
         isInbox: t.isInbox,

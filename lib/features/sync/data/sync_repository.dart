@@ -1085,9 +1085,12 @@ class SyncRepository {
     if (!_upsertOrder.containsKey(table)) {
       throw StateError('Unsupported sync table');
     }
+    final clearRecurrenceReason = table == 'tasks'
+        ? 'recurrence_removal_reason = NULL, '
+        : '';
     await _db.customStatement(
-      'UPDATE $table SET deleted_at = ?, server_version = NULL, '
-      'sync_status = 0 WHERE id = ?',
+      'UPDATE $table SET deleted_at = ?, $clearRecurrenceReason'
+      'server_version = NULL, sync_status = 0 WHERE id = ?',
       [deletedAt, recordId],
     );
   }
@@ -1393,7 +1396,8 @@ class SyncRepository {
         capabilities['plan_title_history'] != true ||
         capabilities['manual_actual_source'] != true ||
         capabilities['timer_state_machine'] != true ||
-        capabilities['day_contexts'] != true) {
+        capabilities['day_contexts'] != true ||
+        capabilities['recurrence_removal_provenance'] != true) {
       throw const _SyncUpgradeRequired(
         'Server upgrade required before Sync v2 changes can sync.',
       );

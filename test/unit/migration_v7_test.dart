@@ -13,7 +13,7 @@ void main() {
   setupSqliteForTests();
 
   test(
-    'v8 creates sync tables, metadata and atomic mutation triggers',
+    'v9 creates sync tables, metadata and atomic mutation triggers',
     () async {
       final db = AppDatabase(NativeDatabase.memory());
       try {
@@ -21,7 +21,7 @@ void main() {
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          8,
+          9,
         );
         final tables = await db
             .customSelect("SELECT name FROM sqlite_master WHERE type = 'table'")

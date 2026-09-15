@@ -19,8 +19,19 @@ void main() {
         '20260827000000_sync_v1.sql',
         '20260829000000_sync_v1_hardening.sql',
         '20260910000000_real_use_v2.sql',
+        '20260915000000_recurrence_removal_provenance.sql',
       ]),
     );
+  });
+
+  test('recurrence provenance migration is append-only and constrained', () {
+    final sql = File(
+      'supabase/migrations/20260915000000_recurrence_removal_provenance.sql',
+    ).readAsStringSync();
+
+    expect(sql, contains('add column if not exists recurrence_removal_reason'));
+    expect(sql, contains("recurrence_removal_reason = 'rule_excluded'"));
+    expect(sql, contains("'recurrence_removal_provenance', true"));
   });
 
   test('sync history validation is ordered after the account lock', () {

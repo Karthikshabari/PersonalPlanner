@@ -158,6 +158,9 @@ class SyncRemoteApplier {
           ..['deleted_at'] =
               change.payload['deleted_at'] ??
               DateTime.now().toUtc().toIso8601String();
+        if (change.tableName == 'tasks') {
+          snapshot['recurrence_removal_reason'] = null;
+        }
         final snapshotChange = SyncRemoteChange(
           changeId: change.changeId,
           operationId: change.operationId,
@@ -203,7 +206,8 @@ class SyncRemoteApplier {
                 column.jsonKey != 'due_date' &&
                 column.jsonKey != 'manual_actual_set' &&
                 column.jsonKey != 'plan_title_history_json' &&
-                column.jsonKey != 'display_plan_change_id',
+                column.jsonKey != 'display_plan_change_id' &&
+                column.jsonKey != 'recurrence_removal_reason',
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
     }
@@ -249,6 +253,9 @@ class SyncRemoteApplier {
     }
     if (!payload.containsKey('display_plan_change_id')) {
       payload['display_plan_change_id'] = current?.displayPlanChangeId;
+    }
+    if (!payload.containsKey('recurrence_removal_reason')) {
+      payload['recurrence_removal_reason'] = current?.recurrenceRemovalReason;
     }
   }
 
@@ -407,8 +414,12 @@ ON CONFLICT(${definition.primaryKey}) DO UPDATE SET $updates
     } else {
       variables.add(change.recordId);
     }
+    final clearRecurrenceReason = change.tableName == 'tasks'
+        ? 'recurrence_removal_reason = NULL, '
+        : '';
     await _db.customStatement(
       'UPDATE ${definition.tableName} SET deleted_at = ?, '
+      '$clearRecurrenceReason'
       'server_version = ?, sync_status = 0 WHERE $where',
       variables,
     );
@@ -458,6 +469,7 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('status'),
       _SyncColumn('notes'),
       _SyncColumn('recurring_rule_id'),
+      _SyncColumn('recurrence_removal_reason'),
       _SyncColumn('rescheduled_from_id'),
       _SyncColumn('rescheduled_to_id'),
       _SyncColumn('is_inbox'),

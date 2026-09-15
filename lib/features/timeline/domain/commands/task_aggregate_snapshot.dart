@@ -48,35 +48,35 @@ class TaskAggregateSnapshot {
       await TaskActualDurationService(db).recomputeTaskInTransaction(task.id);
       final actual = (await db.taskDao.getTaskById(task.id))?.actualDurationMin;
       await db.customUpdate(
-      'UPDATE tasks SET deleted_at = ?, updated_at = ?, actual_duration_min = ?, sync_status = 1, '
-      'revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
-      variables: [
-        Variable<String>(nowIso),
-        Variable<String>(nowIso),
-        Variable<int>(actual),
-        Variable<String>(task.id),
-      ],
-      updates: {db.tasks},
+        'UPDATE tasks SET deleted_at = ?, recurrence_removal_reason = NULL, updated_at = ?, actual_duration_min = ?, sync_status = 1, '
+        'revision = revision + 1 WHERE id = ? AND deleted_at IS NULL',
+        variables: [
+          Variable<String>(nowIso),
+          Variable<String>(nowIso),
+          Variable<int>(actual),
+          Variable<String>(task.id),
+        ],
+        updates: {db.tasks},
       );
       await db.customUpdate(
-      'UPDATE subtasks SET deleted_at = ?, updated_at = ?, sync_status = 1, '
-      'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
-      variables: [
-        Variable<String>(nowIso),
-        Variable<String>(nowIso),
-        Variable<String>(task.id),
-      ],
-      updates: {db.subtasks},
+        'UPDATE subtasks SET deleted_at = ?, updated_at = ?, sync_status = 1, '
+        'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
+        variables: [
+          Variable<String>(nowIso),
+          Variable<String>(nowIso),
+          Variable<String>(task.id),
+        ],
+        updates: {db.subtasks},
       );
       await db.customUpdate(
-      'UPDATE task_tags SET deleted_at = ?, updated_at = ?, sync_status = 1, '
-      'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
-      variables: [
-        Variable<String>(nowIso),
-        Variable<String>(nowIso),
-        Variable<String>(task.id),
-      ],
-      updates: {db.taskTags},
+        'UPDATE task_tags SET deleted_at = ?, updated_at = ?, sync_status = 1, '
+        'revision = revision + 1 WHERE task_id = ? AND deleted_at IS NULL',
+        variables: [
+          Variable<String>(nowIso),
+          Variable<String>(nowIso),
+          Variable<String>(task.id),
+        ],
+        updates: {db.taskTags},
       );
     });
   }

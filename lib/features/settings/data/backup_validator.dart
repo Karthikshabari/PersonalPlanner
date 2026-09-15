@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:personal_planner/features/settings/data/backup_format.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
+import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
@@ -55,6 +56,7 @@ class BackupValidator {
       'status',
       'notes',
       'recurring_rule_id',
+      'recurrence_removal_reason',
       'rescheduled_from_id',
       'rescheduled_to_id',
       'is_inbox',
@@ -480,6 +482,16 @@ class BackupValidator {
         status(row, 'status');
         nullableString(row, 'notes');
         nullableId(row, 'recurring_rule_id');
+        final recurrenceRemovalReason = nullableString(
+          row,
+          'recurrence_removal_reason',
+        );
+        if (recurrenceRemovalReason != null &&
+            !RecurrenceRemovalReason.values.contains(recurrenceRemovalReason)) {
+          throw const BackupValidationException(
+            'Invalid recurrence removal reason.',
+          );
+        }
         nullableId(row, 'rescheduled_from_id');
         nullableId(row, 'rescheduled_to_id');
         boolean(row, 'is_inbox');

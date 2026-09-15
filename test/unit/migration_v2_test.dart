@@ -19,7 +19,7 @@ void main() {
 
   tearDown(() => directory.deleteSync(recursive: true));
 
-  test('v1 snapshot upgrades to v8 without losing foundation rows', () async {
+  test('v1 snapshot upgrades to v9 without losing foundation rows', () async {
     MigrationSchema.create(dbFile, 1);
     final db = AppDatabase(NativeDatabase(dbFile));
     try {
@@ -31,7 +31,7 @@ void main() {
         (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
           'user_version',
         ),
-        8,
+        9,
       );
       expect(
         (await db.select(db.tasks).get()).single.manualDurationAdjustmentMin,
