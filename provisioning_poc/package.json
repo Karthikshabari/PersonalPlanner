@@ -1,0 +1,16 @@
+{
+  "name": "personal-planner-provisioning-poc",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "cf:types": "wrangler types",
+    "check": "tsc --noEmit",
+    "deploy:dry": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/node": "24.7.2",
+    "typescript": "5.9.2",
+    "wrangler": "4.132.0"
+  }
+}

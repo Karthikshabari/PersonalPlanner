@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "personal-planner-provisioning-poc",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
+  },
+  "secrets": {
+    "required": [
+      "OAUTH_SESSION_KEY",
+      "SUPABASE_OAUTH_CLIENT_SECRET"
+    ]
+  },
+  "vars": {
+    "POC_PHASE": "oauth",
+    "POC_ORGANIZATION_SLUG": "qqqxtjlmalgijqyndbjv",
+    "POC_PROJECT_NAME": "personal-planner-provisioning-poc-20260916t092225",
+    "POC_PROJECT_REF": "zzptmfpvknudilgdjaes",
+    "SUPABASE_OAUTH_CLIENT_ID": "b4bf9911-46dc-4850-92b1-6fbb05e18630",
+    "SUPABASE_OAUTH_REDIRECT_URI": "https://personal-planner-provisioning-poc.karthikshabariper.workers.dev/oauth/callback"
+  }
+}
