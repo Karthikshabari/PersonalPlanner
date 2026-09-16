@@ -19,6 +19,7 @@ import '../../domain/auth_session_controller.dart';
 import '../../providers/sync_providers.dart';
 import '../../providers/sync_settings_provider.dart';
 import '../../domain/sync_models.dart';
+import '../widgets/cloud_setup_card.dart';
 import '../widgets/sync_status_action.dart';
 
 class SyncSettingsScreen extends ConsumerStatefulWidget {
@@ -130,6 +131,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           children: [
             if (quarantinedChanges.isNotEmpty) ...[
               _QuarantineCard(changes: quarantinedChanges),
+              const SizedBox(height: 12),
+            ],
+            // User-owned Supabase setup. A build with static developer Supabase
+            // configuration keeps the legacy path below instead, so the two
+            // paths never compete for the same screen.
+            if (!SupabaseConfig.isConfigured) ...[
+              const CloudSetupCard(),
               const SizedBox(height: 12),
             ],
             if (!SupabaseConfig.isConfigured)
