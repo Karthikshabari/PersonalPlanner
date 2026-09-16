@@ -48,6 +48,9 @@ dependencies:
   window_manager: ^0.5.1
   stack_trace: ^1.12.1
 
+  # External browser handoff for user-owned cloud setup (Supabase authorization).
+  url_launcher: ^6.3.2
+
   # Required at runtime by Flutter's generated Android plugin registrant.
   # The integration test API remains used only by integration-test targets.
   integration_test:
