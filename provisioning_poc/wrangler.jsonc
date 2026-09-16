@@ -19,6 +19,14 @@
       "head_sampling_rate": 1
     }
   },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PROVISIONING_TRANSACTION", "class_name": "ProvisioningTransaction" }
+    ]
+  },
+  "migrations": [
+    { "tag": "provisioning-transaction-v1", "new_sqlite_classes": ["ProvisioningTransaction"] }
+  ],
   "secrets": {
     "required": [
       "OAUTH_SESSION_KEY",

@@ -4,6 +4,9 @@ import realUseV2 from "../../supabase/migrations/20260910000000_real_use_v2.sql"
 import recurrenceRemovalProvenance from "../../supabase/migrations/20260915000000_recurrence_removal_provenance.sql";
 import titleHistoryConflictOrdering from "../../supabase/migrations/20260916000000_title_history_conflict_ordering.sql";
 import titleHistoryRuntimeTest from "../../supabase/tests/database/title_history_conflict_ordering_test.sql";
+import { ProvisioningTransaction, productionFetch, productionOAuthCallback } from "./production";
+
+export { ProvisioningTransaction };
 
 const AUTHORIZE_URL = "https://api.supabase.com/v1/oauth/authorize";
 const TOKEN_URL = "https://api.supabase.com/v1/oauth/token";
@@ -16,7 +19,7 @@ const SESSION_TTL_SECONDS = 50 * 60;
 const SEAL_CONTEXT = new TextEncoder().encode(
   "personal-planner-provisioning-poc-v1",
 );
-const MIGRATIONS = [
+export const MIGRATIONS = [
   {
     name: "20260827000000_sync_v1",
     query: syncV1,
@@ -960,7 +963,7 @@ async function applyMigrations(request: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 303, headers });
 }
 
-const SCHEMA_VERIFICATION_SQL = `
+export const SCHEMA_VERIFICATION_SQL = `
 with expected_tables(table_name) as (
   values
     ('sync_state'), ('sync_changes'), ('sync_operation_ack'),
@@ -1381,6 +1384,10 @@ async function oauthCallback(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const productionCallback = await productionOAuthCallback(request, env);
+    if (productionCallback !== null) return productionCallback;
+    const production = await productionFetch(request, env);
+    if (production !== null) return production;
     const url = new URL(request.url);
 
     if (request.method === "POST" && url.pathname === "/poc/migrations") {

@@ -1,0 +1,139 @@
+# Personal Planner Provisioning Control-Plane Hardening Record
+
+## Review history
+
+The Terra production review and focused Sol review confirmed two Critical issues: an ambiguous project-create result could reach a second create request without mandatory reconciliation, and a delayed OAuth callback could write Management credentials after expiry cleanup. They also confirmed three Important issues: verification transport uncertainty was incorrectly terminal, migration/verification calls lacked durable in-flight ownership, and migration recovery was not reachable from its generic recoverable state.
+
+## Implemented resolutions
+
+- Project creation now uses `project_reconciliation_required` and `project_retry_authorized`, a durable create nonce, and a 90-second create lease. Only initial organization selection or a durable, authoritative zero-match reconciliation result can reserve a POST. One match recovers the recorded ref; multiple matches become terminal; inconclusive reconciliation remains recoverable without a new POST. Completion and uncertainty handling require the active nonce.
+- OAuth state is stored with a SHA-256 state hash. Callback credential persistence performs encryption first, then synchronously reloads and validates current authorization state, one-time callback claim, state hash, token lifetime, and transaction TTL immediately before its durable write. It clears OAuth state/hash/verifier on success. Expiry clears those values and encrypted Management material.
+- Capability authentication performs its final state/expiry check after asynchronous hashing. Management-token decryption also rechecks current transaction authority and ciphertext identity after decrypting.
+- Verification is explicitly `passed`, `assertion_failed`, or `indeterminate`. Only fixed-verification assertion failure becomes terminal. 429/5xx/network/malformed responses retain bounded retryable verification state and authority until ready or TTL expiry.
+- Migration and verification have durable operation kind/nonces and leases. Active duplicate calls return in-progress. Completion validates its nonce. A stale migration lease first moves to `migration_reconciliation_required`; the next migration call reads official history before any POST. Canonical drift remains terminal and fail-closed.
+- Project readiness is checked through the Management project-status endpoint before migrations. A not-yet-healthy project becomes retryable migration reconciliation, not migration-history drift or another project-create attempt.
+
+## Regression coverage
+
+`provisioning_poc/test/production.test.ts` now covers create reservation/reconciliation constraints, active leases, bounded retry authorization, OAuth expiry/replay predicates, actual expired-callback rejection, nonce-bound migration/verification completion, migration recovery transitions and canonical history behavior, verification assertion-versus-transport classification, and secret redaction. The suite has 14 passing focused tests.
+
+## Validation
+
+- `npm run check` — passing.
+- `npm test` — passing: 14 tests.
+- `npm run deploy:dry` — passing; Worker bundle reports only the existing Durable Object binding.
+- `git diff --check` — passing.
+
+## Scope and remaining items
+
+No Flutter source, Planner migrations, `planner_testing`, or hosted Supabase projects were touched. The only Cloudflare persistence mechanism is the existing SQLite-backed Durable Object; no D1, KV, R2, Queues, Workflows, Hyperdrive, or additional Worker was introduced.
+
+The external release dependency remains: Supabase Management migration API entitlement for arbitrary unrelated end-user organizations is not externally confirmed. This does not change the tested control-plane mechanics, but must be confirmed before public release. No fallback transport has been introduced.
+
+---
+
+# DeepSeek Independent Security Re-Check
+
+## Header
+
+- Date/time: 2026-09-16 20:14 IST (14:44 UTC).
+- Reviewer: DeepSeek, independent second-model verification pass. REVIEW ONLY: no production code, test, config, migration, Flutter, package, or infrastructure file was modified by this pass.
+- Method: repository evidence first. Actual privileged flows were traced from public Worker route to Durable Object state validation to external Supabase call to durable completion, including failure/timeout/restart/TTL/stale-response interleavings. Terra's and Sol's written conclusions were treated as unverified claims and re-derived from code.
+
+## Reviewed repository state
+
+- HEAD: `c870e64` ("Poc for supabse automation-succeed with it"). `origin/main` is `b832559`, so HEAD is one local commit ahead; the hardening itself is entirely uncommitted/unpushed.
+- Uncommitted work reviewed: modified `provisioning_poc/{package.json,package-lock.json,src/index.ts,worker-configuration.d.ts,wrangler.jsonc}`; new `provisioning_poc/src/production.ts`, `provisioning_poc/test/{production.test.ts,cloudflare-workers.ts}`, `provisioning_poc/vitest.config.ts`, `provisioning_poc/wrangler.test.jsonc`.
+- No stash entries, no reset/checkout/restore/clean performed. Durable history files `supabase_findings.md`, `supabase_poc_result.md`, and `supabase_report` were present and read.
+
+## Verdict
+
+PASS. Both previous Critical findings and all three previous Important findings are resolved in the current implementation; no new security/correctness blocker was found. Two non-blocking ambiguities (one upstream-behaviour dependency in project reconciliation, one already-known external entitlement question) and three optional hardening items are recorded below.
+
+## Previous Critical #1 — project-create idempotency: RESOLVED
+
+Independent trace of `productionFetch` (`/create`, `/reconcile`) plus Durable Object methods:
+
+- There is exactly one project-create POST site in the whole runtime (`production.ts:314`). The legacy POC create handler (`index.ts:507 createProject`) is dead code: both `/poc/create` and `POST /poc/projects` return 410 and nothing calls it.
+- `reserveCreate` mints a fresh 128-bit nonce with a 90s lease and increments `createAttempts`; it is gated by `createReservationAllowed(state, createAttempts)` = `state ∈ {organization_selected, project_retry_authorized} && createAttempts < 2`, so at most two create POSTs can ever be issued for one transaction.
+- `project_creating → project_reconciliation_required` is only reachable through `claimCreateReconciliation` (requires `operationLeaseActive === false`) or `createUncertain` (requires the active create nonce). An active lease therefore cannot be converted into retry permission by a second request; the route converts the failure into 409 `operation_in_progress` and never continues to the POST (`production.ts:302-304`).
+- A zero-match reconciliation cannot authorize retry while a create may be live: to reach `reconciliationAbsent` the state must already be `project_reconciliation_required`, which requires an expired lease, and the Worker's own create POST is bounded by `AbortSignal.timeout(20_000)` — well inside the 90s lease. Zero-match also does not auto-POST in the same request: it returns `project_retry_authorized` and requires a further `/create` call (`production.ts:305-313`).
+- Stale responses cannot mutate newer state: `recordProject` and `createUncertain` both require `state === "project_creating"` and `operation.nonce === n`; a newer attempt always replaces the nonce, so the old request's commit fails closed (`stale_operation`), and `project_creating` and `project_retry_authorized` cannot transition directly back into a POST-capable state without a new reservation.
+- Multiple matches during reconciliation become terminal `project_identity_ambiguous` (409); inconclusive reconciliation leaves `project_reconciliation_required` unchanged and returns 502 with no POST.
+- Organization/project identity cannot change while reconciliation is unresolved: `selectOrganization` requires `authorization_pending`, and the create body uses the DO-stored organization slug and requested project name, never client-supplied values.
+
+## Previous Critical #2 — OAuth expiry / token resurrection: RESOLVED
+
+- Callback claim is one-time and state-bound: `oauthCallback` hashes the presented state, requires `authorization_pending`, `!oauthStateUsed`, a matching stored SHA-256 state hash, and a live TTL; it sets `oauthStateUsed` and returns the PKCE verifier. Replay returns null → 400.
+- Credential persistence is race-free at the final step: `saveOAuthFromCallback` performs hashing and AES-GCM sealing first, then reloads durable state, expires it if the TTL has passed, and evaluates `oauthCredentialSaveAllowed(state, used, storedHash, providedHash, txExpiresAt, tokenExpiresAt, now)` immediately before a synchronous single-row SQLite write. There is no interleavable await between the final authoritative check and the durable write, and ciphertext is never written outside that validated block.
+- Delayed callbacks after TTL cannot resurrect credentials: expiry clears `oauthStateHash`, `oauthStateUsed`-independent state becomes `expired`, and the TTL predicate fails, so the DO throws and nothing is persisted. The same holds after the alarm has run, and also when the alarm has not yet run but `Date.now() >= expiresAt`.
+- Ready/terminal transactions cannot receive credentials: the predicate requires `authorization_pending`; `terminal_error`/`ready`/`expired` all fail closed. `create` cannot overwrite an existing record.
+
+## Previous Important #1 — verification tri-state: RESOLVED
+
+`runFixedVerification` returns `passed` only when the fixed SQL returns all 12 named checks as `true`; `assertion_failed` only when all 12 are present as booleans and at least one is `false`; otherwise `indeterminate`. Non-2xx (including 429 and 5xx), thrown/aborted fetches, and malformed/unusable response shapes are all `indeterminate`. `finishVerification` maps only `assertion_failed` to terminal `verification_failed`; `indeterminate` keeps the transaction in `verifying` (retryable, 202), and only `passed` reaches `ready`.
+
+## Previous Important #2 — migration/verification operation ownership: RESOLVED
+
+`claimOperation` stores a durable operation record (kind, nonce, startedAt, lease) under an atomic read-check-write with no await between load and save. An active lease blocks duplicates: verification duplicates (and migration duplicates while `migrating` with a live lease) throw `operation_in_progress` → 409. A stale migration lease is first moved to `migration_reconciliation_required` and the call is rejected without any POST. `finishMigration`/`finishVerification` require current state, matching operation kind, and the exact nonce, so stale completions cannot advance state, cannot delete the current credentials, and cannot mark a transaction ready. Retry after lease expiry always mints a fresh nonce.
+
+## Previous Important #3 — migration recovery: RESOLVED
+
+`migration_reconciliation_required` is reachable from the real route and is genuinely resumable: `claimOperation("migration")` accepts it (and `project_waiting`), moves to `migrating`, and `runCanonicalMigrations` always reads official Supabase migration history first and applies only the missing canonical suffix. Every migration execution path therefore reconciles history before any POST; an ambiguous previous outcome can never be blindly resubmitted. Divergent/unexpected history, off-bundle SQL digests, and post-POST history that does not advance all fail closed (terminal `migration_history_mismatch`, or `indeterminate → migration_reconciliation_required` for transport failures). Cross-stage confusion is prevented by the transition table (`project_reconciliation_required → migrating` is illegal) and by `claimOperation` state gating.
+
+## Project readiness
+
+`/migrate` checks Management project status before touching migrations and only proceeds on `ACTIVE_HEALTHY`. Any other status, non-2xx (429/5xx), malformed body, or thrown/aborted fetch yields `ready() === false`, which maps to `finishMigration(..., indeterminate)` → retryable `migration_reconciliation_required` (HTTP 202). A newly created but not-yet-healthy project is therefore never treated as migration drift, never terminal, and never triggers replacement-project creation. Retries are bounded by the shared expensive-operation cap and TTL expiry; no infinite polling.
+
+## New required findings
+
+None.
+
+## Review ambiguities
+
+1. REVIEW AMBIGUITY + EXTERNAL DEPENDENCY — "authoritative zero match" depends on Supabase project-listing visibility, not on repository evidence. Area: `reconcile()` (`production.ts:221-228`) plus the 90s `CREATE_LEASE_MS`. What is uncertain: whether `GET /v1/organizations/{slug}/projects?search=<name>` reliably reports a project created up to ~70s after the original POST was aborted, and whether such a project could ever be absent from that listing (eventual consistency, pagination with `limit=100`, or listing that omits not-yet-active projects). Why it matters: if a listing falsely reports zero, `reconciliationAbsent` can authorize the second (final) create POST while a first project already exists. Compensating controls present in code: create POSTs are hard-capped at 2, an active lease can never be converted, multiple matches are terminal `project_identity_ambiguous`, a second POST under the same name is expected to be rejected upstream and self-heal through `createUncertain → reconcile → recordProject(recovered)`, and a genuine duplicate becomes a detected terminal error rather than silent double-provisioning. Evidence needed to resolve: upstream documentation/observed test proving project-create visibility latency is far below the ~70s settle window (or a create-side idempotency key). Does it block Flutter integration? No — the ambiguity is upstream-facing and unchanged by client work, but it should be closed alongside the migration-API entitlement check before public release.
+2. EXTERNAL DEPENDENCY — Supabase Management migration-API entitlement for arbitrary unrelated end-user organizations remains unconfirmed. Migrations are likewise affected in a fail-closed way only: unsupported/non-entitled responses become `indeterminate` (retryable) and never `assertion_failed` or false success.
+3. REVIEW AMBIGUITY — exact shape of the official migration-history payload. `reconcileMigrations` accepts `${version}_${name}` or a bare `name` and treats any extra/unexpected entry as terminal drift. This is strict and fail-closed (no silent partial application), but a legitimate upstream change in history payload shape would surface as `migration_history_mismatch`. Evidence needed: re-confirm against a real project when the entitlement check is performed. Not blocking.
+
+## Optional / defense-in-depth observations (not blockers)
+
+1. A migration lease is 120s while the worst-case guarded work (readiness check + 6 history reads + 5 POSTs, each capped at 20s) can exceed it, so a duplicate `/migrate` arriving after lease expiry while the first run is still in flight could start a second concurrent migration execution. Consequences are fail-closed (idempotent canonical SQL, history re-read after every POST, drift detected as terminal mismatch, stale completion rejected). A per-step lease renewal or a lease sized above the worst case would close it.
+2. The expensive-operation budget (`MAX_OPS = 8`) is shared by migration and verification. Exhausting it leaves the transaction in a nominally recoverable state (`migration_reconciliation_required`) whose further calls return 400 until the TTL alarm expires it. This is intentional bounded retry, but the exhausted state could use a dedicated error code.
+3. Management credentials are retained until TTL expiry in `terminal_error` reached via migration failure or ambiguous project identity (they are cleared on `ready` and on `verification_failed`, and are never re-issued). Clearing them on any terminal transition would tighten credential lifetime.
+4. `POST /v1/provisioning/transactions` is unauthenticated and creates a Durable Object per call with a 1h TTL; there is no global rate limit (only body-size and per-transaction attempt caps). Consider an edge rate limit before public release.
+5. `redact()` is exercised only by tests and is not used on any runtime path; the actual reason responses/logs cannot leak credentials is that `production.ts` performs no logging and returns fixed error codes without upstream bodies. `createContext`'s early return echoes the raw `operation` (nonce) to the capability holder — harmless but internal state that need not be exposed.
+
+## Test coverage assessment
+
+14 focused tests pass and were re-run by this reviewer. Genuinely exercised: create reservation gating (including "uncertain create cannot reserve again, then reserve only after durable reconciliation"), create lease/stale-completion predicates and transition legality, real Durable Object methods for expired-callback rejection and replayed/mismatched/cleared OAuth state, nonce-bound migration and verification completion against a real in-memory DO record, canonical-history prefix acceptance, apply-only-missing/no-op/drift behavior of `runCanonicalMigrations` with injected Management responses, 503/429/malformed classification, verification `passed` vs `assertion_failed`, and the redaction helper.
+
+Meaningful gaps (not blockers, but they mean several invariants are established by this code review rather than by tests): `productionFetch` route orchestration has no test, so route-level ordering (reconcile-before-retry, zero-match not auto-POSTing, active-lease 409, readiness gate before migration, indefinite→202) is unprotected by regression tests; `reconcile()` (one/zero/ambiguous classification) is untested and module-private; `claimCreateReconciliation` is not tested against an active lease through the DO method, only via the pure predicate; no test asserts that a stale create nonce cannot record a project after a newer attempt; and the credential-clearing assertions are vacuous because no ciphertext is ever stored first (a genuine test would save a token, then assert `managementToken` returns null / `tokenCiphertext` is undefined after `ready` or expiry). Also note `vitest.config.ts` uses `environment: "node"` with a manual `cloudflare:workers` stub, so `@cloudflare/vitest-pool-workers` and `wrangler.test.jsonc` are currently unused, and the test file is outside the `tsc` `include` set (`npm run check` does not type-check tests).
+
+## Validation results (re-run by this reviewer)
+
+- `npm run check` — PASS (`tsc --noEmit`, clean).
+- `npm test` — PASS: 14/14 tests, 1 file.
+- `npm run deploy:dry` — PASS: worker bundles (178.47 KiB / 33.81 KiB gzip) and reports only the existing `PROVISIONING_TRANSACTION` Durable Object binding plus pre-existing environment vars (the `EROFS` line is the sandbox blocking wrangler's log file under `~/.config`, not a build failure).
+- `git diff --check` — PASS (clean).
+- `sha256sum supabase/migrations/*.sql` independently matched all five pinned `sha256` constants in `MIGRATIONS`.
+
+## Architecture boundary status
+
+Unchanged and intact. `production.ts` calls only Supabase Management endpoints (`/v1/oauth/*`, `/v1/organizations`, `/v1/projects`, `/v1/projects/{ref}`, `/v1/projects/{ref}/database/migrations`, `/v1/projects/{ref}/database/query`). No Planner data path runs through Cloudflare; no service-role/secret key is requested, stored, or referenced anywhere in the provisioning code; no D1/KV/R2/Queues/Workflows/Hyperdrive or additional Worker was introduced (single SQLite-backed Durable Object class only). Normal runtime remains Flutter ↔ user-owned Supabase project.
+
+## Repository integrity status
+
+- Flutter production source unchanged (`lib/`, `android/`, `linux/`, `pubspec*` show no working-tree changes).
+- Historical migrations unchanged; no migration file was added, edited, renamed, or squashed; SHA-256 digests verified.
+- `planner_testing` is not referenced by any new code; the only local reference is the gitignored CLI artifact `supabase/.temp/linked-project.json`. No hosted Supabase project was created or called during this review, and no network call to Supabase was made.
+- No secret values committed: `OAUTH_SESSION_KEY` and `SUPABASE_OAUTH_CLIENT_SECRET` are declared as required Worker secrets and are absent from the repository; `.dev.vars`/`.env*`/`.wrangler/` remain gitignored and absent. The client ID and redirect URI present in `wrangler.jsonc` are non-secret OAuth identifiers.
+- No commits, no pushes, no stash, and no history rewrite occurred (`main` still at `c870e64`, one ahead of `origin/main`).
+- Pre-existing POC surface note: the same Worker still exposes the earlier `/poc/*` cookie-session POC routes (`index.ts`), which hold a Management token in an encrypted HttpOnly cookie and are unrelated to the hardened `/v1/provisioning/*` control plane. This is baseline work from commit `c870e64`, not introduced by this hardening, and the POC project was deleted; it should be stripped during productionization.
+
+## External dependency
+
+Supabase Management migration API entitlement for arbitrary unrelated end-user organizations remains externally unconfirmed. No fallback transport (direct Postgres, service-role key, Hyperdrive, alternate migration system) has been introduced, and none should be added merely to close this question.
+
+## Flutter integration decision
+
+READY FOR FLUTTER INTEGRATION, with the recommendation that the Supabase listing-visibility assumption and the migration-API entitlement question be closed before public release. No fixes are required before starting a separately scoped Flutter integration phase.

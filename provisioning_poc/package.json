@@ -5,12 +5,15 @@
   "scripts": {
     "cf:types": "wrangler types",
     "check": "tsc --noEmit",
+    "test": "vitest run",
     "deploy:dry": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
     "@types/node": "24.7.2",
     "typescript": "5.9.2",
-    "wrangler": "4.132.0"
+    "wrangler": "4.132.0",
+    "vitest": "3.2.4",
+    "@cloudflare/vitest-pool-workers": "0.8.43"
   }
 }
