@@ -163,11 +163,26 @@ describe("migration and verification recovery", () => {
     expect((await tx.get(access) as any).state).toBe("ready");
   });
 
-  it("accepts only a canonical history prefix", () => {
+  it("accepts a canonical history prefix in either recorded shape", () => {
     const migrations = [{ name: "1_one", query: "", sha256: "a" }, { name: "2_two", query: "", sha256: "b" }];
     expect(reconcileMigrations(migrations, [])).toEqual({ next: 0 });
+    // version + short name, as the CLI records it
     expect(reconcileMigrations(migrations, [{ name: "one", version: "1" }])).toEqual({ next: 1 });
+    // full canonical name stored verbatim
+    expect(reconcileMigrations(migrations, [{ name: "1_one" }])).toEqual({ next: 1 });
+    expect(reconcileMigrations(migrations, [{ name: "one", version: "1" }, { name: "two", version: "2" }])).toEqual({ next: 2 });
+  });
+
+  it("ignores history rows that are not ours but still fails closed on our own drift", () => {
+    const migrations = [{ name: "1_one", query: "", sha256: "a" }, { name: "2_two", query: "", sha256: "b" }];
+    // platform/external rows observed on a real project are not drift
+    expect(reconcileMigrations(migrations, [{ name: "20211115170000_init" }])).toEqual({ next: 0 });
+    expect(reconcileMigrations(migrations, [{ name: "20211115170000_init" }, { name: "one", version: "1" }])).toEqual({ next: 1 });
+    expect(reconcileMigrations(migrations, [{ name: "1_one" }, { name: "0_platform_patch" }, { name: "2_two" }])).toEqual({ next: 2 });
+    // our own migrations must appear exactly once and in canonical order
     expect(reconcileMigrations(migrations, [{ name: "two", version: "2" }])).toEqual({ next: 0, error: "migration_history_mismatch" });
+    expect(reconcileMigrations(migrations, [{ name: "2_two" }, { name: "1_one" }])).toEqual({ next: 0, error: "migration_history_mismatch" });
+    expect(reconcileMigrations(migrations, [{ name: "1_one" }, { name: "one", version: "1" }])).toEqual({ next: 0, error: "migration_history_mismatch" });
   });
 
   it("applies only missing migrations, treats complete history as a no-op, and fails closed on drift", async () => {
@@ -185,7 +200,51 @@ describe("migration and verification recovery", () => {
     expect(posts).toHaveLength(5);
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
     expect(posts).toHaveLength(5);
-    expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "999_unexpected" }]))).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+    // Our own migrations appearing out of order remain a terminal failure.
+    expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "20260910000000_real_use_v2" }]))).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+    // A history the Worker cannot advance through stays retryable, never terminal.
+    expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "999_platform_bootstrap" }]))).toEqual({ kind: "indeterminate" });
+  });
+
+  it("applies only the missing suffix when the project history also holds foreign rows", async () => {
+    const history: Array<{ name?: string; version?: string }> = [{ name: "20211115170000_init" }];
+    const posts: string[] = [];
+    const management = async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const request = JSON.parse(String(init.body)) as { name: string };
+        posts.push(request.name);
+        history.push({ name: request.name });
+      }
+      return Response.json(history);
+    };
+
+    expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
+    expect(posts).toHaveLength(5);
+  });
+
+  it("accepts version and short-name history rows and applies only what is missing", async () => {
+    const history: Array<{ name?: string; version?: string }> = [
+      { name: "20211115170000_init" },
+      { name: "sync_v1", version: "20260827000000" },
+    ];
+    const posts: string[] = [];
+    const management = async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const request = JSON.parse(String(init.body)) as { name: string };
+        posts.push(request.name);
+        const [version, ...rest] = request.name.split("_");
+        history.push({ name: rest.join("_"), version });
+      }
+      return Response.json(history);
+    };
+
+    expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
+    expect(posts).toEqual([
+      "20260829000000_sync_v1_hardening",
+      "20260910000000_real_use_v2",
+      "20260915000000_recurrence_removal_provenance",
+      "20260916000000_title_history_conflict_ordering",
+    ]);
   });
 
   it("classifies unavailable migration history and verification transport as indeterminate", async () => {
@@ -620,5 +679,203 @@ describe("provisioning route contract", () => {
     const body = await response!.json() as { state: string; runtimeConfig: unknown };
     expect(body.state).toBe("verifying");
     expect(body.runtimeConfig).toBeNull();
+  });
+});
+
+describe("migration history validation", () => {
+  const canonicalOne = "20260827000000_sync_v1";
+  const canonicalTwo = "20260829000000_sync_v1_hardening";
+  const canonicalThree = "20260910000000_real_use_v2";
+
+  /**
+   * Minimal Management stub for reconciliation tests. History reads answer with
+   * `rows` (or with the value returned by a `rows()` callback); migration POSTs
+   * are recorded so a test can prove none happened.
+   */
+  function migrationApi(rows: unknown) {
+    const posts: string[] = [];
+    const historyPaths: string[] = [];
+    const call = async (path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { name: string };
+        posts.push(body.name);
+        return Response.json({});
+      }
+      historyPaths.push(path);
+      return Response.json(rows);
+    };
+    return { call, posts, historyPaths };
+  }
+
+  /** Recorder whose history advances as migrations are applied. */
+  function advancingMigrationApi(initial: Array<{ name?: string; version?: string }>) {
+    const history = [...initial];
+    const posts: string[] = [];
+    const call = async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { name: string };
+        posts.push(body.name);
+        history.push({ name: body.name });
+      }
+      return Response.json(history);
+    };
+    return { call, posts };
+  }
+
+  describe("MH-01 malformed history rows", () => {
+    it("rejects rows whose identity cannot be read at all", async () => {
+      for (const rows of <unknown[]>[
+        [{}],
+        [{ version: "20260827000000" }],
+        [{ name: undefined, version: "20260827000000" }],
+      ]) {
+        const api = migrationApi(rows);
+
+        expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "indeterminate" });
+        expect(api.historyPaths).toHaveLength(1);
+        expect(api.posts).toEqual([]);
+      }
+    });
+
+    it("rejects non-string or empty identity fields instead of treating them as foreign", async () => {
+      for (const rows of <unknown[]>[
+        [{ name: 42, version: "20260827000000" }],
+        [{ name: "sync_v1", version: 123 }],
+        [{ name: null, version: "20260827000000" }],
+        [{ name: "", version: "20260827000000" }],
+        [{ name: "sync_v1", version: "" }],
+        [{ name: ["sync_v1"], version: { version: 1 } }],
+      ]) {
+        const api = migrationApi(rows);
+
+        expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "indeterminate" });
+        expect(api.posts).toEqual([]);
+      }
+    });
+
+    it("rejects malformed rows placed before, between, or after canonical rows", async () => {
+      for (const rows of <unknown[]>[
+        [{ name: canonicalOne }, {}],
+        [{}, { name: canonicalOne }],
+        [{ name: canonicalOne }, { name: 42 }, { name: canonicalTwo }],
+        [{ name: canonicalOne }, { name: canonicalTwo, version: 5 }],
+      ]) {
+        const api = migrationApi(rows);
+
+        expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "indeterminate" });
+        expect(api.posts).toEqual([]);
+      }
+    });
+
+    it("surfaces unusable history to direct callers so no migration can be authorized", () => {
+      const migrations = [{ name: "1_one", query: "", sha256: "a" }];
+
+      expect(reconcileMigrations(migrations, [{}])).toEqual({ next: 0, unusable: true });
+      expect(reconcileMigrations(migrations, [{ name: 42 }])).toEqual({ next: 0, unusable: true });
+      // A well-formed unrelated row is still allowed and does not make history unusable.
+      expect(reconcileMigrations(migrations, [{ name: "0_platform_init" }])).toEqual({ next: 0 });
+    });
+  });
+
+  describe("MH-02 contradictory canonical identity", () => {
+    it("rejects a canonical full name whose version contradicts that migration", async () => {
+      const api = migrationApi([{ name: canonicalOne, version: "20260910000000" }]);
+
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+      expect(api.posts).toEqual([]);
+    });
+
+    it("accepts a canonical full name whose version agrees with it", async () => {
+      const api = advancingMigrationApi([{ name: canonicalOne, version: "20260827000000" }]);
+
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
+      expect(api.posts).toHaveLength(4);
+      expect(api.posts[0]).toBe(canonicalTwo);
+    });
+
+    it("accepts every supported representation of the same canonical migration", () => {
+      const canonical = [
+        { name: canonicalOne, query: "", sha256: "a" },
+        { name: canonicalTwo, query: "", sha256: "b" },
+      ];
+
+      expect(reconcileMigrations(canonical, [{ name: canonicalOne }])).toEqual({ next: 1 });
+      expect(reconcileMigrations(canonical, [{ name: "sync_v1", version: "20260827000000" }])).toEqual({ next: 1 });
+      expect(reconcileMigrations(canonical, [{ name: canonicalOne, version: "20260827000000" }])).toEqual({ next: 1 });
+    });
+
+    it("rejects a row whose supported interpretations point at different canonical migrations", async () => {
+      // Synthetic bundle: the full name identifies one migration while the
+      // version-plus-name pair would identify a different one.
+      const canonical = [
+        { name: "1_alpha", query: "", sha256: "a" },
+        { name: "2_1_alpha", query: "", sha256: "b" },
+      ];
+      expect(reconcileMigrations(canonical, [{ name: "1_alpha", version: "2" }])).toEqual({ next: 0, error: "migration_history_mismatch" });
+
+      const api = migrationApi([{ name: canonicalOne, version: "20260829000000" }]);
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+      expect(api.posts).toEqual([]);
+    });
+  });
+
+  describe("canonical prefix and duplicate regression", () => {
+    it("rejects canonical 1 followed by canonical 3 because migration 2 is missing", async () => {
+      const api = migrationApi([{ name: canonicalOne }, { name: canonicalThree }]);
+
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+      expect(api.posts).toEqual([]);
+    });
+
+    it("rejects a canonical duplicate separated by unrelated rows, including across representations", async () => {
+      const api = migrationApi([
+        { name: canonicalOne },
+        { name: "20211115170000_init" },
+        { name: "sync_v1_hardening", version: "20260829000000" },
+        { name: "20211115170000_init" },
+        { name: canonicalTwo },
+      ]);
+
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+      expect(api.posts).toEqual([]);
+
+      const canonical = [
+        { name: "1_one", query: "", sha256: "a" },
+        { name: "2_two", query: "", sha256: "b" },
+      ];
+      expect(
+        reconcileMigrations(canonical, [
+          { name: "1_one" },
+          { name: "0_foreign" },
+          { name: "2_two" },
+          { name: "0_foreign" },
+          { name: "2_two" },
+        ]),
+      ).toEqual({ next: 0, error: "migration_history_mismatch" });
+    });
+  });
+
+  describe("bundle integrity", () => {
+    it("returns migration_bundle_invalid without reading history or posting", async () => {
+      const api = migrationApi([{ name: canonicalOne }]);
+
+      expect(
+        await runCanonicalMigrations(ref, api.call, { bundlesValid: async () => false }),
+      ).toEqual({ kind: "failed", code: "migration_bundle_invalid" });
+      expect(api.historyPaths).toEqual([]);
+      expect(api.posts).toEqual([]);
+    });
+
+    it("still reconciles against Management when the bundle check passes", async () => {
+      const api = migrationApi([{ name: canonicalOne }]);
+
+      // Static history cannot advance, so reconciliation stays retryable: the
+      // check that matters here is that the injected pass-through did not skip
+      // the remote history read.
+      expect(
+        await runCanonicalMigrations(ref, api.call, { bundlesValid: async () => true }),
+      ).toEqual({ kind: "indeterminate" });
+      expect(api.historyPaths.length).toBeGreaterThan(0);
+    });
   });
 });
