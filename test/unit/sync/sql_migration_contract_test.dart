@@ -20,7 +20,122 @@ void main() {
         '20260829000000_sync_v1_hardening.sql',
         '20260910000000_real_use_v2.sql',
         '20260915000000_recurrence_removal_provenance.sql',
+        '20260916000000_title_history_conflict_ordering.sql',
       ]),
+    );
+  });
+
+  test('F03 migration classifies stale title branches before transition checks', () {
+    final sql = File(
+      'supabase/migrations/20260916000000_title_history_conflict_ordering.sql',
+    ).readAsStringSync();
+
+    final structuralValidation = sql.indexOf(
+      'perform public.planner_validate_plan_title_history',
+    );
+    final branchUnion = sql.indexOf(
+      'branch_history := branch_history || jsonb_build_array(existing_event)',
+    );
+    final accountLock = sql.indexOf(
+      'perform 1 from public.sync_state s where s.user_id = caller for update',
+    );
+    final acknowledgement = sql.indexOf(
+      'where a.user_id = caller and a.operation_id = p_operation_id',
+      accountLock,
+    );
+    final casClassification = sql.indexOf(
+      'p_expected_server_version is distinct from current_version',
+      acknowledgement,
+    );
+    final conflictPayload = sql.indexOf(
+      'planner_title_history_conflict_payload',
+      casClassification,
+    );
+    final delegatedBase = sql.indexOf(
+      'apply_sync_operation_v1_title_order_base',
+      conflictPayload,
+    );
+
+    expect(structuralValidation, greaterThanOrEqualTo(0));
+    expect(branchUnion, greaterThan(structuralValidation));
+    expect(accountLock, greaterThanOrEqualTo(0));
+    expect(acknowledgement, greaterThan(accountLock));
+    expect(casClassification, greaterThan(acknowledgement));
+    expect(conflictPayload, greaterThan(casClassification));
+    expect(delegatedBase, greaterThan(conflictPayload));
+    expect(
+      sql,
+      contains(
+        "message = 'Plan title event ID has conflicting immutable data'",
+      ),
+    );
+    expect(sql, contains("p_operation in ('insert', 'update')"));
+    expect(sql, contains('apply_sync_operation_v2_title_order_base'));
+    expect(
+      sql,
+      contains(
+        'revoke all on function public.planner_title_history_conflict_payload',
+      ),
+    );
+    expect(
+      sql,
+      contains(
+        'revoke all on function public.apply_sync_operation_v2_title_order_base',
+      ),
+    );
+    expect(
+      sql,
+      contains('grant execute on function public.apply_sync_operation_v2'),
+    );
+  });
+
+  test('F03 delegation retains server ownership and relationship guards', () {
+    final foundation = File('supabase/migrations/20260827000000_sync_v1.sql')
+        .readAsStringSync();
+    final hardening = File(
+      'supabase/migrations/20260829000000_sync_v1_hardening.sql',
+    ).readAsStringSync();
+    final v2 = File('supabase/migrations/20260910000000_real_use_v2.sql')
+        .readAsStringSync();
+    final f03 = File(
+      'supabase/migrations/20260916000000_title_history_conflict_ordering.sql',
+    ).readAsStringSync();
+
+    expect(f03, contains("jsonb_typeof(canonical) <> 'object'"));
+    expect(
+      f03,
+      contains('if acknowledged is not null then return acknowledged'),
+    );
+    expect(f03, contains('if stale_branch then'));
+    expect(
+      f03,
+      contains('return public.apply_sync_operation_v2_title_order_base'),
+    );
+    expect(hardening, contains('Payload contains server-owned fields'));
+    expect(hardening, contains('where s.user_id = caller'));
+    expect(
+      foundation,
+      contains(
+        'foreign key (user_id, category_id) references public.categories(user_id, id)',
+      ),
+    );
+    expect(
+      foundation,
+      contains(
+        'foreign key (user_id, task_id) references public.tasks(user_id, id)',
+      ),
+    );
+    expect(
+      v2,
+      contains(
+        'revoke all on function public.planner_apply_sync_operation_internal',
+      ),
+    );
+    expect(
+      f03,
+      contains(
+        'revoke all on function public.apply_sync_operation_v2_title_order_base',
+      ),
     );
   });
 

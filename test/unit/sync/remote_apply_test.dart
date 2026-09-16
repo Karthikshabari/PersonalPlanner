@@ -2,9 +2,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/features/sync/data/remote_apply.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
+import 'package:personal_planner/features/sync/domain/sync_validation.dart';
+import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/features/timer/domain/task_actual_duration_service.dart';
 
@@ -345,4 +348,85 @@ void main() {
       }
     },
   );
+
+  test('branch validation allows missing events but authoritative apply rejects removal', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    try {
+      final now = DateTime.utc(2026, 9, 16, 9);
+      const taskId = '00000000-0000-7000-8000-000000000301';
+      final localEvent = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000302',
+        previousTitle: 'Common title',
+        newTitle: 'Local title',
+        changedAt: now,
+      );
+      await db.syncDao.runWithoutOutbound(() async {
+        await db
+            .into(db.tasks)
+            .insert(
+              TasksCompanion.insert(
+                id: taskId,
+                title: 'Local title',
+                planTitleHistoryJson: Value(
+                  PlanTitleHistory.encodeJson([localEvent]),
+                ),
+                displayPlanChangeId: Value(localEvent.id),
+                createdAt: now,
+                updatedAt: now,
+                serverVersion: const Value(5),
+              ),
+            );
+      });
+      final change = SyncRemoteChange(
+        changeId: 6,
+        operationId: '00000000-0000-7000-8000-000000000303',
+        tableName: 'tasks',
+        recordId: taskId,
+        operation: 'update',
+        serverVersion: 6,
+        serverTimestamp: now,
+        payload: {
+          'id': taskId,
+          'title': 'Common title',
+          'description': null,
+          'start_time': null,
+          'end_time': null,
+          'estimated_duration_min': null,
+          'actual_duration_min': null,
+          'manual_duration_adjustment_min': 0,
+          'manual_actual_set': 0,
+          'category_id': null,
+          'priority': 0,
+          'status': 'planned',
+          'notes': 'Remote branch note',
+          'recurring_rule_id': null,
+          'recurrence_removal_reason': null,
+          'rescheduled_from_id': null,
+          'rescheduled_to_id': null,
+          'is_inbox': 0,
+          'inbox_content_version': 0,
+          'due_date': null,
+          'missed_at': null,
+          'plan_title_history_json': '[]',
+          'display_plan_change_id': null,
+          'created_at': now.toIso8601String(),
+          'updated_at': now.toIso8601String(),
+          'deleted_at': null,
+        },
+      );
+      final applier = SyncRemoteApplier(db);
+
+      await applier.validate(change);
+      await expectLater(
+        db.syncDao.runWithoutOutbound(() => applier.apply(change)),
+        throwsA(isA<SyncValidationException>()),
+      );
+
+      final task = await db.taskDao.getTaskById(taskId);
+      expect(task?.title, 'Local title');
+      expect(task?.planTitleHistoryJson, contains(localEvent.id));
+    } finally {
+      await db.close();
+    }
+  });
 }

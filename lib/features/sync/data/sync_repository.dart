@@ -41,6 +41,8 @@ class SyncRepository {
   final SyncRemoteApplier _applier;
   bool _cycleRunning = false;
   bool _v2CapabilityVerified = false;
+  static const _legacyTitleHistoryTransitionDiagnostic =
+      'Existing plan title events cannot be removed or changed';
 
   void _assertAccountScope() {
     final current = _currentAccountId?.call();
@@ -73,6 +75,7 @@ class SyncRepository {
     late final List<SyncLogRow> operations;
     try {
       _assertAccountScope();
+      await _repairTitleHistoryPermanentOperations();
       operations = _orderOperations(
         await _db.syncDao.getRetryableOperations(DateTime.now().toUtc()),
       );
@@ -165,9 +168,48 @@ class SyncRepository {
     return firstFailure;
   }
 
+  /// Requeues only permanent task operations whose retained diagnostic is the
+  /// former server-side F03 transition error. The original operation ID,
+  /// expected version, payload, and ordering remain intact so the corrected
+  /// server can return its normal idempotent acknowledgement or CAS conflict.
+  Future<void> _repairTitleHistoryPermanentOperations() async {
+    final failed = await _db.syncDao.getPermanentOperationsMatching(
+      'tasks',
+      _legacyTitleHistoryTransitionDiagnostic,
+    );
+    for (final operation in failed) {
+      _assertAccountScope();
+      try {
+        final prepared = await _clientPayloadForOperation(operation);
+        SyncPayloadValidator.validate(
+          SyncRemoteChange(
+            changeId: 0,
+            operationId: operation.operationId,
+            tableName: operation.entityTableName,
+            recordId: operation.recordId,
+            operation: operation.operation,
+            serverVersion: operation.expectedServerVersion ?? 0,
+            serverTimestamp: DateTime.now().toUtc(),
+            payload: prepared.payload,
+          ),
+        );
+        await _db.syncDao.retryPermanentOperation(
+          operation.operationId,
+          DateTime.now().toUtc(),
+        );
+      } on _SyncAccountScopeChanged {
+        rethrow;
+      } on Object {
+        // Leave malformed or no-longer-decodable operations permanently
+        // stopped for explicit repair.
+      }
+    }
+  }
+
   Future<SyncFailure?> pull({int limit = 200}) async {
     try {
       _assertAccountScope();
+      await _repairTitleHistoryQuarantine();
     } on _SyncAccountScopeChanged {
       return _scopeFailure;
     }
@@ -343,6 +385,76 @@ class SyncRepository {
     if (raw is! Map) return null;
     final value = raw['change_id'] ?? raw['changeId'];
     return value is num ? value.toInt() : int.tryParse('$value');
+  }
+
+  /// Reconsiders only retained task rows that carry the exact diagnostic
+  /// emitted by the former pre-conflict title-transition check. A current
+  /// active local operation is required, so an old feed row can only enter
+  /// acknowledgement/conflict handling and can never overwrite an unrelated
+  /// newer materialized edit. Other quarantine records and the cursor remain
+  /// untouched.
+  Future<void> _repairTitleHistoryQuarantine() async {
+    final retained = await _db.syncDao.getQuarantinedChanges(_accountId);
+    final changedTables = <String>{};
+    for (final setting in retained) {
+      _assertAccountScope();
+      try {
+        final decoded = jsonDecode(setting.value);
+        if (decoded is! Map) continue;
+        final record = Map<String, dynamic>.from(decoded);
+        if (record['account_id']?.toString() != _accountId ||
+            !record['diagnostic'].toString().contains(
+              _legacyTitleHistoryTransitionDiagnostic,
+            )) {
+          continue;
+        }
+        final raw = record['raw_change'];
+        if (raw is! Map) continue;
+        final change = SyncRemoteChange.fromJson(raw);
+        if (change.tableName != 'tasks' || change.operation == 'delete') {
+          continue;
+        }
+        final currentTask = await _db.taskDao.getTaskById(change.recordId);
+        final currentVersion = currentTask?.serverVersion;
+        if (currentTask == null ||
+            (currentVersion != null &&
+                change.serverVersion <= currentVersion)) {
+          continue;
+        }
+        final active = await _db.syncDao.getActiveOperationsForRecord(
+          change.tableName,
+          change.recordId,
+        );
+        if (active.isEmpty) continue;
+        await _applier.validate(
+          change,
+          checkMaterializedState: false,
+          checkHistoryLinks: false,
+        );
+
+        var repaired = false;
+        await _db.syncDao.runWithoutOutbound(() async {
+          _assertAccountScope();
+          if (await _db.syncDao.getSetting(setting.key) == null) return;
+          final stillActive = await _db.syncDao.getActiveOperationsForRecord(
+            change.tableName,
+            change.recordId,
+          );
+          if (stillActive.isEmpty) return;
+          await _applyPulledChange(change);
+          await _db.syncDao.deleteSetting(setting.key);
+          repaired = true;
+        });
+        if (repaired) changedTables.add(change.tableName);
+      } on _SyncAccountScopeChanged {
+        rethrow;
+      } on Object {
+        // The retained row remains available for explicit review if it is not
+        // structurally valid under the corrected boundary or cannot be safely
+        // classified against the current local operation set.
+      }
+    }
+    _notifyDomainStreams(changedTables);
   }
 
   Future<void> _acknowledgePulledOperation(SyncRemoteChange change) async {
@@ -699,8 +811,18 @@ class SyncRepository {
       if (conflict.entityTableName == 'tasks' &&
           actualVersion != null &&
           remotePayload['title'] != null) {
+        final active = await _db.syncDao.getActiveOperationsForRecord(
+          conflict.entityTableName,
+          conflict.recordId,
+        );
+        final newerLocal = active
+            .where((entry) => entry.state != 'conflict')
+            .toList(growable: false);
+        final localSnapshot = newerLocal.isEmpty
+            ? conflict.localSnapshot
+            : _newestOperation(newerLocal).payload;
         final localPayload = Map<String, dynamic>.from(
-          jsonDecode(conflict.localSnapshot) as Map,
+          jsonDecode(localSnapshot) as Map,
         );
         // The remote side deliberately controls the live title/pointer, but
         // locally unique intentional events remain durable history.
