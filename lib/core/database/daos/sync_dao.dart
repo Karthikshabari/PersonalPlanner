@@ -215,6 +215,43 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
             ..limit(1))
           .getSingleOrNull();
 
+  Future<List<SyncLogRow>> getPermanentOperationsMatching(
+    String tableName,
+    String diagnostic, {
+    int limit = 50,
+  }) =>
+      (select(syncLog)
+            ..where(
+              (row) =>
+                  row.entityTableName.equals(tableName) &
+                  row.state.equals('error') &
+                  row.nextAttemptAt.equals(permanentRetryAt.toIso8601String()) &
+                  row.lastError.like('%$diagnostic%'),
+            )
+            ..orderBy([
+              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.operationId),
+            ])
+            ..limit(limit))
+          .get();
+
+  Future<void> retryPermanentOperation(String operationId, DateTime now) async {
+    await (update(syncLog)..where(
+          (row) =>
+              row.operationId.equals(operationId) &
+              row.state.equals('error') &
+              row.nextAttemptAt.equals(permanentRetryAt.toIso8601String()),
+        ))
+        .write(
+          SyncLogCompanion(
+            state: const Value('pending'),
+            nextAttemptAt: const Value(null),
+            lastError: const Value(null),
+            updatedAt: Value(now),
+          ),
+        );
+  }
+
   Stream<List<SyncLogRow>> watchPermanentOperations() =>
       (select(syncLog)
             ..where(
@@ -245,6 +282,16 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
             ..where((row) => row.key.like('sync.quarantine.%'))
             ..orderBy([(row) => OrderingTerm.asc(row.key)]))
           .watch();
+
+  Future<List<AppSetting>> getQuarantinedChanges(
+    String accountId, {
+    int limit = 50,
+  }) =>
+      (select(appSettings)
+            ..where((row) => row.key.like('sync.quarantine.$accountId.%'))
+            ..orderBy([(row) => OrderingTerm.asc(row.key)])
+            ..limit(limit))
+          .get();
 
   Stream<List<SyncConflictRow>> watchConflicts() => (select(
     syncConflicts,
@@ -346,6 +393,12 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
     return into(appSettings).insertOnConflictUpdate(
       AppSettingsCompanion.insert(key: key, value: value),
     );
+  }
+
+  Future<void> deleteSetting(String key) async {
+    await (delete(
+      appSettings,
+    )..where((setting) => setting.key.equals(key))).go();
   }
 
   Future<void> recordQuarantinedChange(

@@ -1749,6 +1749,416 @@ void main() {
   });
 
   test(
+    'concurrent title-history branch becomes a conflict instead of quarantine',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway();
+      final now = DateTime.utc(2026, 9, 16, 9);
+      const taskId = '00000000-0000-7000-8000-000000000101';
+      const operationId = '00000000-0000-7000-8000-000000000102';
+      final localEvent = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000103',
+        previousTitle: 'Common title',
+        newTitle: 'Local title',
+        changedAt: now,
+      );
+      final localPayload = _taskPayload(
+        id: taskId,
+        title: 'Local title',
+        history: [localEvent],
+        displayPlanChangeId: localEvent.id,
+        recurrenceRemovalReason: 'rule_excluded',
+        now: now,
+      );
+      final remotePayload = _taskPayload(
+        id: taskId,
+        title: 'Common title',
+        history: const [],
+        displayPlanChangeId: null,
+        now: now.add(const Duration(minutes: 1)),
+      )..['notes'] = 'Remote-only note';
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Local title',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  recurrenceRemovalReason: const Value('rule_excluded'),
+                  planTitleHistoryJson: Value(
+                    PlanTitleHistory.encodeJson([localEvent]),
+                  ),
+                  displayPlanChangeId: Value(localEvent.id),
+                  createdAt: now,
+                  updatedAt: now,
+                  serverVersion: const Value(5),
+                ),
+              );
+          await db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: operationId,
+              entityTableName: 'tasks',
+              recordId: taskId,
+              operation: 'update',
+              expectedServerVersion: const Value(5),
+              payload: jsonEncode(localPayload),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        });
+        gateway.pullPages.add([
+          _taskChange(
+            changeId: 6,
+            operationId: '00000000-0000-7000-8000-000000000104',
+            payload: remotePayload,
+            now: now,
+          ),
+        ]);
+
+        final failure = await SyncRepository.withGateway(
+          db,
+          gateway,
+          'account',
+        ).pull();
+
+        expect(failure, isNull);
+        final conflicts = await db.syncDao.watchConflicts().first;
+        expect(conflicts, hasLength(1));
+        expect(
+          jsonDecode(conflicts.single.remoteSnapshot)['notes'],
+          'Remote-only note',
+        );
+        expect(
+          await db.syncDao.getSetting('sync.quarantine.account.6'),
+          isNull,
+        );
+        final task = await db.taskDao.getTaskById(taskId);
+        expect(task?.title, 'Local title');
+        expect(task?.recurrenceRemovalReason, 'rule_excluded');
+        expect(task?.planTitleHistoryJson, contains(localEvent.id));
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
+    'immutable title event collision is quarantined, not conflicted',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway();
+      final now = DateTime.utc(2026, 9, 16, 10);
+      const taskId = '00000000-0000-7000-8000-000000000111';
+      const operationId = '00000000-0000-7000-8000-000000000112';
+      final localEvent = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000113',
+        previousTitle: 'Common title',
+        newTitle: 'Local title',
+        changedAt: now,
+      );
+      final localPayload = _taskPayload(
+        id: taskId,
+        title: 'Local title',
+        history: [localEvent],
+        displayPlanChangeId: localEvent.id,
+        now: now,
+      );
+      final remoteEvent = PlanTitleChange(
+        id: localEvent.id,
+        previousTitle: 'Common title',
+        newTitle: 'Repurposed title',
+        changedAt: now,
+      );
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Local title',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  planTitleHistoryJson: Value(
+                    PlanTitleHistory.encodeJson([localEvent]),
+                  ),
+                  displayPlanChangeId: Value(localEvent.id),
+                  createdAt: now,
+                  updatedAt: now,
+                  serverVersion: const Value(5),
+                ),
+              );
+          await db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: operationId,
+              entityTableName: 'tasks',
+              recordId: taskId,
+              operation: 'update',
+              expectedServerVersion: const Value(5),
+              payload: jsonEncode(localPayload),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        });
+        gateway.pullPages.add([
+          _taskChange(
+            changeId: 7,
+            operationId: '00000000-0000-7000-8000-000000000114',
+            payload: _taskPayload(
+              id: taskId,
+              title: 'Repurposed title',
+              history: [remoteEvent],
+              displayPlanChangeId: remoteEvent.id,
+              now: now,
+            ),
+            now: now,
+          ),
+        ]);
+
+        final failure = await SyncRepository.withGateway(
+          db,
+          gateway,
+          'account',
+        ).pull();
+
+        expect(failure?.kind, SyncFailureKind.invalidData);
+        expect(await db.syncDao.watchConflicts().first, isEmpty);
+        expect(
+          await db.syncDao.getSetting('sync.quarantine.account.7'),
+          isNotNull,
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
+    'old task acknowledgement on a page boundary preserves newer rename',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway();
+      final now = DateTime.utc(2026, 9, 16, 11);
+      const taskId = '00000000-0000-7000-8000-000000000121';
+      const operationA = '00000000-0000-7000-8000-000000000122';
+      const operationB = '00000000-0000-7000-8000-000000000123';
+      final eventA = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000124',
+        previousTitle: 'Common title',
+        newTitle: 'First rename',
+        changedAt: now,
+      );
+      final eventB = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000125',
+        previousTitle: 'First rename',
+        newTitle: 'Newest rename',
+        changedAt: now.add(const Duration(minutes: 1)),
+      );
+      final payloadA = _taskPayload(
+        id: taskId,
+        title: 'First rename',
+        history: [eventA],
+        displayPlanChangeId: eventA.id,
+        now: now,
+      );
+      final payloadB = _taskPayload(
+        id: taskId,
+        title: 'Newest rename',
+        history: [eventA, eventB],
+        displayPlanChangeId: eventB.id,
+        now: now.add(const Duration(minutes: 1)),
+      );
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Newest rename',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  planTitleHistoryJson: Value(
+                    PlanTitleHistory.encodeJson([eventA, eventB]),
+                  ),
+                  displayPlanChangeId: Value(eventB.id),
+                  createdAt: now,
+                  updatedAt: now.add(const Duration(minutes: 1)),
+                  serverVersion: const Value(5),
+                ),
+              );
+          for (final entry in [
+            (operationA, payloadA, now),
+            (operationB, payloadB, now.add(const Duration(minutes: 1))),
+          ]) {
+            await db.syncDao.enqueueOperation(
+              SyncLogCompanion.insert(
+                operationId: entry.$1,
+                entityTableName: 'tasks',
+                recordId: taskId,
+                operation: 'update',
+                expectedServerVersion: const Value(5),
+                payload: jsonEncode(entry.$2),
+                state: const Value('pending'),
+                createdAt: entry.$3,
+                updatedAt: entry.$3,
+              ),
+            );
+          }
+        });
+        gateway.pullPages.addAll([
+          [
+            _taskChange(
+              changeId: 8,
+              operationId: operationA,
+              payload: payloadA,
+              now: now,
+            ),
+          ],
+          const <Object?>[],
+        ]);
+
+        await SyncRepository.withGateway(db, gateway, 'account').pull(limit: 1);
+
+        final task = await db.taskDao.getTaskById(taskId);
+        expect(task?.title, 'Newest rename');
+        expect(task?.displayPlanChangeId, eventB.id);
+        expect(
+          PlanTitleHistory.decodeJson(task!.planTitleHistoryJson)
+              .map((event) => event.id),
+          orderedEquals([eventA.id, eventB.id]),
+        );
+        expect(
+          (await db.syncDao.getOperation(operationA))?.state,
+          'acknowledged',
+        );
+        final newer = await db.syncDao.getOperation(operationB);
+        expect(newer?.state, 'pending');
+        expect(newer?.expectedServerVersion, 8);
+        expect(await db.syncDao.watchConflicts().first, isEmpty);
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
+    'retained F03 quarantine repair is bounded and preserves current edits',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final now = DateTime.utc(2026, 9, 16, 12);
+      const taskId = '00000000-0000-7000-8000-000000000131';
+      const operationId = '00000000-0000-7000-8000-000000000132';
+      final localEvent = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000133',
+        previousTitle: 'Common title',
+        newTitle: 'Current local title',
+        changedAt: now,
+      );
+      final localPayload = _taskPayload(
+        id: taskId,
+        title: 'Current local title',
+        history: [localEvent],
+        displayPlanChangeId: localEvent.id,
+        now: now,
+      );
+      final retained = _taskChange(
+        changeId: 41,
+        operationId: '00000000-0000-7000-8000-000000000134',
+        payload: _taskPayload(
+          id: taskId,
+          title: 'Common title',
+          history: const [],
+          displayPlanChangeId: null,
+          now: now,
+        )..['notes'] = 'Retained remote note',
+        now: now,
+      );
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Current local title',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  planTitleHistoryJson: Value(
+                    PlanTitleHistory.encodeJson([localEvent]),
+                  ),
+                  displayPlanChangeId: Value(localEvent.id),
+                  createdAt: now,
+                  updatedAt: now,
+                  serverVersion: const Value(5),
+                ),
+              );
+          await db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: operationId,
+              entityTableName: 'tasks',
+              recordId: taskId,
+              operation: 'update',
+              expectedServerVersion: const Value(5),
+              payload: jsonEncode(localPayload),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        });
+        await db.syncDao.recordQuarantinedChange(
+          'account',
+          41,
+          'Rejected remote tasks/$taskId: Invalid sync data: '
+              'Existing plan title events cannot be removed or changed.',
+          rawChange: retained,
+        );
+        await db.syncDao.recordQuarantinedChange(
+          'account',
+          42,
+          'Invalid sync data: malformed unrelated payload',
+          rawChange: const {'payload': <Object>[]},
+        );
+
+        await SyncRepository.withGateway(db, _FakeGateway(), 'account').pull();
+
+        expect(
+          await db.syncDao.getSetting('sync.quarantine.account.41'),
+          isNull,
+        );
+        expect(
+          await db.syncDao.getSetting('sync.quarantine.account.42'),
+          isNotNull,
+        );
+        expect(await db.syncDao.getCursor('account'), 0);
+        final conflicts = await db.syncDao.watchConflicts().first;
+        expect(conflicts, hasLength(1));
+        expect(
+          jsonDecode(conflicts.single.remoteSnapshot)['notes'],
+          'Retained remote note',
+        );
+        final task = await db.taskDao.getTaskById(taskId);
+        expect(task?.title, 'Current local title');
+        expect(task?.planTitleHistoryJson, contains(localEvent.id));
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
     'task conflict choices retain the union of intentional title events',
     () async {
       Future<void> verifyChoice({required bool keepRemote}) async {
@@ -1766,6 +2176,12 @@ void main() {
           previousTitle: 'Office work',
           newTitle: 'Client call',
           changedAt: now.add(const Duration(minutes: 1)),
+        );
+        final newerLocalEvent = PlanTitleChange(
+          id: '00000000-0000-7000-8000-0000000000e5',
+          previousTitle: 'Office work',
+          newTitle: 'Later local title',
+          changedAt: now.add(const Duration(minutes: 2)),
         );
         final localPayload = _taskPayload(
           id: taskId,
@@ -1831,6 +2247,44 @@ void main() {
               createdAt: now,
             ),
           );
+          if (keepRemote) {
+            final newerLocalPayload = _taskPayload(
+              id: taskId,
+              title: 'Later local title',
+              history: [localEvent, newerLocalEvent],
+              displayPlanChangeId: newerLocalEvent.id,
+              now: now.add(const Duration(minutes: 2)),
+            );
+            await db.syncDao.runWithoutOutbound(() async {
+              await (db.update(
+                db.tasks,
+              )..where((row) => row.id.equals(taskId))).write(
+                TasksCompanion(
+                  title: const Value('Later local title'),
+                  planTitleHistoryJson: Value(
+                    newerLocalPayload['plan_title_history_json'] as String,
+                  ),
+                  displayPlanChangeId: Value(newerLocalEvent.id),
+                  updatedAt: Value(now.add(const Duration(minutes: 2))),
+                  revision: const Value(2),
+                  syncStatus: const Value(1),
+                ),
+              );
+              await db.syncDao.enqueueOperation(
+                SyncLogCompanion.insert(
+                  operationId: '00000000-0000-7000-8000-0000000000e6',
+                  entityTableName: 'tasks',
+                  recordId: taskId,
+                  operation: 'update',
+                  expectedServerVersion: const Value(5),
+                  payload: jsonEncode(newerLocalPayload),
+                  state: const Value('pending'),
+                  createdAt: now.add(const Duration(minutes: 2)),
+                  updatedAt: now.add(const Duration(minutes: 2)),
+                ),
+              );
+            });
+          }
 
           final sync = SyncRepository.withGateway(
             db,
@@ -1849,7 +2303,11 @@ void main() {
           expect(task.displayPlanChangeId, selected.id);
           expect(
             task.planTitleHistory.map((event) => event.id),
-            orderedEquals([localEvent.id, remoteEvent.id]),
+            orderedEquals([
+              localEvent.id,
+              remoteEvent.id,
+              if (keepRemote) newerLocalEvent.id,
+            ]),
           );
           final pending = await db.syncDao.getActiveOperationsForRecord(
             'tasks',
@@ -1864,7 +2322,11 @@ void main() {
             PlanTitleHistory.decodeJson(
               queued['plan_title_history_json'] as String,
             ).map((event) => event.id),
-            orderedEquals([localEvent.id, remoteEvent.id]),
+            orderedEquals([
+              localEvent.id,
+              remoteEvent.id,
+              if (keepRemote) newerLocalEvent.id,
+            ]),
           );
         } finally {
           await db.close();
@@ -1873,6 +2335,129 @@ void main() {
 
       await verifyChoice(keepRemote: false);
       await verifyChoice(keepRemote: true);
+    },
+  );
+
+  test(
+    'identified F03 permanent operation retries with its original identity',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway();
+      final now = DateTime.utc(2026, 9, 16, 13);
+      const taskId = '00000000-0000-7000-8000-000000000141';
+      const operationId = '00000000-0000-7000-8000-000000000142';
+      const unrelatedOperation = '00000000-0000-7000-8000-000000000144';
+      final event = PlanTitleChange(
+        id: '00000000-0000-7000-8000-000000000143',
+        previousTitle: 'Common title',
+        newTitle: 'Local title',
+        changedAt: now,
+      );
+      final payload = _taskPayload(
+        id: taskId,
+        title: 'Local title',
+        history: [event],
+        displayPlanChangeId: event.id,
+        now: now,
+      )..['_planner_payload_version'] = 2;
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Local title',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  planTitleHistoryJson: Value(
+                    PlanTitleHistory.encodeJson([event]),
+                  ),
+                  displayPlanChangeId: Value(event.id),
+                  createdAt: now,
+                  updatedAt: now,
+                  serverVersion: const Value(5),
+                ),
+              );
+          await db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: operationId,
+              entityTableName: 'tasks',
+              recordId: taskId,
+              operation: 'update',
+              expectedServerVersion: const Value(5),
+              payload: jsonEncode(payload),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+          await db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: unrelatedOperation,
+              entityTableName: 'categories',
+              recordId: 'unrelated-category',
+              operation: 'insert',
+              payload: jsonEncode({
+                '_planner_payload_version': 2,
+                'id': 'unrelated-category',
+                'name': 'Unrelated',
+                'color_hex': '#4285F4',
+                'sort_order': 0,
+                'is_focus': 0,
+                'created_at': now.toIso8601String(),
+                'updated_at': now.toIso8601String(),
+                'deleted_at': null,
+              }),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        });
+        await db.syncDao.markPermanentError(
+          operationId,
+          now: now,
+          error: 'Existing plan title events cannot be removed or changed',
+        );
+        await db.syncDao.markPermanentError(
+          unrelatedOperation,
+          now: now,
+          error: 'unrelated invalid payload',
+        );
+        gateway.responses.add({
+          'status': 'conflict',
+          'server_version': 0,
+          'change_id': 0,
+          'actual_server_version': 6,
+          'remote_snapshot': _taskPayload(
+            id: taskId,
+            title: 'Common title',
+            history: const [],
+            displayPlanChangeId: null,
+            now: now,
+          ),
+        });
+
+        final failure = await SyncRepository.withGateway(
+          db,
+          gateway,
+          'account',
+        ).push();
+
+        expect(failure, isNull);
+        expect(gateway.appliedTables, ['tasks']);
+        expect((await db.syncDao.getOperation(operationId))?.state, 'conflict');
+        final unrelated = await db.syncDao.getOperation(unrelatedOperation);
+        expect(unrelated?.state, 'error');
+        expect(unrelated?.lastError, startsWith('Permanent sync error: '));
+        final conflict = (await db.syncDao.watchConflicts().first).single;
+        expect(conflict.operationId, operationId);
+        expect(conflict.actualServerVersion, 6);
+      } finally {
+        await db.close();
+      }
     },
   );
 
@@ -1969,6 +2554,7 @@ Map<String, dynamic> _taskPayload({
   required List<PlanTitleChange> history,
   required String? displayPlanChangeId,
   required DateTime now,
+  String? recurrenceRemovalReason,
 }) => {
   'id': id,
   'title': title,
@@ -1984,6 +2570,7 @@ Map<String, dynamic> _taskPayload({
   'status': 'planned',
   'notes': null,
   'recurring_rule_id': null,
+  'recurrence_removal_reason': recurrenceRemovalReason,
   'rescheduled_from_id': null,
   'rescheduled_to_id': null,
   'is_inbox': 0,
@@ -1995,6 +2582,22 @@ Map<String, dynamic> _taskPayload({
   'created_at': now.toIso8601String(),
   'updated_at': now.toIso8601String(),
   'deleted_at': null,
+};
+
+Map<String, dynamic> _taskChange({
+  required int changeId,
+  required String operationId,
+  required Map<String, dynamic> payload,
+  required DateTime now,
+}) => {
+  'change_id': changeId,
+  'operation_id': operationId,
+  'table_name': 'tasks',
+  'record_id': payload['id'],
+  'operation': 'update',
+  'server_version': changeId,
+  'server_timestamp': now.toIso8601String(),
+  'payload': payload,
 };
 
 Map<String, dynamic> _dayContextChange({

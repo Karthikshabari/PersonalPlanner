@@ -31,11 +31,15 @@ class SyncRemoteApplier {
     if (change.tableName == 'tasks') {
       final current = await _db.taskDao.getTaskById(change.recordId);
       if (current != null) {
-        PlanTitleHistory.validateTransition(
-          previous: PlanTitleHistory.decodeJson(current.planTitleHistoryJson),
-          next: PlanTitleHistory.decodeJson(
+        // Competing branches may legitimately omit events introduced only on
+        // the other branch. Their shared stable IDs must still describe the
+        // same immutable event body; union provides exactly that check without
+        // treating either branch as an authoritative successor.
+        PlanTitleHistory.union(
+          chosen: PlanTitleHistory.decodeJson(
             change.payload['plan_title_history_json'] as String,
           ),
+          other: PlanTitleHistory.decodeJson(current.planTitleHistoryJson),
         );
       }
     }
@@ -172,13 +176,35 @@ class SyncRemoteApplier {
           payload: snapshot,
         );
         await validate(snapshotChange);
+        await _validateAuthoritativeHistoryTransition(snapshotChange);
         await _applySnapshot(snapshotChange, definition);
       } else {
         await _applyMissingTombstone(change, definition);
       }
       return;
     }
+    await _validateAuthoritativeHistoryTransition(change);
     await _applySnapshot(change, definition);
+  }
+
+  /// Enforces append-only title evidence only once synchronization has
+  /// classified this snapshot as the next authoritative local state.
+  Future<void> _validateAuthoritativeHistoryTransition(
+    SyncRemoteChange change,
+  ) async {
+    if (change.tableName != 'tasks' || change.operation == 'delete') return;
+    final current = await _db.taskDao.getTaskById(change.recordId);
+    if (current == null) return;
+    try {
+      PlanTitleHistory.validateTransition(
+        previous: PlanTitleHistory.decodeJson(current.planTitleHistoryJson),
+        next: PlanTitleHistory.decodeJson(
+          change.payload['plan_title_history_json'] as String,
+        ),
+      );
+    } on FormatException catch (error) {
+      throw SyncValidationException(error.message);
+    }
   }
 
   bool _hasCompleteSnapshot(
