@@ -13,6 +13,7 @@ import '../data/initial_sync_coordinator.dart';
 import '../data/initial_sync_gateway.dart';
 import '../data/initial_sync_state_store.dart';
 import '../data/sync_repository.dart';
+import '../domain/auth_callback_notice.dart';
 import '../domain/auth_session_controller.dart';
 import '../domain/initial_sync_models.dart';
 import '../domain/runtime_backend.dart';
@@ -39,6 +40,25 @@ final authSessionControllerProvider = Provider<AuthSessionController?>((ref) {
   ref.onDispose(() => unawaited(fallback.dispose()));
   return fallback;
 });
+
+/// Sanitized outcome of the most recent provisioned Auth callback, or null.
+///
+/// A rejected callback never changes the session or the active scope; this is
+/// only the bounded message the Sync screen can show next to the sign-in form.
+final authCallbackNoticeProvider = StreamProvider<AuthCallbackNotice?>((ref) {
+  return _authCallbackNoticeStream(ref.watch(authSessionControllerProvider));
+});
+
+Stream<AuthCallbackNotice?> _authCallbackNoticeStream(
+  AuthSessionController? controller,
+) async* {
+  if (controller == null) {
+    yield null;
+    return;
+  }
+  yield controller.lastCallbackNotice;
+  yield* controller.callbackNotices;
+}
 
 /// Bootstrap supplies the canonical identity of the database currently open in
 /// this container. A token cannot select a different account's local outbox,

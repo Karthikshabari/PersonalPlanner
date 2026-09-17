@@ -100,14 +100,24 @@ class FakeRuntimeAuthClient implements RuntimeAuthClient {
   final List<String> restoredSessions = <String>[];
   final List<({String email, String password})> signInCalls =
       <({String email, String password})>[];
-  final List<({String email, String password})> signUpCalls =
-      <({String email, String password})>[];
+  final List<({String email, String password, String emailRedirectTo})>
+  signUpCalls = <({String email, String password, String emailRedirectTo})>[];
+  final List<String> acceptedCallbackCodes = <String>[];
   int refreshCalls = 0;
   int signOutCalls = 0;
 
   /// Simulates an unusable stored session (for example a value written by a
   /// different GoTrue version).
   Object? restoreError;
+
+  /// Session a successful Auth callback establishes for this project.
+  ///
+  /// Null makes [exchangeCodeForSession] fail the way the SDK does when no code
+  /// verifier is stored for this project.
+  Session? callbackSession;
+
+  /// Scripted failure for [exchangeCodeForSession].
+  Object? callbackError;
 
   @override
   Session? get currentSession => session;
@@ -145,12 +155,31 @@ class FakeRuntimeAuthClient implements RuntimeAuthClient {
   }
 
   @override
+  Future<void> exchangeCodeForSession(String authCode) async {
+    acceptedCallbackCodes.add(authCode);
+    final error = callbackError;
+    if (error != null) throw error;
+    final next = callbackSession;
+    if (next == null) {
+      throw const AuthException(
+        'Code verifier could not be found in local storage.',
+      );
+    }
+    session = next;
+    _events.add(AuthState(AuthChangeEvent.signedIn, next));
+  }
+
+  @override
   Future<AuthResponse> signUp({
     required String email,
     required String password,
     required String emailRedirectTo,
   }) async {
-    signUpCalls.add((email: email, password: password));
+    signUpCalls.add((
+      email: email,
+      password: password,
+      emailRedirectTo: emailRedirectTo,
+    ));
     return AuthResponse(session: session);
   }
 

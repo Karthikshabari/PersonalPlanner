@@ -51,6 +51,11 @@ dependencies:
   # External browser handoff for user-owned cloud setup (Supabase authorization).
   url_launcher: ^6.3.2
 
+  # Deep-link delivery for provisioned Supabase Auth callbacks. The compile-time
+  # developer path keeps using supabase_flutter's own observer, which is built
+  # on this same plugin.
+  app_links: ^7.2.1
+
   # Required at runtime by Flutter's generated Android plugin registrant.
   # The integration test API remains used only by integration-test targets.
   integration_test:

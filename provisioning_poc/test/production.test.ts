@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  PLANNER_AUTH_CALLBACK_URI,
   ProvisioningTransaction,
   canTransition,
   createReservationAllowed,
+  ensureAuthRedirectConfigured,
   fetchRuntimeConfig,
   listOrganizations,
+  mergeAuthRedirectAllowList,
   oauthCredentialSaveAllowed,
   operationLeaseActive,
   productionFetch,
@@ -645,9 +648,19 @@ describe("provisioning route contract", () => {
 
   it("publishes the runtime configuration only after verification and key retrieval succeed", async () => {
     const requested: string[] = [];
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    const authConfigWrites: unknown[] = [];
+    let allowList = "";
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       requested.push(url);
+      if (url.endsWith("/config/auth")) {
+        if (init?.method === "PATCH") {
+          const body = JSON.parse(String(init.body)) as { uri_allow_list: string };
+          authConfigWrites.push(body);
+          allowList = body.uri_allow_list;
+        }
+        return Response.json({ uri_allow_list: allowList });
+      }
       if (url.endsWith("/database/query")) return Response.json([verificationRow]);
       if (url.endsWith("/api-keys")) return Response.json([{ id: "pub-1", type: "publishable" }]);
       if (url.includes("?reveal=true")) {
@@ -663,12 +676,20 @@ describe("provisioning route contract", () => {
     expect(body.state).toBe("ready");
     expect(body.runtimeConfig).toEqual(runtimeConfig);
     expect(JSON.stringify(body)).not.toContain("management-token");
+    // The new project's Auth config now allows exactly the canonical callback,
+    // and nothing else was dropped because the list started empty.
+    expect(authConfigWrites).toEqual([
+      { uri_allow_list: PLANNER_AUTH_CALLBACK_URI },
+    ]);
     expect(requested).toContain(`https://api.supabase.com/v1/projects/${ref}/api-keys/pub-1?reveal=true`);
   });
 
   it("stays retryable, and never reports ready, when the publishable key cannot be read", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url.endsWith("/config/auth")) {
+        return Response.json({ uri_allow_list: PLANNER_AUTH_CALLBACK_URI });
+      }
       if (url.endsWith("/database/query")) return Response.json([verificationRow]);
       if (url.endsWith("/api-keys")) return new Response(null, { status: 500 });
       return new Response(null, { status: 404 });
@@ -680,6 +701,30 @@ describe("provisioning route contract", () => {
     const body = await response!.json() as { state: string; runtimeConfig: unknown };
     expect(body.state).toBe("verifying");
     expect(body.runtimeConfig).toBeNull();
+  });
+
+  it("stays retryable, and never reports ready, when the Auth redirect allow list cannot be applied", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("/config/auth")) {
+        if (init?.method === "PATCH") return new Response(null, { status: 403 });
+        return Response.json({ uri_allow_list: "" });
+      }
+      if (url.endsWith("/database/query")) return Response.json([verificationRow]);
+      return new Response(null, { status: 404 });
+    });
+
+    const response = await productionFetch(postRequest(verifyUrl), environment(fakeTransaction()) as any);
+    expect(response!.status).toBe(202);
+
+    const body = await response!.json() as { state: string; runtimeConfig: unknown };
+    expect(body.state).toBe("verifying");
+    expect(body.runtimeConfig).toBeNull();
+    // The publishable key must never be published for a backend whose
+    // confirmation email cannot return to the app.
+    expect(requested.some((url) => url.endsWith("/api-keys"))).toBe(false);
   });
 });
 
@@ -878,5 +923,108 @@ describe("migration history validation", () => {
       ).toEqual({ kind: "indeterminate" });
       expect(api.historyPaths.length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe("project Auth redirect configuration", () => {
+  it("pins the canonical Planner callback URI", () => {
+    expect(PLANNER_AUTH_CALLBACK_URI).toBe(
+      "com.personalplanner.personal_planner://login-callback",
+    );
+  });
+
+  it("merges the callback without dropping or duplicating entries", () => {
+    expect(mergeAuthRedirectAllowList(undefined, PLANNER_AUTH_CALLBACK_URI)).toEqual({
+      list: PLANNER_AUTH_CALLBACK_URI,
+      changed: true,
+    });
+    expect(
+      mergeAuthRedirectAllowList("https://planner.test/callback", PLANNER_AUTH_CALLBACK_URI),
+    ).toEqual({
+      list: `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`,
+      changed: true,
+    });
+    expect(
+      mergeAuthRedirectAllowList(
+        `https://planner.test/callback, ${PLANNER_AUTH_CALLBACK_URI}`,
+        PLANNER_AUTH_CALLBACK_URI,
+      ),
+    ).toEqual({
+      list: `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`,
+      changed: false,
+    });
+  });
+
+  it("refuses input it cannot safely rewrite", () => {
+    for (const value of [
+      42,
+      ["https://planner.test/callback"],
+      "https://planner.test/callback,not a redirect",
+      "x".repeat(257),
+    ]) {
+      expect(mergeAuthRedirectAllowList(value, PLANNER_AUTH_CALLBACK_URI)).toBeNull();
+    }
+    const full = Array.from({ length: 32 }, (_, index) => `https://planner.test/${index}`).join(",");
+    expect(mergeAuthRedirectAllowList(full, PLANNER_AUTH_CALLBACK_URI)).toBeNull();
+  });
+
+  it("patches the merged allow list and confirms it through Management", async () => {
+    const calls: Array<{ method: string; body?: string }> = [];
+    let allowList = "https://planner.test/callback";
+    const call = async (_path: string, init?: RequestInit) => {
+      calls.push({ method: init?.method ?? "GET", body: init?.body as string | undefined });
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { uri_allow_list: string };
+        allowList = body.uri_allow_list;
+      }
+      return Response.json({ uri_allow_list: allowList });
+    };
+
+    expect(await ensureAuthRedirectConfigured(ref, call)).toBe(true);
+    expect(calls.filter((entry) => entry.method === "PATCH")).toHaveLength(1);
+    expect(JSON.parse(calls.find((entry) => entry.method === "PATCH")!.body!)).toEqual({
+      uri_allow_list: `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`,
+    });
+    expect(allowList).toContain(PLANNER_AUTH_CALLBACK_URI);
+    expect(allowList).toContain("https://planner.test/callback");
+  });
+
+  it("is idempotent when the callback is already allowed", async () => {
+    const methods: string[] = [];
+    const call = async (_path: string, init?: RequestInit) => {
+      methods.push(init?.method ?? "GET");
+      return Response.json({
+        uri_allow_list: `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`,
+      });
+    };
+
+    expect(await ensureAuthRedirectConfigured(ref, call)).toBe(true);
+    expect(methods).toEqual(["GET", "GET"]);
+  });
+
+  it("returns false instead of guessing when Management cannot be trusted", async () => {
+    const refused = async () => new Response(null, { status: 403 });
+    expect(await ensureAuthRedirectConfigured(ref, refused)).toBe(false);
+
+    const missing = async () => Response.json({});
+    expect(await ensureAuthRedirectConfigured(ref, missing)).toBe(false);
+
+    const unusable = async () => Response.json({ uri_allow_list: "not a redirect" });
+    expect(await ensureAuthRedirectConfigured(ref, unusable)).toBe(false);
+
+    expect(await ensureAuthRedirectConfigured("not-a-project-ref", refused)).toBe(false);
+  });
+
+  it("never returns the allow list or a Management token to the caller", async () => {
+    const call = async () =>
+      Response.json({
+        uri_allow_list: PLANNER_AUTH_CALLBACK_URI,
+        access_token: "management-token",
+      });
+
+    const result = await ensureAuthRedirectConfigured(ref, call);
+
+    expect(result).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("management-token");
   });
 });

@@ -1568,6 +1568,7 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
               error!,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          const _AuthCallbackNotice(),
         ],
       ),
     ),
@@ -1593,5 +1594,29 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+}
+
+/// Bounded, sanitized failure of the most recent provisioned Auth callback.
+///
+/// A rejected callback never changes the session or the active scope; it only
+/// explains why the email confirmation did not sign this device in. Rendered
+/// next to the sign-in form so the user has an explicit retry path.
+class _AuthCallbackNotice extends ConsumerWidget {
+  const _AuthCallbackNotice();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notice = ref.watch(authCallbackNoticeProvider).value;
+    if (notice == null || notice.handled || notice.message.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        notice.message,
+        key: const ValueKey('auth-callback-notice'),
+      ),
+    );
   }
 }

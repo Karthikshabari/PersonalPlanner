@@ -42,22 +42,48 @@ class RuntimeSupabaseClientFactory {
       AuthClientOptions(
         autoRefreshToken: true,
         authFlowType: AuthFlowType.pkce,
-        pkceAsyncStorage: SecureSupabasePkceStorage(
-          namespaces: backend.authNamespaces,
-          storage: secureStorage,
-        ),
+        pkceAsyncStorage: pkceStorageFor(backend),
       );
 
-  SupabaseClient create(ProvisionedRuntimeBackend backend) {
-    final options = authOptionsFor(backend);
+  /// Project-scoped PKCE storage of [backend].
+  ///
+  /// Exposed so the callback router checks the same verifier the client writes,
+  /// without introducing a second, project-independent namespace.
+  SecureSupabasePkceStorage pkceStorageFor(ProvisionedRuntimeBackend backend) =>
+      SecureSupabasePkceStorage(
+        namespaces: backend.authNamespaces,
+        storage: secureStorage,
+      );
+
+  /// Builds [backend]'s client together with the PKCE storage wired into it.
+  ///
+  /// The caller that also handles deep links needs both, and both must describe
+  /// exactly the same project namespace.
+  ({SupabaseClient client, SecureSupabasePkceStorage pkceStorage})
+  createWithStorage(ProvisionedRuntimeBackend backend) {
+    final pkceStorage = pkceStorageFor(backend);
+    final options = AuthClientOptions(
+      autoRefreshToken: true,
+      authFlowType: AuthFlowType.pkce,
+      pkceAsyncStorage: pkceStorage,
+    );
     final builder = clientBuilder;
     if (builder != null) {
-      return builder(backend.projectUrl, backend.publishableKey, options);
+      return (
+        client: builder(backend.projectUrl, backend.publishableKey, options),
+        pkceStorage: pkceStorage,
+      );
     }
-    return SupabaseClient(
-      backend.projectUrl,
-      backend.publishableKey,
-      authOptions: options,
+    return (
+      client: SupabaseClient(
+        backend.projectUrl,
+        backend.publishableKey,
+        authOptions: options,
+      ),
+      pkceStorage: pkceStorage,
     );
   }
+
+  SupabaseClient create(ProvisionedRuntimeBackend backend) =>
+      createWithStorage(backend).client;
 }

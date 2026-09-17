@@ -156,6 +156,66 @@ void main() {
     expect(events, isEmpty);
   });
 
+  test(
+    'a durable disconnect write failure reports the partial state truthfully',
+    () async {
+      await storeReadyProfile();
+      final failingWrites = _FailingProfileWritesStore(profileStore);
+      final failingService = CloudLifecycleService(
+        profileStore: failingWrites,
+        capabilityStore: capabilities,
+        clock: () => runtimeAuthTestClock,
+      );
+      final namespaces = RuntimeAuthNamespaces.forProject(projectRefA);
+      secure.values[namespaces.sessionKey] = 'project-a-session';
+
+      final result = await failingService.disconnect(
+        backend: testProvisionedBackend(projectRef: projectRefA),
+        stopSync: () async => events.add('stopSync'),
+        authRepository: _RecordingAuthRepository(
+          client,
+          sessionStorage: SecureSupabaseLocalStorage(
+            storage: secure,
+            sessionKey: namespaces.sessionKey,
+          ),
+          onSignOut: () => events.add('signOut'),
+        ),
+      );
+
+      expect(result.outcome, CloudLifecycleOutcome.failed);
+      // The session really was cleared and sync really was stopped, so
+      // "left unchanged" would be untruthful.
+      expect(result.message, cloudDisconnectSignedOutStateFailureMessage);
+      expect(events, ['stopSync', 'signOut']);
+      expect(client.signOutCalls, 1);
+      expect(secure.values.containsKey(namespaces.sessionKey), isFalse);
+      // The durable profile was not falsely marked disconnected.
+      expect((await profileStore.read())?.connectionDisabled, isFalse);
+    },
+  );
+
+  test(
+    'a durable disconnect write failure without a session reports only sync stopping',
+    () async {
+      await storeReadyProfile();
+      final failingWrites = _FailingProfileWritesStore(profileStore);
+      final failingService = CloudLifecycleService(
+        profileStore: failingWrites,
+        capabilityStore: capabilities,
+        clock: () => runtimeAuthTestClock,
+      );
+
+      final result = await failingService.disconnect(
+        backend: testProvisionedBackend(projectRef: projectRefA),
+        stopSync: () async => events.add('stopSync'),
+      );
+
+      expect(result.outcome, CloudLifecycleOutcome.failed);
+      expect(result.message, cloudDisconnectSyncStoppedStateFailureMessage);
+      expect(events, ['stopSync']);
+    },
+  );
+
   test('reconnect re-enables the same remembered project only', () async {
     final profile = await storeReadyProfile();
     await profileStore.save(
@@ -201,6 +261,28 @@ class _RecordingAuthRepository extends AuthRepository {
   Future<void> signOut() async {
     onSignOut();
     await super.signOut();
+  }
+}
+
+/// Reads through to [delegate] but always fails the durable write, which is the
+/// partial-failure shape a full or read-only profile directory produces.
+class _FailingProfileWritesStore extends ConnectionProfileStore {
+  _FailingProfileWritesStore(this.delegate);
+
+  final ConnectionProfileStore delegate;
+
+  @override
+  Future<BackendConnectionProfile?> read() => delegate.read();
+
+  @override
+  Future<BackendConnectionProfile> save(
+    BackendConnectionProfile profile, {
+    int? expectedGeneration,
+  }) async {
+    throw const ConnectionProfileStoreException(
+      ConnectionProfileStoreFailure.writeFailed,
+      'The stored backend profile could not be written.',
+    );
   }
 }
 

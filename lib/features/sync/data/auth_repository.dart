@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/config/auth_callback.dart';
 import 'runtime_auth_client.dart';
+import 'runtime_auth_callback.dart';
 import 'secure_session_storage.dart';
 
 /// The small auth surface used by app-lifetime state. Keeping this boundary
@@ -24,7 +26,7 @@ abstract interface class AuthSessionRepository {
 /// for project A cannot authenticate against project B or against the
 /// compile-time developer project.
 class AuthRepository implements AuthSessionRepository {
-  AuthRepository(this.client, {this.sessionStorage});
+  AuthRepository(this.client, {this.sessionStorage, this.provisionedAuthFlow});
 
   final RuntimeAuthClient client;
 
@@ -36,10 +38,13 @@ class AuthRepository implements AuthSessionRepository {
   /// this repository (see [attachScopedSessionStorage]).
   final SecureSupabaseLocalStorage? sessionStorage;
 
-  StreamSubscription<AuthState>? _sessionPersistence;
+  /// Pending-provisioned-flow bookkeeping of exactly this project.
+  ///
+  /// Null for the compile-time developer backend, whose historical deep-link
+  /// behaviour stays owned by `supabase_flutter`'s singleton wrapper.
+  final ProvisionedAuthCallbackFlow? provisionedAuthFlow;
 
-  static const emailConfirmationRedirect =
-      'com.personalplanner.personal_planner://login-callback';
+  StreamSubscription<AuthState>? _sessionPersistence;
 
   @override
   Session? get currentSession => client.currentSession;
@@ -101,11 +106,36 @@ class AuthRepository implements AuthSessionRepository {
     }
   }
 
-  Future<AuthResponse> signUp(String email, String password) => client.signUp(
-    email: email.trim(),
-    password: password,
-    emailRedirectTo: emailConfirmationRedirect,
-  );
+  /// Signs up on exactly this backend, asking the confirmation email to return
+  /// to the canonical Planner callback.
+  ///
+  /// For the provisioned path the pending flow is recorded *before* the request
+  /// is sent, so the marker and the PKCE verifier the SDK writes are created
+  /// together and a cold-started app can still route the callback later.
+  Future<AuthResponse> signUp(String email, String password) async {
+    final flow = provisionedAuthFlow;
+    await flow?.begin();
+    try {
+      final response = await client.signUp(
+        email: email.trim(),
+        password: password,
+        emailRedirectTo: AuthCallback.redirectUrl,
+      );
+      if (response.session != null) {
+        // Confirmation is not required: there is no pending email link.
+        await flow?.clear();
+      }
+      return response;
+    } on AuthException catch (error) {
+      final status = error.statusCode;
+      if (flow != null && status != null && status.startsWith('4')) {
+        // The Auth server definitively rejected the sign-up, so no
+        // confirmation email is outstanding.
+        await flow.clear();
+      }
+      rethrow;
+    }
+  }
 
   Future<AuthResponse> signIn(String email, String password) =>
       client.signInWithPassword(email: email.trim(), password: password);
@@ -129,6 +159,9 @@ class AuthRepository implements AuthSessionRepository {
         await storage.removePersistedSession();
         await storage.settle();
       }
+      // Sign-out abandons any pending email confirmation of this project, so an
+      // old callback cannot re-establish a session the user just ended.
+      await provisionedAuthFlow?.clear();
     }
   }
 

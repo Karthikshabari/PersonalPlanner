@@ -20,6 +20,15 @@ abstract interface class RuntimeAuthClient {
 
   Future<void> refreshSession();
 
+  /// Exchanges a PKCE authorization code for a session on this client's own
+  /// project only.
+  ///
+  /// The SDK consumes the code verifier from this client's project-scoped PKCE
+  /// storage, so a callback can only ever be exchanged against the project that
+  /// started the flow. A failure leaves other projects' verifiers and sessions
+  /// untouched.
+  Future<void> exchangeCodeForSession(String authCode);
+
   Future<AuthResponse> signUp({
     required String email,
     required String password,
@@ -63,6 +72,10 @@ class SupabaseRuntimeAuthClient implements RuntimeAuthClient {
 
   @override
   Future<void> refreshSession() => _auth.refreshSession();
+
+  @override
+  Future<void> exchangeCodeForSession(String authCode) =>
+      _auth.exchangeCodeForSession(authCode);
 
   @override
   Future<AuthResponse> signUp({
