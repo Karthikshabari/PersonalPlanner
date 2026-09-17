@@ -21,6 +21,12 @@ final appNavigatorKey = GlobalKey<NavigatorState>();
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
   initialLocation: '/day',
+  // The Planner owns its deep links: Auth callbacks are consumed by the
+  // raw-string callback router, and notifications navigate imperatively.
+  // Without this, a platform-provided initial route (Android passes the
+  // confirmation intent data to the engine) replaces '/day'; that URI has no
+  // path, go_router normalizes it to '/', and no '/' route exists.
+  overridePlatformDefaultLocation: true,
   routes: [
     ShellRoute(
       builder: (context, state, child) => AdaptiveShell(child: child),
