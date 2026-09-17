@@ -297,6 +297,7 @@ class _RecordingGateway implements SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
+    String? baselineToken,
   }) async {
     applyCalls += 1;
     onApply?.call();

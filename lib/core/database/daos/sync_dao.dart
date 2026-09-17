@@ -401,6 +401,35 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
     )..where((setting) => setting.key.equals(key))).go();
   }
 
+  /// Durable settings owned by one sync sub-system, read as a plain map.
+  ///
+  /// Settings live in the account database, which is already scoped to the
+  /// canonical `(projectRef, authUserId)` identity, so two projects (or two
+  /// users) can never observe each other's first-sync state.
+  Future<Map<String, String>> readSettingsWithPrefix(String prefix) async {
+    final rows =
+        await (select(appSettings)
+              ..where((setting) => setting.key.like('$prefix%'))
+              ..orderBy([(setting) => OrderingTerm.asc(setting.key)]))
+            .get();
+    return {for (final row in rows) row.key: row.value};
+  }
+
+  Stream<Map<String, String>> watchSettingsWithPrefix(String prefix) =>
+      (select(appSettings)
+            ..where((setting) => setting.key.like('$prefix%'))
+            ..orderBy([(setting) => OrderingTerm.asc(setting.key)]))
+          .watch()
+          .map((rows) => {for (final row in rows) row.key: row.value});
+
+  Future<void> writeSettings(Map<String, String> values) => transaction(() async {
+    for (final entry in values.entries) {
+      await into(appSettings).insertOnConflictUpdate(
+        AppSettingsCompanion.insert(key: entry.key, value: entry.value),
+      );
+    }
+  });
+
   Future<void> recordQuarantinedChange(
     String accountId,
     int changeId,

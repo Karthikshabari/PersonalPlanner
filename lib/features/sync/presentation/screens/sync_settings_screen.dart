@@ -16,6 +16,7 @@ import '../../data/anonymous_data_adoption.dart';
 import '../../data/auth_repository.dart';
 import '../../data/sync_repository.dart';
 import '../../domain/auth_session_controller.dart';
+import '../../domain/initial_sync_models.dart';
 import '../../domain/runtime_backend.dart';
 import '../../providers/runtime_backend_providers.dart';
 import '../../providers/sync_providers.dart';
@@ -118,12 +119,67 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final quarantinedChanges = quarantineAsync.requireValue;
     final adoptionSummary = session == null
         ? null
-        // Anonymous-data adoption stays a compile-time-developer-path flow.
-        // The provisioned path never inspects or adopts anonymous data in this
-        // phase, so it never even reads the anonymous database.
-        : backend.allowsPlannerDataSync
+        // The compile-time developer path keeps the historical adoption card.
+        // A provisioned account routes the same decision through the Phase G
+        // first-sync coordinator, which only offers adoption once the cloud
+        // account is proven empty.
+        : backend is LegacyStaticRuntimeBackend
         ? ref.watch(anonymousDataSummaryProvider)
         : null;
+    final initialSyncAsync = ref.watch(syncInitialSyncProvider);
+    final initialSync = initialSyncAsync.value;
+    final firstSyncSurface = <Widget>[
+      if (conflicts.isNotEmpty)
+        _ConflictCard(
+          conflicts: conflicts,
+          busy: _busy,
+          onKeepLocal: _keepLocal,
+          onKeepRemote: _keepRemote,
+        ),
+      if (conflicts.isNotEmpty) const SizedBox(height: 12),
+      if (permanentOperations.isNotEmpty) ...[
+        _PermanentFailureCard(
+          operations: permanentOperations,
+          busy: _busy,
+          onRepair: _repairPermanentOperation,
+        ),
+        const SizedBox(height: 12),
+      ],
+      Card(
+        child: SwitchListTile(
+          title: const Text('Enable sync'),
+          subtitle: const Text(
+            'Disabling sync keeps the durable outbox and cursor intact.',
+          ),
+          value: enabled,
+          onChanged: (value) =>
+              ref.read(syncEnabledProvider.notifier).setEnabled(value),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Card(
+        child: ListTile(
+          leading: Icon(_statusIcon(status.state)),
+          title: Text(status.state.label),
+          subtitle: Text(
+            [
+              if (status.message != null) status.message!,
+              '${status.pendingOperations} pending operation(s)',
+              if (status.lastSuccessfulSync != null)
+                'Last sync: ${status.lastSuccessfulSync!.toLocal()}'
+              else
+                'Last sync: not yet completed',
+            ].join('\n'),
+          ),
+          trailing: FilledButton(
+            onPressed: enabled && !_busy
+                ? () => ref.read(syncEngineProvider)?.syncNow()
+                : null,
+            child: const Text('Sync now'),
+          ),
+        ),
+      ),
+    ];
     final tokens = AppThemeTokens.of(context);
     return Scaffold(
       backgroundColor: tokens.canvas,
@@ -145,7 +201,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             //
             // local-only: provisioning is the only cloud action available.
             // provisioned ready: account connection runs against the user's own
-            // project; Planner data synchronization stays off in this phase.
+            // project. Normal Planner data synchronization only appears after
+            // the Phase G first-sync baseline is complete.
             // compile-time developer config: the legacy path below is
             // unchanged.
             if (backend is LocalOnlyRuntimeBackend) ...[
@@ -166,13 +223,31 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               const SizedBox(height: 12),
               if (session == null)
                 const _AuthForm()
-              else
+              else ...[
                 _CloudAccountCard(
                   backend: backend,
                   session: session,
                   busy: _busy,
                   onSignOut: _signOut,
+                  initialSync: initialSync,
                 ),
+                const SizedBox(height: 12),
+                if (initialSync != null && !initialSync.baselineComplete)
+                  _ProvisionedFirstSyncCard(
+                    status: initialSync,
+                    busy: _busy,
+                    permanentOperations: permanentOperations,
+                    onRetry: _retryInitialSync,
+                    onAdopt: _adoptOfflineData,
+                    onKeepSeparate: _keepOfflineDataSeparate,
+                    onRepair: _repairPendingInitialSyncOperation,
+                  ),
+                // Normal sync controls exist only after the safe baseline.
+                // They stay visible when sync is switched off, so it can be
+                // switched back on.
+                if (initialSync?.baselineComplete ?? false)
+                  ...firstSyncSurface,
+              ],
             ] else if (session == null)
               _AuthForm()
             else ...[
@@ -230,56 +305,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                       : const SizedBox.shrink(),
                 ),
               const SizedBox(height: 12),
-              if (conflicts.isNotEmpty)
-                _ConflictCard(
-                  conflicts: conflicts,
-                  busy: _busy,
-                  onKeepLocal: _keepLocal,
-                  onKeepRemote: _keepRemote,
-                ),
-              if (conflicts.isNotEmpty) const SizedBox(height: 12),
-              Card(
-                child: SwitchListTile(
-                  title: const Text('Enable sync'),
-                  subtitle: const Text(
-                    'Disabling sync keeps the durable outbox and cursor intact.',
-                  ),
-                  value: enabled,
-                  onChanged: (value) =>
-                      ref.read(syncEnabledProvider.notifier).setEnabled(value),
-                ),
-              ),
-              if (permanentOperations.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _PermanentFailureCard(
-                  operations: permanentOperations,
-                  busy: _busy,
-                  onRepair: _repairPermanentOperation,
-                ),
-              ],
-              const SizedBox(height: 12),
-              Card(
-                child: ListTile(
-                  leading: Icon(_statusIcon(status.state)),
-                  title: Text(status.state.label),
-                  subtitle: Text(
-                    [
-                      if (status.message != null) status.message!,
-                      '${status.pendingOperations} pending operation(s)',
-                      if (status.lastSuccessfulSync != null)
-                        'Last sync: ${status.lastSuccessfulSync!.toLocal()}'
-                      else
-                        'Last sync: not yet completed',
-                    ].join('\n'),
-                  ),
-                  trailing: FilledButton(
-                    onPressed: enabled && !_busy
-                        ? () => ref.read(syncEngineProvider)?.syncNow()
-                        : null,
-                    child: const Text('Sync now'),
-                  ),
-                ),
-              ),
+              ...firstSyncSurface,
               const SizedBox(height: 12),
               const Card(
                 child: ListTile(
@@ -312,6 +338,138 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// Phase G: re-run discovery of the cloud Planner state. Used by every
+  /// pre-baseline state that can be retried.
+  Future<void> _retryInitialSync() async {
+    final coordinator = ref.read(initialSyncCoordinatorProvider);
+    if (coordinator == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await coordinator.retry();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = safeSyncError(error));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Phase G: import offline-only Planner data into an account whose cloud copy
+  /// is proven empty. This is the same explicit, conflict-aborting adoption the
+  /// compile-time developer path offers, only orchestrated under safe
+  /// conditions.
+  Future<void> _adoptOfflineData() async {
+    final coordinator = ref.read(initialSyncCoordinatorProvider);
+    if (coordinator == null) return;
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Import offline-only data?'),
+        content: const Text(
+          'This copies the offline-only records into this cloud account, then '
+          'uploads them. The offline-only database is kept as a recovery copy. '
+          'Any conflicting metadata or review data stops the import.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Import and upload'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice != true) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await coordinator.adoptOfflineData();
+      if (mounted) {
+        setState(
+          () => _message =
+              'Offline-only data was imported. Uploading it to your cloud '
+              'account.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error is AnonymousDataAdoptionException
+              ? error.message
+              : 'Import could not be completed. The offline-only data was kept.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _keepOfflineDataSeparate() async {
+    final coordinator = ref.read(initialSyncCoordinatorProvider);
+    if (coordinator == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await coordinator.keepOfflineDataSeparate();
+      if (mounted) {
+        setState(
+          () => _message =
+              'Offline-only data stays separate from this cloud account.',
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Could not save that choice.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Repairs a locally parked outbox operation before the first upload
+  /// completes. No remote request is made by the repair itself.
+  Future<void> _repairPendingInitialSyncOperation(String operationId) async {
+    final coordinator = ref.read(initialSyncCoordinatorProvider);
+    if (coordinator == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await coordinator.repairPendingOperation(operationId);
+      await coordinator.retry();
+      if (mounted) {
+        setState(
+          () => _message =
+              'The repaired local record was queued and the first '
+              'synchronization was retried.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error is SyncRepairException
+              ? error.message
+              : 'The sync failure could not be repaired safely.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _signOut() async {
@@ -525,6 +683,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     SyncEngineState.authFailure => Icons.lock_outline,
     SyncEngineState.refreshPaused => Icons.refresh,
     SyncEngineState.invalidData => Icons.data_object,
+    SyncEngineState.initialSyncPending => Icons.cloud_sync_outlined,
     _ => Icons.cloud_queue,
   };
 }
@@ -878,21 +1037,23 @@ String _fieldLabel(String key) {
 
 /// Connected state of a provisioned user-owned backend.
 ///
-/// Deliberately claims nothing about Planner data: runtime Supabase Auth is
-/// connected, and normal task/category synchronization is a later phase. There
-/// is therefore no status card, no "Sync now", and no sync toggle here.
+/// Deliberately claims nothing about Planner data while the first
+/// synchronization is unresolved: runtime Supabase Auth being connected is not
+/// the same as cloud synchronization being active.
 class _CloudAccountCard extends StatelessWidget {
   const _CloudAccountCard({
     required this.backend,
     required this.session,
     required this.busy,
     required this.onSignOut,
+    this.initialSync,
   });
 
   final ProvisionedRuntimeBackend backend;
   final Session session;
   final bool busy;
   final Future<void> Function() onSignOut;
+  final InitialSyncStatus? initialSync;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -902,8 +1063,12 @@ class _CloudAccountCard extends StatelessWidget {
       subtitle: Text(
         [
           session.user.email ?? 'Signed-in account',
-          'Your account is connected to your cloud backend. Planner data '
-              'synchronization is not enabled yet.',
+          if (initialSync == null || !initialSync!.baselineComplete)
+            'Your account is connected to your cloud backend. Cloud '
+                'synchronization for Planner data starts only after the first '
+                'synchronization is complete.'
+          else
+            'Your account is connected to its own cloud backend.',
           if (kDebugMode) 'Supabase project: ${backend.projectRef}',
         ].join('\n'),
       ),
@@ -913,6 +1078,144 @@ class _CloudAccountCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Phase G user-facing state of the provisioned first synchronization.
+///
+/// States are deliberately descriptive: nothing here may claim that cloud
+/// synchronization is active before the baseline exists, and the conflict state
+/// offers no destructive choice.
+class _ProvisionedFirstSyncCard extends StatelessWidget {
+  const _ProvisionedFirstSyncCard({
+    required this.status,
+    required this.busy,
+    required this.permanentOperations,
+    required this.onRetry,
+    required this.onAdopt,
+    required this.onKeepSeparate,
+    required this.onRepair,
+  });
+
+  final InitialSyncStatus status;
+  final bool busy;
+  final List<SyncLogRow> permanentOperations;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onAdopt;
+  final Future<void> Function() onKeepSeparate;
+  final ValueChanged<String> onRepair;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    final waiting =
+        status.phase == InitialSyncPhase.discovering ||
+        status.phase == InitialSyncPhase.restoring ||
+        status.phase == InitialSyncPhase.uploading ||
+        status.phase == InitialSyncPhase.remoteExisting;
+    return Card(
+      key: const ValueKey('provisioned-first-sync'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(_icon(status.phase), color: _color(tokens, status.phase)),
+              title: Text(_title(status.phase)),
+              subtitle: Text(status.message ?? provisionedPhaseDescription(status.phase)),
+            ),
+            if (waiting) const LinearProgressIndicator(),
+            if (status.phase == InitialSyncPhase.adoptionRequired) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    key: const ValueKey('first-sync-import-offline'),
+                    onPressed: busy ? null : onAdopt,
+                    child: const Text('Import offline data and upload'),
+                  ),
+                  OutlinedButton(
+                    onPressed: busy ? null : onKeepSeparate,
+                    child: const Text('Keep offline data separate'),
+                  ),
+                ],
+              ),
+            ],
+            if (permanentOperations.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'A local record needs a repair before it can be uploaded. '
+                'Nothing is ever retried unchanged.',
+              ),
+              for (final operation in permanentOperations) ...[
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(operation.recordId),
+                  subtitle: Text(
+                    operation.lastError?.replaceFirst(
+                          SyncDao.permanentErrorPrefix,
+                          '',
+                        ) ??
+                        'Permanent sync error',
+                  ),
+                  trailing: OutlinedButton(
+                    onPressed: busy
+                        ? null
+                        : () => onRepair(operation.operationId),
+                    child: const Text('Retry repaired record'),
+                  ),
+                ),
+              ],
+            ],
+            if (status.phase != InitialSyncPhase.adoptionRequired) ...[
+              const SizedBox(height: 12),
+              OutlinedButton(
+                key: const ValueKey('first-sync-retry'),
+                onPressed: busy || waiting ? null : onRetry,
+                child: const Text('Retry cloud setup'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _title(InitialSyncPhase phase) => switch (phase) {
+    InitialSyncPhase.unresolved => 'Cloud setup pending',
+    InitialSyncPhase.discovering => 'Checking cloud Planner data',
+    InitialSyncPhase.remoteExisting => 'Cloud Planner data found',
+    InitialSyncPhase.restoring => 'Restoring from your cloud account',
+    InitialSyncPhase.remoteEmpty => 'Cloud account is empty',
+    InitialSyncPhase.adoptionRequired => 'Offline-only data found',
+    InitialSyncPhase.uploading => 'Uploading your local Planner data',
+    InitialSyncPhase.conflict => 'Local and cloud data both exist',
+    InitialSyncPhase.retryable => 'Cloud setup needs a retry',
+    InitialSyncPhase.complete => 'Cloud synchronization ready',
+  };
+
+  static IconData _icon(InitialSyncPhase phase) => switch (phase) {
+    InitialSyncPhase.discovering ||
+    InitialSyncPhase.restoring ||
+    InitialSyncPhase.uploading => Icons.cloud_sync_outlined,
+    InitialSyncPhase.remoteExisting => Icons.cloud_download_outlined,
+    InitialSyncPhase.remoteEmpty => Icons.cloud_queue,
+    InitialSyncPhase.adoptionRequired => Icons.move_to_inbox_outlined,
+    InitialSyncPhase.conflict => Icons.warning_amber,
+    InitialSyncPhase.retryable => Icons.sync_problem,
+    InitialSyncPhase.unresolved || InitialSyncPhase.complete =>
+      Icons.cloud_queue,
+  };
+
+  static Color? _color(AppThemeTokens tokens, InitialSyncPhase phase) =>
+      switch (phase) {
+        InitialSyncPhase.conflict => tokens.pending,
+        InitialSyncPhase.retryable => tokens.error,
+        _ => tokens.info,
+      };
 }
 
 class _AuthForm extends ConsumerStatefulWidget {

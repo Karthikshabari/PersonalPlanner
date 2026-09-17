@@ -313,6 +313,7 @@ class _DeterministicGateway implements SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
+    String? baselineToken,
   }) async {
     final key = '$tableName\u0000$recordId';
     final currentVersion = _versions[key];

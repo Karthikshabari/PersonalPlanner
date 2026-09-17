@@ -23,6 +23,7 @@ CANONICAL_MIGRATIONS=(
   20260910000000_real_use_v2
   20260915000000_recurrence_removal_provenance
   20260916000000_title_history_conflict_ordering
+  20260917000000_initial_sync_baseline
 )
 
 # Secret shapes that must never be committed: Supabase secret/service-role

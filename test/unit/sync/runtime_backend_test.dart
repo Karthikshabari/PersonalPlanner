@@ -84,11 +84,16 @@ void main() {
       expect(backend.accountScopeFor('account-a'), isNull);
     });
 
-    test('the provisioned backend has no Planner data sync in this phase', () {
+    test('the provisioned backend exposes its endpoint behind the Phase G gate', () {
       final backend = _resolveWith(profile: testReadyProfile());
 
-      expect(backend.plannerDataSyncEndpoint, isNull);
-      expect(backend.allowsPlannerDataSync, isFalse);
+      // Phase G: the client-safe endpoint exists, but normal synchronization is
+      // gated by the durable first-sync baseline in the sync providers.
+      final endpoint = backend.plannerDataSyncEndpoint!;
+      expect(endpoint.url, 'https://$projectRefA.supabase.co');
+      expect(endpoint.publishableKey, publishableKeyA);
+      expect(backend.allowsPlannerDataSync, isTrue);
+      expect(backend, isA<ProvisionedRuntimeBackend>());
     });
 
     test('the same project ref at a newer generation is a different value', () {

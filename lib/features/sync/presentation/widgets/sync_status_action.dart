@@ -48,6 +48,7 @@ class SyncStatusAction extends ConsumerWidget {
     SyncEngineState.pending => Icons.cloud_upload,
     SyncEngineState.offline => Icons.cloud_off,
     SyncEngineState.refreshPaused => Icons.refresh,
+    SyncEngineState.initialSyncPending => Icons.cloud_sync_outlined,
     SyncEngineState.error ||
     SyncEngineState.conflict ||
     SyncEngineState.partialSuccess ||
@@ -64,6 +65,7 @@ class SyncStatusAction extends ConsumerWidget {
         SyncEngineState.pending => tokens.pending,
         SyncEngineState.offline ||
         SyncEngineState.notConfigured => tokens.offline,
+        SyncEngineState.initialSyncPending => tokens.pending,
         SyncEngineState.refreshPaused => tokens.pending,
         SyncEngineState.error ||
         SyncEngineState.conflict ||
