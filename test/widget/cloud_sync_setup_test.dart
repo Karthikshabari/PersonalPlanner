@@ -211,14 +211,102 @@ void main() {
 
     expect(find.text('Cloud setup paused'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Start Again'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('cloud-retry-action')));
     await _settle(tester);
 
+    // Retry continues the SAME transaction and never starts a new attempt.
     expect(api.calls.where((call) => call == 'migrate').length, greaterThan(1));
+    expect(api.startAttemptCount, 0);
 
     await _unmount(tester);
   });
+
+  testWidgets(
+    'Start Again abandons a retryable attempt and starts a new transaction',
+    (tester) async {
+      const newTransactionId = 'ffffffffffffffffffffffffffffffff';
+      api.attempt = testAttempt(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      api.verifyResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        message: 'Provisioning stopped: invalid_request (HTTP 400).',
+      );
+      api.startResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(
+          ProvisioningState.authorizationPending,
+          transactionId: newTransactionId,
+        ),
+        authorizationUrl: testAuthorizationUrl,
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      expect(find.text('Cloud setup paused'), findsOneWidget);
+      final verifyCallsBefore = api.calls
+          .where((call) => call == 'verify')
+          .length;
+
+      await tester.tap(find.byKey(const ValueKey('cloud-start-again')));
+      await _settle(tester);
+
+      // A brand-new transaction was requested for the authorization flow, and
+      // the abandoned attempt was not advanced again.
+      expect(api.startAttemptCount, 1);
+      expect(
+        api.calls.where((call) => call == 'verify').length,
+        verifyCallsBefore,
+      );
+      expect(launcher.opened, <Uri>[testAuthorizationUrl]);
+      expect(find.text('Authorize Supabase'), findsOneWidget);
+      expect(find.textContaining(newTransactionId), findsOneWidget);
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'keeps Open authorization page available on a retryable failure',
+    (tester) async {
+      api.startResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.authorizationPending),
+        authorizationUrl: testAuthorizationUrl,
+      );
+      api.refreshResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        message: 'Provisioning stopped: rate_limited (HTTP 429).',
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      await tester.tap(find.byKey(const ValueKey('cloud-enable-action')));
+      await _settle(tester);
+      expect(find.text('Authorize Supabase'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+      await _settle(tester);
+
+      expect(find.text('Cloud setup paused'), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-retry-action')), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-start-again')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('cloud-open-authorization')));
+      await _settle(tester);
+      expect(
+        launcher.opened,
+        <Uri>[testAuthorizationUrl, testAuthorizationUrl],
+      );
+
+      await _unmount(tester);
+    },
+  );
 
   testWidgets('offers Start Setup Again for an expired session', (
     tester,
@@ -246,11 +334,21 @@ void main() {
       errorCode: 'project_identity_ambiguous',
       projectRef: testProjectRef,
     );
+    api.startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      authorizationUrl: testAuthorizationUrl,
+    );
     await _pumpCard(tester, api: api, launcher: launcher);
 
     expect(find.text("Cloud setup couldn't be completed"), findsOneWidget);
     expect(find.textContaining('Start again'), findsOneWidget);
     expect(find.textContaining('HTTP'), findsNothing);
+
+    expect(find.byKey(const ValueKey('cloud-restart-action')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('cloud-restart-action')));
+    await _settle(tester);
+    expect(api.startAttemptCount, 1);
 
     await _unmount(tester);
   });
@@ -272,6 +370,9 @@ void main() {
     expect(find.textContaining(testProjectRef), findsOneWidget);
     expect(find.text('Sync now'), findsNothing);
     expect(find.byType(TextField), findsNothing);
+    // A connected backend is never offered a restart action here.
+    expect(find.byKey(const ValueKey('cloud-restart-action')), findsNothing);
+    expect(find.byKey(const ValueKey('cloud-start-again')), findsNothing);
     expect(find.textContaining(testPublishableKey), findsNothing);
     expect(find.textContaining('Connect your Planner account'), findsOneWidget);
     // Account connection is available now; Planner data synchronization only

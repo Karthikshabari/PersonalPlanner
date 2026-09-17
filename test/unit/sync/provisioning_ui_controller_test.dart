@@ -304,9 +304,55 @@ void main() {
     );
     await controller().retry();
 
+    // Retry continues the same transaction rather than starting a new one.
     expect(api.calls.where((call) => call == 'migrate'), hasLength(2));
+    expect(api.startAttemptCount, 0);
     expect(current().phase, ProvisioningUiPhase.provisioning);
   });
+
+  test(
+    'start again from a retryable failure creates a new attempt',
+    () async {
+      const newTransactionId = 'ffffffffffffffffffffffffffffffff';
+      api.attempt = testAttempt(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      api.verifyResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        message: 'Provisioning stopped: invalid_request (HTTP 400).',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().advance();
+
+      expect(current().phase, ProvisioningUiPhase.retryableError);
+      final verifyCallsBefore = api.calls
+          .where((call) => call == 'verify')
+          .length;
+
+      api.startResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(
+          ProvisioningState.authorizationPending,
+          transactionId: newTransactionId,
+        ),
+        authorizationUrl: testAuthorizationUrl,
+      );
+      await controller().startAgain();
+
+      // A brand-new transaction was requested, the abandoned one was not
+      // retried, and the UI returned to the authorization flow for the new id.
+      expect(api.startAttemptCount, 1);
+      expect(
+        api.calls.where((call) => call == 'verify').length,
+        verifyCallsBefore,
+      );
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+      expect(current().transactionId, newTransactionId);
+      expect(current().transactionId, isNot(testTransactionId));
+    },
+  );
 
   test(
     'starting again calls startAttempt instead of touching storage',
