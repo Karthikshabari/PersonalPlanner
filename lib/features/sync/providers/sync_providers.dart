@@ -4,8 +4,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../core/config/supabase_config.dart';
 import '../../../core/database/app_database.dart';
+import '../../../core/models/planner_account_scope.dart';
 import '../../../core/providers/database_provider.dart';
 import '../data/anonymous_data_adoption.dart';
 import '../data/auth_repository.dart';
@@ -13,31 +13,33 @@ import '../data/sync_repository.dart';
 import '../domain/auth_session_controller.dart';
 import '../domain/sync_engine.dart';
 import '../domain/sync_models.dart';
+import 'runtime_backend_providers.dart';
 import 'sync_settings_provider.dart';
 
-final supabaseClientProvider = Provider<SupabaseClient?>((ref) {
-  if (!SupabaseConfig.isConfigured) return null;
-  return Supabase.instance.client;
-});
-
-final authRepositoryProvider = Provider<AuthRepository?>((ref) {
-  final client = ref.watch(supabaseClientProvider);
-  return client == null ? null : AuthRepository(client);
-});
+/// Auth boundary of the selected runtime backend, or null when this
+/// installation has no cloud backend connected.
+final authRepositoryProvider = Provider<AuthRepository?>(
+  (ref) => ref.watch(runtimeAuthStackProvider).repository,
+);
 
 /// Bootstrap overrides this with its single app-lifetime reducer. The fallback
 /// keeps isolated provider tests usable without a second production source.
 final authSessionControllerProvider = Provider<AuthSessionController?>((ref) {
-  final repository = ref.watch(authRepositoryProvider);
+  final stack = ref.watch(runtimeAuthStackProvider);
+  final controller = stack.controller;
+  if (controller != null) return controller;
+  final repository = stack.repository;
   if (repository == null) return null;
-  final controller = AuthSessionController(repository);
-  ref.onDispose(() => unawaited(controller.dispose()));
-  return controller;
+  final fallback = AuthSessionController(repository);
+  ref.onDispose(() => unawaited(fallback.dispose()));
+  return fallback;
 });
 
-/// Bootstrap supplies the identity of the database currently open in this
-/// container. A token cannot select a different account's local outbox.
-final openAccountIdProvider = Provider<String?>((ref) => null);
+/// Bootstrap supplies the canonical identity of the database currently open in
+/// this container. A token cannot select a different account's local outbox,
+/// and two Supabase projects that issued the same auth user id are still
+/// different accounts.
+final openAccountScopeProvider = Provider<PlannerAccountScope?>((ref) => null);
 
 final anonymousDataAdoptionProvider = Provider<AnonymousDataAdoptionService>((
   ref,
@@ -87,16 +89,24 @@ final syncConnectivityMonitorProvider = Provider<SyncConnectivityMonitor>((
 });
 
 final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
-  final client = ref.watch(supabaseClientProvider);
+  final backend = ref.watch(runtimeBackendProvider);
+  // Phase EF boundary: only the compile-time developer backend carries a
+  // normal Planner data endpoint. A provisioned user-owned backend has runtime
+  // Auth but no Planner data synchronization yet, so it gets no repository, no
+  // engine, and no "Sync now"; Phase G owns that decision.
+  final endpoint = backend.plannerDataSyncEndpoint;
+  if (endpoint == null) return null;
   final controller = ref.watch(authSessionControllerProvider);
   final session = ref.watch(authSessionStateProvider).value?.session;
-  final openAccountId = ref.watch(openAccountIdProvider);
+  final openScope = ref.watch(openAccountScopeProvider);
   final enabled = ref.watch(syncEnabledProvider).value ?? true;
-  if (client == null || controller == null || session == null || !enabled) {
+  if (controller == null || session == null || !enabled) {
     return null;
   }
-  final userId = session.user.id;
-  if (openAccountId != userId) return null;
+  // The canonical account scope is (projectRef, authUserId), so this guard also
+  // rejects a same-user-id session that belongs to a different project.
+  final scope = backend.accountScopeFor(session.user.id);
+  if (scope == null || openScope != scope) return null;
   if (!controller.hasUsableAccessToken(session)) {
     unawaited(controller.requestRefreshIfNeeded());
     return null;
@@ -107,10 +117,10 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
   // one. The repository's owner guard also prevents a stale provider from
   // applying a response after the account changes.
   final scopedClient = SupabaseClient(
-    SupabaseConfig.url,
-    SupabaseConfig.publishableKey,
+    endpoint.url,
+    endpoint.publishableKey,
     accessToken: () async {
-      if (controller.current.session?.user.id != userId ||
+      if (controller.current.session?.user.id != session.user.id ||
           !controller.hasUsableAccessToken(session)) {
         throw const _SyncAccessTokenUnavailable();
       }
@@ -121,8 +131,12 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
   return SyncRepository(
     ref.watch(appDatabaseProvider),
     scopedClient,
-    userId,
-    currentAccountId: () => controller.current.session?.user.id,
+    scope.storageId,
+    currentAccountId: () {
+      final current = controller.current.session;
+      if (current == null) return null;
+      return backend.accountScopeFor(current.user.id)?.storageId;
+    },
   );
 });
 

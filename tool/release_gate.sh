@@ -138,38 +138,29 @@ assert_no_project_processes() {
 flutter_bin="${FLUTTER_BIN:-flutter}"
 run_with_memory_limit() {
   local limit="$1"; shift
-  if [[ "$MEMORY_LIMIT_MODE" == "systemd-cgroup" ]]; then
-    systemd-run --user --scope --wait --collect --quiet \
-      --property="MemoryMax=${limit}" -- "$@"
-    return
+  if [[ "$MEMORY_LIMIT_MODE" != "systemd-cgroup" ]]; then
+    printf 'Required memory cap %s is unavailable; command was not started.\n' \
+      "$limit" >&2
+    return 125
   fi
-  printf 'Required memory cap %s is unavailable; command was not started.\n' \
-    "$limit" >&2
-  return 125
+  # A scoped run stays in the foreground and already reports the wrapped
+  # command's exit status, so `--wait` is unnecessary. Current systemd rejects
+  # it ("--wait may not be combined with --scope", verified on systemd 259).
+  systemd-run --user --scope --collect --quiet \
+    --property="MemoryMax=${limit}" -- "$@"
+}
+
+memory_cap_available() {
+  require_command systemd-run || return 1
+  systemd-run --user --scope --collect --quiet \
+    --property=MemoryMax=128M -- true >/dev/null 2>&1
 }
 
 local_checks() {
   run_check git_diff_check git -C "$REPO_ROOT" diff --check
   run_check cached_diff_check git -C "$REPO_ROOT" diff --cached --check
-  run_check secret_scan bash -c '
-    ! rg -n --hidden --glob "!supabase.local.json" --glob "!.git/**" \
-      --glob "!build/**" --glob "!.dart_tool/**" --glob "!artifacts/**" \
-      "(sb_secret_[A-Za-z0-9_-]{20,}|service_role_[A-Za-z0-9_-]{20,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|eyJ[A-Za-z0-9_-]{20,}\\.)" .
-  '
-  run_check migration_order bash -c '
-    test -f supabase/migrations/20260827000000_sync_v1.sql &&
-    test -f supabase/migrations/20260829000000_sync_v1_hardening.sql &&
-    test -f supabase/migrations/20260910000000_real_use_v2.sql &&
-    test "$(find supabase/migrations -maxdepth 1 -type f -name "20260827000000_sync_v1.sql" | wc -l)" -eq 1 &&
-    test "$(find supabase/migrations -maxdepth 1 -type f -name "20260829000000_sync_v1_hardening.sql" | wc -l)" -eq 1 &&
-    test "$(find supabase/migrations -maxdepth 1 -type f -name "20260910000000_real_use_v2.sql" | wc -l)" -eq 1 &&
-    test "$(find supabase/migrations -maxdepth 1 -type f -name "*.sql" | wc -l)" -eq 3 &&
-    printf "%s  %s\n%s  %s\n" \
-      "1b22bd8eb9eb9a52a2d9405ba30093d8125816bb7107f11fed6f404230f4369b" \
-      "supabase/migrations/20260827000000_sync_v1.sql" \
-      "b38c4617cfbf0ccb49db0f5c0a0a32a6b8cafab6147af2a0e20f85073b2b1083" \
-      "supabase/migrations/20260829000000_sync_v1_hardening.sql" | sha256sum -c -
-  '
+  run_check secret_scan bash "$REPO_ROOT/tool/release_gate_checks.sh" secret-scan "$REPO_ROOT"
+  run_check migration_order bash "$REPO_ROOT/tool/release_gate_checks.sh" migration-order "$REPO_ROOT"
   run_check manifest_safety bash -c '
     rg -q "android:allowBackup=\"false\"" android/app/src/main/AndroidManifest.xml &&
     test -f android/app/src/main/res/xml/backup_rules.xml &&
@@ -187,16 +178,14 @@ local_checks() {
 select_memory_limit_mode() {
   case "${RELEASE_GATE_MEMORY_MODE:-auto}" in
     systemd)
-      if ! require_command systemd-run || ! systemd-run --user --scope --wait \
-        --collect --quiet --property=MemoryMax=128M -- true >/dev/null 2>&1; then
+      if ! memory_cap_available; then
         MEMORY_LIMIT_MODE="unavailable (systemd requested)"
         return
       fi
       MEMORY_LIMIT_MODE="systemd-cgroup"
       ;;
     auto)
-      if require_command systemd-run && systemd-run --user --scope --wait \
-        --collect --quiet --property=MemoryMax=128M -- true >/dev/null 2>&1; then
+      if memory_cap_available; then
         MEMORY_LIMIT_MODE="systemd-cgroup"
       else
         MEMORY_LIMIT_MODE="unavailable"

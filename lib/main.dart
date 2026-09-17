@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
 import 'core/config/supabase_config.dart';
 import 'core/database/app_database.dart';
+import 'core/models/planner_account_scope.dart';
 import 'core/providers/database_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/utils/date_utils.dart';
@@ -15,9 +16,15 @@ import 'core/widgets/error_panel.dart';
 import 'features/recurring/providers/recurring_providers.dart';
 import 'features/settings/providers/notification_settings_providers.dart';
 import 'features/sync/data/auth_repository.dart';
+import 'features/sync/data/connection_profile_store.dart';
+import 'features/sync/data/runtime_auth_client.dart';
+import 'features/sync/data/runtime_supabase_client.dart';
 import 'features/sync/data/secure_session_storage.dart';
+import 'features/sync/domain/backend_connection_profile.dart';
 import 'features/sync/domain/auth_session_controller.dart';
+import 'features/sync/domain/runtime_backend.dart';
 import 'features/sync/domain/sync_engine.dart';
+import 'features/sync/providers/runtime_backend_providers.dart';
 import 'features/sync/providers/sync_providers.dart';
 import 'features/timer/domain/notification_service.dart';
 import 'features/timer/domain/timer_service.dart';
@@ -25,16 +32,166 @@ import 'features/timer/platform/android_foreground_timer.dart';
 import 'features/timer/providers/timer_providers.dart';
 import 'platform/desktop/window_manager.dart';
 
-_SupabaseBootstrapResources? _supabaseBootstrap;
+_RuntimeAuthBootstrap? _runtimeAuthBootstrap;
 
-class _SupabaseBootstrapResources {
-  const _SupabaseBootstrapResources({
-    required this.authRepository,
+/// App-lifetime runtime Auth resources of the selected backend.
+///
+/// Exactly one exists at a time and the bootstrap owns it, including disposal,
+/// so a dynamically created client never becomes a global mutable singleton.
+class _RuntimeAuthBootstrap {
+  const _RuntimeAuthBootstrap({
+    required this.backend,
+    required this.repository,
     required this.authController,
+    this.ownedClient,
   });
 
-  final AuthRepository authRepository;
+  final RuntimeBackend backend;
+
+  /// Secure-storage-aware Auth boundary. Sign-out cleanup and the scoped
+  /// session lifecycle of the provisioned path live here.
+  final AuthRepository repository;
+
   final AuthSessionController authController;
+
+  /// The dynamically created client of the provisioned path, owned and disposed
+  /// here. Null for the compile-time developer path, whose client is the
+  /// app-wide `Supabase.instance` singleton.
+  final SupabaseClient? ownedClient;
+
+  RuntimeAuthStack get stack => RuntimeAuthStack(
+    backend: backend,
+    repository: repository,
+    controller: authController,
+  );
+
+  Future<void> dispose() async {
+    final client = ownedClient;
+    if (client == null) {
+      // The compile-time developer client is the app-wide singleton.
+      await authController.dispose();
+      await repository.dispose();
+      return;
+    }
+    await _releaseRuntimeAuthResources(
+      client: client,
+      controller: authController,
+      repository: repository,
+    );
+  }
+}
+
+/// Test seams of the bootstrap lifecycle.
+///
+/// Production always uses the defaults. Bootstrap tests substitute an in-memory
+/// database opener, a no-op local-service layer and scripted runtime Auth steps,
+/// so the real account-scope switch lifecycle can run without platform plugins,
+/// a keyring, or a network.
+@visibleForTesting
+class PlannerBootstrapSeams {
+  const PlannerBootstrapSeams({
+    this.readProvisionedBackend = _readProvisionedBackend,
+    this.installProvisionedRuntimeAuth = _createProvisionedRuntimeAuth,
+    this.openDatabase = AppDatabase.open,
+    this.initializeLocalServices = _initializeLocalServices,
+    this.shutdownLocalServices = _shutdownLocalServicesForSeam,
+  });
+
+  /// Reads the durable connection profile and returns the READY provisioned
+  /// backend, or null when there is none.
+  final Future<ProvisionedRuntimeBackend?> Function() readProvisionedBackend;
+
+  /// Installs the runtime Auth resources of [backend].
+  final Future<void> Function(ProvisionedRuntimeBackend backend)
+  installProvisionedRuntimeAuth;
+
+  /// Opens the database of an account scope id (null is the anonymous one).
+  final Future<AppDatabase> Function({String? accountId}) openDatabase;
+
+  /// Initializes the non-cloud local services of an opened account database.
+  final Future<SyncEngine?> Function(
+    ProviderContainer container, {
+    required Future<void> Function() beforeWindowClose,
+  })
+  initializeLocalServices;
+
+  /// Releases an opened account database and its local services.
+  ///
+  /// [persistWindow] is false only while the desktop window is closing.
+  final Future<void> Function(
+    ProviderContainer container,
+    AppDatabase database,
+    SyncEngine? engine,
+    bool persistWindow,
+  )
+  shutdownLocalServices;
+}
+
+/// Root widget of the app.
+///
+/// [main] runs this after resolving runtime Auth. Bootstrap tests build the same
+/// widget with [PlannerBootstrapSeams].
+@visibleForTesting
+Widget plannerBootstrap({
+  Object? initialBootstrapError,
+  PlannerBootstrapSeams seams = const PlannerBootstrapSeams(),
+}) => _PlannerBootstrap(
+  initialBootstrapError: initialBootstrapError,
+  seams: seams,
+);
+
+/// Installs runtime Auth resources for a bootstrap test.
+///
+/// Production installs them through [_createProvisionedRuntimeAuth].
+@visibleForTesting
+void installRuntimeAuthBootstrapForTesting({
+  required RuntimeBackend backend,
+  required AuthRepository repository,
+  required AuthSessionController controller,
+}) {
+  _runtimeAuthBootstrap = _RuntimeAuthBootstrap(
+    backend: backend,
+    repository: repository,
+    authController: controller,
+  );
+}
+
+/// Releases whatever runtime Auth stack is installed. Test helper.
+@visibleForTesting
+Future<void> resetRuntimeAuthBootstrapForTesting() =>
+    _disposeRuntimeAuthBootstrap();
+
+/// The account database and provider container the Planner must have open.
+///
+/// The pair matters: a container is only valid for one runtime Auth stack
+/// **instance** (a replaced stack must rebuild it even when the account scope
+/// looks unchanged) and for one canonical `(projectRef, authUserId)` scope, so
+/// two projects that issued the same auth user id can never share one.
+@immutable
+class _AccountDatabaseTarget {
+  const _AccountDatabaseTarget({
+    required this.runtimeAuth,
+    required this.accountScope,
+  });
+
+  /// Runtime Auth resources this container belongs to. Compared by identity: a
+  /// replacement installs a new instance.
+  final _RuntimeAuthBootstrap? runtimeAuth;
+
+  /// Canonical account scope of the database. Null is the anonymous database.
+  final PlannerAccountScope? accountScope;
+
+  /// Storage id of the database this target opens.
+  String? get accountId => accountScope?.storageId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AccountDatabaseTarget &&
+      identical(other.runtimeAuth, runtimeAuth) &&
+      other.accountScope == accountScope;
+
+  @override
+  int get hashCode => Object.hash(accountScope, identityHashCode(runtimeAuth));
 }
 
 Future<void> main() async {
@@ -45,14 +202,14 @@ Future<void> main() async {
   );
   Object? bootstrapError;
   try {
-    await _initializeSupabaseIfConfigured();
+    await _initializeRuntimeAuth();
   } catch (error, stack) {
     bootstrapError = error;
     FlutterError.reportError(
       FlutterErrorDetails(exception: error, stack: stack),
     );
   }
-  runApp(_PlannerBootstrap(initialBootstrapError: bootstrapError));
+  runApp(plannerBootstrap(initialBootstrapError: bootstrapError));
 }
 
 /// Drift and other async libraries can propagate package:stack_trace objects.
@@ -61,6 +218,103 @@ StackTrace _demangleStackTrace(StackTrace stack) {
   if (stack is Trace) return stack.vmTrace;
   if (stack is Chain) return stack.toTrace().vmTrace;
   return stack;
+}
+
+/// Resolves and prepares the runtime Auth backend once, before the first frame.
+///
+/// Only local reads happen here. No network call may block startup, so an
+/// unreachable, unfinished, or unreadable cloud backend simply leaves the
+/// Planner local-only.
+Future<void> _initializeRuntimeAuth([
+  PlannerBootstrapSeams seams = const PlannerBootstrapSeams(),
+]) async {
+  if (SupabaseConfig.isConfigured) {
+    // The compile-time developer configuration keeps precedence, so a stored
+    // profile can never take over an explicitly configured build.
+    await _initializeSupabaseIfConfigured();
+    return;
+  }
+  final backend = await seams.readProvisionedBackend();
+  if (backend == null) {
+    await _disposeRuntimeAuthBootstrap();
+    return;
+  }
+  await seams.installProvisionedRuntimeAuth(backend);
+}
+
+/// Reads the durable connection profile and returns the provisioned backend.
+///
+/// Returns null when there is no profile, when the profile is not READY, or
+/// when it cannot be trusted, so a partial or corrupt profile never produces a
+/// runtime client.
+Future<ProvisionedRuntimeBackend?> _readProvisionedBackend() async {
+  final BackendConnectionProfile? profile;
+  try {
+    profile = await ConnectionProfileStore().read();
+  } on ConnectionProfileStoreException {
+    // An unreadable profile is not a startup blocker: the Planner keeps working
+    // locally and the provisioning card stays the repair path.
+    return null;
+  }
+  return ProvisionedRuntimeBackend.tryFromProfile(profile);
+}
+
+/// Builds the runtime Auth connection for a provisioned user-owned project.
+///
+/// The client comes from the client-safe READY profile only, so no provisioning
+/// capability, Management token, or secret key is reachable from this path.
+Future<void> _createProvisionedRuntimeAuth(
+  ProvisionedRuntimeBackend backend,
+) async {
+  final client = const RuntimeSupabaseClientFactory().create(backend);
+  final storage = SecureSupabaseLocalStorage(
+    sessionKey: backend.authNamespaces.sessionKey,
+  );
+  final repository = AuthRepository(
+    SupabaseRuntimeAuthClient(client),
+    sessionStorage: storage,
+  );
+  final controller = AuthSessionController(repository);
+  storage.onOutcome = controller.recordStorageOutcome;
+  try {
+    // Restores only this project's scoped session. A legacy global session
+    // lives under a different key and is never restored into a project.
+    await repository.attachScopedSessionStorage();
+  } catch (error, stack) {
+    // A secure-storage failure must not look like "no session": the Planner
+    // would otherwise open the anonymous database while the user believes the
+    // cloud account is connected. Surface it as a bootstrap failure with Retry
+    // instead of guessing, exactly like the compile-time developer path.
+    await _releaseRuntimeAuthResources(
+      client: client,
+      controller: controller,
+      repository: repository,
+    );
+    Error.throwWithStackTrace(error, stack);
+  }
+  await controller.start();
+  final previous = _runtimeAuthBootstrap;
+  _runtimeAuthBootstrap = _RuntimeAuthBootstrap(
+    backend: backend,
+    repository: repository,
+    authController: controller,
+    ownedClient: client,
+  );
+  await previous?.dispose();
+}
+
+Future<void> _releaseRuntimeAuthResources({
+  required SupabaseClient client,
+  required AuthSessionController controller,
+  required AuthRepository repository,
+}) async {
+  await controller.dispose();
+  await repository.dispose();
+  try {
+    await client.dispose();
+  } catch (_) {
+    // A client that never finished initializing has nothing left to release.
+  }
 }
 
 Future<void> _initializeSupabaseIfConfigured() async {
@@ -86,23 +340,29 @@ Future<void> _initializeSupabaseIfConfigured() async {
     }
     requireSecureSessionBootstrapReady(collector);
   }
+  // The legacy developer path keeps its historical global session namespace and
+  // lets supabase_flutter's own singleton wrapper restore and persist it.
   final repository = AuthRepository(
-    Supabase.instance.client,
+    SupabaseRuntimeAuthClient(Supabase.instance.client),
     sessionStorage: storage,
   );
   final controller = AuthSessionController(repository);
   storage.onOutcome = controller.recordStorageOutcome;
   await controller.start();
-  _supabaseBootstrap = _SupabaseBootstrapResources(
-    authRepository: repository,
+  _runtimeAuthBootstrap = _RuntimeAuthBootstrap(
+    backend: LegacyStaticRuntimeBackend(
+      url: SupabaseConfig.url,
+      publishableKey: SupabaseConfig.publishableKey,
+    ),
+    repository: repository,
     authController: controller,
   );
 }
 
-Future<void> _disposeSupabaseBootstrapResources() async {
-  final resources = _supabaseBootstrap;
-  _supabaseBootstrap = null;
-  await resources?.authController.dispose();
+Future<void> _disposeRuntimeAuthBootstrap() async {
+  final resources = _runtimeAuthBootstrap;
+  _runtimeAuthBootstrap = null;
+  await resources?.dispose();
   if (SupabaseConfig.isConfigured) {
     try {
       await Supabase.instance.dispose();
@@ -115,8 +375,12 @@ Future<void> _disposeSupabaseBootstrapResources() async {
 
 class _PlannerBootstrap extends StatefulWidget {
   final Object? initialBootstrapError;
+  final PlannerBootstrapSeams seams;
 
-  const _PlannerBootstrap({this.initialBootstrapError});
+  const _PlannerBootstrap({
+    this.initialBootstrapError,
+    this.seams = const PlannerBootstrapSeams(),
+  });
 
   @override
   State<_PlannerBootstrap> createState() => _PlannerBootstrapState();
@@ -128,8 +392,21 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   ProviderContainer? _container;
   SyncEngine? _syncEngine;
   StreamSubscription<AuthSessionState>? _authSubscription;
-  String? _accountId;
-  String? _requestedAccountId;
+
+  /// The account database/container/local services that are actually open, or
+  /// null while nothing is open.
+  ///
+  /// Written only after [_switchDatabase] has published a container that
+  /// matches this target. Auth saying a different scope is desired never
+  /// overwrites it, otherwise the drain below could conclude "already open" and
+  /// leave the previous account's database active.
+  _AccountDatabaseTarget? _openTarget;
+
+  /// The most recent target Auth asked for. It differs from [_openTarget] while
+  /// a switch is in flight, after a failed switch, and after a runtime Auth
+  /// replacement that still has to be applied.
+  _AccountDatabaseTarget? _requestedTarget;
+
   Future<void>? _databaseSwitch;
   Object? _error;
   Object? _bootstrapError;
@@ -145,7 +422,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _supabaseBootstrap?.authController.recordLifecycle(state);
+    _runtimeAuthBootstrap?.authController.recordLifecycle(state);
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshPlannerTimezone());
     }
@@ -181,29 +458,52 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   }
 
   void _startDatabaseScope() {
-    if (SupabaseConfig.isConfigured) {
-      final resources = _supabaseBootstrap;
-      if (resources == null) {
-        setState(() {
-          _bootstrapError = const SecureSessionBootstrapException(
-            'initialization_missing',
-          );
-          _switching = false;
-        });
-        return;
-      }
-      unawaited(_authSubscription?.cancel());
-      _authSubscription = resources.authController.states.listen((state) {
-        _requestDatabaseSwitch(state.session?.user.id);
-      });
-      _accountId = resources.authController.session?.user.id;
-    }
-    _requestedAccountId = _accountId;
-    _requestDatabaseSwitch(_accountId);
+    final resources = _runtimeAuthBootstrap;
+    if (resources != null) _subscribeToRuntimeAuth(resources);
+    // The desired target always comes from live Auth state. Nothing about the
+    // currently open database is assumed here: if the target differs, the drain
+    // opens it, and [_openTarget] is only replaced once that succeeded.
+    _requestDatabaseSwitch(
+      _targetFor(resources, resources?.authController.session),
+    );
   }
 
-  void _requestDatabaseSwitch(String? accountId) {
-    _requestedAccountId = accountId;
+  /// Follows exactly one runtime Auth stack.
+  ///
+  /// The subscription is bound to the stack instance that created it, so an
+  /// event from a replaced stack is dropped before it could be resolved with the
+  /// replacement's project identity.
+  void _subscribeToRuntimeAuth(_RuntimeAuthBootstrap resources) {
+    unawaited(_authSubscription?.cancel());
+    _authSubscription = resources.authController.states.listen((state) {
+      if (!identical(_runtimeAuthBootstrap, resources)) return;
+      _requestDatabaseSwitch(_targetFor(resources, state.session));
+    });
+  }
+
+  _AccountDatabaseTarget _targetFor(
+    _RuntimeAuthBootstrap? resources,
+    Session? session,
+  ) => _AccountDatabaseTarget(
+    runtimeAuth: resources,
+    accountScope: _scopeForSession(resources?.backend, session),
+  );
+
+  /// Canonical account scope of [backend] for [session].
+  ///
+  /// A provisioned backend resolves `(projectRef, authUserId)`, so the same
+  /// auth user id in two projects selects two different local databases. A
+  /// null session is the anonymous local database.
+  PlannerAccountScope? _scopeForSession(
+    RuntimeBackend? backend,
+    Session? session,
+  ) {
+    if (backend == null || session == null) return null;
+    return backend.accountScopeFor(session.user.id);
+  }
+
+  void _requestDatabaseSwitch(_AccountDatabaseTarget target) {
+    _requestedTarget = target;
     if (_databaseSwitch != null) return;
     final run = _drainDatabaseSwitches();
     _databaseSwitch = run;
@@ -216,8 +516,9 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
 
   Future<void> _drainDatabaseSwitches() async {
     while (mounted &&
-        (_database == null || _accountId != _requestedAccountId)) {
-      final target = _requestedAccountId;
+        _requestedTarget != null &&
+        _openTarget != _requestedTarget) {
+      final target = _requestedTarget!;
       final opened = await _switchDatabase(target);
       if (!opened) return;
     }
@@ -234,12 +535,10 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       // Supabase marks its singleton initialized before auth/session recovery
       // finishes. Dispose that failed attempt so Retry can genuinely repeat
       // initialization rather than silently returning a half-ready client.
-      if (SupabaseConfig.isConfigured) {
-        await _authSubscription?.cancel();
-        _authSubscription = null;
-        await _disposeSupabaseBootstrapResources();
-        await _initializeSupabaseIfConfigured();
-      }
+      unawaited(_authSubscription?.cancel());
+      _authSubscription = null;
+      await _disposeRuntimeAuthBootstrap();
+      await _initializeRuntimeAuth(widget.seams);
       if (!mounted) return;
       _startDatabaseScope();
     } catch (error, stack) {
@@ -256,14 +555,60 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
 
   void _retryDatabase() {
     if (!mounted) return;
+    final target = _requestedTarget;
+    if (target == null) return;
     setState(() {
       _error = null;
       _switching = true;
     });
-    _requestDatabaseSwitch(_accountId);
+    _requestDatabaseSwitch(target);
   }
 
-  Future<bool> _switchDatabase(String? accountId) async {
+  /// Re-reads durable connection state and re-scopes runtime Auth when the
+  /// backend changed while the app was running.
+  ///
+  /// Provisioning finishes inside the running app, so the new user-owned
+  /// project has to gain its runtime Auth client without a restart. Static
+  /// configuration still wins, and an unchanged backend is a no-op.
+  Future<void> _reloadRuntimeBackend() async {
+    if (SupabaseConfig.isConfigured) return;
+    try {
+      final backend = await widget.seams.readProvisionedBackend();
+      if (backend == null || backend == _runtimeAuthBootstrap?.backend) return;
+      // Stop the previous runtime Auth generation from driving account scope
+      // *before* the replacement becomes visible, so an event queued by a
+      // replaced client can never be resolved with the new project's identity.
+      // Cancellation removes the listener synchronously; its returned future is
+      // not awaited because a slow cancel must never block adopting a backend
+      // (the subscription callback also verifies its own stack identity).
+      unawaited(_authSubscription?.cancel());
+      _authSubscription = null;
+      await widget.seams.installProvisionedRuntimeAuth(backend);
+      if (!mounted) return;
+      final container = _container;
+      final resources = _runtimeAuthBootstrap;
+      if (container != null && resources != null) {
+        container
+            .read(runtimeAuthStackProvider.notifier)
+            .replace(resources.stack);
+      }
+      // Re-subscribes to the new stack and requests its target; the open
+      // database is only replaced when that request is applied.
+      _startDatabaseScope();
+    } catch (error, stack) {
+      // Adoption is best effort: a backend this build cannot adopt leaves the
+      // Planner on its current local scope. Nothing is deleted, no stale
+      // session is reused, and the richer recovery flow belongs to the
+      // lifecycle phase.
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: error, stack: stack),
+      );
+      // Whatever stack is still installed stays authoritative.
+      if (mounted) _startDatabaseScope();
+    }
+  }
+
+  Future<bool> _switchDatabase(_AccountDatabaseTarget target) async {
     if (!mounted) return false;
     setState(() {
       _switching = true;
@@ -276,42 +621,65 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
     _container = null;
     _database = null;
     _syncEngine = null;
+    // Nothing is open while the switch is in flight. The open target is
+    // published again only after this switch established it.
+    _openTarget = null;
     if (oldContainer != null && oldDatabase != null) {
-      await _shutdownLocalServices(oldContainer, oldDatabase, oldEngine);
+      await widget.seams.shutdownLocalServices(
+        oldContainer,
+        oldDatabase,
+        oldEngine,
+        true,
+      );
     }
 
     AppDatabase? database;
     ProviderContainer? container;
     SyncEngine? engine;
     try {
-      database = await AppDatabase.open(accountId: accountId);
-      AndroidForegroundTimer.setAccountScope(accountId);
+      database = await widget.seams.openDatabase(accountId: target.accountId);
+      if (!mounted || _requestedTarget != target) {
+        // Superseded while the database was opening. Nothing of this target may
+        // reach local services, so no default rows, timer state, or provider
+        // container is created for it.
+        await _closeDatabase(database);
+        return true;
+      }
+      AndroidForegroundTimer.setAccountScope(target.accountId);
       final openedDatabase = database;
-      final resources = _supabaseBootstrap;
       container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWithValue(openedDatabase),
-          openAccountIdProvider.overrideWithValue(accountId),
-          if (resources != null) ...[
-            authRepositoryProvider.overrideWithValue(resources.authRepository),
-            authSessionControllerProvider.overrideWithValue(
-              resources.authController,
+          openAccountScopeProvider.overrideWithValue(target.accountScope),
+          // The container is built for exactly the runtime Auth stack of this
+          // target, so it can never serve a replaced client.
+          runtimeAuthStackProvider.overrideWith(
+            () => RuntimeAuthStackNotifier(
+              target.runtimeAuth?.stack ?? const RuntimeAuthStack.localOnly(),
             ),
-          ],
+          ),
+          runtimeBackendReloaderProvider.overrideWithValue(
+            _BootstrapRuntimeReloader(this),
+          ),
         ],
       );
       final openedContainer = container;
-      engine = await _initializeLocalServices(
+      engine = await widget.seams.initializeLocalServices(
         openedContainer,
         beforeWindowClose: () =>
             _shutdownForWindowClose(openedContainer, openedDatabase),
       );
-      if (!mounted || _requestedAccountId != accountId) {
-        await _shutdownLocalServices(openedContainer, openedDatabase, engine);
+      if (!mounted || _requestedTarget != target) {
+        await widget.seams.shutdownLocalServices(
+          openedContainer,
+          openedDatabase,
+          engine,
+          true,
+        );
         return true;
       }
       setState(() {
-        _accountId = accountId;
+        _openTarget = target;
         _database = database;
         _container = container;
         _syncEngine = engine;
@@ -320,15 +688,14 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       return true;
     } catch (error, stack) {
       if (container != null && database != null) {
-        await _shutdownLocalServices(container, database, engine);
+        await widget.seams.shutdownLocalServices(
+          container,
+          database,
+          engine,
+          true,
+        );
       } else {
-        try {
-          await database?.close();
-        } catch (cleanupError, cleanupStack) {
-          FlutterError.reportError(
-            FlutterErrorDetails(exception: cleanupError, stack: cleanupStack),
-          );
-        }
+        if (database != null) await _closeDatabase(database);
       }
       FlutterError.reportError(
         FlutterErrorDetails(exception: error, stack: stack),
@@ -347,20 +714,20 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_authSubscription?.cancel());
-    unawaited(_disposeSupabaseBootstrapResources());
+    unawaited(_disposeRuntimeAuthBootstrap());
     final container = _container;
     final database = _database;
     final engine = _syncEngine;
     _container = null;
     _database = null;
     _syncEngine = null;
+    _openTarget = null;
+    _requestedTarget = null;
     if (container != null && database != null) {
       unawaited(
-        _shutdownLocalServices(
-          container,
-          database,
-          engine,
-        ).whenComplete(WindowStateService.instance.dispose),
+        widget.seams
+            .shutdownLocalServices(container, database, engine, true)
+            .whenComplete(WindowStateService.instance.dispose),
       );
     }
     super.dispose();
@@ -371,16 +738,18 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
     AppDatabase database,
   ) async {
     if (!identical(_container, container)) return;
-    await _authSubscription?.cancel();
+    // The listener is removed synchronously; see [_reloadRuntimeBackend].
+    unawaited(_authSubscription?.cancel());
     _authSubscription = null;
     _container = null;
     _database = null;
     _syncEngine = null;
-    await _shutdownLocalServices(
+    _openTarget = null;
+    await widget.seams.shutdownLocalServices(
       container,
       database,
       container.read(syncEngineProvider),
-      persistWindow: false,
+      false,
     );
   }
 
@@ -434,6 +803,29 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
     return UncontrolledProviderScope(
       container: container,
       child: const PersonalPlannerApp(),
+    );
+  }
+}
+
+/// Lets the cloud-setup card ask the bootstrap to adopt a backend that just
+/// finished provisioning. Lifecycle stays in [_PlannerBootstrapState].
+class _BootstrapRuntimeReloader implements RuntimeBackendReloader {
+  const _BootstrapRuntimeReloader(this._state);
+
+  final _PlannerBootstrapState _state;
+
+  @override
+  Future<void> reload() => _state._reloadRuntimeBackend();
+}
+
+/// Closes a database that was opened for a target the bootstrap no longer
+/// wants. Nothing else was created for it yet, so this is the whole cleanup.
+Future<void> _closeDatabase(AppDatabase database) async {
+  try {
+    await database.close();
+  } catch (error, stack) {
+    FlutterError.reportError(
+      FlutterErrorDetails(exception: error, stack: stack),
     );
   }
 }
@@ -666,3 +1058,17 @@ Future<void> _shutdownLocalServices(
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
 }
+
+/// Positional adapter for [PlannerBootstrapSeams.shutdownLocalServices], so the
+/// seam can default to a constant tear-off.
+Future<void> _shutdownLocalServicesForSeam(
+  ProviderContainer container,
+  AppDatabase database,
+  SyncEngine? engine,
+  bool persistWindow,
+) => _shutdownLocalServices(
+  container,
+  database,
+  engine,
+  persistWindow: persistWindow,
+);

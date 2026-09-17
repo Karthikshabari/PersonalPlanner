@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../providers/runtime_backend_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
 
 /// Settings → Sync card for the user-owned Supabase setup flow.
@@ -44,6 +45,18 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
 
   @override
   Widget build(BuildContext context) {
+    // A backend that finishes provisioning while the Planner is running needs
+    // its runtime Auth client, and the app bootstrap owns client lifecycle.
+    // Ask it to adopt the newly stored profile; this is a no-op when the active
+    // backend already matches or when compile-time configuration wins.
+    ref.listen(provisioningUiProvider, (previous, next) {
+      final becameReady =
+          (next.value?.isReady ?? false) &&
+          !(previous?.value?.isReady ?? false);
+      if (!becameReady) return;
+      final pending = ref.read(runtimeBackendReloaderProvider)?.reload();
+      if (pending != null) unawaited(pending);
+    });
     return ref
         .watch(provisioningUiProvider)
         .when(

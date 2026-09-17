@@ -63,8 +63,8 @@ const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
 const cloudSetupReadyBody =
-    'Your cloud backend is ready. Account connection and Planner '
-    'synchronization will be enabled in the next setup step.';
+    'Your cloud backend is ready. Connect your Planner account below. Planner '
+    'data synchronization is not enabled yet.';
 const cloudSetupLeaveHint =
     'You can leave this screen. Setup continues safely and you can come back to '
     'it later.';
