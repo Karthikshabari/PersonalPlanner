@@ -38,6 +38,52 @@ enum ConnectionProfileStoreFailure {
   writeFailed,
 }
 
+/// User-visible health of the durable backend profile.
+///
+/// Bootstrap never blocks the Planner on an unusable profile: the local-first
+/// product keeps working, and this is the explicit recoverable state the Sync
+/// settings screen surfaces instead of pretending no cloud backend was ever
+/// configured (or, worse, silently connecting a different one).
+enum BackendProfileHealth {
+  /// No failure: either no profile is stored, or it was read successfully.
+  ok,
+
+  /// The stored profile document (or its directory) could not be read.
+  unreadable,
+
+  /// The stored document is not a valid profile.
+  corrupt,
+
+  /// The document declares a format version this build cannot read.
+  unsupportedVersion,
+
+  /// The document is larger than this build accepts.
+  tooLarge,
+
+  /// A write was rejected by the filesystem.
+  writeFailed;
+
+  bool get needsAttention => this != BackendProfileHealth.ok;
+
+  /// True when only an explicit fresh write may replace the document, because
+  /// its recorded generation cannot be trusted.
+  bool get isReplaceable =>
+      this == BackendProfileHealth.corrupt ||
+      this == BackendProfileHealth.unsupportedVersion ||
+      this == BackendProfileHealth.tooLarge;
+
+  static BackendProfileHealth fromFailure(
+    ConnectionProfileStoreFailure failure,
+  ) => switch (failure) {
+    ConnectionProfileStoreFailure.unreadable => BackendProfileHealth.unreadable,
+    ConnectionProfileStoreFailure.corrupt => BackendProfileHealth.corrupt,
+    ConnectionProfileStoreFailure.unsupportedVersion =>
+      BackendProfileHealth.unsupportedVersion,
+    ConnectionProfileStoreFailure.tooLarge => BackendProfileHealth.tooLarge,
+    ConnectionProfileStoreFailure.writeFailed => BackendProfileHealth.writeFailed,
+  };
+}
+
 /// Typed persistence failure.
 ///
 /// The store never reinterprets an unreadable document and never deletes it:

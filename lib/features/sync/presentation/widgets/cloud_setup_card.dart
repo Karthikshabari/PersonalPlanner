@@ -271,6 +271,26 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
           debugDetail: debugDetail,
           busy: busy,
         );
+
+      case ProvisioningUiPhase.disconnected:
+        final profile = state.readyProfile;
+        return _CloudCard(
+          icon: Icons.cloud_off_outlined,
+          title: 'Cloud backend disconnected',
+          body: profile == null
+              ? cloudSetupDisconnectedBody
+              : '${state.message ?? cloudSetupDisconnectedBody}'
+                    '\n\nSupabase project: ${profile.projectRef}',
+          debugDetail: debugDetail,
+          busy: busy,
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-reconnect-action'),
+              onPressed: busy ? null : controller.reconnect,
+              child: const Text('Reconnect to this project'),
+            ),
+          ],
+        );
     }
   }
 

@@ -323,7 +323,8 @@ class _PreparedAuthStack {
 class _BootstrapHarness {
   _BootstrapHarness() {
     seams = PlannerBootstrapSeams(
-      readProvisionedBackend: () async => _profileBackend,
+      readProvisionedBackend: () async =>
+          ProvisionedBackendRead(backend: _profileBackend),
       installProvisionedRuntimeAuth: _install,
       openDatabase: _openDatabase,
       initializeLocalServices: _initializeLocalServices,

@@ -467,7 +467,11 @@ class InitialSyncCoordinator {
         return false;
       case RemoteBaselineClaimStatus.recoveryRequired:
         await persist(
-          InitialSyncPhase.conflict,
+          // Same server decision as before, but its own durable lifecycle
+          // state: a partial foreign first baseline is not the ordinary
+          // "both sides have data" conflict and must be presented as an
+          // explicit recovery decision.
+          InitialSyncPhase.recoveryRequired,
           clearClaim: true,
           nextMessage: baselineRecoveryRequiredMessage,
         );

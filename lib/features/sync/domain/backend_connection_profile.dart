@@ -8,7 +8,11 @@ import 'provisioning_state.dart';
 /// reinterpreted: the profile decides which user-owned backend this
 /// installation talks to, so silently ignoring unknown content could bind the
 /// Planner to the wrong project. Adding fields therefore requires a version
-/// bump.
+/// bump, with one narrow documented exception: an optional field whose absence
+/// keeps the exact previous meaning and which this build fully handles. Such a
+/// field (`connection_disabled`) cannot rewrite how existing content is
+/// interpreted, and bumping the version for it would instead reject every
+/// already-stored READY profile, stranding a connected installation.
 const int plannerBackendProfileFormatVersion = 1;
 
 /// Thrown when profile data is well formed but is not a valid client-safe
@@ -152,6 +156,7 @@ class BackendConnectionProfile {
     this.resumeState,
     this.errorCode,
     this.provisioningTransactionId,
+    this.connectionDisabled = false,
   }) : createdAt = createdAt.toUtc(),
        updatedAt = updatedAt.toUtc() {
     _validate();
@@ -214,6 +219,19 @@ class BackendConnectionProfile {
   /// Provisioning transaction id used to resume an in-flight setup.
   final String? provisioningTransactionId;
 
+  /// True when the user explicitly stopped using this provisioned backend
+  /// without deleting it.
+  ///
+  /// A disconnected profile keeps the client-safe endpoint of the same
+  /// user-owned project so reconnecting reuses the exact same local account
+  /// database (and its completed Phase G baseline) instead of provisioning a
+  /// different project. It is never resolved into a runtime backend while it is
+  /// disabled: the Planner runs local-only and no Auth client is created.
+  ///
+  /// Only a READY profile may be disconnected, and disconnecting never removes
+  /// the local Planner data or deletes the Supabase project.
+  final bool connectionDisabled;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -231,6 +249,9 @@ class BackendConnectionProfile {
     if (compatibility != null) 'compatibility': compatibility!.toJson(),
     if (provisioningTransactionId != null)
       'provisioning_transaction_id': provisioningTransactionId,
+    // Absent means "connected", so a document written before this field existed
+    // keeps its exact original meaning.
+    if (connectionDisabled) 'connection_disabled': true,
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),
   };
@@ -258,6 +279,7 @@ class BackendConnectionProfile {
       'installation_id',
       'compatibility',
       'provisioning_transaction_id',
+      'connection_disabled',
       'created_at',
       'updated_at',
     }, 'Backend profile');
@@ -310,6 +332,7 @@ class BackendConnectionProfile {
         json,
         'provisioning_transaction_id',
       ),
+      connectionDisabled: _optionalBool(json, 'connection_disabled') ?? false,
     );
   }
 
@@ -331,6 +354,7 @@ class BackendConnectionProfile {
     Object? resumeState = _unset,
     Object? errorCode = _unset,
     Object? provisioningTransactionId = _unset,
+    bool? connectionDisabled,
   }) => BackendConnectionProfile(
     profileId: profileId ?? this.profileId,
     generation: generation ?? this.generation,
@@ -361,7 +385,14 @@ class BackendConnectionProfile {
     provisioningTransactionId: identical(provisioningTransactionId, _unset)
         ? this.provisioningTransactionId
         : provisioningTransactionId as String?,
+    connectionDisabled: connectionDisabled ?? this.connectionDisabled,
   );
+
+  /// True when this profile describes a READY user-owned backend that the user
+  /// explicitly stopped using, and which can therefore be reconnected without
+  /// provisioning anything new.
+  bool get canReconnect =>
+      connectionDisabled && state == ProvisioningState.ready;
 
   /// Validates that [next] may replace this profile in durable storage.
   ///
@@ -520,6 +551,14 @@ class BackendConnectionProfile {
         );
       }
     }
+    // A disconnected profile is a *remembered* backend: it keeps the complete
+    // client-safe endpoint so reconnecting reuses the same project, which is
+    // only meaningful for a verified backend.
+    if (connectionDisabled && state != ProvisioningState.ready) {
+      throw const BackendProfileValidationException(
+        'Only a ready backend profile can be disconnected.',
+      );
+    }
   }
 
   @override
@@ -536,6 +575,7 @@ class BackendConnectionProfile {
       other.resumeState == resumeState &&
       other.errorCode == errorCode &&
       other.provisioningTransactionId == provisioningTransactionId &&
+      other.connectionDisabled == connectionDisabled &&
       other.createdAt == createdAt &&
       other.updatedAt == updatedAt;
 
@@ -552,6 +592,7 @@ class BackendConnectionProfile {
     resumeState,
     errorCode,
     provisioningTransactionId,
+    connectionDisabled,
     createdAt,
     updatedAt,
   );
@@ -682,6 +723,17 @@ int _requiredInt(Map<String, dynamic> json, String key) {
   if (value is! int) {
     throw BackendProfileValidationException(
       'Backend profile $key must be an integer.',
+    );
+  }
+  return value;
+}
+
+bool? _optionalBool(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! bool) {
+    throw BackendProfileValidationException(
+      'Backend profile $key must be a boolean.',
     );
   }
   return value;

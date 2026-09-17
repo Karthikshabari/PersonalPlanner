@@ -37,6 +37,16 @@ enum InitialSyncPhase {
   /// is establishing the baseline. Nothing is pushed or pulled automatically.
   conflict,
 
+  /// The server refused to hand over an abandoned first baseline because the
+  /// cloud already carries part of that unfinished upload.
+  ///
+  /// Phase G deliberately never resolves this automatically: merging a partial
+  /// foreign upload into local Planner data cannot be proven correct. Phase H
+  /// gives it its own durable, needs-attention lifecycle state (instead of
+  /// reusing [conflict]) so the user sees a distinct recovery decision and no
+  /// normal synchronization ever runs for it.
+  recoveryRequired,
+
   /// Discovery, restore or upload failed in a way that can be retried. The
   /// remote state stays explicitly unknown; it is never treated as empty.
   retryable,
@@ -53,6 +63,7 @@ enum InitialSyncPhase {
     InitialSyncPhase.adoptionRequired => 'adoption_required',
     InitialSyncPhase.uploading => 'uploading',
     InitialSyncPhase.conflict => 'conflict',
+    InitialSyncPhase.recoveryRequired => 'recovery_required',
     InitialSyncPhase.retryable => 'retryable',
     InitialSyncPhase.complete => 'complete',
   };
@@ -73,6 +84,12 @@ enum InitialSyncPhase {
 
   /// The one condition that unlocks normal provisioned synchronization.
   bool get baselineComplete => this == InitialSyncPhase.complete;
+
+  /// True when this state needs an explicit user decision before any further
+  /// cloud work: nothing is merged, uploaded, or restored automatically.
+  bool get needsRecoveryDecision =>
+      this == InitialSyncPhase.conflict ||
+      this == InitialSyncPhase.recoveryRequired;
 }
 
 /// Durable first-sync state of the account database currently open.

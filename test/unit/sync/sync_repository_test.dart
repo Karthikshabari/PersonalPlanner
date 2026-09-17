@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/database/daos/sync_dao.dart';
 import 'package:personal_planner/core/models/category.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
@@ -576,6 +577,60 @@ void main() {
       await db.close();
     }
   });
+
+  test(
+    'an unreachable backend never parks queued work as a permanent failure',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway()
+        ..applyError = Exception(
+          "ClientException with SocketException: Failed host lookup: "
+          "'abcdefghijklmnopqrst.supabase.co'",
+        );
+      final now = DateTime.utc(2026, 1, 1, 9);
+      try {
+        await CategoryRepository(db).insertCategory(
+          Category(
+            id: 'backend-gone-category',
+            name: 'Work',
+            colorHex: '#4285F4',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+        final result = await SyncRepository.withGateway(
+          db,
+          gateway,
+          'account',
+        ).sync();
+
+        expect(result.pushFailure?.kind, SyncFailureKind.backendUnavailable);
+        expect(result.pushFailure?.keepsOperationQueued, isTrue);
+        final operation = (await db.select(db.syncLog).get()).single;
+        expect(operation.state, 'error');
+        expect(operation.lastError, cloudBackendUnreachableMessage);
+        // The entry stays eligible for the ordinary backoff retry: it is not
+        // parked on the permanent-retry sentinel, and no local row was touched.
+        expect(
+          (await db.syncDao.getRetryableOperations(
+            DateTime.now().toUtc().add(const Duration(minutes: 5)),
+          )).map((row) => row.operationId),
+          contains(operation.operationId),
+        );
+        expect(
+          operation.nextAttemptAt,
+          isNot(SyncDao.permanentRetryAt.toIso8601String()),
+        );
+        expect(
+          await db.categoryDao.getCategoryById('backend-gone-category'),
+          isNotNull,
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
 
   test(
     'malformed remote changes are quarantined and advance the cursor',

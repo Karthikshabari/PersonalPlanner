@@ -11,6 +11,7 @@ enum SyncEngineState {
   permanentFailure,
   authFailure,
   refreshPaused,
+  backendUnavailable,
   invalidData,
   initialSyncPending,
   notConfigured,
@@ -28,19 +29,43 @@ extension SyncEngineStateLabel on SyncEngineState {
     SyncEngineState.permanentFailure => 'Action required',
     SyncEngineState.authFailure => 'Sign-in required',
     SyncEngineState.refreshPaused => 'Waiting for session refresh',
+    SyncEngineState.backendUnavailable => 'Backend unavailable',
     SyncEngineState.invalidData => 'Invalid data',
     SyncEngineState.initialSyncPending => 'Cloud setup pending',
     SyncEngineState.notConfigured => 'Not configured',
   };
 }
 
-enum SyncFailureKind { retryable, permanent, authentication, invalidData }
+enum SyncFailureKind {
+  retryable,
+  permanent,
+  authentication,
+
+  /// The Planner's own cloud backend could not be reached *as this project*:
+  /// the project host does not resolve, or the project answers that it does not
+  /// exist. Distinct from a transient transport failure, and never a reason to
+  /// modify stored configuration, local data, or the local outbox.
+  backendUnavailable,
+  invalidData,
+}
 
 class SyncFailure {
   final SyncFailureKind kind;
   final String message;
 
   const SyncFailure(this.kind, this.message);
+
+  /// True when the failure describes the *environment* rather than the queued
+  /// payload: a transport problem, or the account's own backend being
+  /// unreachable.
+  ///
+  /// Such an operation must stay in the outbox with a backoff so it is retried
+  /// when the backend comes back. It must never be parked as a permanent
+  /// failure, which would ask the user to "repair" perfectly valid local data
+  /// and would misreport a temporary outage as a data problem.
+  bool get keepsOperationQueued =>
+      kind == SyncFailureKind.retryable ||
+      kind == SyncFailureKind.backendUnavailable;
 }
 
 class SyncCycleResult {

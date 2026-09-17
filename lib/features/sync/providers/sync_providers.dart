@@ -369,10 +369,16 @@ String provisionedPhaseDescription(InitialSyncPhase phase) => switch (phase) {
     'Uploading your local Planner data to the empty cloud account.',
   InitialSyncPhase.conflict =>
     'Local and cloud Planner data both exist. Nothing was overwritten.',
+  InitialSyncPhase.recoveryRequired =>
+    'A previous device started the first cloud synchronization and never '
+        'finished it, and the cloud already holds part of that data. Nothing '
+        'was merged or overwritten; this account needs your decision.',
   InitialSyncPhase.retryable =>
     'Cloud setup will retry. Local planning keeps working.',
   InitialSyncPhase.complete => 'Cloud synchronization is ready.',
 };
+
+
 
 class _SyncAccessTokenUnavailable implements Exception {
   const _SyncAccessTokenUnavailable();

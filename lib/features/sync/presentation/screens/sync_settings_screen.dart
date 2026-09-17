@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,11 +15,15 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../data/anonymous_data_adoption.dart';
 import '../../data/auth_repository.dart';
+import '../../data/connection_profile_store.dart';
 import '../../data/sync_repository.dart';
 import '../../domain/auth_session_controller.dart';
+import '../../domain/cloud_connection_lifecycle.dart';
 import '../../domain/initial_sync_models.dart';
 import '../../domain/runtime_backend.dart';
+import '../controllers/provisioning_ui_controller.dart';
 import '../../providers/runtime_backend_providers.dart';
+import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../../providers/sync_settings_provider.dart';
 import '../../domain/sync_models.dart';
@@ -128,7 +133,23 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         : null;
     final initialSyncAsync = ref.watch(syncInitialSyncProvider);
     final initialSync = initialSyncAsync.value;
-    final firstSyncSurface = <Widget>[
+    // The Cloud Sync preference is deliberately *not* part of the post-baseline
+    // surface: it belongs to the connection, applies in every account state
+    // (including before the Phase G baseline exists) and must stay reachable so
+    // automatic synchronization can always be switched off.
+    final syncPreferenceCard = Card(
+      child: SwitchListTile(
+        key: const ValueKey('sync-enable-toggle'),
+        title: const Text('Enable sync'),
+        subtitle: const Text(
+          'Disabling sync keeps the durable outbox and cursor intact.',
+        ),
+        value: enabled,
+        onChanged: (value) =>
+            ref.read(syncEnabledProvider.notifier).setEnabled(value),
+      ),
+    );
+    List<Widget> syncStateCards({required bool cloudSyncDisabled}) => <Widget>[
       if (conflicts.isNotEmpty)
         _ConflictCard(
           conflicts: conflicts,
@@ -146,24 +167,22 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         const SizedBox(height: 12),
       ],
       Card(
-        child: SwitchListTile(
-          title: const Text('Enable sync'),
-          subtitle: const Text(
-            'Disabling sync keeps the durable outbox and cursor intact.',
-          ),
-          value: enabled,
-          onChanged: (value) =>
-              ref.read(syncEnabledProvider.notifier).setEnabled(value),
-        ),
-      ),
-      const SizedBox(height: 12),
-      Card(
         child: ListTile(
-          leading: Icon(_statusIcon(status.state)),
-          title: Text(status.state.label),
+          leading: Icon(
+            cloudSyncDisabled
+                ? Icons.cloud_off_outlined
+                : _statusIcon(status.state),
+          ),
+          title: Text(
+            cloudSyncDisabled ? 'Cloud Sync is off' : status.state.label,
+          ),
           subtitle: Text(
             [
-              if (status.message != null) status.message!,
+              if (cloudSyncDisabled)
+                'Nothing is uploaded or downloaded. Pending changes stay '
+                    'queued in this account until sync is switched back on.'
+              else if (status.message != null)
+                status.message!,
               '${status.pendingOperations} pending operation(s)',
               if (status.lastSuccessfulSync != null)
                 'Last sync: ${status.lastSuccessfulSync!.toLocal()}'
@@ -208,6 +227,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             if (backend is LocalOnlyRuntimeBackend) ...[
               const CloudSetupCard(),
               const SizedBox(height: 12),
+              const _CloudProfileHealthCard(),
               const Card(
                 child: ListTile(
                   leading: Icon(Icons.cloud_off),
@@ -229,24 +249,28 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   session: session,
                   busy: _busy,
                   onSignOut: _signOut,
+                  onDisconnect: _disconnect,
                   initialSync: initialSync,
                 ),
+                const SizedBox(height: 12),
+                // Available before the baseline completes too, so a user can
+                // always stop automatic scheduling of the first upload.
+                syncPreferenceCard,
                 const SizedBox(height: 12),
                 if (initialSync != null && !initialSync.baselineComplete)
                   _ProvisionedFirstSyncCard(
                     status: initialSync,
                     busy: _busy,
+                    syncEnabled: enabled,
                     permanentOperations: permanentOperations,
                     onRetry: _retryInitialSync,
                     onAdopt: _adoptOfflineData,
                     onKeepSeparate: _keepOfflineDataSeparate,
                     onRepair: _repairPendingInitialSyncOperation,
+                    onDisconnect: _disconnect,
                   ),
-                // Normal sync controls exist only after the safe baseline.
-                // They stay visible when sync is switched off, so it can be
-                // switched back on.
                 if (initialSync?.baselineComplete ?? false)
-                  ...firstSyncSurface,
+                  ...syncStateCards(cloudSyncDisabled: !enabled),
               ],
             ] else if (session == null)
               _AuthForm()
@@ -305,7 +329,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                       : const SizedBox.shrink(),
                 ),
               const SizedBox(height: 12),
-              ...firstSyncSurface,
+              syncPreferenceCard,
+              const SizedBox(height: 12),
+              // The compile-time developer path keeps its historical status
+              // card: only the provisioned lifecycle distinguishes a
+              // deliberately switched-off Cloud Sync preference.
+              ...syncStateCards(cloudSyncDisabled: false),
               const SizedBox(height: 12),
               const Card(
                 child: ListTile(
@@ -481,6 +510,107 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       await ref.read(authRepositoryProvider)?.signOut();
     } catch (error) {
       if (mounted) setState(() => _error = safeAuthError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Stops every automatic synchronization path of the *currently open*
+  /// account before any connection or session state is cleared.
+  ///
+  /// Nothing new is created here: `exists` is checked first so a disconnect
+  /// cannot build (and start) a SyncEngine or first-sync coordinator that was
+  /// not already running. A cleared session and a disabled connection also make
+  /// the scope guards reject any straggling completion.
+  Future<void> _suspendSync() async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (container.exists(syncEngineProvider)) {
+      await container.read(syncEngineProvider)?.stop();
+    }
+    if (container.exists(initialSyncCoordinatorProvider)) {
+      await container.read(initialSyncCoordinatorProvider)?.dispose();
+    }
+  }
+
+  /// Explicit disconnect: stop sync, sign out of exactly this project, then
+  /// stop resolving the stored backend while remembering its endpoint.
+  ///
+  /// Local Planner databases, the durable outbox and the user's Supabase
+  /// project are never touched.
+  ///
+  /// Lifecycle correctness deliberately does not belong to this widget. The
+  /// sign-out performed by the lifecycle service publishes a null session,
+  /// which makes bootstrap switch the account scope to the anonymous database
+  /// and dispose *this screen's* provider container — so this `State` is
+  /// commonly unmounted before `disconnect` even returns. The runtime Auth
+  /// teardown is therefore driven by the bootstrap-owned reloader, captured
+  /// before the await and always awaited after a successful disconnect;
+  /// `mounted` only guards the visual updates below.
+  Future<void> _disconnect() async {
+    final backend = ref.read(runtimeBackendProvider);
+    if (backend is! ProvisionedRuntimeBackend) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(cloudDisconnectTitle),
+        content: const Text(cloudDisconnectConfirmation),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('cloud-disconnect-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Disconnect'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    // Captured before the await: adopting the changed backend disposes this
+    // screen's provider container, so nothing may be read from `ref` after
+    // that point. `reloader` is owned by the app bootstrap (it is not scoped to
+    // this container), so it stays valid for the whole transition even when
+    // this widget disappears.
+    final reloader = ref.read(runtimeBackendReloaderProvider);
+    final lifecycle = ref.read(cloudLifecycleServiceProvider);
+    final authRepository = ref.read(authRepositoryProvider);
+    try {
+      final result = await lifecycle.disconnect(
+        backend: backend,
+        stopSync: _suspendSync,
+        authRepository: authRepository,
+      );
+      if (!result.succeeded) {
+        if (mounted) {
+          setState(
+            () => _error = result.message ?? cloudDisconnectFailedMessage,
+          );
+        }
+        return;
+      }
+      // The connection is durably disabled. The runtime Auth client and the
+      // account database of this project must now be released so the local
+      // Planner becomes the active scope — regardless of whether this screen
+      // still exists. If this widget was unmounted by the sign-out above, the
+      // bootstrap still owns the reload, so the teardown is not skipped.
+      await reloader?.reload();
+      if (mounted) {
+        setState(
+          () => _message =
+              result.message ??
+              'Cloud backend disconnected. Local Planner data stays on this '
+                  'device.',
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = friendlyErrorMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -684,7 +814,79 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     SyncEngineState.refreshPaused => Icons.refresh,
     SyncEngineState.invalidData => Icons.data_object,
     SyncEngineState.initialSyncPending => Icons.cloud_sync_outlined,
+    SyncEngineState.backendUnavailable => Icons.cloud_off_outlined,
     _ => Icons.cloud_queue,
+  };
+}
+
+/// Explicit repair surface for an unusable stored backend profile.
+///
+/// An unreadable or incompatible profile deliberately resolves to local-only so
+/// the Planner keeps working, but the user must still be told that a cloud
+/// connection exists on this device and now needs attention. Nothing is
+/// deleted: starting cloud setup replaces the unusable document only when the
+/// user asks for it, and every local Planner record is untouched.
+class _CloudProfileHealthCard extends ConsumerWidget {
+  const _CloudProfileHealthCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final health = ref.watch(backendProfileHealthProvider);
+    if (!health.needsAttention) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        key: const ValueKey('cloud-profile-health'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.report_problem_outlined),
+                title: Text('Cloud connection needs attention'),
+                subtitle: Text(
+                  'A cloud backend is recorded on this device but its saved '
+                  'details could not be used, so Personal Planner is running '
+                  'locally. Your Planner data is intact.',
+                ),
+              ),
+              Text(_healthDetail(health)),
+              const SizedBox(height: 8),
+              if (ref.watch(provisioningApiProvider) != null)
+                OutlinedButton(
+                  key: const ValueKey('cloud-profile-health-repair'),
+                  onPressed: () => unawaited(
+                    ref.read(provisioningUiProvider.notifier).startSetup(),
+                  ),
+                  child: const Text('Start cloud setup again'),
+                )
+              else
+                const Text(
+                  'Cloud setup is unavailable in this build, so this connection '
+                  'cannot be repaired here yet.',
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _healthDetail(BackendProfileHealth health) => switch (health) {
+    BackendProfileHealth.ok => '',
+    BackendProfileHealth.unreadable =>
+      'The saved cloud connection could not be read. It was not changed.',
+    BackendProfileHealth.corrupt =>
+      'The saved cloud connection is not a valid document. It was not changed.',
+    BackendProfileHealth.unsupportedVersion =>
+      'The saved cloud connection was written by a different version of '
+          'Personal Planner.',
+    BackendProfileHealth.tooLarge =>
+      'The saved cloud connection is larger than this build accepts.',
+    BackendProfileHealth.writeFailed =>
+      'The cloud connection could not be saved on this device.',
   };
 }
 
@@ -1046,6 +1248,7 @@ class _CloudAccountCard extends StatelessWidget {
     required this.session,
     required this.busy,
     required this.onSignOut,
+    required this.onDisconnect,
     this.initialSync,
   });
 
@@ -1053,28 +1256,60 @@ class _CloudAccountCard extends StatelessWidget {
   final Session session;
   final bool busy;
   final Future<void> Function() onSignOut;
+  final Future<void> Function() onDisconnect;
   final InitialSyncStatus? initialSync;
 
   @override
   Widget build(BuildContext context) => Card(
-    child: ListTile(
-      leading: const Icon(Icons.cloud_done_outlined),
-      title: const Text('Cloud account connected'),
-      subtitle: Text(
-        [
-          session.user.email ?? 'Signed-in account',
-          if (initialSync == null || !initialSync!.baselineComplete)
-            'Your account is connected to your cloud backend. Cloud '
-                'synchronization for Planner data starts only after the first '
-                'synchronization is complete.'
-          else
-            'Your account is connected to its own cloud backend.',
-          if (kDebugMode) 'Supabase project: ${backend.projectRef}',
-        ].join('\n'),
-      ),
-      trailing: TextButton(
-        onPressed: busy ? null : onSignOut,
-        child: const Text('Log out'),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.cloud_done_outlined),
+            title: const Text('Cloud account connected'),
+            subtitle: Text(
+              [
+                session.user.email ?? 'Signed-in account',
+                if (initialSync == null || !initialSync!.baselineComplete)
+                  'Your account is connected to your cloud backend. Cloud '
+                      'synchronization for Planner data starts only after the '
+                      'first synchronization is complete.'
+                else
+                  'Your account is connected to its own cloud backend.',
+                if (kDebugMode) 'Supabase project: ${backend.projectRef}',
+              ].join('\n'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // These are deliberately different actions with different
+          // consequences, so they are never presented as one choice:
+          // signing out keeps the connection configured, disconnecting stops
+          // using this backend (and keeps every local record).
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              TextButton(
+                key: const ValueKey('cloud-sign-out-action'),
+                onPressed: busy ? null : onSignOut,
+                child: const Text('Log out'),
+              ),
+              OutlinedButton(
+                key: const ValueKey('cloud-disconnect-action'),
+                onPressed: busy ? null : onDisconnect,
+                child: const Text(cloudDisconnectTitle),
+              ),
+            ],
+          ),
+          Text(
+            '$cloudDisconnectExplanation\n'
+            'Logging out only ends the session on this device.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
       ),
     ),
   );
@@ -1089,20 +1324,24 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
   const _ProvisionedFirstSyncCard({
     required this.status,
     required this.busy,
+    required this.syncEnabled,
     required this.permanentOperations,
     required this.onRetry,
     required this.onAdopt,
     required this.onKeepSeparate,
     required this.onRepair,
+    required this.onDisconnect,
   });
 
   final InitialSyncStatus status;
   final bool busy;
+  final bool syncEnabled;
   final List<SyncLogRow> permanentOperations;
   final Future<void> Function() onRetry;
   final Future<void> Function() onAdopt;
   final Future<void> Function() onKeepSeparate;
   final ValueChanged<String> onRepair;
+  final Future<void> Function() onDisconnect;
 
   @override
   Widget build(BuildContext context) {
@@ -1125,7 +1364,14 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
               title: Text(_title(status.phase)),
               subtitle: Text(status.message ?? provisionedPhaseDescription(status.phase)),
             ),
-            if (waiting) const LinearProgressIndicator(),
+            if (waiting && syncEnabled) const LinearProgressIndicator(),
+            if (!syncEnabled) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Cloud Sync is switched off, so nothing is uploaded or '
+                'restored. Turn it back on to continue.',
+              ),
+            ],
             if (status.phase == InitialSyncPhase.adoptionRequired) ...[
               const SizedBox(height: 12),
               Wrap(
@@ -1140,6 +1386,31 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
                   OutlinedButton(
                     onPressed: busy ? null : onKeepSeparate,
                     child: const Text('Keep offline data separate'),
+                  ),
+                ],
+              ),
+            ],
+            if (status.phase == InitialSyncPhase.recoveryRequired) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Personal Planner will not merge or overwrite either copy. '
+                'Retrying asks the cloud account again; disconnecting stops '
+                'using this cloud backend and keeps every local record.',
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    key: const ValueKey('first-sync-recovery-retry'),
+                    onPressed: busy || !syncEnabled ? null : onRetry,
+                    child: const Text('Retry cloud setup'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('first-sync-recovery-disconnect'),
+                    onPressed: busy ? null : onDisconnect,
+                    child: const Text(cloudDisconnectTitle),
                   ),
                 ],
               ),
@@ -1170,11 +1441,12 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
                 ),
               ],
             ],
-            if (status.phase != InitialSyncPhase.adoptionRequired) ...[
+            if (status.phase != InitialSyncPhase.adoptionRequired &&
+                status.phase != InitialSyncPhase.recoveryRequired) ...[
               const SizedBox(height: 12),
               OutlinedButton(
                 key: const ValueKey('first-sync-retry'),
-                onPressed: busy || waiting ? null : onRetry,
+                onPressed: busy || waiting || !syncEnabled ? null : onRetry,
                 child: const Text('Retry cloud setup'),
               ),
             ],
@@ -1193,6 +1465,7 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
     InitialSyncPhase.adoptionRequired => 'Offline-only data found',
     InitialSyncPhase.uploading => 'Uploading your local Planner data',
     InitialSyncPhase.conflict => 'Local and cloud data both exist',
+    InitialSyncPhase.recoveryRequired => 'This cloud account needs recovery',
     InitialSyncPhase.retryable => 'Cloud setup needs a retry',
     InitialSyncPhase.complete => 'Cloud synchronization ready',
   };
@@ -1205,6 +1478,7 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
     InitialSyncPhase.remoteEmpty => Icons.cloud_queue,
     InitialSyncPhase.adoptionRequired => Icons.move_to_inbox_outlined,
     InitialSyncPhase.conflict => Icons.warning_amber,
+    InitialSyncPhase.recoveryRequired => Icons.health_and_safety_outlined,
     InitialSyncPhase.retryable => Icons.sync_problem,
     InitialSyncPhase.unresolved || InitialSyncPhase.complete =>
       Icons.cloud_queue,
@@ -1213,6 +1487,7 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
   static Color? _color(AppThemeTokens tokens, InitialSyncPhase phase) =>
       switch (phase) {
         InitialSyncPhase.conflict => tokens.pending,
+        InitialSyncPhase.recoveryRequired => tokens.error,
         InitialSyncPhase.retryable => tokens.error,
         _ => tokens.info,
       };

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/provisioning_config.dart';
+import '../data/cloud_lifecycle_service.dart';
 import '../data/connection_profile_store.dart';
 import '../data/provisioning_capability_store.dart';
 import '../data/provisioning_client.dart';
@@ -43,6 +44,18 @@ final provisioningCapabilityStoreProvider =
     Provider<ProvisioningCapabilityStore>(
       (ref) => SecureProvisioningCapabilityStore(),
     );
+
+/// Explicit disconnect/reconnect operations of the provisioned connection.
+///
+/// Uses the same durable stores as provisioning (the profile file and the
+/// secure provisioning-capability namespace) so a lifecycle action and a
+/// provisioning attempt can never disagree about which backend is stored.
+final cloudLifecycleServiceProvider = Provider<CloudLifecycleService>((ref) {
+  return CloudLifecycleService(
+    profileStore: ref.watch(connectionProfileStoreProvider),
+    capabilityStore: ref.watch(provisioningCapabilityStoreProvider),
+  );
+});
 
 /// Control-plane client, or null when this build has no provisioning base URL.
 ///
