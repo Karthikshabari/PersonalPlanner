@@ -28,7 +28,7 @@ function headers(){return new Headers({"cache-control":"no-store","content-type"
 async function cryptoKey(s:string){return crypto.subtle.importKey("raw",await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)),"AES-GCM",false,["encrypt","decrypt"]);} async function seal(v:string,s:string){const iv=crypto.getRandomValues(new Uint8Array(12));const e=await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:new TextEncoder().encode("pp-provisioning-v2")},await cryptoKey(s),new TextEncoder().encode(v));return btoa(String.fromCharCode(...iv,...new Uint8Array(e)));} async function unseal(v:string,s:string){try{const x=Uint8Array.from(atob(v),c=>c.charCodeAt(0));const p=await crypto.subtle.decrypt({name:"AES-GCM",iv:x.slice(0,12),additionalData:new TextEncoder().encode("pp-provisioning-v2")},await cryptoKey(s),x.slice(12));return new TextDecoder().decode(p);}catch{return null;}}
 
 /** Canonical Planner Auth callback URI. Mirrors AuthCallback.redirectUrl in lib/core/config/auth_callback.dart. */
-export const PLANNER_AUTH_CALLBACK_URI="com.personalplanner.personal_planner://login-callback";
+export const PLANNER_AUTH_CALLBACK_URI="com.personalplanner.personalplanner://login-callback";
 /** Upper bound on Auth redirect entries this Worker carries forward. */
 const MAX_AUTH_REDIRECT_ENTRIES=32;
 function validAuthRedirectUri(v:unknown):v is string{return typeof v==="string"&&v.length>0&&v.length<=256&&/^[a-z][a-z0-9+._-]*:\/\/[^,\s]+$/iu.test(v);}

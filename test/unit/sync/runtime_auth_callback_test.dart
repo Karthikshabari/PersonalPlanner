@@ -50,17 +50,23 @@ void main() {
     test('is pinned to one value', () {
       expect(
         AuthCallback.redirectUrl,
-        'com.personalplanner.personal_planner://login-callback',
+        'com.personalplanner.personalplanner://login-callback',
       );
-      expect(AuthCallback.scheme, 'com.personalplanner.personal_planner');
+      expect(AuthCallback.scheme, 'com.personalplanner.personalplanner');
       expect(AuthCallback.host, 'login-callback');
     });
 
     test('parses only the Planner callback destination', () {
-      // The registered scheme contains an underscore, which Dart's strict URI
-      // parser rejects. That is exactly why the callback is parsed from the raw
-      // delivered string.
-      expect(Uri.tryParse(AuthCallback.redirectUrl), isNull);
+      // The canonical URI must be RFC 3986-valid. The previous scheme contained
+      // an underscore, so Supabase Auth fell back to the Site URL and Dart's
+      // Uri parser rejected the delivered link.
+      final canonical = Uri.tryParse(AuthCallback.redirectUrl);
+      expect(canonical, isNotNull);
+      expect(canonical!.scheme, AuthCallback.scheme);
+      expect(canonical.host, AuthCallback.host);
+      expect(canonical.path.isEmpty, isTrue);
+      expect(canonical.query.isEmpty, isTrue);
+      expect(canonical.fragment.isEmpty, isTrue);
 
       expect(AuthCallback.tryParse(plannerCallback()), isNotNull);
       expect(AuthCallback.tryParse(AuthCallback.redirectUrl), isNotNull);
@@ -70,7 +76,13 @@ void main() {
       );
       expect(
         AuthCallback.tryParse(
-          'com.personalplanner.personal_planner://other-host',
+          'com.personalplanner.personalplanner://other-host',
+        ),
+        isNull,
+      );
+      expect(
+        AuthCallback.tryParse(
+          'com.personalplanner.personalplanner://login-callback-other',
         ),
         isNull,
       );

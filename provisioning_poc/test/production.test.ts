@@ -959,7 +959,7 @@ describe("migration history validation", () => {
 describe("project Auth redirect configuration", () => {
   it("pins the canonical Planner callback URI", () => {
     expect(PLANNER_AUTH_CALLBACK_URI).toBe(
-      "com.personalplanner.personal_planner://login-callback",
+      "com.personalplanner.personalplanner://login-callback",
     );
   });
 
