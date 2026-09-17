@@ -33,6 +33,15 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- The Planner handles its deep links itself: the confirmation
+                 callback is consumed by the app's own callback router and
+                 notifications navigate imperatively. Leaving the engine's
+                 deep-link bridge on would push the callback URI at GoRouter
+                 (and the empty-path URI would become "/", which has no
+                 route). app_links still receives the intent directly. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
