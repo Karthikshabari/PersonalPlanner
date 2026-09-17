@@ -82,6 +82,7 @@ class _FakeTransport implements ProvisioningTransport {
 
 class _MemoryCapabilityStore implements ProvisioningCapabilityStore {
   final Map<String, String> values = <String, String>{};
+  final List<String> deleted = <String>[];
   bool unavailable = false;
 
   @override
@@ -102,6 +103,7 @@ class _MemoryCapabilityStore implements ProvisioningCapabilityStore {
   @override
   Future<void> delete({required String transactionId}) async {
     _guard();
+    deleted.add(transactionId);
     values.remove(transactionId);
   }
 
@@ -271,7 +273,7 @@ void main() {
       },
     );
 
-    test('replaces an earlier attempt and drops its capability', () async {
+    test('replaces an earlier attempt and drops only its capability', () async {
       transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
       transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
 
@@ -283,6 +285,18 @@ void main() {
       expect(second.profile!.provisioningTransactionId, _transactionB);
       expect(capabilityStore.values.containsKey(_transactionA), isFalse);
       expect(capabilityStore.values[_transactionB], _capability);
+      // Only the abandoned attempt's capability is discarded, and only through
+      // the capability store abstraction.
+      expect(capabilityStore.deleted, <String>[_transactionA]);
+      // The durable profile now names the new transaction, never the old one.
+      expect(profileFile(), contains(_transactionB));
+      expect(profileFile(), isNot(contains(_transactionA)));
+      // Structurally, starting again only ever creates transactions: no remote
+      // project delete (or any other remote call) is issued.
+      expect(transport.keys, <String>[
+        'POST $_transactionsPath',
+        'POST $_transactionsPath',
+      ]);
     });
 
     test('writes nothing when secure storage is unavailable', () async {

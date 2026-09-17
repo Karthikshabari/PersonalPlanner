@@ -219,6 +219,16 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
               onPressed: busy ? null : controller.retry,
               child: const Text('Retry'),
             ),
+            // Explicit escape hatch: some retryable failures can never succeed
+            // on this transaction (for example a missing OAuth scope that was
+            // granted after this attempt was authorized). Start Again abandons
+            // this local attempt and asks the coordinator for a brand-new
+            // transaction; it never deletes a Supabase project.
+            TextButton(
+              key: const ValueKey('cloud-start-again'),
+              onPressed: busy ? null : controller.startAgain,
+              child: const Text('Start Again'),
+            ),
             if (state.authorizationUrlAvailable)
               TextButton(
                 key: const ValueKey('cloud-open-authorization'),
