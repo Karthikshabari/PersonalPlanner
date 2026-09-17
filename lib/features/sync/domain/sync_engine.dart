@@ -174,6 +174,11 @@ class SyncEngine with WidgetsBindingObserver {
     if (failure.kind == SyncFailureKind.invalidData) {
       return SyncEngineState.invalidData;
     }
+    if (failure.kind == SyncFailureKind.backendUnavailable) {
+      // Only reachable while the platform reports an available transport: a
+      // genuinely offline device reports `offline` instead.
+      return SyncEngineState.backendUnavailable;
+    }
     if (failure.kind == SyncFailureKind.permanent) {
       return SyncEngineState.permanentFailure;
     }

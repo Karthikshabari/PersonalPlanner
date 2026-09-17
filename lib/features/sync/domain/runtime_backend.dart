@@ -142,15 +142,22 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
   });
 
   /// Builds the runtime backend for [profile], or null when the profile is not
-  /// a READY user-owned backend.
+  /// a READY, currently connected user-owned backend.
   ///
   /// Only `state == ready` may reach runtime Auth: a partially provisioned
   /// profile never produces a client, so an unfinished setup cannot log in
   /// against half-configured infrastructure.
+  ///
+  /// An explicitly disconnected READY profile is a *remembered* backend, not an
+  /// active one, so it resolves to no runtime backend either. The Planner then
+  /// runs local-only while the user-owned project, and every local account
+  /// database, stays untouched.
   static ProvisionedRuntimeBackend? tryFromProfile(
     BackendConnectionProfile? profile,
   ) {
-    if (profile == null || profile.state != ProvisioningState.ready) {
+    if (profile == null ||
+        profile.state != ProvisioningState.ready ||
+        profile.connectionDisabled) {
       return null;
     }
     final projectRef = profile.projectRef;
@@ -237,7 +244,7 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
 ///    so a stored profile can never silently take over an explicitly
 ///    configured build. Phase D already gives the static path precedence and
 ///    Phase EF keeps that until static mode is retired separately;
-/// 2. otherwise a durable READY provisioned profile;
+/// 2. otherwise a durable READY provisioned profile that is still connected;
 /// 3. otherwise local-only.
 RuntimeBackend resolveRuntimeBackend({
   required bool legacyStaticConfigured,

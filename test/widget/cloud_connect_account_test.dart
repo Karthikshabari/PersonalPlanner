@@ -108,7 +108,9 @@ void main() {
       );
       expect(find.text('Log out'), findsOneWidget);
       expect(find.text('Sync now'), findsNothing);
-      expect(find.text('Enable sync'), findsNothing);
+      // Phase H: the Cloud Sync preference is reachable before the baseline
+      // exists, so automatic synchronization can always be switched off.
+      expect(find.text('Enable sync'), findsOneWidget);
       expect(find.text('Synced'), findsNothing);
       // The Phase G first-sync state is described honestly: the account is
       // connected, but cloud synchronization is not claimed to be active.
@@ -341,6 +343,11 @@ Future<_Harness> _pumpSyncSettings(
   final store = FakeSecureKeyValueStore();
   final client = FakeRuntimeAuthClient();
   final anonymous = AnonymousDatabaseFixture.create();
+  // These cases assert on cards stacked below the fold; a default test surface
+  // would leave them unbuilt because a ListView builds lazily.
+  tester.view.physicalSize = const Size(1200, 2600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
   final calls = <RemoteCall>[];
   // The Phase G first synchronization is scripted to fail discovery, so a
   // signed-in account is shown in its honest pre-baseline state.

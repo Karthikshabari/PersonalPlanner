@@ -5,7 +5,9 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
+import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
+import 'package:personal_planner/features/sync/domain/initial_sync_models.dart';
 import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
@@ -183,6 +185,102 @@ void main() {
         await repository.dispose();
         await client.close();
         await db.close();
+      }
+    },
+  );
+
+  test(
+    'a completed Phase G baseline opens normal sync without re-adopting',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final client = FakeRuntimeAuthClient();
+      final repository = AuthRepository(client);
+      final controller = AuthSessionController(repository);
+      final backend = testProvisionedBackend();
+      final scope = PlannerAccountScope.provisioned(
+        projectRef: projectRefA,
+        authUserId: authUserIdX,
+      );
+      final calls = <RemoteCall>[];
+      final anonymous = AnonymousDatabaseFixture.create();
+      final initial = FakeInitialSyncGateway(calls: calls);
+      final remote = FakeSyncRemoteGateway(calls: calls);
+      // This account finished its first synchronization on an earlier run.
+      await InitialSyncStateStore(db).write(
+        InitialSyncRecord(
+          phase: InitialSyncPhase.complete,
+          updatedAt: DateTime.now().toUtc(),
+        ),
+      );
+
+      client.emitSignedIn(testAuthSession(authUserId: authUserIdX));
+      await controller.start();
+
+      final container = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          openAccountScopeProvider.overrideWithValue(scope),
+          runtimeAuthStackProvider.overrideWith(
+            () => RuntimeAuthStackNotifier(
+              RuntimeAuthStack(
+                backend: backend,
+                repository: repository,
+                controller: controller,
+              ),
+            ),
+          ),
+          syncRemoteFactoryProvider.overrideWithValue(
+            FakeSyncRemoteFactory(
+              initialSyncGateway: initial,
+              syncGateway: remote,
+            ),
+          ),
+          anonymousDatabaseFactoryProvider.overrideWithValue(anonymous.open),
+        ],
+      );
+
+      try {
+        final initialState = container.listen(
+          syncInitialSyncProvider,
+          (previous, next) {},
+        );
+        final sessionState = container.listen(
+          authSessionStateProvider,
+          (previous, next) {},
+        );
+        for (var attempt = 0;
+            attempt < 100 &&
+                (!(initialState.read().value?.baselineComplete ?? false) ||
+                    sessionState.read().value?.session == null);
+            attempt += 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        final coordinator = container.read(initialSyncCoordinatorProvider);
+        await coordinator?.start();
+
+        expect(initialState.read().value?.baselineComplete, isTrue);
+        expect(
+          container.read(syncRepositoryProvider),
+          isNotNull,
+          reason: 'a completed baseline must unlock normal synchronization',
+        );
+        // Reconnecting to an established account never re-runs discovery,
+        // claiming, uploading or restoring.
+        expect(calls, isEmpty);
+        expect(initial.stateCalls, 0);
+        expect(initial.claimCalls, 0);
+        expect(initial.completeCalls, 0);
+        expect(remote.applyCalls, 0);
+        expect(remote.pullCalls, 0);
+        sessionState.close();
+        initialState.close();
+      } finally {
+        container.dispose();
+        await controller.dispose();
+        await repository.dispose();
+        await client.close();
+        await db.close();
+        anonymous.delete();
       }
     },
   );

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/supabase_config.dart';
 import '../data/auth_repository.dart';
+import '../data/connection_profile_store.dart';
 import '../data/runtime_auth_client.dart';
 import '../domain/auth_session_controller.dart';
 import '../domain/runtime_backend.dart';
@@ -107,3 +108,28 @@ abstract interface class RuntimeBackendReloader {
 final runtimeBackendReloaderProvider = Provider<RuntimeBackendReloader?>(
   (ref) => null,
 );
+
+/// Bootstrap-owned health of the durable backend profile.
+///
+/// Local-only is the correct fallback for an unreadable profile, but it must
+/// never be *indistinguishable* from "no cloud backend was ever configured":
+/// the user would see cloud setup as untouched while their stored connection
+/// silently stopped working. Bootstrap publishes the real outcome here so Sync
+/// settings can offer the explicit repair path.
+class BackendProfileHealthNotifier extends Notifier<BackendProfileHealth> {
+  BackendProfileHealthNotifier([
+    BackendProfileHealth initialState = BackendProfileHealth.ok,
+  ]) : _initialState = initialState;
+
+  final BackendProfileHealth _initialState;
+
+  @override
+  BackendProfileHealth build() => _initialState;
+
+  void replace(BackendProfileHealth next) => state = next;
+}
+
+final backendProfileHealthProvider =
+    NotifierProvider<BackendProfileHealthNotifier, BackendProfileHealth>(
+      BackendProfileHealthNotifier.new,
+    );

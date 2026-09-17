@@ -66,6 +66,13 @@ const cloudSetupReadyBody =
     'Your cloud backend is ready. Connect your Planner account below. Planner '
     'data synchronization starts after the first safe synchronization with '
     'your cloud account.';
+const cloudSetupDisconnectedBody =
+    'Cloud sync is disconnected on this device. Your Planner data stays on '
+    'this device and your Supabase project was not deleted. Reconnect to the '
+    'same project to use it again.';
+const cloudSetupReconnectedBody =
+    'Reconnected to your cloud backend. Sign in to the account that owns this '
+    'project to resume synchronization. Your Planner data was not changed.';
 const cloudSetupLeaveHint =
     'You can leave this screen. Setup continues safely and you can come back to '
     'it later.';
@@ -101,6 +108,10 @@ enum ProvisioningUiPhase {
 
   /// The client-safe backend profile is provisioned and persisted.
   ready,
+
+  /// A verified backend is stored, but the user explicitly disconnected it on
+  /// this device. It can be reconnected without provisioning anything new.
+  disconnected,
 }
 
 /// User-facing progress stages inside [ProvisioningUiPhase.provisioning].
@@ -138,6 +149,8 @@ class ProvisioningUiState {
   final String? message;
 
   bool get isReady => phase == ProvisioningUiPhase.ready;
+
+  bool get isDisconnected => phase == ProvisioningUiPhase.disconnected;
 
   bool get canStartSetup =>
       phase == ProvisioningUiPhase.localOnly ||
@@ -295,6 +308,48 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// "Start again": the C2 coordinator supersedes the previous attempt.
   Future<void> startAgain() => startSetup();
 
+  /// Reconnects the remembered user-owned backend of this device.
+  ///
+  /// Only the durable "disconnected" flag changes. The stored project ref, URL
+  /// and publishable key are reused, so nothing is provisioned and no Planner
+  /// data can be uploaded to a different project. The cloud-setup card reloads
+  /// the runtime Auth client when this reaches [ProvisioningUiPhase.ready].
+  Future<void> reconnect() => _run(() async {
+    final api = _api;
+    if (api == null) return;
+    final attempt = await api.loadAttempt();
+    final profile = attempt?.profile;
+    final projectRef = profile?.projectRef;
+    if (profile == null || projectRef == null) {
+      _update(
+        (current) => current.copyWith(
+          phase: ProvisioningUiPhase.restartRequired,
+          message: cloudSetupMissingCapabilityMessage,
+        ),
+      );
+      return;
+    }
+    final result = await ref
+        .read(cloudLifecycleServiceProvider)
+        .reconnect(projectRef: projectRef);
+    if (!result.succeeded) {
+      _update(
+        (current) => current.copyWith(
+          message: result.message ?? cloudSetupRetryableMessage,
+        ),
+      );
+      return;
+    }
+    _applyState(
+      ProvisioningUiState(
+        phase: ProvisioningUiPhase.ready,
+        transactionId: profile.provisioningTransactionId,
+        readyProfile: profile,
+        message: cloudSetupReconnectedBody,
+      ),
+    );
+  });
+
   /// Advances setup by exactly one authoritative step.
   Future<void> advance() => _run(() async {
     final api = _api;
@@ -382,6 +437,14 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
 
   ProvisioningUiState _stateForAttempt(ProvisioningAttempt attempt) {
     if (attempt.state == ProvisioningState.ready) {
+      if (attempt.profile.connectionDisabled) {
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.disconnected,
+          transactionId: attempt.transactionId,
+          readyProfile: attempt.profile,
+          message: cloudSetupDisconnectedBody,
+        );
+      }
       return ProvisioningUiState(
         phase: ProvisioningUiPhase.ready,
         transactionId: attempt.transactionId,

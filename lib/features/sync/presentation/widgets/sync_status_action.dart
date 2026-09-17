@@ -49,6 +49,7 @@ class SyncStatusAction extends ConsumerWidget {
     SyncEngineState.offline => Icons.cloud_off,
     SyncEngineState.refreshPaused => Icons.refresh,
     SyncEngineState.initialSyncPending => Icons.cloud_sync_outlined,
+    SyncEngineState.backendUnavailable => Icons.cloud_off_outlined,
     SyncEngineState.error ||
     SyncEngineState.conflict ||
     SyncEngineState.partialSuccess ||
@@ -66,6 +67,9 @@ class SyncStatusAction extends ConsumerWidget {
         SyncEngineState.offline ||
         SyncEngineState.notConfigured => tokens.offline,
         SyncEngineState.initialSyncPending => tokens.pending,
+        // Recoverable, but not a transient blip: the backend itself is the
+        // problem, so it is not presented as "offline".
+        SyncEngineState.backendUnavailable => tokens.error,
         SyncEngineState.refreshPaused => tokens.pending,
         SyncEngineState.error ||
         SyncEngineState.conflict ||

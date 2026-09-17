@@ -395,7 +395,9 @@ void main() {
       await b.coordinator.start();
 
       final bState = await stateOf(b);
-      expect(bState.phase, InitialSyncPhase.conflict);
+      // Phase H: this is its own durable, needs-attention lifecycle state, not
+      // the ordinary "both sides have data" conflict.
+      expect(bState.phase, InitialSyncPhase.recoveryRequired);
       expect(bState.detail?['message'], baselineRecoveryRequiredMessage);
       expect(server.claimCalls, 1, reason: 'B asks the server, not its own clock');
       expect(server.claimToken, 'claim-a', reason: 'no silent takeover');

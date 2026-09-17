@@ -82,6 +82,25 @@ class _RuntimeAuthBootstrap {
   }
 }
 
+/// Durable backend-profile read outcome, including why it could not be used.
+///
+/// [health] is `ok` for "no profile" and for a successfully read profile, so a
+/// caller can distinguish "never configured" from "configured but unreadable".
+@immutable
+class ProvisionedBackendRead {
+  const ProvisionedBackendRead({
+    this.backend,
+    this.health = BackendProfileHealth.ok,
+  });
+
+  /// The active provisioned backend, or null when there is none (including an
+  /// explicitly disconnected profile).
+  final ProvisionedRuntimeBackend? backend;
+
+  /// Health of the stored document itself.
+  final BackendProfileHealth health;
+}
+
 /// Test seams of the bootstrap lifecycle.
 ///
 /// Production always uses the defaults. Bootstrap tests substitute an in-memory
@@ -99,8 +118,12 @@ class PlannerBootstrapSeams {
   });
 
   /// Reads the durable connection profile and returns the READY provisioned
-  /// backend, or null when there is none.
-  final Future<ProvisionedRuntimeBackend?> Function() readProvisionedBackend;
+  /// backend, or null when there is none or it is explicitly disconnected.
+  ///
+  /// The failure travels with the result so bootstrap can publish a
+  /// recoverable needs-attention state instead of silently presenting an
+  /// unusable stored connection as "never configured".
+  final Future<ProvisionedBackendRead> Function() readProvisionedBackend;
 
   /// Installs the runtime Auth resources of [backend].
   final Future<void> Function(ProvisionedRuntimeBackend backend)
@@ -135,9 +158,11 @@ class PlannerBootstrapSeams {
 @visibleForTesting
 Widget plannerBootstrap({
   Object? initialBootstrapError,
+  BackendProfileHealth initialProfileHealth = BackendProfileHealth.ok,
   PlannerBootstrapSeams seams = const PlannerBootstrapSeams(),
 }) => _PlannerBootstrap(
   initialBootstrapError: initialBootstrapError,
+  initialProfileHealth: initialProfileHealth,
   seams: seams,
 );
 
@@ -202,15 +227,21 @@ Future<void> main() async {
     message: 'This screen could not be displayed. Please retry.',
   );
   Object? bootstrapError;
+  var profileHealth = BackendProfileHealth.ok;
   try {
-    await _initializeRuntimeAuth();
+    profileHealth = await _initializeRuntimeAuth();
   } catch (error, stack) {
     bootstrapError = error;
     FlutterError.reportError(
       FlutterErrorDetails(exception: error, stack: stack),
     );
   }
-  runApp(plannerBootstrap(initialBootstrapError: bootstrapError));
+  runApp(
+    plannerBootstrap(
+      initialBootstrapError: bootstrapError,
+      initialProfileHealth: profileHealth,
+    ),
+  );
 }
 
 /// Drift and other async libraries can propagate package:stack_trace objects.
@@ -226,21 +257,23 @@ StackTrace _demangleStackTrace(StackTrace stack) {
 /// Only local reads happen here. No network call may block startup, so an
 /// unreachable, unfinished, or unreadable cloud backend simply leaves the
 /// Planner local-only.
-Future<void> _initializeRuntimeAuth([
+Future<BackendProfileHealth> _initializeRuntimeAuth([
   PlannerBootstrapSeams seams = const PlannerBootstrapSeams(),
 ]) async {
   if (SupabaseConfig.isConfigured) {
     // The compile-time developer configuration keeps precedence, so a stored
     // profile can never take over an explicitly configured build.
     await _initializeSupabaseIfConfigured();
-    return;
+    return BackendProfileHealth.ok;
   }
-  final backend = await seams.readProvisionedBackend();
+  final read = await seams.readProvisionedBackend();
+  final backend = read.backend;
   if (backend == null) {
     await _disposeRuntimeAuthBootstrap();
-    return;
+    return read.health;
   }
   await seams.installProvisionedRuntimeAuth(backend);
+  return read.health;
 }
 
 /// Reads the durable connection profile and returns the provisioned backend.
@@ -248,16 +281,22 @@ Future<void> _initializeRuntimeAuth([
 /// Returns null when there is no profile, when the profile is not READY, or
 /// when it cannot be trusted, so a partial or corrupt profile never produces a
 /// runtime client.
-Future<ProvisionedRuntimeBackend?> _readProvisionedBackend() async {
+Future<ProvisionedBackendRead> _readProvisionedBackend() async {
   final BackendConnectionProfile? profile;
   try {
     profile = await ConnectionProfileStore().read();
-  } on ConnectionProfileStoreException {
+  } on ConnectionProfileStoreException catch (error) {
     // An unreadable profile is not a startup blocker: the Planner keeps working
-    // locally and the provisioning card stays the repair path.
-    return null;
+    // locally and the provisioning card stays the repair path. The failure is
+    // still reported so the user is told their stored connection needs
+    // attention rather than being shown a never-configured Planner.
+    return ProvisionedBackendRead(
+      health: BackendProfileHealth.fromFailure(error.failure),
+    );
   }
-  return ProvisionedRuntimeBackend.tryFromProfile(profile);
+  return ProvisionedBackendRead(
+    backend: ProvisionedRuntimeBackend.tryFromProfile(profile),
+  );
 }
 
 /// Builds the runtime Auth connection for a provisioned user-owned project.
@@ -376,10 +415,12 @@ Future<void> _disposeRuntimeAuthBootstrap() async {
 
 class _PlannerBootstrap extends StatefulWidget {
   final Object? initialBootstrapError;
+  final BackendProfileHealth initialProfileHealth;
   final PlannerBootstrapSeams seams;
 
   const _PlannerBootstrap({
     this.initialBootstrapError,
+    this.initialProfileHealth = BackendProfileHealth.ok,
     this.seams = const PlannerBootstrapSeams(),
   });
 
@@ -411,6 +452,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   Future<void>? _databaseSwitch;
   Object? _error;
   Object? _bootstrapError;
+  late BackendProfileHealth _profileHealth;
   bool _switching = true;
 
   @override
@@ -418,6 +460,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _bootstrapError = widget.initialBootstrapError;
+    _profileHealth = widget.initialProfileHealth;
     if (_bootstrapError == null) _startDatabaseScope();
   }
 
@@ -539,7 +582,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       unawaited(_authSubscription?.cancel());
       _authSubscription = null;
       await _disposeRuntimeAuthBootstrap();
-      await _initializeRuntimeAuth(widget.seams);
+      _profileHealth = await _initializeRuntimeAuth(widget.seams);
       if (!mounted) return;
       _startDatabaseScope();
     } catch (error, stack) {
@@ -574,8 +617,32 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   Future<void> _reloadRuntimeBackend() async {
     if (SupabaseConfig.isConfigured) return;
     try {
-      final backend = await widget.seams.readProvisionedBackend();
-      if (backend == null || backend == _runtimeAuthBootstrap?.backend) return;
+      final read = await widget.seams.readProvisionedBackend();
+      if (!mounted) return;
+      _profileHealth = read.health;
+      _publishProfileHealth();
+      final backend = read.backend;
+      if (backend == null) {
+        // The stored connection no longer resolves: the user disconnected it,
+        // or the durable document became unusable. Leaving the previous runtime
+        // Auth stack installed would keep talking to a backend this
+        // installation must no longer use, so the app falls back to the local
+        // scope instead. Local databases and the outbox are untouched.
+        if (_runtimeAuthBootstrap?.backend is ProvisionedRuntimeBackend) {
+          // Stop the old stack from driving account scope before it is
+          // replaced; the subscription callback also verifies stack identity.
+          unawaited(_authSubscription?.cancel());
+          _authSubscription = null;
+          await _disposeRuntimeAuthBootstrap();
+          if (!mounted) return;
+          _container
+              ?.read(runtimeAuthStackProvider.notifier)
+              .replace(const RuntimeAuthStack.localOnly());
+          _startDatabaseScope();
+        }
+        return;
+      }
+      if (backend == _runtimeAuthBootstrap?.backend) return;
       // Stop the previous runtime Auth generation from driving account scope
       // *before* the replacement becomes visible, so an event queued by a
       // replaced client can never be resolved with the new project's identity.
@@ -604,9 +671,20 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       FlutterError.reportError(
         FlutterErrorDetails(exception: error, stack: stack),
       );
+      _profileHealth = BackendProfileHealth.unreadable;
+      _publishProfileHealth();
       // Whatever stack is still installed stays authoritative.
       if (mounted) _startDatabaseScope();
     }
+  }
+
+  /// Republishes the durable profile health to the live provider graph.
+  void _publishProfileHealth() {
+    final container = _container;
+    if (container == null) return;
+    container
+        .read(backendProfileHealthProvider.notifier)
+        .replace(_profileHealth);
   }
 
   Future<bool> _switchDatabase(_AccountDatabaseTarget target) async {
@@ -661,6 +739,9 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
           ),
           runtimeBackendReloaderProvider.overrideWithValue(
             _BootstrapRuntimeReloader(this),
+          ),
+          backendProfileHealthProvider.overrideWith(
+            () => BackendProfileHealthNotifier(_profileHealth),
           ),
         ],
       );

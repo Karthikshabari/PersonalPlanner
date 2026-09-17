@@ -147,7 +147,7 @@ class SyncRepository {
         final failure = classifySyncFailure(error);
         firstFailure ??= failure;
         final failureMessage = failure.message;
-        if (failure.kind == SyncFailureKind.retryable) {
+        if (failure.keepsOperationQueued) {
           final retryAt = DateTime.now().toUtc().add(
             _backoff(operation.attemptCount + 1),
           );
@@ -1790,6 +1790,19 @@ String safeSyncError(Object error) {
     return 'Invalid sync data: ${error.message}';
   }
   final message = error.toString().toLowerCase();
+  // An expired/absent session is its own recoverable state and must never be
+  // presented as a backend that disappeared.
+  if (message.contains('401') ||
+      message.contains('403') ||
+      message.contains('jwt') ||
+      message.contains('unauthorized') ||
+      message.contains('invalid login') ||
+      message.contains('session')) {
+    return 'Authentication expired; sign in again.';
+  }
+  if (looksLikeUnavailableBackend(message)) {
+    return cloudBackendUnreachableMessage;
+  }
   if (message.contains('socket') ||
       message.contains('timeout') ||
       message.contains('network') ||
@@ -1797,12 +1810,42 @@ String safeSyncError(Object error) {
       message.contains('dns')) {
     return 'Network unavailable; retry scheduled.';
   }
-  if (message.contains('401') ||
-      message.contains('jwt') ||
-      message.contains('auth')) {
-    return 'Authentication expired; sign in again.';
-  }
   return 'Sync request failed; retry scheduled.';
+}
+
+/// Copy for a backend that is reachable in principle but is not answering as
+/// *this* Supabase project. Deliberately never suggests deleting anything: the
+/// local Planner data, the queued outbox and the stored connection all stay.
+const cloudBackendUnreachableMessage =
+    'Your cloud backend could not be reached. Local Planner data and pending '
+    'changes are safe on this device.';
+
+/// True when a failure is evidence that the Provisioned Supabase project
+/// itself is gone, rather than a transient transport problem.
+///
+/// Deliberately narrow: only a project host that cannot be resolved, or an
+/// explicit "this project does not exist" answer, qualify. Generic timeouts,
+/// socket resets and HTTP 5xx responses stay retryable, so a flaky network can
+/// never be presented as a deleted backend.
+bool looksLikeUnavailableBackend(String message) {
+  const hostGone = <String>[
+    'failed host lookup',
+    'name or service not known',
+    'nodename nor servname',
+    'no address associated with hostname',
+    'temporary failure in name resolution',
+  ];
+  if (hostGone.any(message.contains)) return true;
+  if (message.contains('project not found') ||
+      message.contains('project does not exist') ||
+      message.contains('project is not available') ||
+      message.contains('unknown project')) {
+    return true;
+  }
+  // A PostgREST 404 carries the project host as its authority. Bare "not found"
+  // is deliberately not enough: a missing RPC is an un-migrated backend, which
+  // is a different, explicit state.
+  return message.contains('404') && message.contains('supabase');
 }
 
 SyncFailure classifySyncFailure(Object error) {
@@ -1828,6 +1871,9 @@ SyncFailure classifySyncFailure(Object error) {
       initialBaselineFencedMessage,
     );
   }
+  // Authentication is checked before backend availability: an expired session
+  // is recoverable by signing in again, and must never look like a backend that
+  // disappeared. (Project-gone evidence never carries these markers.)
   if (message.contains('401') ||
       message.contains('403') ||
       message.contains('jwt') ||
@@ -1836,6 +1882,15 @@ SyncFailure classifySyncFailure(Object error) {
     return const SyncFailure(
       SyncFailureKind.authentication,
       'Authentication expired; sign in again.',
+    );
+  }
+  // Distinct from the generic retry below: an unreachable project is a
+  // needs-attention state that keeps the outbox and stored connection intact,
+  // rather than a transient transport failure the engine silently retries.
+  if (looksLikeUnavailableBackend(message)) {
+    return const SyncFailure(
+      SyncFailureKind.backendUnavailable,
+      cloudBackendUnreachableMessage,
     );
   }
   if (message.contains('invalid') ||
