@@ -76,7 +76,7 @@ export class ProvisioningTransaction extends DurableObject<Env>{
 
 async function json(r:Request){const n=Number(r.headers.get("content-length")??"0");if(!Number.isFinite(n)||n>MAX_BODY)return null;const x=await r.text();if(new TextEncoder().encode(x).byteLength>MAX_BODY)return null;try{const v:unknown=JSON.parse(x);return record(v)?v:null;}catch{return null;}} function cap(r:Request){const a=r.headers.get("authorization");return a?.startsWith("Provisioning ")?a.slice(13):null;} function tx(env:Env,id:string){return env.PROVISIONING_TRANSACTION.get(env.PROVISIONING_TRANSACTION.idFromName(`tx:${id}`));} function projectRef(v:unknown){return record(v)&&(typeof v.ref==="string"?v.ref:typeof v.id==="string"?v.id:null)||null;} function management(token:string,path:string,init:RequestInit={}){const h=new Headers(init.headers);h.set("authorization",`Bearer ${token}`);return fetch(`${API}${path}`,{...init,headers:h,signal:AbortSignal.timeout(20_000)});}
 type Recon={kind:"one";ref:string}|{kind:"zero"}|{kind:"ambiguous"}|{kind:"indeterminate"}; async function reconcile(c:{organizationSlug?:string;requestedProjectName?:string},token:string):Promise<Recon>{if(!c.organizationSlug||!c.requestedProjectName)return{kind:"ambiguous"};try{const q=new URLSearchParams({limit:"100",search:c.requestedProjectName}),r=await management(token,`/v1/organizations/${encodeURIComponent(c.organizationSlug)}/projects?${q}`),p:unknown=r.ok?await r.json():null;if(!record(p)||!Array.isArray(p.projects))return{kind:"indeterminate"};const m=p.projects.filter(x=>record(x)&&x.name===c.requestedProjectName).map(projectRef).filter((x):x is string=>x!==null);return m.length===0?{kind:"zero"}:m.length===1?{kind:"one",ref:m[0]!}:{kind:"ambiguous"};}catch{return{kind:"indeterminate"};}}
-async function sha(v:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v));return Array.from(new Uint8Array(d),b=>b.toString(16).padStart(2,"0")).join("");} async function validBundle(){const h=await Promise.all(CANONICAL_MIGRATIONS.map(m=>sha(m.query)));return h.every((v,i)=>v===CANONICAL_MIGRATIONS[i]?.sha256);} export function reconcileMigrations(e:readonly Migration[],h:MigrationHistory):{next:number;error?:"migration_history_mismatch";unusable?:true}{const identities:HistoryIdentity[]=[];for(const raw of h){const identity=usableHistoryIdentity(raw);if(identity===null)return{next:0,unusable:true};identities.push(identity);}const index=new Map<string,number>();e.forEach((m,i)=>index.set(m.name,i));const seen=new Set<number>();let next=0;for(const identity of identities){const resolved=canonicalIdentity(identity,e,index);if(resolved.kind==="contradictory")return{next:0,error:"migration_history_mismatch"};if(resolved.kind==="foreign")continue;if(seen.has(resolved.index)||resolved.index!==next)return{next:0,error:"migration_history_mismatch"};seen.add(resolved.index);next=resolved.index+1;}return{next};}
+async function sha(v:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v));return Array.from(new Uint8Array(d),b=>b.toString(16).padStart(2,"0")).join("");} async function validBundle(){const h=await Promise.all(CANONICAL_MIGRATIONS.map(m=>sha(m.query)));return h.every((v,i)=>v===CANONICAL_MIGRATIONS[i]?.sha256);} export function reconcileMigrations(e:readonly Migration[],h:MigrationHistory):{next:number;error?:"migration_history_mismatch";unusable?:true}{const identities:HistoryIdentity[]=[];for(const raw of h){const identity=usableHistoryIdentity(raw);if(identity===null)return{next:0,unusable:true};identities.push(identity);}const index=new Map<string,number>();e.forEach((m,i)=>index.set(m.name,i));const seen=new Set<number>();let next=0;for(const identity of identities){const resolved=canonicalIdentity(identity,index);if(resolved.kind==="contradictory")return{next:0,error:"migration_history_mismatch"};if(resolved.kind==="foreign")continue;if(seen.has(resolved.index)||resolved.index!==next)return{next:0,error:"migration_history_mismatch"};seen.add(resolved.index);next=resolved.index+1;}return{next};}
 /** Identity fields of one migration-history row, after runtime validation. */
 type HistoryIdentity={name:string;version:string|null};
 /**
@@ -88,20 +88,20 @@ type HistoryIdentity={name:string;version:string|null};
  * `version: null` is treated as "no version".
  */
 function usableHistoryIdentity(value:unknown):HistoryIdentity|null{if(!record(value))return null;const name=value.name;if(typeof name!=="string"||name.length===0)return null;const version=value.version;if(version===undefined||version===null)return{name,version:null};if(typeof version!=="string"||version.length===0)return null;return{name,version};}
-/** Canonical migrations are named `<timestamp>_<slug>`, so their version is the timestamp prefix. */
-function canonicalVersion(migration:Migration):string{return migration.name.split("_")[0]??"";}
 type CanonicalIdentity={kind:"canonical";index:number}|{kind:"foreign"}|{kind:"contradictory"};
 /**
  * Resolves one validated row to a canonical migration, a foreign row, or
  * contradictory evidence.
  *
- * Both supported representations are accepted, but they must agree: a full
- * canonical name may only carry a version equal to that migration's own timestamp,
- * and two interpretations that point at different canonical migrations are
- * rejected instead of being resolved by precedence. Rows that are not ours
- * (platform or external migrations) stay allowed and are ignored.
+ * An exact canonical full `name` identifies that migration on its own. Real
+ * hosted Supabase history stores a separate `version` that is not necessarily
+ * that migration's timestamp prefix, so a full name is never rejected for a
+ * differing `version`. The alternate `<version>_<short-name>` representation is
+ * still supported. Evidence is contradictory only when both interpretations
+ * resolve to *different* canonical migrations. Rows that are not ours (platform
+ * or external migrations) stay allowed and are ignored.
  */
-function canonicalIdentity(row:HistoryIdentity,canonical:readonly Migration[],index:Map<string,number>):CanonicalIdentity{const direct=index.get(row.name),paired=row.version===null?undefined:index.get(`${row.version}_${row.name}`);if(direct!==undefined&&row.version!==null&&canonicalVersion(canonical[direct]!)!==row.version)return{kind:"contradictory"};if(direct!==undefined&&paired!==undefined&&direct!==paired)return{kind:"contradictory"};if(direct!==undefined)return{kind:"canonical",index:direct};if(paired!==undefined)return{kind:"canonical",index:paired};return{kind:"foreign"};}
+function canonicalIdentity(row:HistoryIdentity,index:Map<string,number>):CanonicalIdentity{const direct=index.get(row.name),paired=row.version===null?undefined:index.get(`${row.version}_${row.name}`);if(direct!==undefined&&paired!==undefined&&direct!==paired)return{kind:"contradictory"};if(direct!==undefined)return{kind:"canonical",index:direct};if(paired!==undefined)return{kind:"canonical",index:paired};return{kind:"foreign"};}
 /** Sanitized history shapes for diagnostics: field types and lengths only, never values. */
 function historyShape(h:MigrationHistory):(string|number)[][]{return h.slice(0,8).map(x=>{const name=x?.name,version=x?.version;return[typeof name,typeof version,typeof name==="string"?name.length:0,typeof version==="string"?version.length:0];});}
 /** Authoritative remote history contradicts canonical Planner order or identity. */

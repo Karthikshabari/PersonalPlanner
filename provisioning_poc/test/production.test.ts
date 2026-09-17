@@ -824,11 +824,19 @@ describe("migration history validation", () => {
   });
 
   describe("MH-02 contradictory canonical identity", () => {
-    it("rejects a canonical full name whose version contradicts that migration", async () => {
-      const api = migrationApi([{ name: canonicalOne, version: "20260910000000" }]);
+    it("accepts the real hosted shape: exact canonical name with an unrelated version", async () => {
+      // Confirmed on a real hosted project after applying canonical migration 1:
+      //   name    = 20260827000000_sync_v1
+      //   version = 20260917132417
+      // The separate `version` column is not that migration's timestamp prefix,
+      // so the exact canonical name alone must identify the migration.
+      const api = advancingMigrationApi([
+        { name: canonicalOne, version: "20260917132417" },
+      ]);
 
-      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
-      expect(api.posts).toEqual([]);
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
+      expect(api.posts).toHaveLength(5);
+      expect(api.posts[0]).toBe(canonicalTwo);
     });
 
     it("accepts a canonical full name whose version agrees with it", async () => {
@@ -848,9 +856,12 @@ describe("migration history validation", () => {
       expect(reconcileMigrations(canonical, [{ name: canonicalOne }])).toEqual({ next: 1 });
       expect(reconcileMigrations(canonical, [{ name: "sync_v1", version: "20260827000000" }])).toEqual({ next: 1 });
       expect(reconcileMigrations(canonical, [{ name: canonicalOne, version: "20260827000000" }])).toEqual({ next: 1 });
+      // The hosted shape: the exact full name wins even though `version` is a
+      // different value entirely.
+      expect(reconcileMigrations(canonical, [{ name: canonicalOne, version: "20260917132417" }])).toEqual({ next: 1 });
     });
 
-    it("rejects a row whose supported interpretations point at different canonical migrations", async () => {
+    it("rejects a row whose supported interpretations point at different canonical migrations", () => {
       // Synthetic bundle: the full name identifies one migration while the
       // version-plus-name pair would identify a different one.
       const canonical = [
@@ -858,16 +869,24 @@ describe("migration history validation", () => {
         { name: "2_1_alpha", query: "", sha256: "b" },
       ];
       expect(reconcileMigrations(canonical, [{ name: "1_alpha", version: "2" }])).toEqual({ next: 0, error: "migration_history_mismatch" });
-
-      const api = migrationApi([{ name: canonicalOne, version: "20260829000000" }]);
-      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
-      expect(api.posts).toEqual([]);
     });
   });
 
   describe("canonical prefix and duplicate regression", () => {
     it("rejects canonical 1 followed by canonical 3 because migration 2 is missing", async () => {
       const api = migrationApi([{ name: canonicalOne }, { name: canonicalThree }]);
+
+      expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
+      expect(api.posts).toEqual([]);
+    });
+
+    it("still rejects an out-of-order canonical row that carries an unrelated version", async () => {
+      // Relaxing the version-mismatch rule must not weaken prefix ordering:
+      // canonical 3 is still not allowed to follow canonical 1 directly.
+      const api = migrationApi([
+        { name: canonicalOne, version: "20260917132417" },
+        { name: canonicalThree, version: "20260917132417" },
+      ]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "failed", code: "migration_history_mismatch" });
       expect(api.posts).toEqual([]);
@@ -895,6 +914,17 @@ describe("migration history validation", () => {
           { name: "0_foreign" },
           { name: "2_two" },
           { name: "0_foreign" },
+          { name: "2_two" },
+        ]),
+      ).toEqual({ next: 0, error: "migration_history_mismatch" });
+
+      // A repeat is still a duplicate when the repeated row carries an
+      // unrelated version.
+      expect(
+        reconcileMigrations(canonical, [
+          { name: "1_one", version: "20260917132417" },
+          { name: "0_foreign" },
+          { name: "1_one" },
           { name: "2_two" },
         ]),
       ).toEqual({ next: 0, error: "migration_history_mismatch" });
