@@ -14,12 +14,14 @@ import 'package:flutter/foundation.dart' show immutable;
 abstract final class AuthCallback {
   /// Custom URL scheme owned by the Planner.
   ///
-  /// Note: this scheme contains an underscore, which RFC 3986 does not allow in
-  /// a scheme. It is preserved because Android already registers it. Dart's
-  /// `Uri` parser rejects such a scheme and the platform deep-link plugin's
-  /// `Uri` stream silently drops the callback, so the provisioned handler
-  /// consumes the raw delivered link through [tryParse] instead.
-  static const String scheme = 'com.personalplanner.personal_planner';
+  /// RFC 3986-valid: schemes may contain letters, digits, `+`, `-`, and `.`,
+  /// but not `_`. The previous value contained an underscore, which made the
+  /// callback unusable: Supabase Auth rejected the redirect and fell back to
+  /// the project Site URL, and Dart's `Uri` parser dropped the delivered link.
+  ///
+  /// This is the deep-link scheme only. The Android applicationId/package and
+  /// the Linux GApplication id are separate identifiers and are unchanged.
+  static const String scheme = 'com.personalplanner.personalplanner';
 
   /// Host part of the callback URI (`...://login-callback`).
   static const String host = 'login-callback';
@@ -36,6 +38,12 @@ abstract final class AuthCallback {
 
   /// Parses a raw delivered link, or returns null when it is not a Planner
   /// callback.
+  ///
+  /// Raw-string routing is kept deliberately: the platform delivers the link
+  /// as a string, and matching the exact destination here keeps rejection of
+  /// wrong hosts, wrong paths, and malformed links explicit. The scheme is now
+  /// RFC-valid, so URI-based consumers (for example `supabase_flutter`'s own
+  /// observer on the legacy static path) receive the same callback.
   ///
   /// Only the authorization code and the Auth server's own error fields are
   /// read. Implicit-flow tokens in the link are ignored on purpose: the
