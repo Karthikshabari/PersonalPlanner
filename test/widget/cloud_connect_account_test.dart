@@ -7,6 +7,8 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/sync/data/anonymous_data_adoption.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
+import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
+import 'package:personal_planner/features/sync/domain/initial_sync_models.dart';
 import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
@@ -17,8 +19,10 @@ import 'package:personal_planner/features/sync/presentation/screens/sync_setting
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_providers.dart';
+import 'package:personal_planner/features/sync/providers/sync_settings_provider.dart';
 
 import '../helpers/provisioning_fakes.dart';
+import '../helpers/initial_sync_fakes.dart';
 import '../helpers/runtime_auth_fakes.dart';
 import '../helpers/sqlite_setup.dart';
 import '../helpers/test_container.dart' show settle;
@@ -75,12 +79,30 @@ void main() {
         signedIn: true,
       );
 
+      // The Phase G coordinator itself is covered by test/unit/sync; here the
+      // durable state of an account whose cloud state could not be resolved is
+      // written directly so the widget tree renders that state.
+      await tester.runAsync(() async {
+        await InitialSyncStateStore(harness.database).write(
+          InitialSyncRecord(
+            phase: InitialSyncPhase.retryable,
+            detail: const <String, dynamic>{
+              'message':
+                  'Network unavailable; cloud setup will retry. Local planning '
+                  'keeps working.',
+            },
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        );
+      });
+      await settle(tester);
+
       expect(find.text('Cloud account connected'), findsOneWidget);
       expect(find.textContaining('person@example.com'), findsOneWidget);
       expect(
         find.textContaining(
-          'Your account is connected to your cloud backend. Planner data '
-          'synchronization is not enabled yet.',
+          'Cloud synchronization for Planner data starts only after the first '
+          'synchronization is complete.',
         ),
         findsOneWidget,
       );
@@ -88,8 +110,60 @@ void main() {
       expect(find.text('Sync now'), findsNothing);
       expect(find.text('Enable sync'), findsNothing);
       expect(find.text('Synced'), findsNothing);
-      // The status entry point reports "Not configured", never a synced claim.
-      expect(find.byTooltip('Not configured'), findsOneWidget);
+      // The Phase G first-sync state is described honestly: the account is
+      // connected, but cloud synchronization is not claimed to be active.
+      expect(find.byKey(const ValueKey('provisioned-first-sync')), findsOneWidget);
+      expect(find.text('Cloud setup needs a retry'), findsOneWidget);
+      expect(find.text('Retry cloud setup'), findsOneWidget);
+      expect(find.byTooltip('Cloud setup pending'), findsOneWidget);
+
+      await _teardown(tester, harness);
+    },
+  );
+
+  testWidgets(
+    'a completed first synchronization shows the normal sync controls',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      final harness = await _pumpSyncSettings(
+        tester,
+        backend: testProvisionedBackend(),
+        api: api,
+        signedIn: true,
+      );
+
+      await tester.runAsync(() async {
+        await InitialSyncStateStore(harness.database).write(
+          InitialSyncRecord(
+            phase: InitialSyncPhase.complete,
+            detail: const <String, dynamic>{
+              'message': 'Cloud Planner data restored.',
+            },
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        );
+      });
+      await settle(tester);
+
+      expect(find.byKey(const ValueKey('provisioned-first-sync')), findsNothing);
+      expect(find.text('Enable sync'), findsOneWidget);
+      expect(find.text('Sync now'), findsOneWidget);
+
+      // Switching sync off keeps the controls visible so they can be switched
+      // back on; it never claims a synced state.
+      await tester.tap(find.text('Enable sync'));
+      await settle(tester);
+      expect(find.text('Enable sync'), findsOneWidget);
+      expect(find.text('Sync now'), findsOneWidget);
+      expect(
+        await tester.runAsync(
+          () => harness.container.read(syncEnabledProvider.future),
+        ),
+        isFalse,
+      );
 
       await _teardown(tester, harness);
     },
@@ -246,12 +320,14 @@ class _Harness {
     required this.database,
     required this.client,
     required this.store,
+    required this.anonymous,
   });
 
   final ProviderContainer container;
   final AppDatabase database;
   final FakeRuntimeAuthClient client;
   final FakeSecureKeyValueStore store;
+  final AnonymousDatabaseFixture anonymous;
 }
 
 Future<_Harness> _pumpSyncSettings(
@@ -264,6 +340,13 @@ Future<_Harness> _pumpSyncSettings(
 }) async {
   final store = FakeSecureKeyValueStore();
   final client = FakeRuntimeAuthClient();
+  final anonymous = AnonymousDatabaseFixture.create();
+  final calls = <RemoteCall>[];
+  // The Phase G first synchronization is scripted to fail discovery, so a
+  // signed-in account is shown in its honest pre-baseline state.
+  final initialSync = FakeInitialSyncGateway(calls: calls)
+    ..stateError = Exception('SocketException: network is unreachable');
+  final syncRemote = FakeSyncRemoteGateway(calls: calls);
   final namespaces =
       backend.authNamespaces ?? const RuntimeAuthNamespaces.legacyStatic();
   final storage = SecureSupabaseLocalStorage(
@@ -307,6 +390,13 @@ Future<_Harness> _pumpSyncSettings(
       ),
       browserLauncherProvider.overrideWithValue(FakeBrowserLauncher()),
       runtimeBackendReloaderProvider.overrideWithValue(reloader),
+      syncRemoteFactoryProvider.overrideWithValue(
+        FakeSyncRemoteFactory(
+          initialSyncGateway: initialSync,
+          syncGateway: syncRemote,
+        ),
+      ),
+      anonymousDatabaseFactoryProvider.overrideWithValue(anonymous.open),
       // The compile-time developer path builds a real SupabaseClient for normal
       // sync, whose auto-refresh ticker cannot be cancelled under a widget
       // test's fake clock. The sync DATA path stays covered by
@@ -340,6 +430,7 @@ Future<_Harness> _pumpSyncSettings(
     database: database,
     client: client,
     store: store,
+    anonymous: anonymous,
   );
 }
 
@@ -354,5 +445,6 @@ Future<void> _teardown(WidgetTester tester, _Harness harness) async {
     await repository?.dispose();
     await harness.client.close();
     await harness.database.close();
+    harness.anonymous.delete();
   });
 }

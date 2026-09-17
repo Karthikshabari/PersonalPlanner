@@ -71,7 +71,7 @@ class SyncRepository {
     }
   }
 
-  Future<SyncFailure?> push() async {
+  Future<SyncFailure?> push({String? baselineToken}) async {
     late final List<SyncLogRow> operations;
     try {
       _assertAccountScope();
@@ -125,6 +125,7 @@ class SyncRepository {
           expectedServerVersion: operation.expectedServerVersion,
           payload: payload,
           payloadVersion: prepared.version,
+          baselineToken: baselineToken,
         );
         _assertAccountScope();
         final acknowledgement = SyncRpcAcknowledgement.fromJson(response);
@@ -163,6 +164,10 @@ class SyncRepository {
             error: failureMessage,
           );
         }
+        // A fencing rejection is a protocol-level answer: this client no longer
+        // owns the account's in-progress baseline, so no further operation from
+        // this batch may be attempted.
+        if (isInitialBaselineFencingFailure(failure)) return failure;
       }
     }
     return firstFailure;
@@ -206,7 +211,16 @@ class SyncRepository {
     }
   }
 
-  Future<SyncFailure?> pull({int limit = 200}) async {
+  /// Pulls remote changes from the durable cursor.
+  ///
+  /// [beforePageCommit] runs inside the transaction that applies one coalesced
+  /// page, immediately before that page's rows and cursor advance are written.
+  /// Throwing from it rolls the whole page back, which the Phase G remote-first
+  /// restore uses to stop the moment meaningful local work appears.
+  Future<SyncFailure?> pull({
+    int limit = 200,
+    Future<void> Function()? beforePageCommit,
+  }) async {
     try {
       _assertAccountScope();
       await _repairTitleHistoryQuarantine();
@@ -305,6 +319,11 @@ class SyncRepository {
         // A valid reschedule pair stores reciprocal self-references. SQLite
         // must validate those foreign keys after both task snapshots exist.
         await _db.customStatement('PRAGMA defer_foreign_keys = ON');
+        // Phase G: the restore may only continue while this local database is
+        // still free of user-authored Planner work. The check runs inside this
+        // page transaction, so a new local edit aborts the page atomically:
+        // no remote rows and no cursor advance are committed after it.
+        if (beforePageCommit != null) await beforePageCommit();
         // Coalescing is correct for the materialized row, but it must not
         // hide an acknowledgement that precedes a newer feed entry for the
         // same record. Retire/rebase every matching local operation first;
@@ -1689,6 +1708,7 @@ abstract interface class SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
+    String? baselineToken,
   });
 
   Future<Object?> pullChanges({required int afterChangeId, required int limit});
@@ -1711,18 +1731,36 @@ class SupabaseSyncRemoteGateway implements SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
-  }) => _client.rpc(
-    'apply_sync_operation_v2',
-    params: {
-      'p_operation_id': operationId,
-      'p_table_name': tableName,
-      'p_record_id': recordId,
-      'p_operation': operation,
-      'p_expected_server_version': expectedServerVersion,
-      'p_payload': payload,
-      'p_payload_version': payloadVersion,
-    },
-  );
+    String? baselineToken,
+  }) => baselineToken == null
+      ? _client.rpc(
+          'apply_sync_operation_v2',
+          params: {
+            'p_operation_id': operationId,
+            'p_table_name': tableName,
+            'p_record_id': recordId,
+            'p_operation': operation,
+            'p_expected_server_version': expectedServerVersion,
+            'p_payload': payload,
+            'p_payload_version': payloadVersion,
+          },
+        )
+      // Phase G: during the initial baseline the server requires the fenced
+      // entry point, which verifies (and renews) the caller's claim. Ordinary
+      // synchronization after the baseline keeps using the v2 RPC unchanged.
+      : _client.rpc(
+          'apply_sync_operation_v3',
+          params: {
+            'p_operation_id': operationId,
+            'p_table_name': tableName,
+            'p_record_id': recordId,
+            'p_operation': operation,
+            'p_expected_server_version': expectedServerVersion,
+            'p_payload': payload,
+            'p_payload_version': payloadVersion,
+            'p_baseline_token': baselineToken,
+          },
+        );
 
   @override
   Future<Object?> pullChanges({
@@ -1733,6 +1771,19 @@ class SupabaseSyncRemoteGateway implements SyncRemoteGateway {
     params: {'p_after_change_id': afterChangeId, 'p_limit': limit},
   );
 }
+
+/// Diagnostic for a mutation that the server refused because the caller no
+/// longer owns the in-progress initial baseline claim.
+///
+/// The durable outbox operation stays queued: once the account is established
+/// (by whichever device owns it) ordinary synchronization can deliver it.
+const initialBaselineFencedMessage =
+    'Cloud baseline ownership changed; the first synchronization was stopped '
+    'safely.';
+
+/// True when a classified failure is the server's baseline fencing rejection.
+bool isInitialBaselineFencingFailure(SyncFailure failure) =>
+    failure.message == initialBaselineFencedMessage;
 
 String safeSyncError(Object error) {
   if (error is SyncValidationException) {
@@ -1768,6 +1819,15 @@ SyncFailure classifySyncFailure(Object error) {
     );
   }
   final message = error.toString().toLowerCase();
+  // Fencing is checked before the generic transport/auth classification: the
+  // server refused this mutation because another device owns the in-progress
+  // initial baseline, which is a deliberate, recoverable protocol answer.
+  if (message.contains('initial baseline claim')) {
+    return const SyncFailure(
+      SyncFailureKind.retryable,
+      initialBaselineFencedMessage,
+    );
+  }
   if (message.contains('401') ||
       message.contains('403') ||
       message.contains('jwt') ||

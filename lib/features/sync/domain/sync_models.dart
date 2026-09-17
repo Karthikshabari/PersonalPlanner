@@ -12,6 +12,7 @@ enum SyncEngineState {
   authFailure,
   refreshPaused,
   invalidData,
+  initialSyncPending,
   notConfigured,
 }
 
@@ -28,6 +29,7 @@ extension SyncEngineStateLabel on SyncEngineState {
     SyncEngineState.authFailure => 'Sign-in required',
     SyncEngineState.refreshPaused => 'Waiting for session refresh',
     SyncEngineState.invalidData => 'Invalid data',
+    SyncEngineState.initialSyncPending => 'Cloud setup pending',
     SyncEngineState.notConfigured => 'Not configured',
   };
 }

@@ -56,8 +56,11 @@ sealed class RuntimeBackend {
 
   /// True only while normal Planner task/category synchronization may run.
   ///
-  /// A provisioned user-owned backend is intentionally false for Phase EF:
-  /// runtime Auth is wired, Planner data synchronization is Phase G.
+  /// This answers "does this backend have a Planner data endpoint at all?".
+  /// A provisioned user-owned backend says yes, but Phase G additionally
+  /// requires the account's durable initial-synchronization baseline before the
+  /// scoped client, SyncRepository, SyncEngine or "Sync now" are created; that
+  /// gate lives in the sync providers.
   bool get allowsPlannerDataSync => plannerDataSyncEndpoint != null;
 }
 
@@ -193,11 +196,13 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
         authUserId: authUserId,
       );
 
-  /// Null for Phase EF. The provisioned path has no Planner data sync, so no
-  /// normal-sync endpoint exists for it yet; Phase G introduces the gated
-  /// first-sync design that may change this.
+  /// The provisioned endpoint is reachable, but Phase G gating is what decides
+  /// whether normal synchronization may actually run: the scoped client,
+  /// SyncRepository and SyncEngine only exist after the account's first
+  /// synchronization baseline is complete. See the sync providers.
   @override
-  RuntimeSupabaseEndpoint? get plannerDataSyncEndpoint => null;
+  RuntimeSupabaseEndpoint get plannerDataSyncEndpoint =>
+      RuntimeSupabaseEndpoint(url: projectUrl, publishableKey: publishableKey);
 
   @override
   bool operator ==(Object other) =>

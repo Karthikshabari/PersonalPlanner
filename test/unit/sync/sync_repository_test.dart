@@ -2663,6 +2663,7 @@ class _FakeGateway implements SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
+    String? baselineToken,
   }) async {
     onApply?.call();
     expectedVersions.add(expectedServerVersion);

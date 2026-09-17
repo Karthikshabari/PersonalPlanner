@@ -64,7 +64,8 @@ const cloudSetupNeedsUserActionMessage =
     'organization and try again.';
 const cloudSetupReadyBody =
     'Your cloud backend is ready. Connect your Planner account below. Planner '
-    'data synchronization is not enabled yet.';
+    'data synchronization starts after the first safe synchronization with '
+    'your cloud account.';
 const cloudSetupLeaveHint =
     'You can leave this screen. Setup continues safely and you can come back to '
     'it later.';

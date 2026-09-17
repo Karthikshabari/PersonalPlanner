@@ -17,6 +17,7 @@ import 'features/recurring/providers/recurring_providers.dart';
 import 'features/settings/providers/notification_settings_providers.dart';
 import 'features/sync/data/auth_repository.dart';
 import 'features/sync/data/connection_profile_store.dart';
+import 'features/sync/data/initial_sync_state_store.dart';
 import 'features/sync/data/runtime_auth_client.dart';
 import 'features/sync/data/runtime_supabase_client.dart';
 import 'features/sync/data/secure_session_storage.dart';
@@ -830,12 +831,31 @@ Future<void> _closeDatabase(AppDatabase database) async {
   }
 }
 
+/// Seeds the built-in default categories unless a provisioned account's initial
+/// synchronization is still unresolved.
+///
+/// Phase G: a fresh account database must not create local Planner rows before
+/// the remote state is known. Uploading bootstrap defaults into an account that
+/// already holds Planner data would create duplicate categories and false
+/// conflicts, so seeding waits until a safe baseline exists. The coordinator
+/// seeds them itself once an account is proven empty on both sides.
+Future<void> _seedPlannerDefaults(ProviderContainer container) async {
+  final backend = container.read(runtimeBackendProvider);
+  if (backend is ProvisionedRuntimeBackend) {
+    final record = await InitialSyncStateStore(
+      container.read(appDatabaseProvider),
+    ).read();
+    if (!record.baselineComplete) return;
+  }
+  await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
+}
+
 Future<SyncEngine?> _initializeLocalServices(
   ProviderContainer container, {
   required Future<void> Function() beforeWindowClose,
 }) async {
   try {
-    await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
+    await _seedPlannerDefaults(container);
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
@@ -987,6 +1007,15 @@ Future<SyncEngine?> _initializeLocalServices(
   final engine = container.read(syncEngineProvider);
   try {
     await engine?.start();
+  } catch (err, stack) {
+    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
+  }
+  try {
+    // Phase G: a provisioned account resolves its remote Planner state even if
+    // the user never opens Settings → Sync. The subscription keeps the
+    // coordinator alive for the lifetime of this account container; it is
+    // released when the container is disposed during an account switch.
+    container.listen(initialSyncCoordinatorProvider, (previous, next) {});
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }

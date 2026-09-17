@@ -3,6 +3,7 @@ import syncV1Hardening from "../../supabase/migrations/20260829000000_sync_v1_ha
 import realUseV2 from "../../supabase/migrations/20260910000000_real_use_v2.sql";
 import recurrenceRemovalProvenance from "../../supabase/migrations/20260915000000_recurrence_removal_provenance.sql";
 import titleHistoryConflictOrdering from "../../supabase/migrations/20260916000000_title_history_conflict_ordering.sql";
+import initialSyncBaseline from "../../supabase/migrations/20260917000000_initial_sync_baseline.sql";
 import titleHistoryRuntimeTest from "../../supabase/tests/database/title_history_conflict_ordering_test.sql";
 import { ProvisioningTransaction, productionFetch, productionOAuthCallback } from "./production";
 
@@ -44,6 +45,11 @@ export const MIGRATIONS = [
     name: "20260916000000_title_history_conflict_ordering",
     query: titleHistoryConflictOrdering,
     sha256: "d01e184c1c530e57a3bba20abf2fbf302a106f916be1196ee69736260f938c13",
+  },
+  {
+    name: "20260917000000_initial_sync_baseline",
+    query: initialSyncBaseline,
+    sha256: "b58df9aa235d3b2729ab9118bb7ef4fc673dd9d787e45960ec9beb6cbfc5ba99",
   },
 ] as const;
 const RUNTIME_TEST_SHA256 =
@@ -967,6 +973,7 @@ export const SCHEMA_VERIFICATION_SQL = `
 with expected_tables(table_name) as (
   values
     ('sync_state'), ('sync_changes'), ('sync_operation_ack'),
+    ('sync_initial_baseline'),
     ('categories'), ('tags'), ('recurring_rules'), ('tasks'),
     ('task_templates'), ('subtasks'), ('task_tags'), ('daily_reviews'),
     ('weekly_reviews'), ('timer_sessions'), ('day_contexts'),
@@ -974,9 +981,15 @@ with expected_tables(table_name) as (
 ), expected_functions(signature) as (
   values
     ('public.apply_sync_operation(uuid,text,text,text,bigint,jsonb)'),
+    ('public.apply_sync_operation_v1_prebaseline_base(uuid,text,text,text,bigint,jsonb)'),
     ('public.apply_sync_operation_v2(uuid,text,text,text,bigint,jsonb,integer)'),
+    ('public.apply_sync_operation_v2_prebaseline_base(uuid,text,text,text,bigint,jsonb,integer)'),
+    ('public.apply_sync_operation_v3(uuid,text,text,text,bigint,jsonb,integer,uuid)'),
     ('public.pull_sync_changes(bigint,integer)'),
-    ('public.planner_sync_capabilities()')
+    ('public.planner_sync_capabilities()'),
+    ('public.planner_sync_account_state()'),
+    ('public.planner_claim_initial_baseline(uuid,bigint)'),
+    ('public.planner_complete_initial_baseline(uuid)')
 ), helper as (
   select pg_get_functiondef(
     'public.planner_title_history_conflict_payload(jsonb,uuid,text)'::regprocedure
@@ -985,20 +998,32 @@ with expected_tables(table_name) as (
   select pg_get_functiondef(
     'public.apply_sync_operation(uuid,text,text,text,bigint,jsonb)'::regprocedure
   ) as definition
+), base_v1 as (
+  select pg_get_functiondef(
+    'public.apply_sync_operation_v1_prebaseline_base(uuid,text,text,text,bigint,jsonb)'::regprocedure
+  ) as definition
 ), wrapper_v2 as (
   select pg_get_functiondef(
     'public.apply_sync_operation_v2(uuid,text,text,text,bigint,jsonb,integer)'::regprocedure
   ) as definition
+), base_v2 as (
+  select pg_get_functiondef(
+    'public.apply_sync_operation_v2_prebaseline_base(uuid,text,text,text,bigint,jsonb,integer)'::regprocedure
+  ) as definition
+), wrapper_v3 as (
+  select pg_get_functiondef(
+    'public.apply_sync_operation_v3(uuid,text,text,text,bigint,jsonb,integer,uuid)'::regprocedure
+  ) as definition
 )
 select
-  (select count(*) = 15 from expected_tables e
+  (select count(*) = 16 from expected_tables e
     join pg_class c on c.relname = e.table_name
     join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
     where c.relkind = 'r') as required_tables_exist,
   (select bool_and(c.relrowsecurity) from expected_tables e
     join pg_class c on c.relname = e.table_name
     join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public') as rls_enabled,
-  (select count(*) = 4 from expected_functions e
+  (select count(*) = 10 from expected_functions e
     where to_regprocedure(e.signature) is not null) as required_rpcs_exist,
   has_function_privilege(
     'authenticated',
@@ -1025,9 +1050,25 @@ select
         < position('for existing_event' in definition)
     from helper) as f03_validates_branch_before_union,
   (select position('planner_title_history_conflict_payload' in definition) > 0
+    from base_v1) and
+  (select position('apply_sync_operation_v1_prebaseline_base' in definition) > 0
     from wrapper_v1) and
   (select position('planner_title_history_conflict_payload' in definition) > 0
+    from base_v2) and
+  (select position('apply_sync_operation_v2_prebaseline_base' in definition) > 0
     from wrapper_v2) as f03_wrappers_active,
+  (select position('sync_initial_baseline' in definition) > 0
+      and position('No active initial baseline claim' in definition) > 0
+    from wrapper_v1) and
+  (select position('sync_initial_baseline' in definition) > 0
+      and position('No active initial baseline claim' in definition) > 0
+    from wrapper_v2) and
+  (select position('p_baseline_token' in definition) > 0
+      and position('no longer owned by this device' in definition) > 0
+      and position('the baseline is already completed' in definition) > 0
+      and position('the baseline is already completed' in definition)
+        < position('apply_sync_operation_v2_prebaseline_base' in definition)
+    from wrapper_v3) as initial_sync_fencing_present,
   exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'tasks'
@@ -1063,6 +1104,8 @@ select
     public.planner_sync_capabilities()->>'protocol_version' = '2'
     and public.planner_sync_capabilities()->>'plan_title_history' = 'true'
     and public.planner_sync_capabilities()->>'recurrence_removal_provenance' = 'true'
+    and public.planner_sync_capabilities()->>'initial_sync_baseline' = 'true'
+    and public.planner_sync_capabilities()->>'initial_sync_fencing' = 'true'
     and public.planner_sync_capabilities()->'payload_versions' = '[1, 2]'::jsonb
   ) as capability_payload_current,
   public.planner_sync_capabilities() as capabilities;

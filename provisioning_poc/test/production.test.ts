@@ -197,9 +197,9 @@ describe("migration and verification recovery", () => {
       return Response.json(history);
     };
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(5);
+    expect(posts).toHaveLength(6);
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(5);
+    expect(posts).toHaveLength(6);
     // Our own migrations appearing out of order remain a terminal failure.
     expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "20260910000000_real_use_v2" }]))).toEqual({ kind: "failed", code: "migration_history_mismatch" });
     // A history the Worker cannot advance through stays retryable, never terminal.
@@ -219,7 +219,7 @@ describe("migration and verification recovery", () => {
     };
 
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(5);
+    expect(posts).toHaveLength(6);
   });
 
   it("accepts version and short-name history rows and applies only what is missing", async () => {
@@ -244,6 +244,7 @@ describe("migration and verification recovery", () => {
       "20260910000000_real_use_v2",
       "20260915000000_recurrence_removal_provenance",
       "20260916000000_title_history_conflict_ordering",
+      "20260917000000_initial_sync_baseline",
     ]);
   });
 
@@ -789,7 +790,7 @@ describe("migration history validation", () => {
       const api = advancingMigrationApi([{ name: canonicalOne, version: "20260827000000" }]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
-      expect(api.posts).toHaveLength(4);
+      expect(api.posts).toHaveLength(5);
       expect(api.posts[0]).toBe(canonicalTwo);
     });
 

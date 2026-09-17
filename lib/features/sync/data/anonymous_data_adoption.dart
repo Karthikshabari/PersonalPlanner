@@ -5,7 +5,12 @@ import '../../settings/data/backup_codec.dart';
 import '../../settings/data/backup_database_applier.dart';
 import '../../settings/data/backup_merge_planner.dart';
 
-const _adoptionDecisionKey = 'sync.anonymous_adoption_decision';
+/// Durable record of the user's explicit choice about offline-only data.
+///
+/// Stored in the account database, so one account's decision never speaks for
+/// another account of the same project (or for the same user in another
+/// project).
+const anonymousAdoptionDecisionKey = 'sync.anonymous_adoption_decision';
 
 /// Counts are deliberately read from both databases so the UI can explain
 /// what will be copied before the user confirms. The anonymous database is
@@ -88,7 +93,7 @@ class AnonymousDataAdoptionService {
         .into(_accountDatabase.appSettings)
         .insertOnConflictUpdate(
           AppSettingsCompanion.insert(
-            key: _adoptionDecisionKey,
+            key: anonymousAdoptionDecisionKey,
             value: 'separate',
           ),
         );
@@ -130,7 +135,7 @@ class AnonymousDataAdoptionService {
             .into(_accountDatabase.appSettings)
             .insertOnConflictUpdate(
               AppSettingsCompanion.insert(
-                key: _adoptionDecisionKey,
+                key: anonymousAdoptionDecisionKey,
                 value: 'imported',
               ),
             );
@@ -162,7 +167,9 @@ class AnonymousDataAdoptionService {
   Future<String?> _decision(AppDatabase database) async {
     final row =
         await (database.select(database.appSettings)
-              ..where((setting) => setting.key.equals(_adoptionDecisionKey)))
+              ..where(
+                (setting) => setting.key.equals(anonymousAdoptionDecisionKey),
+              ))
             .getSingleOrNull();
     return row?.value;
   }

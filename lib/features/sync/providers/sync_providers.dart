@@ -9,8 +9,13 @@ import '../../../core/models/planner_account_scope.dart';
 import '../../../core/providers/database_provider.dart';
 import '../data/anonymous_data_adoption.dart';
 import '../data/auth_repository.dart';
+import '../data/initial_sync_coordinator.dart';
+import '../data/initial_sync_gateway.dart';
+import '../data/initial_sync_state_store.dart';
 import '../data/sync_repository.dart';
 import '../domain/auth_session_controller.dart';
+import '../domain/initial_sync_models.dart';
+import '../domain/runtime_backend.dart';
 import '../domain/sync_engine.dart';
 import '../domain/sync_models.dart';
 import 'runtime_backend_providers.dart';
@@ -41,10 +46,19 @@ final authSessionControllerProvider = Provider<AuthSessionController?>((ref) {
 /// different accounts.
 final openAccountScopeProvider = Provider<PlannerAccountScope?>((ref) => null);
 
+/// Opens the stable anonymous/offline-only database. Overridable so tests can
+/// supply a temporary file-backed database instead of the platform application
+/// directory.
+final anonymousDatabaseFactoryProvider =
+    Provider<Future<AppDatabase> Function()>((ref) => AppDatabase.open);
+
 final anonymousDataAdoptionProvider = Provider<AnonymousDataAdoptionService>((
   ref,
 ) {
-  return AnonymousDataAdoptionService(ref.watch(appDatabaseProvider));
+  return AnonymousDataAdoptionService(
+    ref.watch(appDatabaseProvider),
+    anonymousDatabaseFactory: ref.watch(anonymousDatabaseFactoryProvider),
+  );
 });
 
 final anonymousDataSummaryProvider =
@@ -88,12 +102,46 @@ final syncConnectivityMonitorProvider = Provider<SyncConnectivityMonitor>((
   return PlatformSyncConnectivityMonitor();
 });
 
-final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
+/// Builds the remote gateways of the selected backend. Tests substitute
+/// recording fakes so the Phase G state machine runs without a network.
+final syncRemoteFactoryProvider = Provider<SyncRemoteFactory>(
+  (ref) => const SupabaseSyncRemoteFactory(),
+);
+
+/// The scoped Supabase client and canonical account identity of the *current*
+/// authenticated account, or null when this installation must not talk to a
+/// Planner data endpoint right now.
+///
+/// The client is created here so both the initial-sync coordinator and the
+/// normal SyncRepository share exactly one scoped client per provider
+/// generation. It always supplies the token captured for this generation and
+/// the repository's owner guard rejects responses that arrive after the account
+/// changed.
+class SyncAccountBinding {
+  const SyncAccountBinding({
+    required this.backend,
+    required this.scope,
+    required this.endpoint,
+    required this.client,
+    this.currentAccountId,
+  });
+
+  final RuntimeBackend backend;
+  final PlannerAccountScope scope;
+  final RuntimeSupabaseEndpoint endpoint;
+  final SupabaseClient client;
+
+  /// Live canonical account id of the runtime Auth stack, or null when no
+  /// session is active.
+  final String? Function()? currentAccountId;
+
+  String get accountId => scope.storageId;
+
+  bool get isProvisioned => backend is ProvisionedRuntimeBackend;
+}
+
+final syncAccountBindingProvider = Provider<SyncAccountBinding?>((ref) {
   final backend = ref.watch(runtimeBackendProvider);
-  // Phase EF boundary: only the compile-time developer backend carries a
-  // normal Planner data endpoint. A provisioned user-owned backend has runtime
-  // Auth but no Planner data synchronization yet, so it gets no repository, no
-  // engine, and no "Sync now"; Phase G owns that decision.
   final endpoint = backend.plannerDataSyncEndpoint;
   if (endpoint == null) return null;
   final controller = ref.watch(authSessionControllerProvider);
@@ -113,9 +161,7 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
   }
   // Do not let an in-flight request read the mutable singleton auth session.
   // This scoped client always supplies the token captured for this provider
-  // generation; auth/session changes dispose this repository and create a new
-  // one. The repository's owner guard also prevents a stale provider from
-  // applying a response after the account changes.
+  // generation; auth/session changes dispose it and create a new one.
   final scopedClient = SupabaseClient(
     endpoint.url,
     endpoint.publishableKey,
@@ -128,15 +174,88 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
     },
   );
   ref.onDispose(() => unawaited(scopedClient.dispose()));
-  return SyncRepository(
-    ref.watch(appDatabaseProvider),
-    scopedClient,
-    scope.storageId,
+  return SyncAccountBinding(
+    backend: backend,
+    scope: scope,
+    endpoint: endpoint,
+    client: scopedClient,
     currentAccountId: () {
       final current = controller.current.session;
       if (current == null) return null;
       return backend.accountScopeFor(current.user.id)?.storageId;
     },
+  );
+});
+
+/// Durable Phase G first-sync state of the currently open account database.
+///
+/// `notApplicable` is returned for every non-provisioned backend: the
+/// provisioned first-sync gate does not apply to the compile-time developer
+/// path, which keeps its historical behaviour.
+final syncInitialSyncProvider =
+    StreamProvider.autoDispose<InitialSyncStatus>((ref) {
+      final backend = ref.watch(runtimeBackendProvider);
+      if (backend is! ProvisionedRuntimeBackend) {
+        return Stream.value(InitialSyncStatus.notApplicable);
+      }
+      return InitialSyncStateStore(ref.watch(appDatabaseProvider))
+          .watch()
+          .map(InitialSyncStatus.fromRecord);
+    });
+
+/// Phase G initial-synchronization orchestrator of the current provisioned
+/// account, or null when this runtime has no provisioned account open.
+final initialSyncCoordinatorProvider = Provider<InitialSyncCoordinator?>((
+  ref,
+) {
+  final backend = ref.watch(runtimeBackendProvider);
+  if (backend is! ProvisionedRuntimeBackend) return null;
+  final binding = ref.watch(syncAccountBindingProvider);
+  if (binding == null) return null;
+  final database = ref.watch(appDatabaseProvider);
+  final remoteFactory = ref.watch(syncRemoteFactoryProvider);
+  final coordinator = InitialSyncCoordinator(
+    database: database,
+    scope: binding.scope,
+    gateway: remoteFactory.createInitialSyncGateway(binding.client),
+    repositoryFactory: () => SyncRepository.withGateway(
+      database,
+      remoteFactory.createSyncGateway(binding.client),
+      binding.accountId,
+      currentAccountId: binding.currentAccountId,
+    ),
+    anonymousDatabaseFactory: ref.watch(anonymousDatabaseFactoryProvider),
+    currentAccountId: binding.currentAccountId,
+    seedDefaultsIfEmpty: () =>
+        ref.read(categoryRepositoryProvider).seedDefaultsIfEmpty(),
+  );
+  ref.onDispose(() => unawaited(coordinator.dispose()));
+  // A provisioned account must determine the remote Planner state as soon as
+  // it is connected, before any local mutation could be pushed. Starting here
+  // (rather than only from the Settings screen) means a fresh device restores
+  // its cloud data without the user opening Sync settings.
+  unawaited(coordinator.start());
+  return coordinator;
+});
+
+final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
+  final binding = ref.watch(syncAccountBindingProvider);
+  if (binding == null) return null;
+  // Phase G boundary: a provisioned user-owned backend gets Auth and the
+  // first-sync coordinator immediately, but normal Planner data
+  // synchronization - repository, engine, automatic push/pull, "Sync now" -
+  // only exists once the durable initial synchronization baseline is complete.
+  // Authentication alone, and a READY backend alone, are both insufficient.
+  if (binding.isProvisioned &&
+      !(ref.watch(syncInitialSyncProvider).value?.baselineComplete ??
+          false)) {
+    return null;
+  }
+  return SyncRepository.withGateway(
+    ref.watch(appDatabaseProvider),
+    ref.watch(syncRemoteFactoryProvider).createSyncGateway(binding.client),
+    binding.accountId,
+    currentAccountId: binding.currentAccountId,
   );
 });
 
@@ -158,25 +277,41 @@ final syncStatusProvider = StreamProvider.autoDispose<SyncStatusSnapshot>((
   ref,
 ) {
   final engine = ref.watch(syncEngineProvider);
-  if (engine == null) {
-    return _authGatedStatus(ref.watch(authSessionControllerProvider));
-  }
-  return engine.status;
+  if (engine != null) return engine.status;
+  // No engine means either no usable runtime Auth, or a provisioned account
+  // whose initial synchronization is not complete yet. Both cases are
+  // described from durable state, and neither ever claims cloud sync is
+  // active.
+  final backend = ref.watch(runtimeBackendProvider);
+  final initialSync = ref.watch(syncInitialSyncProvider).value;
+  return _authGatedStatus(
+    ref.watch(authSessionControllerProvider),
+    provisioned: backend is ProvisionedRuntimeBackend
+        ? (initialSync ?? InitialSyncStatus.unresolved)
+        : null,
+  );
 });
 
 Stream<SyncStatusSnapshot> _authGatedStatus(
-  AuthSessionController? controller,
-) async* {
+  AuthSessionController? controller, {
+  InitialSyncStatus? provisioned,
+}) async* {
   if (controller == null) {
-    yield const SyncStatusSnapshot(state: SyncEngineState.notConfigured);
+    yield _statusForInitialSync(provisioned) ??
+        const SyncStatusSnapshot(state: SyncEngineState.notConfigured);
     return;
   }
   await controller.start();
-  yield _statusForAuth(controller);
-  yield* controller.states.map((_) => _statusForAuth(controller));
+  yield _statusForAuth(controller, provisioned: provisioned);
+  yield* controller.states.map(
+    (_) => _statusForAuth(controller, provisioned: provisioned),
+  );
 }
 
-SyncStatusSnapshot _statusForAuth(AuthSessionController controller) {
+SyncStatusSnapshot _statusForAuth(
+  AuthSessionController controller, {
+  InitialSyncStatus? provisioned,
+}) {
   final state = controller.current;
   if (state.health == AuthSessionHealth.reauthenticationRequired) {
     return const SyncStatusSnapshot(
@@ -199,8 +334,45 @@ SyncStatusSnapshot _statusForAuth(AuthSessionController controller) {
       message: 'Session refresh is pending; local work is safe.',
     );
   }
+  final initialSync = _statusForInitialSync(provisioned);
+  if (initialSync != null) return initialSync;
   return const SyncStatusSnapshot(state: SyncEngineState.notConfigured);
 }
+
+/// Pre-baseline status of a provisioned account, or null once the safe initial
+/// synchronization baseline exists (normal sync reports from then on) and for
+/// every non-provisioned backend.
+SyncStatusSnapshot? _statusForInitialSync(InitialSyncStatus? status) {
+  if (status == null || status.baselineComplete) return null;
+  return SyncStatusSnapshot(
+    state: SyncEngineState.initialSyncPending,
+    message: status.message ?? provisionedPhaseDescription(status.phase),
+  );
+}
+
+String provisionedPhaseDescription(InitialSyncPhase phase) => switch (phase) {
+  InitialSyncPhase.unresolved =>
+    'Cloud sync setup has not run yet. Local planning keeps working.',
+  InitialSyncPhase.discovering =>
+    'Checking whether this cloud account already contains Planner data.',
+  InitialSyncPhase.remoteExisting =>
+    'Cloud Planner data was found and will be restored before anything is '
+        'uploaded.',
+  InitialSyncPhase.restoring =>
+    'Restoring Planner data from your cloud account.',
+  InitialSyncPhase.remoteEmpty =>
+    'The cloud account is empty; the first upload is being prepared.',
+  InitialSyncPhase.adoptionRequired =>
+    'The cloud account is empty. Offline-only Planner data needs your '
+        'decision before anything is uploaded.',
+  InitialSyncPhase.uploading =>
+    'Uploading your local Planner data to the empty cloud account.',
+  InitialSyncPhase.conflict =>
+    'Local and cloud Planner data both exist. Nothing was overwritten.',
+  InitialSyncPhase.retryable =>
+    'Cloud setup will retry. Local planning keeps working.',
+  InitialSyncPhase.complete => 'Cloud synchronization is ready.',
+};
 
 class _SyncAccessTokenUnavailable implements Exception {
   const _SyncAccessTokenUnavailable();

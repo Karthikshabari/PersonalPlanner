@@ -274,9 +274,10 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.textContaining(testPublishableKey), findsNothing);
     expect(find.textContaining('Connect your Planner account'), findsOneWidget);
-    // Account connection is available now; Planner data sync is still not.
+    // Account connection is available now; Planner data synchronization only
+    // starts after the Phase G first synchronization is complete.
     expect(
-      find.textContaining('synchronization is not enabled yet'),
+      find.textContaining('starts after the first safe synchronization'),
       findsOneWidget,
     );
 

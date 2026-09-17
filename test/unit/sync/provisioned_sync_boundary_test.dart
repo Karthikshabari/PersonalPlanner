@@ -13,17 +13,18 @@ import 'package:personal_planner/features/sync/providers/sync_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_settings_provider.dart';
 
 import '../../helpers/runtime_auth_fakes.dart';
+import '../../helpers/initial_sync_fakes.dart';
 import '../../helpers/sqlite_setup.dart';
 
-/// Phase EF wires runtime Supabase Auth for a provisioned backend and
-/// deliberately stops there. This suite is the regression barrier: a signed-in
-/// provisioned account must not gain a sync repository, a sync engine, a
-/// "Sync now" path, or a changed sync-enabled flag.
+/// Phase G keeps the Phase EF barrier for the first synchronization: a
+/// signed-in provisioned account whose cloud state is still unresolved gains no
+/// sync repository, no sync engine and no "Sync now", and the sync-enabled flag
+/// is untouched. The legacy developer backend keeps its historical behaviour.
 void main() {
   setupSqliteForTests();
 
   test(
-    'a signed-in provisioned account stays out of normal Planner sync',
+    'a signed-in provisioned account stays out of normal Planner sync until the baseline exists',
     () async {
       final db = AppDatabase(NativeDatabase.memory());
       final client = FakeRuntimeAuthClient();
@@ -34,6 +35,12 @@ void main() {
         projectRef: projectRefA,
         authUserId: authUserIdX,
       );
+      final calls = <RemoteCall>[];
+      final anonymous = AnonymousDatabaseFixture.create();
+      final initial = FakeInitialSyncGateway(calls: calls)
+        // Discovery is unavailable, so the remote state stays unresolvable.
+        ..stateError = Exception('SocketException: network is unreachable');
+      final remote = FakeSyncRemoteGateway(calls: calls);
 
       // The user is genuinely signed in to the provisioned project.
       client.emitSignedIn(
@@ -54,6 +61,15 @@ void main() {
               ),
             ),
           ),
+          syncRemoteFactoryProvider.overrideWithValue(
+            FakeSyncRemoteFactory(
+              initialSyncGateway: initial,
+              syncGateway: remote,
+            ),
+          ),
+          anonymousDatabaseFactoryProvider.overrideWithValue(
+            anonymous.open,
+          ),
         ],
       );
 
@@ -63,12 +79,17 @@ void main() {
         expect(controller.session?.user.id, authUserIdX);
         expect(controller.hasUsableAccessToken(), isTrue);
 
+        final coordinatorSubscription = container.listen(
+          initialSyncCoordinatorProvider,
+          (previous, next) {},
+        );
         final statusSubscription = container.listen(
           syncStatusProvider,
           (previous, next) {},
         );
         // Let the session stream publish its first value.
         await Future<void>.delayed(Duration.zero);
+        await container.read(initialSyncCoordinatorProvider)!.start();
 
         // Sync is enabled by default, and the provisioned backend still gets no
         // sync surface at all.
@@ -85,7 +106,7 @@ void main() {
         );
         expect(
           statusSubscription.read().value?.state,
-          SyncEngineState.notConfigured,
+          SyncEngineState.initialSyncPending,
         );
 
         // Turning sync off, then seeing another Auth event, changes nothing.
@@ -95,6 +116,11 @@ void main() {
         expect(await container.read(syncEnabledProvider.future), isFalse);
         expect(container.read(syncRepositoryProvider), isNull);
         expect(container.read(syncEngineProvider), isNull);
+        // Zero remote mutation while the remote state is unknown.
+        expect(initial.claimCalls, 0);
+        expect(remote.applyCalls, 0);
+        expect(remote.pullCalls, 0);
+        coordinatorSubscription.close();
         statusSubscription.close();
       } finally {
         container.dispose();
@@ -102,6 +128,7 @@ void main() {
         await repository.dispose();
         await client.close();
         await db.close();
+        anonymous.delete();
       }
     },
   );

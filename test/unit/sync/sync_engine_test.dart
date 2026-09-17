@@ -193,6 +193,7 @@ class _NoopGateway implements SyncRemoteGateway {
     required int? expectedServerVersion,
     required Map<String, dynamic> payload,
     required int payloadVersion,
+    String? baselineToken,
   }) => Future.value(const <String, Object?>{});
 
   @override
