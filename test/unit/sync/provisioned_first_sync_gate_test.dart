@@ -5,11 +5,14 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/config/auth_callback.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
+import 'package:personal_planner/features/sync/data/runtime_auth_callback.dart';
+import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
 import 'package:personal_planner/features/sync/domain/initial_sync_models.dart';
 import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
@@ -56,11 +59,14 @@ void main() {
     RuntimeBackend? backend,
     PlannerAccountScope? scope,
     AppDatabase? database,
+    bool seedSession = true,
   }) async {
     final effectiveBackend = backend ?? testProvisionedBackend();
-    client.emitSignedIn(
-      testAuthSession(authUserId: authUserIdX, email: 'person@example.com'),
-    );
+    if (seedSession) {
+      client.emitSignedIn(
+        testAuthSession(authUserId: authUserIdX, email: 'person@example.com'),
+      );
+    }
     await controller.start();
     container = ProviderContainer(
       overrides: [
@@ -160,6 +166,66 @@ void main() {
       final record = await InitialSyncStateStore(accountDb).read();
       expect(record.phase, InitialSyncPhase.retryable);
       expect(record.baselineComplete, isFalse);
+    },
+  );
+
+  test(
+    'Test F - a session established by a handled Auth callback is still pre-baseline',
+    () async {
+      initial.stateError = Exception('SocketException: network is unreachable');
+      // Cold start: the confirmation link is the only source of the session.
+      // The callback is handled before any provider container exists, exactly
+      // like an app launched by the callback itself.
+      final store = FakeSecureKeyValueStore();
+      final flow = ProvisionedAuthCallbackFlow(
+        backend: testProvisionedBackend(),
+        storage: store,
+      );
+      client.callbackSession = testAuthSession(
+        authUserId: authUserIdX,
+        email: 'person@example.com',
+      );
+      await flow.begin();
+      await flow.pkceStorage.setItem(
+        key: SecureSupabasePkceStorage.codeVerifierKey,
+        value: 'code-verifier-secret',
+      );
+      final router = ProvisionedAuthCallbackRouter(
+        backend: flow.backend,
+        client: client,
+        flow: flow,
+        links: const Stream<String>.empty(),
+      );
+      addTearDown(router.dispose);
+
+      final outcome = await router.handle(
+        '${AuthCallback.redirectUrl}?code=authorization-code',
+      );
+      expect(outcome.kind, AuthCallbackOutcomeKind.handled);
+
+      await buildContainer(seedSession: false);
+      await settle();
+      await container.read(initialSyncCoordinatorProvider)!.start();
+      await settle();
+
+      // Auth success alone must not construct normal sync: the account still
+      // has no trusted first-sync baseline.
+      expect(container.read(authSessionControllerProvider), controller);
+      expect(controller.session?.user.id, authUserIdX);
+      expect(container.read(openAccountScopeProvider), scopeA);
+      expect(
+        container.read(syncRepositoryProvider),
+        isNull,
+        reason: 'the callback must not bypass the Phase G gate',
+      );
+      expect(container.read(syncEngineProvider), isNull);
+      expect(
+        container.read(syncStatusProvider).value?.state,
+        SyncEngineState.initialSyncPending,
+      );
+      final record = await InitialSyncStateStore(accountDb).read();
+      expect(record.baselineComplete, isFalse);
+      expect(remote.applyCalls, 0);
     },
   );
 

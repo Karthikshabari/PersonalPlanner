@@ -206,10 +206,27 @@ class SecureSupabasePkceStorage extends GotrueAsyncStorage {
     this.namespaces = const RuntimeAuthNamespaces.legacyStatic(),
   }) : _storage = storage ?? FlutterSecureKeyValueStore();
 
+  /// GoTrue's storage key for the PKCE code verifier.
+  ///
+  /// Mirrors `'${Constants.defaultStorageKey}-code-verifier'` of the installed
+  /// gotrue (2.27.2), where `Constants.defaultStorageKey` is
+  /// `supabase.auth.token`. [namespaces] adds the project prefix, so the full
+  /// key is never shared between projects. A contract test builds a real client
+  /// with this storage and asserts the key it writes, so an SDK change fails
+  /// loudly instead of silently disabling callback routing.
+  static const String codeVerifierKey = 'supabase.auth.token-code-verifier';
+
   final RuntimeAuthNamespaces namespaces;
   final SecureKeyValueStore _storage;
 
   String _key(String key) => namespaces.pkceKey(key);
+
+  /// True when a PKCE code verifier is stored for this namespace.
+  ///
+  /// Used to decide whether an incoming authorization-code callback can be
+  /// exchanged by this project's client at all.
+  Future<bool> hasPendingCodeVerifier() =>
+      _storage.containsKey(key: _key(codeVerifierKey));
 
   @override
   Future<String?> getItem({required String key}) =>

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stack_trace/stack_trace.dart';
@@ -19,6 +20,7 @@ import 'features/sync/data/auth_repository.dart';
 import 'features/sync/data/connection_profile_store.dart';
 import 'features/sync/data/initial_sync_state_store.dart';
 import 'features/sync/data/runtime_auth_client.dart';
+import 'features/sync/data/runtime_auth_callback.dart';
 import 'features/sync/data/runtime_supabase_client.dart';
 import 'features/sync/data/secure_session_storage.dart';
 import 'features/sync/domain/backend_connection_profile.dart';
@@ -44,6 +46,7 @@ class _RuntimeAuthBootstrap {
     required this.backend,
     required this.repository,
     required this.authController,
+    this.authCallbackRouter,
     this.ownedClient,
   });
 
@@ -54,6 +57,10 @@ class _RuntimeAuthBootstrap {
   final AuthRepository repository;
 
   final AuthSessionController authController;
+
+  /// Provisioned deep-link router of [backend], or null for the compile-time
+  /// developer path, whose deep links stay owned by `supabase_flutter`.
+  final ProvisionedAuthCallbackRouter? authCallbackRouter;
 
   /// The dynamically created client of the provisioned path, owned and disposed
   /// here. Null for the compile-time developer path, whose client is the
@@ -67,6 +74,7 @@ class _RuntimeAuthBootstrap {
   );
 
   Future<void> dispose() async {
+    await authCallbackRouter?.dispose();
     final client = ownedClient;
     if (client == null) {
       // The compile-time developer client is the app-wide singleton.
@@ -306,16 +314,40 @@ Future<ProvisionedBackendRead> _readProvisionedBackend() async {
 Future<void> _createProvisionedRuntimeAuth(
   ProvisionedRuntimeBackend backend,
 ) async {
-  final client = const RuntimeSupabaseClientFactory().create(backend);
+  // One secure key-value boundary, shared by this project's session, PKCE
+  // verifier, and pending-callback marker namespaces.
+  final secureStorage = FlutterSecureKeyValueStore();
+  final created = RuntimeSupabaseClientFactory(secureStorage: secureStorage)
+      .createWithStorage(backend);
+  final client = created.client;
+  final runtimeAuthClient = SupabaseRuntimeAuthClient(client);
   final storage = SecureSupabaseLocalStorage(
+    storage: secureStorage,
     sessionKey: backend.authNamespaces.sessionKey,
   );
+  final flow = ProvisionedAuthCallbackFlow(
+    backend: backend,
+    storage: secureStorage,
+  );
   final repository = AuthRepository(
-    SupabaseRuntimeAuthClient(client),
+    runtimeAuthClient,
     sessionStorage: storage,
+    provisionedAuthFlow: flow,
   );
   final controller = AuthSessionController(repository);
   storage.onOutcome = controller.recordStorageOutcome;
+  // Created together with this runtime's client: a callback can only ever be
+  // exchanged by the project that owns this PKCE namespace.
+  final router = ProvisionedAuthCallbackRouter(
+    backend: backend,
+    client: runtimeAuthClient,
+    flow: flow,
+    // Raw strings: the registered scheme contains an underscore, which Dart's
+    // Uri parser rejects, so the plugin's Uri stream would drop the callback.
+    links: AppLinks().stringLinkStream,
+    onOutcome: (outcome) =>
+        controller.recordAuthCallbackOutcome(outcome.notice),
+  );
   try {
     // Restores only this project's scoped session. A legacy global session
     // lives under a different key and is never restored into a project.
@@ -325,6 +357,7 @@ Future<void> _createProvisionedRuntimeAuth(
     // would otherwise open the anonymous database while the user believes the
     // cloud account is connected. Surface it as a bootstrap failure with Retry
     // instead of guessing, exactly like the compile-time developer path.
+    await router.dispose();
     await _releaseRuntimeAuthResources(
       client: client,
       controller: controller,
@@ -333,11 +366,13 @@ Future<void> _createProvisionedRuntimeAuth(
     Error.throwWithStackTrace(error, stack);
   }
   await controller.start();
+  router.start();
   final previous = _runtimeAuthBootstrap;
   _runtimeAuthBootstrap = _RuntimeAuthBootstrap(
     backend: backend,
     repository: repository,
     authController: controller,
+    authCallbackRouter: router,
     ownedClient: client,
   );
   await previous?.dispose();

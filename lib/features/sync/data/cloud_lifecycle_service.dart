@@ -101,9 +101,20 @@ class CloudLifecycleService {
           expectedGeneration: profile.generation,
         );
       } on ConnectionProfileStoreException {
-        return const CloudLifecycleResult.failed(cloudDisconnectFailedMessage);
+        // Sync has already stopped and this device has already been signed out;
+        // only the durable flag is missing. Reporting "left unchanged" here
+        // would contradict the cleared session and the stopped engine.
+        return CloudLifecycleResult.failed(
+          authRepository == null
+              ? cloudDisconnectSyncStoppedStateFailureMessage
+              : cloudDisconnectSignedOutStateFailureMessage,
+        );
       } on StaleConnectionProfileException {
-        return const CloudLifecycleResult.failed(cloudDisconnectFailedMessage);
+        return CloudLifecycleResult.failed(
+          authRepository == null
+              ? cloudDisconnectSyncStoppedStateFailureMessage
+              : cloudDisconnectSignedOutStateFailureMessage,
+        );
       }
     }
 

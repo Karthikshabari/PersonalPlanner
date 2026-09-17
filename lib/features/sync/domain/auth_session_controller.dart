@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/auth_repository.dart';
 import '../data/secure_session_storage.dart';
+import 'auth_callback_notice.dart';
 
 enum AuthSessionHealth {
   ready,
@@ -79,12 +80,14 @@ class AuthSessionController {
   final AuthSessionRepository _repository;
   final DateTime Function() _clock;
   final _states = StreamController<AuthSessionState>.broadcast();
+  final _callbackNotices = StreamController<AuthCallbackNotice>.broadcast();
   final List<AuthSessionDiagnostic> _diagnostics = [];
   StreamSubscription<AuthState>? _subscription;
   Future<void>? _refreshing;
   bool _started = false;
   bool _disposed = false;
   String _lifecycle = 'unknown';
+  AuthCallbackNotice? _lastCallbackNotice;
   AuthSessionState _current = const AuthSessionState(
     session: null,
     health: AuthSessionHealth.ready,
@@ -96,6 +99,12 @@ class AuthSessionController {
   Session? get session => _current.session;
 
   Stream<AuthSessionState> get states => _states.stream;
+
+  /// Sanitized outcomes of provisioned Auth callbacks handled by this runtime.
+  Stream<AuthCallbackNotice> get callbackNotices => _callbackNotices.stream;
+
+  /// Most recent callback outcome, or null when none was observed yet.
+  AuthCallbackNotice? get lastCallbackNotice => _lastCallbackNotice;
 
   List<AuthSessionDiagnostic> get diagnostics =>
       List.unmodifiable(_diagnostics);
@@ -284,6 +293,19 @@ class AuthSessionController {
     _record(event: 'lifecycle');
   }
 
+  /// Records one sanitized provisioned Auth callback outcome.
+  ///
+  /// Only the bounded classification is kept: never the callback URI, an
+  /// authorization code, a PKCE verifier, or a token. A rejected callback is
+  /// reported without touching the session state, so the local Planner stays
+  /// usable at the local scope.
+  void recordAuthCallbackOutcome(AuthCallbackNotice notice) {
+    if (_disposed) return;
+    _lastCallbackNotice = notice;
+    _record(event: 'auth_callback', issueCode: notice.code);
+    if (!_callbackNotices.isClosed) _callbackNotices.add(notice);
+  }
+
   void _publish({
     required Session? session,
     required AuthSessionHealth health,
@@ -376,5 +398,6 @@ class AuthSessionController {
     _disposed = true;
     await _subscription?.cancel();
     await _states.close();
+    await _callbackNotices.close();
   }
 }

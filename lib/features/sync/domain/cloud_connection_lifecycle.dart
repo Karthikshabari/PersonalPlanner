@@ -53,6 +53,24 @@ const cloudDisconnectFailedMessage =
     'The cloud connection could not be updated on this device, so it was left '
     'unchanged. Local Planner data is safe.';
 
+/// Failure copy for the partial case: sync already stopped and the
+/// project-scoped session was already cleared, but the durable "disconnected"
+/// flag could not be written.
+///
+/// The generic [cloudDisconnectFailedMessage] would be untruthful here.
+const cloudDisconnectSignedOutStateFailureMessage =
+    'You were signed out on this device and sync stopped, but the disconnect '
+    'state could not be saved. Local Planner data is safe. Sign in again to '
+    'finish disconnecting, or reconnect to keep using this backend.';
+
+/// Failure copy when synchronization was stopped but no session was cleared
+/// (no runtime Auth repository was supplied) and the durable "disconnected"
+/// flag could not be written.
+const cloudDisconnectSyncStoppedStateFailureMessage =
+    'Sync stopped, but the disconnect state could not be saved on this device. '
+    'Local Planner data is safe. Retry disconnect to finish, or reconnect to '
+    'this project.';
+
 const cloudReconnectTitle = 'Reconnect';
 const cloudReconnectExplanation =
     'Connect this device to the same user-owned Supabase project again. The '
