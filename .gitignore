@@ -51,11 +51,12 @@ app.*.map.json
 # Release bundles and generated distribution artifacts are machine-local.
 /release/
 
-# Keep only the root README in GitHub; other Markdown is local planning/report
-# material and must not be staged accidentally.
-*.md
+# Local planning/analysis reports are working material, not repository
+# documentation, so they are ignored by explicit path. A blanket `*.md` rule is
+# deliberately avoided: it would silently hide real documentation such as
+# README.md, android/README.md, tool/README.md, or anything added under docs/.
+/*.md
 !/README.md
-
 # Local environment and credentials
 .env
 .env.*

@@ -46,6 +46,13 @@ class AndroidForegroundTimer {
   static Future<void>? _activeButtonAction;
   static bool get supported => Platform.isAndroid;
   static bool _initialized = false;
+
+  /// Canonical local account scope id owning this timer service.
+  ///
+  /// Bootstrap supplies the account scope storage id, so a provisioned
+  /// user-owned backend scopes the foreground service and every durable action
+  /// envelope by `(projectRef, authUserId)`. Two Supabase projects that issued
+  /// the same auth user id therefore never share timer identity.
   static String? accountScope;
 
   static void setAccountScope(String? accountId) => accountScope = accountId;

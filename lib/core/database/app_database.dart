@@ -104,26 +104,59 @@ class AppDatabase extends _$AppDatabase {
   ]);
 
   /// Opens the stable anonymous database or an account-isolated database.
-  /// Account IDs are UUIDs from Supabase Auth, not user-controlled paths.
+  ///
+  /// [accountId] is the canonical account scope storage id
+  /// (`project_<projectRef>__user_<authUserId>` for a provisioned user-owned
+  /// backend, or the bare auth user id for the historical compile-time
+  /// developer backend). It is never user-entered text, and it is validated
+  /// against those two shapes before it can reach a file path.
   static Future<AppDatabase> open({String? accountId}) async {
     // Account adoption intentionally opens the anonymous and authenticated
     // databases at the same time. They use different file executors, so the
     // generated-database warning about multiple instances is not applicable.
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     final dir = await getApplicationSupportDirectory();
-    final filename = accountId == null
-        ? 'personal_planner.sqlite3'
-        : 'personal_planner_account_${_safeAccountId(accountId)}.sqlite3';
-    return AppDatabase(_openConnection(p.join(dir.path, filename)));
+    return AppDatabase(
+      _openConnection(
+        p.join(dir.path, databaseFileNameFor(accountId: accountId)),
+      ),
+    );
   }
+
+  /// File name of the anonymous database. Unchanged since the first release.
+  static const String anonymousDatabaseFileName = 'personal_planner.sqlite3';
+
+  /// Deterministic file name for the anonymous or account-isolated database.
+  ///
+  /// The provisioned scope keeps `projectRef` and `authUserId` in the name, so
+  /// the same auth user id in two different Supabase projects resolves to two
+  /// different files.
+  static String databaseFileNameFor({String? accountId}) => accountId == null
+      ? anonymousDatabaseFileName
+      : 'personal_planner_account_${_safeAccountId(accountId)}.sqlite3';
 
   static String _safeAccountId(String accountId) {
     final normalized = accountId.toLowerCase();
-    if (!RegExp(r'^[0-9a-f-]{36}$').hasMatch(normalized)) {
-      throw ArgumentError('Authenticated account ID must be a UUID');
+    if (_legacyAccountIdShape.hasMatch(normalized) ||
+        _projectScopedAccountIdShape.hasMatch(normalized)) {
+      return normalized;
     }
-    return normalized;
+    throw ArgumentError(
+      'Account ID must be a Supabase Auth user id or a project-scoped '
+      'account id',
+    );
   }
+
+  /// Historical compile-time developer backend: the auth user id alone.
+  static final RegExp _legacyAccountIdShape = RegExp(r'^[0-9a-f-]{36}$');
+
+  /// Provisioned user-owned backend: `project_<ref>__user_<authUserId>`.
+  ///
+  /// Both parts are fixed-shape, so the name is unambiguous and contains no
+  /// path separator, no whitespace, and no user-entered text.
+  static final RegExp _projectScopedAccountIdShape = RegExp(
+    r'^project_[a-z0-9]{20}__user_[0-9a-f-]{36}$',
+  );
 
   static QueryExecutor _openConnection(String path) =>
       NativeDatabase.createInBackground(

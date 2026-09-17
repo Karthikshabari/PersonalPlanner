@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../../core/config/supabase_config.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/daos/sync_dao.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -16,6 +16,8 @@ import '../../data/anonymous_data_adoption.dart';
 import '../../data/auth_repository.dart';
 import '../../data/sync_repository.dart';
 import '../../domain/auth_session_controller.dart';
+import '../../domain/runtime_backend.dart';
+import '../../providers/runtime_backend_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../../providers/sync_settings_provider.dart';
 import '../../domain/sync_models.dart';
@@ -58,6 +60,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     });
     final sessionAsync = ref.watch(authSessionProvider);
     final authController = ref.watch(authSessionControllerProvider);
+    final backend = ref.watch(runtimeBackendProvider);
     final statusAsync = ref.watch(syncStatusProvider);
     final enabledAsync = ref.watch(syncEnabledProvider);
     final conflictsAsync = ref.watch(syncConflictsProvider);
@@ -115,7 +118,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final quarantinedChanges = quarantineAsync.requireValue;
     final adoptionSummary = session == null
         ? null
-        : ref.watch(anonymousDataSummaryProvider);
+        // Anonymous-data adoption stays a compile-time-developer-path flow.
+        // The provisioned path never inspects or adopts anonymous data in this
+        // phase, so it never even reads the anonymous database.
+        : backend.allowsPlannerDataSync
+        ? ref.watch(anonymousDataSummaryProvider)
+        : null;
     final tokens = AppThemeTokens.of(context);
     return Scaffold(
       backgroundColor: tokens.canvas,
@@ -133,25 +141,39 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               _QuarantineCard(changes: quarantinedChanges),
               const SizedBox(height: 12),
             ],
-            // User-owned Supabase setup. A build with static developer Supabase
-            // configuration keeps the legacy path below instead, so the two
-            // paths never compete for the same screen.
-            if (!SupabaseConfig.isConfigured) ...[
+            // The three runtime backends never compete for the same screen.
+            //
+            // local-only: provisioning is the only cloud action available.
+            // provisioned ready: account connection runs against the user's own
+            // project; Planner data synchronization stays off in this phase.
+            // compile-time developer config: the legacy path below is
+            // unchanged.
+            if (backend is LocalOnlyRuntimeBackend) ...[
               const CloudSetupCard(),
               const SizedBox(height: 12),
-            ],
-            if (!SupabaseConfig.isConfigured)
               const Card(
                 child: ListTile(
                   leading: Icon(Icons.cloud_off),
                   title: Text('Offline-only mode'),
                   subtitle: Text(
-                    'Add SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY at build time '
-                    'to enable account sync.',
+                    'Personal Planner keeps working locally. Nothing is '
+                    'uploaded until a cloud backend is connected.',
                   ),
                 ),
-              )
-            else if (session == null)
+              ),
+            ] else if (backend is ProvisionedRuntimeBackend) ...[
+              const CloudSetupCard(),
+              const SizedBox(height: 12),
+              if (session == null)
+                const _AuthForm()
+              else
+                _CloudAccountCard(
+                  backend: backend,
+                  session: session,
+                  busy: _busy,
+                  onSignOut: _signOut,
+                ),
+            ] else if (session == null)
               _AuthForm()
             else ...[
               Card(
@@ -852,6 +874,45 @@ String _fieldLabel(String key) {
         RegExp(r'^.'),
         (match) => match.group(0)!.toUpperCase(),
       );
+}
+
+/// Connected state of a provisioned user-owned backend.
+///
+/// Deliberately claims nothing about Planner data: runtime Supabase Auth is
+/// connected, and normal task/category synchronization is a later phase. There
+/// is therefore no status card, no "Sync now", and no sync toggle here.
+class _CloudAccountCard extends StatelessWidget {
+  const _CloudAccountCard({
+    required this.backend,
+    required this.session,
+    required this.busy,
+    required this.onSignOut,
+  });
+
+  final ProvisionedRuntimeBackend backend;
+  final Session session;
+  final bool busy;
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: ListTile(
+      leading: const Icon(Icons.cloud_done_outlined),
+      title: const Text('Cloud account connected'),
+      subtitle: Text(
+        [
+          session.user.email ?? 'Signed-in account',
+          'Your account is connected to your cloud backend. Planner data '
+              'synchronization is not enabled yet.',
+          if (kDebugMode) 'Supabase project: ${backend.projectRef}',
+        ].join('\n'),
+      ),
+      trailing: TextButton(
+        onPressed: busy ? null : onSignOut,
+        child: const Text('Log out'),
+      ),
+    ),
+  );
 }
 
 class _AuthForm extends ConsumerStatefulWidget {

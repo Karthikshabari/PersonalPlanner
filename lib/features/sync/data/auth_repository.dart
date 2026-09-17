@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'runtime_auth_client.dart';
 import 'secure_session_storage.dart';
 
 /// The small auth surface used by app-lifetime state. Keeping this boundary
@@ -13,40 +17,104 @@ abstract interface class AuthSessionRepository {
   Future<void> refreshSession();
 }
 
-/// Auth boundary. The rest of the app receives only session/user state and
-/// never reaches Supabase directly.
+/// Auth boundary for exactly one runtime backend.
+///
+/// The rest of the app receives only session/user state and never reaches
+/// Supabase directly. The client is supplied explicitly, so a repository built
+/// for project A cannot authenticate against project B or against the
+/// compile-time developer project.
 class AuthRepository implements AuthSessionRepository {
-  AuthRepository(this._client, {this.sessionStorage});
+  AuthRepository(this.client, {this.sessionStorage});
 
-  final SupabaseClient _client;
+  final RuntimeAuthClient client;
+
+  /// Secure storage holding this backend's persisted session.
+  ///
+  /// The compile-time developer backend uses the historical global key and is
+  /// restored/persisted by supabase_flutter's own singleton wrapper. The
+  /// provisioned backend uses a project-scoped key and is restored/persisted by
+  /// this repository (see [attachScopedSessionStorage]).
   final SecureSupabaseLocalStorage? sessionStorage;
+
+  StreamSubscription<AuthState>? _sessionPersistence;
 
   static const emailConfirmationRedirect =
       'com.personalplanner.personal_planner://login-callback';
 
   @override
-  Session? get currentSession => _client.auth.currentSession;
+  Session? get currentSession => client.currentSession;
 
-  User? get currentUser => _client.auth.currentUser;
+  User? get currentUser => client.currentUser;
 
   @override
-  Stream<AuthState> get authStateChanges => _client.auth.onAuthStateChange;
+  Stream<AuthState> get authStateChanges => client.authStateChanges;
 
-  Future<AuthResponse> signUp(String email, String password) =>
-      _client.auth.signUp(
-        email: email.trim(),
-        password: password,
-        emailRedirectTo: emailConfirmationRedirect,
-      );
+  /// Restores this backend's persisted session, then keeps [sessionStorage] in
+  /// sync with later Auth events.
+  ///
+  /// Used by the provisioned runtime path only. `supabase_flutter` only
+  /// restores and persists sessions for its own singleton wrapper, and a
+  /// dynamically created client has no such wrapper, so the session lifecycle
+  /// is owned here instead.
+  ///
+  /// A stored value this project cannot decode is confined to this project:
+  /// only this backend's scoped value is dropped and the runtime stays
+  /// unauthenticated, so a corrupt session can never keep the Planner from
+  /// opening. A secure-storage *infrastructure* failure is deliberately not
+  /// handled here — it propagates so the caller can report an explicit
+  /// bootstrap failure instead of silently treating the account as signed out.
+  Future<void> attachScopedSessionStorage() async {
+    final storage = sessionStorage;
+    if (storage == null) return;
+    final persisted = await storage.accessToken();
+    if (persisted != null) {
+      try {
+        await client.setInitialSession(persisted);
+      } catch (error) {
+        if (!_isUnusableStoredSessionValue(error)) rethrow;
+        // Confined to this project's namespace: no other project's session and
+        // no legacy static session is touched.
+        await storage.removePersistedSession();
+        await storage.settle();
+      }
+    }
+    _sessionPersistence ??= client.authStateChanges.listen(
+      _persistSession,
+      onError: (_) {
+        // Stream errors are surfaced by AuthSessionController as health, never
+        // as an implicit signed-out state.
+      },
+      cancelOnError: false,
+    );
+  }
+
+  void _persistSession(AuthState event) {
+    final storage = sessionStorage;
+    if (storage == null) return;
+    final session = event.session;
+    if (session != null) {
+      unawaited(storage.persistSession(jsonEncode(session.toJson())));
+      return;
+    }
+    if (event.event == AuthChangeEvent.signedOut) {
+      unawaited(storage.removePersistedSession());
+    }
+  }
+
+  Future<AuthResponse> signUp(String email, String password) => client.signUp(
+    email: email.trim(),
+    password: password,
+    emailRedirectTo: emailConfirmationRedirect,
+  );
 
   Future<AuthResponse> signIn(String email, String password) =>
-      _client.auth.signInWithPassword(email: email.trim(), password: password);
+      client.signInWithPassword(email: email.trim(), password: password);
 
   /// Delegates rotation/retry ownership to the SDK. The controller serializes
   /// requests for this method so an expiry cannot start concurrent refreshes.
   @override
   Future<void> refreshSession() async {
-    await _client.auth.refreshSession();
+    await client.refreshSession();
   }
 
   /// Supabase emits the terminal event before its remote sign-out request has
@@ -54,7 +122,7 @@ class AuthRepository implements AuthSessionRepository {
   /// refresh write cannot resurrect credentials after a user logs out.
   Future<void> signOut() async {
     try {
-      await _client.auth.signOut();
+      await client.signOut();
     } finally {
       final storage = sessionStorage;
       if (storage != null) {
@@ -63,7 +131,34 @@ class AuthRepository implements AuthSessionRepository {
       }
     }
   }
+
+  /// Releases the session listener. Storage itself is left intact: signing out
+  /// or switching backends must not delete another backend's namespace, and the
+  /// scoped session is only removed by an explicit sign-out.
+  Future<void> dispose() async {
+    await _sessionPersistence?.cancel();
+    _sessionPersistence = null;
+  }
 }
+
+/// True when [error] means "the *stored session value* is not a usable
+/// session", which is a per-project data problem.
+///
+/// Verified against the installed gotrue (2.27.2)
+/// `GoTrueClient.setInitialSession`, which:
+///
+/// * calls `json.decode` → [FormatException] for malformed JSON;
+/// * passes the decoded value to `Session.fromJson`, whose parameter type makes
+///   a non-object document (a list, string, number, or null) a [TypeError], and
+///   whose body throws [FormatException] for a missing or non-object `user`;
+/// * throws [AuthException] (`sessionMissing`) when the document has no
+///   `access_token`, and [TypeError] when a token field has the wrong type.
+///
+/// Anything else — a keyring/plugin/platform failure, for instance — is secure
+/// storage infrastructure rather than a corrupt value, and must stay
+/// distinguishable to the caller.
+bool _isUnusableStoredSessionValue(Object error) =>
+    error is FormatException || error is TypeError || error is AuthException;
 
 /// Converts known auth failures to safe UI text without exposing access or
 /// refresh tokens, PKCE values, passwords, or raw request payloads.

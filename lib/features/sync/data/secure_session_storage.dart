@@ -1,6 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../domain/runtime_auth_namespaces.dart';
+
 /// Testable minimum of secure key-value storage. Session values are kept in
 /// this boundary only; callbacks deliberately contain no values or messages.
 abstract interface class SecureKeyValueStore {
@@ -103,11 +105,26 @@ void requireSecureSessionBootstrapReady(
 
 /// Secure session storage for Supabase Auth. Tokens never enter SQLite,
 /// app_settings, logs, exports, or error messages.
+///
+/// [sessionKey] selects the namespace: the historical global key for the
+/// compile-time developer backend, or the project-scoped key of a provisioned
+/// user-owned backend. A session stored for one project is therefore
+/// unreachable from any other project, and a legacy global session can never
+/// authenticate a newly provisioned project.
 class SecureSupabaseLocalStorage extends LocalStorage {
-  SecureSupabaseLocalStorage({SecureKeyValueStore? storage, this.onOutcome})
-    : _storage = storage ?? FlutterSecureKeyValueStore();
+  SecureSupabaseLocalStorage({
+    SecureKeyValueStore? storage,
+    this.onOutcome,
+    this.sessionKey = sessionKeyForLegacyBackend,
+  }) : _storage = storage ?? FlutterSecureKeyValueStore();
 
-  static const sessionKey = 'personal_planner.supabase.session';
+  /// Historical session key of the compile-time developer backend.
+  static const sessionKeyForLegacyBackend =
+      RuntimeAuthNamespaces.legacySessionKey;
+
+  /// Key this adapter reads and writes.
+  final String sessionKey;
+
   final SecureKeyValueStore _storage;
   void Function(SecureSessionStorageOutcome outcome)? onOutcome;
   Future<void> _tail = Future<void>.value();
@@ -178,13 +195,21 @@ class SecureSupabaseLocalStorage extends LocalStorage {
 
 /// Secure PKCE verifier storage. The verifier is short-lived but still
 /// credential material and must not use shared preferences.
+///
+/// The key prefix is namespaced by project ref for a provisioned backend, so a
+/// PKCE flow started for project A can never be completed by project B. This is
+/// the runtime Planner Auth PKCE flow, which is separate from the Supabase
+/// Management OAuth PKCE handled by the provisioning subsystem.
 class SecureSupabasePkceStorage extends GotrueAsyncStorage {
-  SecureSupabasePkceStorage({FlutterSecureStorage? storage})
-    : _storage = storage ?? FlutterSecureStorage();
+  SecureSupabasePkceStorage({
+    SecureKeyValueStore? storage,
+    this.namespaces = const RuntimeAuthNamespaces.legacyStatic(),
+  }) : _storage = storage ?? FlutterSecureKeyValueStore();
 
-  final FlutterSecureStorage _storage;
+  final RuntimeAuthNamespaces namespaces;
+  final SecureKeyValueStore _storage;
 
-  String _key(String key) => 'personal_planner.supabase.pkce.$key';
+  String _key(String key) => namespaces.pkceKey(key);
 
   @override
   Future<String?> getItem({required String key}) =>
