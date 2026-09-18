@@ -24,14 +24,17 @@ flutter test
 flutter run -d linux
 ```
 
-The Planner runs fully offline with no configuration. Cloud features stay
-unavailable (and are reported as such in the UI) until the build-time
-configuration below is supplied.
+The Planner runs fully offline with no configuration. Normal Android and Linux
+builds also include the public production provisioning Worker URL, so cloud
+setup is available without a local JSON file. No Planner data is sent until a
+user explicitly provisions storage and signs in.
 
 ## Configuration
 
 All client configuration is compile-time and consists only of public values.
-It is passed with `--dart-define` or with an ignored local JSON file.
+The production provisioning Worker URL is the built-in default. A
+`--dart-define` can override it for staging or an isolated test; static
+Supabase configuration remains an explicit development fallback.
 
 | Value | Purpose |
 |---|---|
@@ -45,12 +48,14 @@ flutter run -d linux \
   --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
   --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 
-# In-app, user-owned project provisioning (needs the Worker URL):
-flutter run -d linux --dart-define=PROVISIONING_BASE_URL=https://<worker-host>
+# Optional staging/isolated-test override for in-app provisioning:
+flutter run -d linux --dart-define=PROVISIONING_BASE_URL=https://<staging-worker-host>
 ```
 
-For local development copy `supabase.example.json` to `supabase.local.json`
-(ignored by Git) and use `--dart-define-from-file=supabase.local.json`.
+For the explicit static fallback, copy `supabase.example.json` to
+`supabase.local.json` (ignored by Git) and use
+`--dart-define-from-file=supabase.local.json`. `provisioning.local.json` is
+also ignored if a local Worker override is useful.
 
 Never commit real credentials. Only the project URL and publishable key belong
 in a client build; Management tokens, OAuth client secrets, service-role keys,

@@ -618,9 +618,29 @@ void main() {
   });
 
   group('configuration and diagnostics', () {
-    test('requires a configured base URL', () {
-      expect(ProvisioningClient.fromConfig, throwsStateError);
-    });
+    test(
+      'uses the public production base URL when no override is supplied',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            'transactionId': _transactionId,
+            'accessToken': _capability,
+            'authorizationUrl': 'https://api.supabase.com/v1/oauth/authorize',
+            'expiresIn': 3600,
+          }),
+        );
+
+        await ProvisioningClient.fromConfig(transport: transport)
+            .createTransaction();
+
+        expect(
+          transport.requests.single.uri,
+          Uri.parse(
+            'https://your-worker.example.workers.dev/v1/provisioning/transactions',
+          ),
+        );
+      },
+    );
 
     test('rejects a base URL that is not https', () {
       expect(

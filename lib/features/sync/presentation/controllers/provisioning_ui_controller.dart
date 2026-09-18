@@ -30,8 +30,7 @@ const cloudSetupUnavailableMessage =
     'Cloud setup is unavailable in this build because no provisioning '
     'control-plane URL is configured. Personal Planner keeps working locally.';
 const cloudSetupLocalOnlyBody =
-    'Cloud sync is optional. Personal Planner can create a Supabase project '
-    'that belongs to you.';
+    'Cloud sync is optional. Set up private cloud storage that belongs to you.';
 const cloudSetupAuthorizationBody =
     'Personal Planner will ask Supabase for permission to create and configure '
     'one project inside an organization you choose.';
@@ -63,9 +62,8 @@ const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
 const cloudSetupReadyBody =
-    'Your cloud backend is ready. Connect your Planner account below. Planner '
-    'data synchronization starts after the first safe synchronization with '
-    'your cloud account.';
+    'Your private cloud storage is ready. Sign in or create a Planner account '
+    'below to begin syncing across devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
     'this device and your Supabase project was not deleted. Reconnect to the '
@@ -115,7 +113,12 @@ enum ProvisioningUiPhase {
 }
 
 /// User-facing progress stages inside [ProvisioningUiPhase.provisioning].
-enum CloudSetupStage { creatingProject, preparingDatabase, verifyingSetup }
+enum CloudSetupStage {
+  preparingProject,
+  waitingForProject,
+  installingPlannerSchema,
+  verifyingCloudStorage,
+}
 
 class ProvisioningUiState {
   const ProvisioningUiState({
@@ -498,21 +501,28 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       case ProvisioningState.migrationReconciliationRequired:
         return ProvisioningUiState(
           phase: ProvisioningUiPhase.provisioning,
-          stage: CloudSetupStage.preparingDatabase,
+          stage: CloudSetupStage.installingPlannerSchema,
           transactionId: transactionId,
           authorizationUrlAvailable: _authorizationUrl != null,
         );
       case ProvisioningState.verifying:
         return ProvisioningUiState(
           phase: ProvisioningUiPhase.provisioning,
-          stage: CloudSetupStage.verifyingSetup,
+          stage: CloudSetupStage.verifyingCloudStorage,
+          transactionId: transactionId,
+          authorizationUrlAvailable: _authorizationUrl != null,
+        );
+      case ProvisioningState.projectWaiting:
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.provisioning,
+          stage: CloudSetupStage.waitingForProject,
           transactionId: transactionId,
           authorizationUrlAvailable: _authorizationUrl != null,
         );
       default:
         return ProvisioningUiState(
           phase: ProvisioningUiPhase.provisioning,
-          stage: CloudSetupStage.creatingProject,
+          stage: CloudSetupStage.preparingProject,
           transactionId: transactionId,
           authorizationUrlAvailable: _authorizationUrl != null,
         );

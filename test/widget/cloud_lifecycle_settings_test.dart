@@ -82,10 +82,7 @@ void main() {
     await settle(tester);
 
     expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
-    expect(
-      find.textContaining('Cloud Sync is switched off'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Cloud Sync is switched off'), findsOneWidget);
     // Retry is unreachable while automatic synchronization is off.
     expect(
       tester
@@ -96,10 +93,7 @@ void main() {
       isNull,
     );
     // The preference is durable in the account database, not in memory.
-    expect(
-      await harness.database.syncDao.getSetting('sync.enabled'),
-      'false',
-    );
+    expect(await harness.database.syncDao.getSetting('sync.enabled'), 'false');
     // Once the baseline exists the same preference reads as an explicit
     // lifecycle state instead of a misleading "Not configured".
     await InitialSyncStateStore(harness.database).write(
@@ -145,9 +139,8 @@ void main() {
         initialSyncPhase: InitialSyncPhase.complete,
         reloader: reloader,
       );
-      final sessionKey = RuntimeAuthNamespaces.forProject(
-        testProjectRef,
-      ).sessionKey;
+      final sessionKey = RuntimeAuthNamespaces.forProject(testProjectRef)
+          .sessionKey;
       harness.store.values[sessionKey] = 'project-session';
       // Building the screen adopts the already-ready backend once; only the
       // reloads after that belong to the lifecycle action under test.
@@ -202,7 +195,7 @@ void main() {
       reloader: reloader,
     );
 
-    expect(find.text('Cloud backend disconnected'), findsOneWidget);
+    expect(find.text('Cloud storage disconnected'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('cloud-reconnect-action')),
       findsOneWidget,
@@ -254,9 +247,8 @@ void main() {
         containerRef: containerRef,
       );
       final container = containerRef.container!;
-      final sessionKey = RuntimeAuthNamespaces.forProject(
-        testProjectRef,
-      ).sessionKey;
+      final sessionKey = RuntimeAuthNamespaces.forProject(testProjectRef)
+          .sessionKey;
       harness.store.values[sessionKey] = 'project-session';
       reloader.calls = 0;
       profileStore.armed = true;
@@ -372,10 +364,7 @@ void main() {
     );
 
     expect(find.text('Cloud connection needs attention'), findsOneWidget);
-    expect(
-      find.textContaining('Your Planner data is intact'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Your Planner data is intact'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('cloud-profile-health-repair')),
       findsOneWidget,
@@ -570,9 +559,7 @@ Future<_Harness> _pump(
     await InitialSyncStateStore(database).write(
       InitialSyncRecord(
         phase: initialSyncPhase,
-        detail: <String, dynamic>{
-          'message': ?initialSyncMessage,
-        },
+        detail: <String, dynamic>{'message': ?initialSyncMessage},
         updatedAt: DateTime.now().toUtc(),
       ),
     );
