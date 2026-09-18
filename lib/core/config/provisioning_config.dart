@@ -6,7 +6,18 @@
 /// project. A missing provisioning URL never affects the local Planner; it only
 /// leaves the provisioning subsystem unavailable.
 abstract final class ProvisioningConfig {
-  static const baseUrl = String.fromEnvironment('PROVISIONING_BASE_URL');
+  /// Public production control-plane endpoint bundled with normal builds.
+  ///
+  /// This is deliberately not a Supabase endpoint and carries no credential.
+  /// A `--dart-define=PROVISIONING_BASE_URL=…` value still overrides it for a
+  /// staging Worker or an isolated integration test.
+  static const defaultBaseUrl =
+      'https://personal-planner-provisioning-poc.karthikshabariper.workers.dev';
+
+  static const baseUrl = String.fromEnvironment(
+    'PROVISIONING_BASE_URL',
+    defaultValue: defaultBaseUrl,
+  );
 
   /// The control-plane base URI, or null when it is missing or unusable.
   ///

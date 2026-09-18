@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../providers/runtime_backend_providers.dart';
+import '../../providers/provisioning_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
 
 /// Settings → Sync card for the user-owned Supabase setup flow.
@@ -34,6 +35,19 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
       _controller = controller;
       unawaited(controller.startWatching());
     });
+  }
+
+  Future<void> _openProjectDashboard(String projectRef) async {
+    final opened = await ref
+        .read(browserLauncherProvider)
+        .open(supabaseProjectDashboardUrl(projectRef));
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The Supabase dashboard could not be opened.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -272,25 +286,32 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
 
       case ProvisioningUiPhase.ready:
         final profile = state.readyProfile;
+        final projectRef = profile?.projectRef;
         return _CloudCard(
           icon: Icons.cloud_done_outlined,
-          title: 'Cloud backend ready',
-          body: profile == null
-              ? cloudSetupReadyBody
-              : '$cloudSetupReadyBody\n\nSupabase project: ${profile.projectRef}',
+          title: 'Cloud storage ready',
+          body: cloudSetupReadyBody,
           debugDetail: debugDetail,
           busy: busy,
+          actions: <Widget>[
+            if (projectRef != null)
+              TextButton(
+                key: const ValueKey('cloud-open-dashboard'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openProjectDashboard(projectRef)),
+                child: const Text('Open Supabase dashboard'),
+              ),
+          ],
         );
 
       case ProvisioningUiPhase.disconnected:
         final profile = state.readyProfile;
+        final projectRef = profile?.projectRef;
         return _CloudCard(
           icon: Icons.cloud_off_outlined,
-          title: 'Cloud backend disconnected',
-          body: profile == null
-              ? cloudSetupDisconnectedBody
-              : '${state.message ?? cloudSetupDisconnectedBody}'
-                    '\n\nSupabase project: ${profile.projectRef}',
+          title: 'Cloud storage disconnected',
+          body: state.message ?? cloudSetupDisconnectedBody,
           debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
@@ -299,15 +320,24 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
               onPressed: busy ? null : controller.reconnect,
               child: const Text('Reconnect to this project'),
             ),
+            if (projectRef != null)
+              TextButton(
+                key: const ValueKey('cloud-open-dashboard'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openProjectDashboard(projectRef)),
+                child: const Text('Open Supabase dashboard'),
+              ),
           ],
         );
     }
   }
 
   String _stageLabel(CloudSetupStage? stage) => switch (stage) {
-    CloudSetupStage.creatingProject => 'Creating cloud project',
-    CloudSetupStage.preparingDatabase => 'Preparing database',
-    CloudSetupStage.verifyingSetup => 'Verifying setup',
+    CloudSetupStage.preparingProject => 'Preparing your cloud project',
+    CloudSetupStage.waitingForProject => 'Waiting for your cloud project',
+    CloudSetupStage.installingPlannerSchema => 'Installing Planner schema',
+    CloudSetupStage.verifyingCloudStorage => 'Verifying cloud storage',
     null => 'Setting up your cloud backend',
   };
 
@@ -317,6 +347,8 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
     final parts = <String>[
       if (state.transactionId != null) 'transaction ${state.transactionId}',
       if (state.errorCode != null) 'code ${state.errorCode}',
+      if (state.readyProfile?.projectRef != null)
+        'project ${state.readyProfile!.projectRef}',
     ];
     return parts.isEmpty ? null : parts.join(' · ');
   }
@@ -377,11 +409,20 @@ class _CloudCard extends StatelessWidget {
             ],
             if (debugDetail != null) ...[
               const SizedBox(height: 8),
-              Text(
-                debugDetail!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Technical details'),
+                children: <Widget>[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      debugDetail!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -389,4 +430,20 @@ class _CloudCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Browser URL for a known, user-owned Supabase project.
+///
+/// The project ref is already validated before a profile can become READY; the
+/// repeat check keeps this UI boundary fail-closed and ensures no capability,
+/// management token, or runtime key can reach an external URL.
+Uri supabaseProjectDashboardUrl(String projectRef) {
+  if (!RegExp(r'^[a-z]{20}$').hasMatch(projectRef)) {
+    throw ArgumentError.value(
+      projectRef,
+      'projectRef',
+      'must be a project ref',
+    );
+  }
+  return Uri.https('supabase.com', '/dashboard/project/$projectRef');
 }

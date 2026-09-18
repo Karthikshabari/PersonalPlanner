@@ -192,7 +192,7 @@ void main() {
     await _pumpCard(tester, api: api, launcher: launcher);
 
     expect(find.text('Setting up your cloud backend'), findsOneWidget);
-    expect(find.textContaining('Preparing database'), findsOneWidget);
+    expect(find.textContaining('Installing Planner schema'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
 
     await _unmount(tester);
@@ -262,6 +262,9 @@ void main() {
       );
       expect(launcher.opened, <Uri>[testAuthorizationUrl]);
       expect(find.text('Authorize Supabase'), findsOneWidget);
+      expect(find.textContaining(newTransactionId), findsNothing);
+      await tester.tap(find.text('Technical details'));
+      await _settle(tester);
       expect(find.textContaining(newTransactionId), findsOneWidget);
 
       await _unmount(tester);
@@ -299,10 +302,10 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('cloud-open-authorization')));
       await _settle(tester);
-      expect(
-        launcher.opened,
-        <Uri>[testAuthorizationUrl, testAuthorizationUrl],
-      );
+      expect(launcher.opened, <Uri>[
+        testAuthorizationUrl,
+        testAuthorizationUrl,
+      ]);
 
       await _unmount(tester);
     },
@@ -366,20 +369,28 @@ void main() {
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
-    expect(find.text('Cloud backend ready'), findsOneWidget);
-    expect(find.textContaining(testProjectRef), findsOneWidget);
+    expect(find.text('Cloud storage ready'), findsOneWidget);
+    expect(find.textContaining(testProjectRef), findsNothing);
     expect(find.text('Sync now'), findsNothing);
     expect(find.byType(TextField), findsNothing);
     // A connected backend is never offered a restart action here.
     expect(find.byKey(const ValueKey('cloud-restart-action')), findsNothing);
     expect(find.byKey(const ValueKey('cloud-start-again')), findsNothing);
     expect(find.textContaining(testPublishableKey), findsNothing);
-    expect(find.textContaining('Connect your Planner account'), findsOneWidget);
+    expect(
+      find.textContaining('Sign in or create a Planner account'),
+      findsOneWidget,
+    );
     // Account connection is available now; Planner data synchronization only
     // starts after the Phase G first synchronization is complete.
+    expect(find.textContaining('begin syncing across devices'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-open-dashboard')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-open-dashboard')));
+    await _settle(tester);
     expect(
-      find.textContaining('starts after the first safe synchronization'),
-      findsOneWidget,
+      launcher.opened.last,
+      Uri.parse('https://supabase.com/dashboard/project/$testProjectRef'),
     );
 
     await _unmount(tester);
@@ -401,7 +412,7 @@ void main() {
     expect(api.startAttemptCount, 0);
     expect(api.calls, contains('verify'));
     expect(find.text('Setting up your cloud backend'), findsOneWidget);
-    expect(find.textContaining('Verifying setup'), findsOneWidget);
+    expect(find.textContaining('Verifying cloud storage'), findsOneWidget);
 
     await _unmount(tester);
   });

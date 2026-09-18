@@ -53,7 +53,7 @@ void main() {
       reloader: reloader,
     );
 
-    expect(find.text('Cloud backend ready'), findsOneWidget);
+    expect(find.text('Cloud storage ready'), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-password')), findsOneWidget);
     // No sync surface exists for the provisioned path.
@@ -114,7 +114,10 @@ void main() {
       expect(find.text('Synced'), findsNothing);
       // The Phase G first-sync state is described honestly: the account is
       // connected, but cloud synchronization is not claimed to be active.
-      expect(find.byKey(const ValueKey('provisioned-first-sync')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('provisioned-first-sync')),
+        findsOneWidget,
+      );
       expect(find.text('Cloud setup needs a retry'), findsOneWidget);
       expect(find.text('Retry cloud setup'), findsOneWidget);
       expect(find.byTooltip('Cloud setup pending'), findsOneWidget);
@@ -150,7 +153,10 @@ void main() {
       });
       await settle(tester);
 
-      expect(find.byKey(const ValueKey('provisioned-first-sync')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('provisioned-first-sync')),
+        findsNothing,
+      );
       expect(find.text('Enable sync'), findsOneWidget);
       expect(find.text('Sync now'), findsOneWidget);
 
@@ -192,7 +198,7 @@ void main() {
 
     expect(find.text('Cloud account connected'), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);
-    expect(find.text('Cloud backend ready'), findsOneWidget);
+    expect(find.text('Cloud storage ready'), findsOneWidget);
     // Signing out is not a provisioning restart and not a disconnect.
     expect(api.startAttemptCount, 0);
     expect(api.attempt, isNotNull);
@@ -282,7 +288,7 @@ void main() {
     );
 
     expect(find.text('Authorize Supabase'), findsOneWidget);
-    expect(find.text('Cloud backend ready'), findsNothing);
+    expect(find.text('Cloud storage ready'), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsNothing);
     expect(reloader.calls, 0);
 

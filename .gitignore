@@ -62,6 +62,7 @@ app.*.map.json
 .env.*
 !.env.example
 /supabase.local.json
+/provisioning.local.json
 
 # Local SQLite runtime files
 *.sqlite

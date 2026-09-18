@@ -186,7 +186,7 @@ void main() {
         provisioningProjectName(testTransactionId),
       );
       expect(current().phase, ProvisioningUiPhase.provisioning);
-      expect(current().stage, CloudSetupStage.creatingProject);
+      expect(current().stage, CloudSetupStage.waitingForProject);
     },
   );
 
@@ -208,7 +208,7 @@ void main() {
     );
     await controller().advance();
     expect(api.calls, contains('migrate'));
-    expect(current().stage, CloudSetupStage.preparingDatabase);
+    expect(current().stage, CloudSetupStage.installingPlannerSchema);
 
     api.attempt = testAttempt(
       ProvisioningState.verifying,
@@ -220,7 +220,7 @@ void main() {
     );
     await controller().advance();
     expect(api.calls, contains('verify'));
-    expect(current().stage, CloudSetupStage.verifyingSetup);
+    expect(current().stage, CloudSetupStage.verifyingCloudStorage);
   });
 
   test('surfaces a ready backend with the persisted profile', () async {
@@ -310,49 +310,46 @@ void main() {
     expect(current().phase, ProvisioningUiPhase.provisioning);
   });
 
-  test(
-    'start again from a retryable failure creates a new attempt',
-    () async {
-      const newTransactionId = 'ffffffffffffffffffffffffffffffff';
-      api.attempt = testAttempt(
-        ProvisioningState.verifying,
-        projectRef: testProjectRef,
-      );
-      api.verifyResult = const ProvisioningResult(
-        outcome: ProvisioningOutcome.retryable,
-        message: 'Provisioning stopped: invalid_request (HTTP 400).',
-      );
-      buildContainer(withApi: api);
-      await loadState();
-      await controller().advance();
+  test('start again from a retryable failure creates a new attempt', () async {
+    const newTransactionId = 'ffffffffffffffffffffffffffffffff';
+    api.attempt = testAttempt(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
+    api.verifyResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.retryable,
+      message: 'Provisioning stopped: invalid_request (HTTP 400).',
+    );
+    buildContainer(withApi: api);
+    await loadState();
+    await controller().advance();
 
-      expect(current().phase, ProvisioningUiPhase.retryableError);
-      final verifyCallsBefore = api.calls
-          .where((call) => call == 'verify')
-          .length;
+    expect(current().phase, ProvisioningUiPhase.retryableError);
+    final verifyCallsBefore = api.calls
+        .where((call) => call == 'verify')
+        .length;
 
-      api.startResult = ProvisioningResult(
-        outcome: ProvisioningOutcome.inProgress,
-        profile: testProfile(
-          ProvisioningState.authorizationPending,
-          transactionId: newTransactionId,
-        ),
-        authorizationUrl: testAuthorizationUrl,
-      );
-      await controller().startAgain();
+    api.startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(
+        ProvisioningState.authorizationPending,
+        transactionId: newTransactionId,
+      ),
+      authorizationUrl: testAuthorizationUrl,
+    );
+    await controller().startAgain();
 
-      // A brand-new transaction was requested, the abandoned one was not
-      // retried, and the UI returned to the authorization flow for the new id.
-      expect(api.startAttemptCount, 1);
-      expect(
-        api.calls.where((call) => call == 'verify').length,
-        verifyCallsBefore,
-      );
-      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
-      expect(current().transactionId, newTransactionId);
-      expect(current().transactionId, isNot(testTransactionId));
-    },
-  );
+    // A brand-new transaction was requested, the abandoned one was not
+    // retried, and the UI returned to the authorization flow for the new id.
+    expect(api.startAttemptCount, 1);
+    expect(
+      api.calls.where((call) => call == 'verify').length,
+      verifyCallsBefore,
+    );
+    expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+    expect(current().transactionId, newTransactionId);
+    expect(current().transactionId, isNot(testTransactionId));
+  });
 
   test(
     'starting again calls startAttempt instead of touching storage',
