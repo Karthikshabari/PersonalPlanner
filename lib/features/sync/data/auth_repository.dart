@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/config/auth_callback.dart';
+import '../domain/password_policy.dart';
 import 'runtime_auth_client.dart';
 import 'runtime_auth_callback.dart';
 import 'secure_session_storage.dart';
@@ -205,6 +206,9 @@ bool _isUnusableStoredSessionValue(Object error) =>
 /// Converts known auth failures to safe UI text without exposing access or
 /// refresh tokens, PKCE values, passwords, or raw request payloads.
 String safeAuthError(Object error) {
+  // A rejected password is not a networking or credential problem, so it must
+  // never be reported with the generic message below.
+  if (isPasswordPolicyFailure(error)) return passwordPolicyErrorMessage();
   final message = error.toString().toLowerCase();
   if (message.contains('invalid login credentials')) {
     return 'Email or password is incorrect.';
@@ -229,3 +233,35 @@ String safeAuthError(Object error) {
   }
   return 'Authentication failed. Check your details and try again.';
 }
+
+/// True when Supabase rejected the chosen *password* rather than the request.
+///
+/// Supabase reports a policy rejection as `weak_password`; older servers
+/// omitted the code and only sent a human message, so the message is checked
+/// as well. Nothing here depends on a guessed password policy — the server
+/// stays the authority and this only makes its answer understandable.
+bool isPasswordPolicyFailure(Object error) {
+  if (error is AuthWeakPasswordException) return true;
+  if (error is AuthException && error.code == 'weak_password') return true;
+  final message = error.toString().toLowerCase();
+  if (message.contains('weak_password') || message.contains('weak password')) {
+    return true;
+  }
+  if (message.contains('known to be weak')) return true;
+  if (message.contains('password') &&
+      (message.contains('too short') ||
+          message.contains('should be at least') ||
+          message.contains('at least one character'))) {
+    return true;
+  }
+  return false;
+}
+
+/// User-facing text for a password Supabase itself rejected.
+///
+/// The guaranteed local minimum is stated, and anything stronger is presented
+/// as belonging to the user's own Supabase project instead of being invented.
+String passwordPolicyErrorMessage() =>
+    'Supabase rejected this password. Use at least '
+    '${PlannerPasswordPolicy.minimumLength} characters, and add letters, '
+    'numbers and symbols if your Supabase project asks for a stronger one.';

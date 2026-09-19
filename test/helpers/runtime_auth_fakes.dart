@@ -123,6 +123,10 @@ class FakeRuntimeAuthClient implements RuntimeAuthClient {
   /// Scripted failure for [exchangeCodeForSession].
   Object? callbackError;
 
+  /// Scripted failure for [signUp], so the registration surface can be tested
+  /// against a real Supabase rejection without a network call.
+  Object? signUpError;
+
   @override
   Session? get currentSession => session;
 
@@ -184,6 +188,8 @@ class FakeRuntimeAuthClient implements RuntimeAuthClient {
       password: password,
       emailRedirectTo: emailRedirectTo,
     ));
+    final error = signUpError;
+    if (error != null) throw error;
     return AuthResponse(session: session);
   }
 

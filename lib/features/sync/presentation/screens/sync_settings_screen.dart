@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/database/app_database.dart';
@@ -20,6 +19,7 @@ import '../../data/sync_repository.dart';
 import '../../domain/auth_session_controller.dart';
 import '../../domain/cloud_connection_lifecycle.dart';
 import '../../domain/initial_sync_models.dart';
+import '../../domain/password_policy.dart';
 import '../../domain/runtime_backend.dart';
 import '../controllers/provisioning_ui_controller.dart';
 import '../../providers/runtime_backend_providers.dart';
@@ -27,7 +27,11 @@ import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../../providers/sync_settings_provider.dart';
 import '../../domain/sync_models.dart';
+import '../widgets/cloud_setup_preflight.dart';
 import '../widgets/cloud_setup_card.dart';
+import '../widgets/password_requirements.dart';
+import '../widgets/sync_action_group.dart';
+import '../widgets/sync_status_card.dart';
 import '../widgets/sync_status_action.dart';
 
 class SyncSettingsScreen extends ConsumerStatefulWidget {
@@ -149,7 +153,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ref.read(syncEnabledProvider.notifier).setEnabled(value),
       ),
     );
-    List<Widget> syncStateCards({required bool cloudSyncDisabled}) => <Widget>[
+    List<Widget> syncStateCards() => <Widget>[
       if (conflicts.isNotEmpty)
         _ConflictCard(
           conflicts: conflicts,
@@ -166,37 +170,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
         const SizedBox(height: 12),
       ],
-      Card(
-        child: ListTile(
-          leading: Icon(
-            cloudSyncDisabled
-                ? Icons.cloud_off_outlined
-                : _statusIcon(status.state),
-          ),
-          title: Text(
-            cloudSyncDisabled ? 'Cloud Sync is off' : status.state.label,
-          ),
-          subtitle: Text(
-            [
-              if (cloudSyncDisabled)
-                'Nothing is uploaded or downloaded. Pending changes stay '
-                    'queued in this account until sync is switched back on.'
-              else if (status.message != null)
-                status.message!,
-              '${status.pendingOperations} pending operation(s)',
-              if (status.lastSuccessfulSync != null)
-                'Last sync: ${status.lastSuccessfulSync!.toLocal()}'
-              else
-                'Last sync: not yet completed',
-            ].join('\n'),
-          ),
-          trailing: FilledButton(
-            onPressed: enabled && !_busy
-                ? () => ref.read(syncEngineProvider)?.syncNow()
-                : null,
-            child: const Text('Sync now'),
-          ),
-        ),
+      SyncStatusPanel(
+        status: status,
+        enabled: enabled,
+        busy: _busy,
+        onSyncNow: () => ref.read(syncEngineProvider)?.syncNow(),
       ),
     ];
     final tokens = AppThemeTokens.of(context);
@@ -239,17 +217,18 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 ),
               ),
             ] else if (backend is ProvisionedRuntimeBackend) ...[
-              const CloudSetupCard(),
+              CloudSetupCard(
+                onUseOfflineOnly: _disconnect,
+                onStopUsingCloud: _disconnect,
+              ),
               const SizedBox(height: 12),
               if (session == null)
                 const _AuthForm()
               else ...[
                 _CloudAccountCard(
-                  backend: backend,
                   session: session,
                   busy: _busy,
                   onSignOut: _signOut,
-                  onDisconnect: _disconnect,
                   initialSync: initialSync,
                 ),
                 const SizedBox(height: 12),
@@ -270,7 +249,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     onDisconnect: _disconnect,
                   ),
                 if (initialSync?.baselineComplete ?? false)
-                  ...syncStateCards(cloudSyncDisabled: !enabled),
+                  ...syncStateCards(),
               ],
             ] else if (session == null)
               _AuthForm()
@@ -331,10 +310,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               const SizedBox(height: 12),
               syncPreferenceCard,
               const SizedBox(height: 12),
-              // The compile-time developer path keeps its historical status
-              // card: only the provisioned lifecycle distinguishes a
-              // deliberately switched-off Cloud Sync preference.
-              ...syncStateCards(cloudSyncDisabled: false),
+              ...syncStateCards(),
               const SizedBox(height: 12),
               const Card(
                 child: ListTile(
@@ -358,11 +334,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => context.pop(),
-              child: const Text('Use offline-only mode'),
-            ),
           ],
         ),
       ),
@@ -560,7 +531,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           FilledButton(
             key: const ValueKey('cloud-disconnect-confirm'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Disconnect'),
+            child: const Text('Stop using cloud'),
           ),
         ],
       ),
@@ -799,22 +770,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     }
   }
 
-  IconData _statusIcon(SyncEngineState? state) => switch (state) {
-    SyncEngineState.synced => Icons.cloud_done,
-    SyncEngineState.syncing => Icons.sync,
-    SyncEngineState.pending => Icons.cloud_upload,
-    SyncEngineState.offline => Icons.cloud_off,
-    SyncEngineState.conflict => Icons.warning_amber,
-    SyncEngineState.error => Icons.error_outline,
-    SyncEngineState.partialSuccess => Icons.warning_amber,
-    SyncEngineState.permanentFailure => Icons.report_problem_outlined,
-    SyncEngineState.authFailure => Icons.lock_outline,
-    SyncEngineState.refreshPaused => Icons.refresh,
-    SyncEngineState.invalidData => Icons.data_object,
-    SyncEngineState.initialSyncPending => Icons.cloud_sync_outlined,
-    SyncEngineState.backendUnavailable => Icons.cloud_off_outlined,
-    _ => Icons.cloud_queue,
-  };
 }
 
 /// Explicit repair surface for an unusable stored backend profile.
@@ -826,6 +781,15 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
 /// user asks for it, and every local Planner record is untouched.
 class _CloudProfileHealthCard extends ConsumerWidget {
   const _CloudProfileHealthCard();
+
+  /// Repairing an unusable stored profile can create the user's first cloud
+  /// project, so it goes through the same pre-flight as the main setup entry
+  /// point and then runs the unchanged provisioning flow.
+  static Future<void> _repairProfile(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showCloudSetupPreflight(context);
+    if (!confirmed) return;
+    await ref.read(provisioningUiProvider.notifier).startSetup();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -855,9 +819,7 @@ class _CloudProfileHealthCard extends ConsumerWidget {
               if (ref.watch(provisioningApiProvider) != null)
                 OutlinedButton(
                   key: const ValueKey('cloud-profile-health-repair'),
-                  onPressed: () => unawaited(
-                    ref.read(provisioningUiProvider.notifier).startSetup(),
-                  ),
+                  onPressed: () => unawaited(_repairProfile(context, ref)),
                   child: const Text('Start cloud setup again'),
                 )
               else
@@ -1237,83 +1199,67 @@ String _fieldLabel(String key) {
 
 /// Connected state of a provisioned user-owned backend.
 ///
-/// Deliberately claims nothing about Planner data while the first
-/// synchronization is unresolved: runtime Supabase Auth being connected is not
-/// the same as cloud synchronization being active.
+/// Presentation only: the account identity and the Planner-account sign-out are
+/// kept in one short card, deliberately separate from cloud-project management.
+/// It claims nothing about Planner data while the first synchronization is
+/// unresolved, because runtime Supabase Auth being connected is not the same as
+/// cloud synchronization being active.
 class _CloudAccountCard extends StatelessWidget {
   const _CloudAccountCard({
-    required this.backend,
     required this.session,
     required this.busy,
     required this.onSignOut,
-    required this.onDisconnect,
     this.initialSync,
   });
 
-  final ProvisionedRuntimeBackend backend;
   final Session session;
   final bool busy;
   final Future<void> Function() onSignOut;
-  final Future<void> Function() onDisconnect;
   final InitialSyncStatus? initialSync;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.account_circle_outlined),
-            title: const Text('Planner account'),
-            subtitle: Text(
-              [
-                session.user.email ?? 'Signed-in account',
-                if (initialSync == null || !initialSync!.baselineComplete)
-                  'Your account is connected to your cloud backend. Cloud '
-                      'synchronization for Planner data starts only after the '
-                      'first synchronization is complete.'
-                else
-                  'Your account is connected to its own cloud backend.',
-                if (kDebugMode) 'Supabase project: ${backend.projectRef}',
-              ].join('\n'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // These are deliberately different actions with different
-          // consequences, so they are never presented as one choice:
-          // signing out keeps the connection configured, disconnecting stops
-          // using this backend (and keeps every local record).
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
+  Widget build(BuildContext context) {
+    final baselineComplete = initialSync?.baselineComplete ?? false;
+    return Card(
+      key: const ValueKey('planner-account-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextButton(
-                key: const ValueKey('cloud-sign-out-action'),
-                onPressed: busy ? null : onSignOut,
-                child: const Text('Log out'),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.account_circle_outlined),
+                title: const Text('Planner account'),
+                subtitle: Text(
+                  [
+                    session.user.email ?? 'Signed-in account',
+                    baselineComplete
+                        ? 'Syncs your Planner data across your signed-in '
+                              'devices.'
+                        : 'Signed in. Cloud sync starts after the first '
+                              'synchronization finishes.',
+                  ].join('\n'),
+                ),
               ),
-              OutlinedButton(
-                key: const ValueKey('cloud-disconnect-action'),
-                onPressed: busy ? null : onDisconnect,
-                child: const Text(cloudDisconnectTitle),
+              const SizedBox(height: AppSpacing.sm),
+              SyncActionGroup(
+                alignment: WrapAlignment.start,
+                actions: [
+                  TextButton(
+                    key: const ValueKey('cloud-sign-out-action'),
+                    onPressed: busy ? null : onSignOut,
+                    child: const Text('Log out'),
+                  ),
+                ],
               ),
             ],
           ),
-          Text(
-            '$cloudDisconnectExplanation\n'
-            'Logging out only ends the Planner account session on this device. '
-            'It never deletes your Supabase project, never removes Personal '
-            "Planner's Supabase authorization, and never signs the browser out "
-            'of supabase.com.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Phase G user-facing state of the provisioned first synchronization.
@@ -1380,10 +1326,9 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
             ],
             if (status.phase == InitialSyncPhase.adoptionRequired) ...[
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
+              SyncActionGroup(
+                alignment: WrapAlignment.start,
+                actions: [
                   FilledButton(
                     key: const ValueKey('first-sync-import-offline'),
                     onPressed: busy ? null : onAdopt,
@@ -1404,10 +1349,9 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
                 'using this cloud backend and keeps every local record.',
               ),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
+              SyncActionGroup(
+                alignment: WrapAlignment.start,
+                actions: [
                   FilledButton(
                     key: const ValueKey('first-sync-recovery-retry'),
                     onPressed: busy || !syncEnabled ? null : onRetry,
@@ -1511,7 +1455,9 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
   final password = TextEditingController();
   bool registering = false;
   bool busy = false;
+  bool _passwordVisible = false;
   String? error;
+  String? passwordError;
   String? message;
 
   @override
@@ -1522,76 +1468,134 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            registering ? 'Create account' : 'Log in',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            key: const ValueKey('sync-email'),
-            controller: email,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(labelText: 'Email'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            key: const ValueKey('sync-password'),
-            controller: password,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password'),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: busy ? null : _submit,
-              child: Text(registering ? 'Register' : 'Log in'),
-            ),
-          ),
-          TextButton(
-            onPressed: busy
-                ? null
-                : () => setState(() {
-                    registering = !registering;
-                    error = null;
-                    message = null;
-                  }),
-            child: Text(
-              registering
-                  ? 'Already have an account? Log in'
-                  : 'Need an account? Register',
-            ),
-          ),
-          if (message != null) Text(message!),
-          if (error != null)
+  Widget build(BuildContext context) {
+    // Local validation only gates a submission the guaranteed policy already
+    // knows cannot pass; Supabase stays the final authority.
+    final canSubmit =
+        !busy && (!registering || PlannerPasswordPolicy.isSatisfied(password.text));
+    return Card(
+      key: const ValueKey('planner-account-form'),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              'Planner account',
+              style: Theme.of(context).textTheme.titleLarge,
             ),
-          const _AuthCallbackNotice(),
-        ],
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              registering
+                  ? 'Create an account to sync your Planner data across your '
+                        'devices.'
+                  : 'Sign in to sync your Planner data across your devices.',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              key: const ValueKey('sync-email'),
+              controller: email,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(labelText: 'Email'),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              key: const ValueKey('sync-password'),
+              controller: password,
+              obscureText: !_passwordVisible,
+              autofillHints: const [AutofillHints.password],
+              textInputAction: TextInputAction.done,
+              onChanged: (_) => setState(() {
+                if (passwordError != null) passwordError = null;
+              }),
+              onSubmitted: (_) {
+                if (canSubmit) unawaited(_submit());
+              },
+              decoration: InputDecoration(
+                labelText: 'Password',
+                errorText: passwordError,
+                suffixIcon: IconButton(
+                  key: const ValueKey('sync-password-visibility'),
+                  tooltip: _passwordVisible ? 'Hide password' : 'Show password',
+                  icon: Icon(
+                    _passwordVisible
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  onPressed: () =>
+                      setState(() => _passwordVisible = !_passwordVisible),
+                ),
+              ),
+            ),
+            if (registering) ...[
+              const SizedBox(height: AppSpacing.sm),
+              PasswordRequirementsIndicator(password: password.text),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            SyncActionGroup(
+              alignment: WrapAlignment.start,
+              actions: [
+                FilledButton(
+                  key: const ValueKey('sync-submit-action'),
+                  onPressed: canSubmit ? _submit : null,
+                  child: Text(registering ? 'Register' : 'Log in'),
+                ),
+              ],
+            ),
+            TextButton(
+              key: const ValueKey('sync-register-toggle'),
+              onPressed: busy
+                  ? null
+                  : () => setState(() {
+                      registering = !registering;
+                      error = null;
+                      passwordError = null;
+                      message = null;
+                    }),
+              child: Text(
+                registering
+                    ? 'Already have an account? Log in'
+                    : 'Need an account? Register',
+              ),
+            ),
+            if (message != null) Text(message!),
+            if (error != null)
+              Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            const _AuthCallbackNotice(),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Future<void> _submit() async {
+    final passwordValue = password.text;
+    if (registering && !PlannerPasswordPolicy.isSatisfied(passwordValue)) {
+      // Obviously invalid locally: never spend a Supabase request on it.
+      setState(() {
+        passwordError = null;
+        error = null;
+        message = null;
+      });
+      return;
+    }
     setState(() {
       busy = true;
       error = null;
+      passwordError = null;
       message = null;
     });
     try {
       final auth = ref.read(authRepositoryProvider);
       if (auth == null) throw StateError('Sync is not configured');
       final response = registering
-          ? await auth.signUp(email.text, password.text)
-          : await auth.signIn(email.text, password.text);
+          ? await auth.signUp(email.text, passwordValue)
+          : await auth.signIn(email.text, passwordValue);
       if (registering && response.session == null && mounted) {
         setState(
           () => message =
@@ -1601,7 +1605,17 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
         );
       }
     } catch (error) {
-      if (mounted) setState(() => this.error = safeAuthError(error));
+      if (!mounted) return;
+      // A password the server rejected belongs on the password field, never in
+      // the generic error line.
+      if (isPasswordPolicyFailure(error)) {
+        setState(() {
+          passwordError = passwordPolicyErrorMessage();
+          this.error = null;
+        });
+      } else {
+        setState(() => this.error = safeAuthError(error));
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }

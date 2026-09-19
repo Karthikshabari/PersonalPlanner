@@ -38,20 +38,19 @@ class CloudLifecycleResult {
 /// consequences. Every sentence here is a promise the implementation keeps:
 /// disconnecting never deletes local Planner data, never deletes the Supabase
 /// project, and never silently moves Planner data to another project.
-const cloudDisconnectTitle = 'Disconnect cloud backend';
+const cloudDisconnectTitle = 'Stop using cloud on this device';
 const cloudDisconnectExplanation =
     'Stop using this cloud backend on this device. Your Planner data stays on '
     'this device, your Supabase project is not deleted, and you can reconnect '
     'to the same project later.';
 const cloudDisconnectConfirmation =
-    'Disconnect this cloud backend?\n\n'
+    'Stop using cloud on this device?\n\n'
     '• Local Planner data stays on this device.\n'
-    '• Your Supabase project is not deleted.\n'
-    '• You are signed out on this device and normal sync stops.\n'
-    '• Reconnecting to the same project reuses this device\'s Planner data.\n\n'
-    'This removes the device credential that can revoke Personal Planner\'s '
-    'Supabase authorization, so use Advanced → Disconnect Supabase access '
-    'first if you want to remove that too.';
+    '• Your Supabase project and its cloud data are not deleted.\n'
+    '• You are signed out of your Planner account on this device and sync '
+    'stops.\n'
+    '• You can reconnect later; reconnecting to the same project reuses this '
+    'device\'s Planner data.';
 const cloudDisconnectFailedMessage =
     'The cloud connection could not be updated on this device, so it was left '
     'unchanged. Local Planner data is safe.';

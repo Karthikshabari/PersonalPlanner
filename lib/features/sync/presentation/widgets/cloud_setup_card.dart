@@ -1,26 +1,37 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../providers/runtime_backend_providers.dart';
 import '../../providers/provisioning_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
+import 'cloud_setup_preflight.dart';
+import 'sync_action_group.dart';
 
 /// Settings → Sync card for the user-owned Supabase setup flow.
 ///
 /// Presentation only: it drives [ProvisioningUiController] and never talks to
 /// the Worker, secure storage or the Durable Object directly.
 class CloudSetupCard extends ConsumerStatefulWidget {
-  const CloudSetupCard({super.key, this.onUseOfflineOnly});
+  const CloudSetupCard({
+    super.key,
+    this.onUseOfflineOnly,
+    this.onStopUsingCloud,
+  });
 
   /// Lets the user stop using the (now missing) cloud backend from the
   /// recovery card. The Settings screen owns that lifecycle action, so it is
   /// injected rather than duplicated here.
   final Future<void> Function()? onUseOfflineOnly;
+
+  /// Lets the user stop using a healthy cloud backend on this device from the
+  /// Advanced section. Same injected lifecycle action as [onUseOfflineOnly];
+  /// nothing about the underlying behaviour changes here.
+  final Future<void> Function()? onStopUsingCloud;
 
   @override
   ConsumerState<CloudSetupCard> createState() => _CloudSetupCardState();
@@ -100,13 +111,14 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     final choice = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Disconnect Supabase access?'),
+        title: const Text('Cancel Supabase access?'),
         content: const Text(
-          'This revokes Personal Planner\'s Supabase authorization.\n\n'
+          'This cancels the temporary Supabase authorization Personal Planner '
+          'is currently holding.\n\n'
           '• Your Supabase project and its data are not deleted.\n'
-          '• Your Planner account and session are not affected.\n'
+          '• Your Planner account and sign-in are not affected.\n'
           '• Local Planner data stays on this device.\n'
-          '• You can re-authorize later from this screen.',
+          '• You can connect to Supabase again later from this screen.',
         ),
         actions: [
           TextButton(
@@ -116,13 +128,24 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           FilledButton(
             key: const ValueKey('cloud-revoke-confirm'),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Disconnect Supabase access'),
+            child: const Text(cloudSetupCancelAccessLabel),
           ),
         ],
       ),
     );
     if (choice != true) return;
     await controller.disconnectSupabaseAccess();
+  }
+
+  /// Confirms the first project creation, then runs exactly the existing
+  /// provisioning entry point. Cancel (or dismissing the dialog) starts
+  /// nothing.
+  Future<void> _startSetupWithPreflight(
+    ProvisioningUiController controller,
+  ) async {
+    final confirmed = await showCloudSetupPreflight(context);
+    if (!confirmed || !mounted) return;
+    await controller.startSetup();
   }
 
   @override
@@ -165,29 +188,28 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
   Widget _buildPhase(ProvisioningUiState state) {
     final controller = ref.read(provisioningUiProvider.notifier);
     final busy = state.busy;
-    final debugDetail = _debugDetail(state);
 
     switch (state.phase) {
       case ProvisioningUiPhase.unavailable:
         return _CloudCard(
           icon: Icons.cloud_off,
-          title: 'Cloud sync',
+          title: cloudStorageTitle,
           body: state.message ?? cloudSetupUnavailableMessage,
-          debugDetail: debugDetail,
         );
 
       case ProvisioningUiPhase.localOnly:
         return _CloudCard(
           icon: Icons.cloud_outlined,
-          title: 'Cloud sync',
+          title: cloudStorageTitle,
           body: cloudSetupLocalOnlyBody,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
               key: const ValueKey('cloud-enable-action'),
-              onPressed: busy ? null : controller.startSetup,
-              child: const Text('Enable Cloud Sync'),
+              onPressed: busy
+                  ? null
+                  : () => unawaited(_startSetupWithPreflight(controller)),
+              child: const Text('Set up cloud storage'),
             ),
           ],
         );
@@ -197,7 +219,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.verified_user_outlined,
           title: 'Authorize Supabase',
           body: state.message ?? cloudSetupWaitingMessage,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -228,7 +249,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               ? 'No Supabase organization was returned for this account.'
               : 'Personal Planner will create one project in the organization '
                     'you choose. That project belongs to you.',
-          debugDetail: debugDetail,
           busy: busy,
           content: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -273,7 +293,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.cloud_sync_outlined,
           title: 'Setting up your cloud backend',
           body: '${_stageLabel(state.stage)}\n\n$cloudSetupLeaveHint',
-          debugDetail: debugDetail,
           busy: busy,
           content: const Padding(
             padding: EdgeInsets.only(top: 12),
@@ -293,7 +312,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.cloud_off,
           title: 'Cloud setup paused',
           body: state.message ?? cloudSetupRetryableMessage,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -325,7 +343,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.restart_alt,
           title: 'Setup session ended',
           body: state.message ?? cloudSetupRestartMessage,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -341,7 +358,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.error_outline,
           title: "Cloud setup couldn't be completed",
           body: state.message ?? cloudSetupTerminalMessage,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -355,106 +371,74 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.ready:
         final profile = state.readyProfile;
         final projectRef = profile?.projectRef;
+        final unreachable =
+            state.reachability == CloudReachability.unavailable;
         return _CloudCard(
+          key: const ValueKey('cloud-storage-ready'),
           icon: Icons.cloud_done_outlined,
-          title: 'Cloud storage ready',
-          // A lifecycle action on this card (re-authorize, disconnect Supabase
-          // access) reports its result here, so the ready body gives way to the
-          // explicit outcome message.
+          title: cloudStorageTitle,
+          status: unreachable
+              ? cloudStorageUnreachableStatus
+              : cloudStorageConnectedStatus,
+          statusTone: unreachable ? _StatusTone.warning : _StatusTone.success,
+          // A lifecycle action on this card (check connection, revoke
+          // temporary access) reports its result here, so the ready body gives
+          // way to the explicit outcome message.
           body: state.message ?? cloudSetupReadyBody,
-          debugDetail: debugDetail,
           busy: busy,
-          content: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.dashboard_outlined),
-                title: const Text('Cloud project'),
-                subtitle: Text(
-                  projectRef == null
-                      ? 'This user-owned Supabase project is ready.'
-                      : 'Your own Supabase project is ready.',
-                ),
-                trailing: projectRef == null
+          actions: <Widget>[
+            if (unreachable)
+              FilledButton(
+                key: const ValueKey('cloud-retry-probe-action'),
+                onPressed: busy ? null : controller.verifyProjectHost,
+                child: const Text('Try again'),
+              ),
+            if (unreachable)
+              OutlinedButton(
+                key: const ValueKey('cloud-reauthorize-action'),
+                onPressed: busy || state.managementCheckInFlight
                     ? null
-                    : TextButton(
-                        key: const ValueKey('cloud-open-dashboard'),
-                        onPressed: busy
-                            ? null
-                            : () =>
-                                  unawaited(_openProjectDashboard(projectRef)),
-                        child: const Text('Open Supabase Dashboard'),
-                      ),
+                    : controller.reauthorizeSupabaseAccess,
+                child: Text(
+                  state.managementCheckInFlight
+                      ? 'Waiting for Supabase…'
+                      : cloudSetupCheckConnectionLabel,
+                ),
               ),
-              const Divider(height: 1),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.key_outlined),
-                title: const Text('Advanced · Supabase access'),
-                subtitle: const Text(cloudSetupSupabaseAccessBody),
-                isThreeLine: true,
+            if (!unreachable && projectRef != null)
+              OutlinedButton(
+                key: const ValueKey('cloud-open-dashboard'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openProjectDashboard(projectRef)),
+                child: const Text('Open Supabase'),
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: <Widget>[
-                  OutlinedButton(
-                    key: const ValueKey('cloud-reauthorize-action'),
-                    onPressed: busy || state.managementCheckInFlight
-                        ? null
-                        : controller.reauthorizeSupabaseAccess,
-                    child: Text(
-                      state.managementCheckInFlight
-                          ? 'Waiting for Supabase…'
-                          : 'Re-authorize Supabase',
-                    ),
-                  ),
-                  OutlinedButton(
-                    key: const ValueKey('cloud-revoke-action'),
-                    onPressed: busy
-                        ? null
-                        : () => unawaited(
-                            _confirmSupabaseAccessDisconnect(controller),
-                          ),
-                    child: const Text('Disconnect Supabase access'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                state.managementCheckInFlight
-                    ? cloudSetupSupabaseAccessPending
-                    : cloudSetupSupabaseAccessReleased,
-                key: const ValueKey('cloud-management-status'),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+          ],
+          content: _SupabaseAccessSection(
+            state: state,
+            controller: controller,
+            busy: busy,
+            onStopUsingCloud: widget.onStopUsingCloud,
+            onRequestRevoke: () =>
+                unawaited(_confirmSupabaseAccessDisconnect(controller)),
           ),
         );
 
       case ProvisioningUiPhase.remoteMissing:
-        final profile = state.readyProfile;
         return _CloudCard(
           key: const ValueKey('cloud-remote-missing'),
           icon: Icons.cloud_off_outlined,
-          title: cloudRemoteMissingTitle,
+          title: cloudStorageTitle,
+          status: cloudRemoteMissingTitle,
+          statusTone: _StatusTone.error,
           body: cloudRemoteMissingBody,
-          debugDetail: debugDetail,
           busy: busy,
-          content: profile?.projectRef == null
-              ? null
-              : Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Deleted project: ${profile!.projectRef}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
           actions: <Widget>[
             FilledButton(
               key: const ValueKey('cloud-setup-again-action'),
-              onPressed: busy ? null : controller.startAgain,
+              onPressed: busy
+                  ? null
+                  : () => unawaited(_startSetupWithPreflight(controller)),
               child: const Text('Set up cloud storage again'),
             ),
             OutlinedButton(
@@ -470,9 +454,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
         final projectRef = profile?.projectRef;
         return _CloudCard(
           icon: Icons.cloud_off_outlined,
-          title: 'Cloud storage disconnected',
+          title: cloudStorageTitle,
+          status: cloudStorageDisconnectedStatus,
+          statusTone: _StatusTone.neutral,
           body: state.message ?? cloudSetupDisconnectedBody,
-          debugDetail: debugDetail,
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -486,7 +471,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 onPressed: busy
                     ? null
                     : () => unawaited(_openProjectDashboard(projectRef)),
-                child: const Text('Open Supabase dashboard'),
+                child: const Text('Open Supabase'),
               ),
           ],
         );
@@ -501,18 +486,113 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     null => 'Setting up your cloud backend',
   };
 
-  /// Debug-only, non-secret identifiers: never credentials or keys.
-  String? _debugDetail(ProvisioningUiState state) {
-    if (!kDebugMode) return null;
-    final parts = <String>[
-      if (state.transactionId != null) 'transaction ${state.transactionId}',
-      if (state.errorCode != null) 'code ${state.errorCode}',
-      if (state.readyProfile?.projectRef != null)
-        'project ${state.readyProfile!.projectRef}',
-    ];
-    return parts.isEmpty ? null : parts.join(' · ');
+}
+
+/// Secondary "Advanced · Supabase access" area of a healthy cloud connection.
+///
+/// It collapses by default so the ordinary screen only shows the state, what it
+/// means and the one useful action. Least privilege is unchanged: the temporary
+/// authorization is normally already released, so the passive status says so
+/// instead of offering a disconnect that would have nothing to revoke.
+class _SupabaseAccessSection extends StatelessWidget {
+  const _SupabaseAccessSection({
+    required this.state,
+    required this.controller,
+    required this.busy,
+    required this.onStopUsingCloud,
+    required this.onRequestRevoke,
+  });
+
+  final ProvisioningUiState state;
+  final ProvisioningUiController controller;
+  final bool busy;
+  final Future<void> Function()? onStopUsingCloud;
+  final VoidCallback onRequestRevoke;
+
+  @override
+  Widget build(BuildContext context) {
+    final inFlight = state.managementCheckInFlight;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Divider(height: 1),
+        Theme(
+          // An expansion tile is used as a plain disclosure control; the
+          // surrounding card already supplies the visual boundary.
+          data: Theme.of(
+            context,
+          ).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            key: const ValueKey('cloud-advanced-access'),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            leading: const Icon(Icons.key_outlined),
+            title: const Text('Advanced · Supabase access'),
+            subtitle: const Text(cloudSetupSupabaseAccessBody),
+            children: <Widget>[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Text(
+                      inFlight
+                          ? cloudSetupSupabaseAccessPending
+                          : cloudSetupSupabaseAccessReleased,
+                      key: const ValueKey('cloud-management-status'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      cloudSetupCheckConnectionHint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SyncActionGroup(
+                      alignment: WrapAlignment.start,
+                      actions: <Widget>[
+                        if (inFlight)
+                          FilledButton(
+                            key: const ValueKey('cloud-revoke-action'),
+                            onPressed: busy ? null : onRequestRevoke,
+                            child: const Text(cloudSetupCancelAccessLabel),
+                          )
+                        else
+                          OutlinedButton(
+                            key: const ValueKey('cloud-reauthorize-action'),
+                            onPressed: busy
+                                ? null
+                                : controller.reauthorizeSupabaseAccess,
+                            child: const Text(
+                              cloudSetupCheckConnectionLabel,
+                            ),
+                          ),
+                        if (onStopUsingCloud != null)
+                          TextButton(
+                            key: const ValueKey(
+                              'cloud-stop-using-cloud-action',
+                            ),
+                            onPressed: busy
+                                ? null
+                                : () => unawaited(onStopUsingCloud!()),
+                            child: const Text(
+                              cloudSetupStopUsingCloudLabel,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
+
+enum _StatusTone { neutral, success, warning, error }
 
 class _CloudCard extends StatelessWidget {
   const _CloudCard({
@@ -523,7 +603,8 @@ class _CloudCard extends StatelessWidget {
     this.content,
     this.actions = const <Widget>[],
     this.busy = false,
-    this.debugDetail,
+    this.status,
+    this.statusTone = _StatusTone.neutral,
   });
 
   final IconData icon;
@@ -532,63 +613,105 @@ class _CloudCard extends StatelessWidget {
   final Widget? content;
   final List<Widget> actions;
   final bool busy;
-  final String? debugDetail;
+  final String? status;
+  final _StatusTone statusTone;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(icon, color: theme.colorScheme.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(title, style: theme.textTheme.titleMedium),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(body),
-            ?content,
-            if (busy) ...[
-              const SizedBox(height: 12),
-              const LinearProgressIndicator(),
-            ],
-            if (actions.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                alignment: WrapAlignment.end,
-                children: actions,
-              ),
-            ],
-            if (debugDetail != null) ...[
-              const SizedBox(height: 8),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: const Text('Technical details'),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      debugDetail!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.outline,
-                      ),
+                  Icon(icon, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _CloudCardHeading(
+                      title: title,
+                      status: status,
+                      tone: statusTone,
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Text(body),
+              ?content,
+              if (busy) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(),
+              ],
+              if (actions.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                SyncActionGroup(actions: actions),
+              ],
             ],
-          ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _CloudCardHeading extends StatelessWidget {
+  const _CloudCardHeading({
+    required this.title,
+    required this.status,
+    required this.tone,
+  });
+
+  final String title;
+  final String? status;
+  final _StatusTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = AppThemeTokens.of(context);
+    final statusColor = switch (tone) {
+      _StatusTone.success => tokens.success,
+      _StatusTone.warning => tokens.warning,
+      _StatusTone.error => tokens.error,
+      _StatusTone.neutral => tokens.textSecondary,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: theme.textTheme.titleMedium),
+        if (status != null) ...[
+          const SizedBox(height: 2),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                switch (tone) {
+                  _StatusTone.success => Icons.check_circle,
+                  _StatusTone.warning => Icons.error_outline,
+                  _StatusTone.error => Icons.report_problem_outlined,
+                  _StatusTone.neutral => Icons.circle_outlined,
+                },
+                size: 14,
+                color: statusColor,
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Flexible(
+                child: Text(
+                  status!,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

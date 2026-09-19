@@ -7,19 +7,24 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/sync/data/anonymous_data_adoption.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
+import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
 import 'package:personal_planner/features/sync/domain/initial_sync_models.dart';
 import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
+import 'package:personal_planner/features/sync/domain/password_policy.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
 import 'package:personal_planner/features/sync/domain/runtime_auth_namespaces.dart';
+import 'package:personal_planner/features/sync/presentation/controllers/provisioning_ui_controller.dart';
 import 'package:personal_planner/features/sync/presentation/screens/sync_settings_screen.dart';
+import 'package:personal_planner/features/sync/presentation/widgets/password_requirements.dart';
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_settings_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../helpers/provisioning_fakes.dart';
 import '../helpers/initial_sync_fakes.dart';
@@ -53,7 +58,9 @@ void main() {
       reloader: reloader,
     );
 
-    expect(find.text('Cloud storage ready'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
+    expect(find.text(cloudSetupReadyBody), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-password')), findsOneWidget);
     // No sync surface exists for the provisioned path.
@@ -103,8 +110,8 @@ void main() {
       expect(find.textContaining('person@example.com'), findsOneWidget);
       expect(
         find.textContaining(
-          'Cloud synchronization for Planner data starts only after the first '
-          'synchronization is complete.',
+          'Signed in. Cloud sync starts after the first synchronization '
+          'finishes.',
         ),
         findsOneWidget,
       );
@@ -200,7 +207,8 @@ void main() {
 
     expect(find.text('Cloud account connected'), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);
-    expect(find.text('Cloud storage ready'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
     // Signing out is not a provisioning restart and not a disconnect.
     expect(api.startAttemptCount, 0);
     expect(api.attempt, isNotNull);
@@ -239,7 +247,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);
     // No user-owned cloud setup card on the legacy path.
-    expect(find.text('Cloud sync'), findsNothing);
+    expect(find.text(cloudStorageTitle), findsNothing);
 
     await _teardown(tester, harness);
   });
@@ -290,7 +298,7 @@ void main() {
     );
 
     expect(find.text('Authorize Supabase'), findsOneWidget);
-    expect(find.text('Cloud storage ready'), findsNothing);
+    expect(find.text(cloudStorageConnectedStatus), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsNothing);
     expect(reloader.calls, 0);
 
@@ -306,13 +314,230 @@ void main() {
       api: api,
     );
 
-    expect(find.text('Cloud sync'), findsOneWidget);
-    expect(find.text('Enable Cloud Sync'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.text('Set up cloud storage'), findsOneWidget);
     expect(find.byKey(const ValueKey('sync-email')), findsNothing);
     expect(find.text('Sync now'), findsNothing);
 
     await _teardown(tester, harness);
   });
+
+  group('registration password experience', () {
+    Future<_Harness> pumpRegistrationForm(WidgetTester tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      final harness = await _pumpSyncSettings(
+        tester,
+        backend: testProvisionedBackend(),
+        api: api,
+      );
+      await tester.tap(find.byKey(const ValueKey('sync-register-toggle')));
+      await tester.pumpAndSettle();
+      return harness;
+    }
+
+    testWidgets('shows the real requirements and updates them live', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final harness = await pumpRegistrationForm(tester);
+
+      expect(find.byType(PasswordRequirementsIndicator), findsOneWidget);
+      expect(
+        find.text('At least ${PlannerPasswordPolicy.minimumLength} characters'),
+        findsOneWidget,
+      );
+      expect(_requirementMet(tester, 'length'), isFalse);
+      // Nothing is styled as an error before the user has interacted.
+      expect(tester.takeException(), isNull);
+
+      final passwordField = find.byKey(const ValueKey('sync-password'));
+      await tester.enterText(passwordField, 'short');
+      await tester.pump();
+      expect(_requirementMet(tester, 'length'), isFalse);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('sync-submit-action')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      await tester.enterText(passwordField, 'long enough');
+      await tester.pump();
+      expect(_requirementMet(tester, 'length'), isTrue);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('sync-submit-action')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      // The requirement is also exposed to assistive technology, not by colour
+      // alone.
+      expect(
+        tester
+            .getSemantics(find.byKey(const ValueKey('password-rule-length')))
+            .label,
+        contains(
+          'At least ${PlannerPasswordPolicy.minimumLength} characters: met',
+        ),
+      );
+      semantics.dispose();
+
+      await _teardown(tester, harness);
+    });
+
+    testWidgets('never submits a locally invalid password to Supabase', (
+      tester,
+    ) async {
+      final harness = await pumpRegistrationForm(tester);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('sync-email')),
+        'person@example.com',
+      );
+      await tester.enterText(find.byKey(const ValueKey('sync-password')), 'pw');
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sync-submit-action')));
+      await tester.pumpAndSettle();
+
+      expect(harness.client.signUpCalls, isEmpty);
+      // The locally invalid value is not turned into a red server error.
+      expect(find.text('Authentication failed. Check your details and try again.'), findsNothing);
+
+      await _teardown(tester, harness);
+    });
+
+    testWidgets('reports a Supabase password rejection on the password field', (
+      tester,
+    ) async {
+      final harness = await pumpRegistrationForm(tester);
+      harness.client.signUpError = AuthWeakPasswordException(
+        message:
+            'Password should contain at least one character of each: '
+            'abcdefghijklmnopqrstuvwxyz, 0123456789',
+        statusCode: '422',
+        reasons: <String>['characters'],
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('sync-email')),
+        'person@example.com',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('sync-password')),
+        'admin 123',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sync-submit-action')));
+      await tester.pumpAndSettle();
+
+      expect(harness.client.signUpCalls, hasLength(1));
+      expect(find.text(passwordPolicyErrorMessage()), findsOneWidget);
+      // The failure is never misreported as a generic or network problem.
+      expect(
+        find.text('Network unavailable. Your local data is still safe.'),
+        findsNothing,
+      );
+      expect(
+        find.text('Authentication failed. Check your details and try again.'),
+        findsNothing,
+      );
+
+      await _teardown(tester, harness);
+    });
+
+    testWidgets('keeps non-password failures out of the password field', (
+      tester,
+    ) async {
+      final harness = await pumpRegistrationForm(tester);
+      harness.client.signUpError = const AuthException(
+        'User already registered',
+      );
+
+      await tester.enterText(
+        find.byKey(const ValueKey('sync-email')),
+        'person@example.com',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('sync-password')),
+        'admin1234',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('sync-submit-action')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('That email is already registered.'), findsOneWidget);
+      expect(find.text(passwordPolicyErrorMessage()), findsNothing);
+
+      await _teardown(tester, harness);
+    });
+
+    testWidgets('can reveal and hide the password', (tester) async {
+      final harness = await pumpRegistrationForm(tester);
+      final passwordField = find.byKey(const ValueKey('sync-password'));
+      expect(tester.widget<TextField>(passwordField).obscureText, isTrue);
+
+      await tester.tap(
+        find.byKey(const ValueKey('sync-password-visibility')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(passwordField).obscureText, isFalse);
+
+      await _teardown(tester, harness);
+    });
+  });
+
+  group('responsive layout', () {
+    for (final width in <double>[360, 400, 768, 1024, 1440]) {
+      testWidgets('no overflow at ${width.toInt()} px', (tester) async {
+        api.attempt = testAttempt(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        );
+        final harness = await _pumpSyncSettings(
+          tester,
+          backend: testProvisionedBackend(),
+          api: api,
+          signedIn: true,
+          surfaceSize: Size(width, 2600),
+        );
+        await tester.runAsync(() async {
+          await InitialSyncStateStore(harness.database).write(
+            InitialSyncRecord(
+              phase: InitialSyncPhase.complete,
+              updatedAt: DateTime.now().toUtc(),
+            ),
+          );
+        });
+        await settle(tester);
+
+        expect(tester.takeException(), isNull);
+        // Every top-level section stays reachable at every width.
+        expect(find.text('Planner account'), findsOneWidget);
+        expect(find.text('Enable sync'), findsOneWidget);
+        expect(find.text('Sync now'), findsOneWidget);
+        expect(find.text(cloudStorageTitle), findsOneWidget);
+        expect(find.byKey(const ValueKey('sync-status-card')), findsOneWidget);
+
+        await _teardown(tester, harness);
+      });
+    }
+  });
+}
+
+/// True when the rendered requirement line shows the satisfied icon.
+bool _requirementMet(WidgetTester tester, String ruleId) {
+  final line = find.byKey(ValueKey<String>('password-rule-$ruleId'));
+  return find
+      .descendant(of: line, matching: find.byIcon(Icons.check_circle))
+      .evaluate()
+      .isNotEmpty;
 }
 
 class _RecordingReloader implements RuntimeBackendReloader {
@@ -347,13 +572,14 @@ Future<_Harness> _pumpSyncSettings(
   bool signedIn = false,
   RuntimeBackendReloader? reloader,
   Set<String> foreignSessionKeys = const <String>{},
+  Size surfaceSize = const Size(1200, 2600),
 }) async {
   final store = FakeSecureKeyValueStore();
   final client = FakeRuntimeAuthClient();
   final anonymous = AnonymousDatabaseFixture.create();
   // These cases assert on cards stacked below the fold; a default test surface
   // would leave them unbuilt because a ListView builds lazily.
-  tester.view.physicalSize = const Size(1200, 2600);
+  tester.view.physicalSize = surfaceSize;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   final calls = <RemoteCall>[];
@@ -402,6 +628,12 @@ Future<_Harness> _pumpSyncSettings(
       provisioningApiProvider.overrideWithValue(api),
       provisioningPollIntervalProvider.overrideWith(
         (ref) => const Duration(hours: 1),
+      ),
+      // The cloud-storage card probes the project host while it is open; a real
+      // HttpClient cannot run under the widget test's fake clock, so the answer
+      // is scripted. A reachable host is the normal READY case.
+      backendProjectProbeProvider.overrideWithValue(
+        FakeProjectProbe()..result = BackendProjectProbeResult.exists,
       ),
       browserLauncherProvider.overrideWithValue(FakeBrowserLauncher()),
       runtimeBackendReloaderProvider.overrideWithValue(reloader),

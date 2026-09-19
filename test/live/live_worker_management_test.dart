@@ -13,10 +13,10 @@ import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 /// Live check against the **deployed** provisioning Worker.
 ///
 /// Skipped unless `PP_LIVE_WORKER=1` is set, because it needs network access to
-/// the production control plane. It proves the path behind the "Re-authorize
-/// Supabase" and "Disconnect Supabase access" buttons really reaches the
-/// deployed Worker for a READY backend — the failure that manual testing caught,
-/// where the post-READY credential was gone and the buttons did nothing.
+/// the production control plane. It proves the path behind the "Check cloud
+/// connection" and "Cancel Supabase access" actions really reaches the deployed
+/// Worker for a READY backend — the failure that manual testing caught, where
+/// the post-READY credential was gone and the actions did nothing.
 ///
 /// It deliberately stops before the browser consent: approving Supabase
 /// authorization requires the user's own browser session and must never be
@@ -55,7 +55,7 @@ void main() {
         expectedGeneration: null,
       );
 
-      // Pressing "Re-authorize Supabase" must reach the deployed Worker and
+      // Pressing "Check cloud connection" must reach the deployed Worker and
       // yield a real Supabase consent URL, even though the provisioning
       // capability of this attempt was destroyed when it reached READY.
       final started = await coordinator.startManagementCheck();
@@ -75,8 +75,8 @@ void main() {
       expect(profile.state, ProvisioningState.ready);
       expect(profile.projectRef, 'abcdefghijklmnopqrst');
 
-      // Pressing "Disconnect Supabase access" must report the truth rather than
-      // a fake success.
+      // Pressing "Cancel Supabase access" must report the truth rather than a
+      // fake success.
       final revoked = await coordinator.revokeManagementAccess();
       expect(revoked.outcome, ManagementRevokeOutcome.nothingHeld);
     },

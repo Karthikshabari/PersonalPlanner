@@ -33,6 +33,10 @@ String provisioningProjectName(String transactionId) {
 const cloudSetupUnavailableMessage =
     'Cloud setup is unavailable in this build because no provisioning '
     'control-plane URL is configured. Personal Planner keeps working locally.';
+const cloudStorageTitle = 'Cloud storage';
+const cloudStorageConnectedStatus = 'Connected';
+const cloudStorageUnreachableStatus = 'Connection unavailable';
+const cloudStorageDisconnectedStatus = 'Disconnected';
 const cloudSetupLocalOnlyBody =
     'Cloud sync is optional. Set up private cloud storage that belongs to you.';
 const cloudSetupAuthorizationBody =
@@ -66,8 +70,7 @@ const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
 const cloudSetupReadyBody =
-    'Your private cloud storage is ready. Sign in or create a Planner account '
-    'below to begin syncing across devices.';
+    'Your Planner data is stored in your own Supabase project.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
     'this device and your Supabase project was not deleted. Reconnect to the '
@@ -86,13 +89,13 @@ const cloudSetupReauthorizeStartedMessage =
 const cloudSetupReauthorizeUnavailableMessage =
     'Supabase access cannot be re-authorized right now. Try again.';
 const cloudSetupRevokedMessage =
-    'Personal Planner no longer has Supabase management access. Your Supabase '
-    'project, Planner account, and local data are unchanged.';
+    'Temporary Supabase access was cancelled. Your Supabase project, Planner '
+    'account, and local data are unchanged.';
 const cloudSetupRevokeNotRetainedMessage =
-    'Personal Planner no longer holds a Supabase credential for this project, '
-    'so there is nothing left to revoke here. If Supabase still lists Personal '
-    'Planner under your authorized applications, remove it in your Supabase '
-    'account settings.';
+    'Personal Planner is not holding temporary Supabase access for this '
+    'project, so there is nothing left to cancel here. If Supabase still lists '
+    'Personal Planner under your authorized applications, remove it in your '
+    'Supabase account settings.';
 const cloudSetupRevokeFailedMessage =
     'Supabase access could not be revoked right now. Nothing changed; try '
     'again when you are online.';
@@ -100,18 +103,17 @@ const cloudSetupManagementUnavailableMessage =
     'This device can no longer manage Supabase access for this backend. Start '
     'cloud setup again to restore it.';
 const cloudSetupSupabaseAccessBody =
-    'Personal Planner asks Supabase for management access only while it sets up '
-    'your project, and releases it as soon as setup finishes. Re-authorize to '
-    'grant that access again for a check or repair, or disconnect to revoke an '
-    'authorization that is still held. Neither action deletes your project, '
-    'your Planner account, or your data. Re-authorizing also re-checks the link '
-    'in your account confirmation email.';
+    'Used temporarily to create or check your cloud project. Separate from your '
+    'Planner account sign-in.';
 const cloudSetupSupabaseAccessReleased =
-    'Personal Planner holds no Supabase management access to this project. '
-    'Supabase may still list Personal Planner under your authorized '
-    'applications; you can remove it in your Supabase account settings.';
+    'No temporary Supabase access is active.';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
+const cloudSetupCheckConnectionHint =
+    'Temporarily connect to Supabase to check or repair your cloud project.';
+const cloudSetupCheckConnectionLabel = 'Check cloud connection';
+const cloudSetupCancelAccessLabel = 'Cancel Supabase access';
+const cloudSetupStopUsingCloudLabel = 'Stop using cloud on this device';
 const cloudSetupReauthorizeStartingMessage = 'Starting Supabase authorization…';
 const cloudSetupReauthorizedMessage =
     'Supabase confirmed your cloud project still exists. Personal Planner '
@@ -128,27 +130,25 @@ const cloudSetupCheckIndeterminateMessage =
     'was changed. Your local Planner data is safe; try again later.';
 const cloudSetupRevokeCheckingMessage = 'Checking Supabase access…';
 const cloudSetupProjectUnreachableHintMessage =
-    'Personal Planner could not reach your cloud project just now. That can '
-    'simply mean you are offline, so nothing was changed. Use “Re-authorize '
-    'Supabase” if you want Supabase to confirm whether the project still '
-    'exists.';
+    'Your cloud project couldn\'t be reached right now. That usually means you '
+    'are offline, and it does not mean your project was deleted. Your local '
+    'Planner data is safe.';
 const cloudSetupNothingToRevokeMessage =
-    'Personal Planner is not currently holding Supabase management access for '
-    'this project, so there is nothing to disconnect. Access is released as '
-    'soon as each check finishes. If Supabase still lists Personal Planner '
-    'under your authorized applications, remove it in your Supabase account '
-    'settings.';
+    'Personal Planner is not holding temporary Supabase access right now, so '
+    'there is nothing to cancel. Access is released as soon as each check '
+    'finishes. If Supabase still lists Personal Planner under your authorized '
+    'applications, remove it in your Supabase account settings.';
 const cloudSetupRevokeUnconfirmedMessage =
-    'Personal Planner destroyed the credential it held, but Supabase could not '
-    'confirm the authorization was revoked. Your project was not touched; if '
-    'Supabase still lists Personal Planner, remove it in your Supabase account '
-    'settings.';
-const cloudRemoteMissingTitle = 'Cloud project unavailable';
+    'Personal Planner removed the temporary access it held, but Supabase could '
+    'not confirm the authorization was cancelled. Your project was not '
+    'touched; if Supabase still lists Personal Planner, remove it in your '
+    'Supabase account settings.';
+const cloudRemoteMissingTitle = 'Project unavailable';
 const cloudRemoteMissingBody =
-    'The Supabase project this device was set up with no longer exists, so '
-    'cloud sync cannot continue. Nothing on this device was deleted: your '
-    'local Planner data, this device\'s account database, and the finished '
-    'first-sync history are all still here.';
+    'The Supabase project that was connected to Personal Planner no longer '
+    'exists, so cloud sync cannot continue. Nothing on this device was '
+    'deleted: your local Planner data is still here. Set up new cloud storage, '
+    'or keep working offline.';
 
 /// Presentation phases for the Settings → Sync cloud-setup card.
 ///
@@ -200,6 +200,14 @@ enum CloudSetupStage {
   verifyingCloudStorage,
 }
 
+/// Presentation-only result of the bounded project-host probe.
+///
+/// This is not a provisioning state: the authoritative lifecycle stays
+/// [ProvisioningUiPhase.ready] unless Supabase itself answers that the project
+/// is gone. It only lets the card say "connection unavailable" instead of
+/// claiming a healthy connection it could not confirm.
+enum CloudReachability { unknown, reachable, unavailable }
+
 class ProvisioningUiState {
   const ProvisioningUiState({
     required this.phase,
@@ -212,6 +220,7 @@ class ProvisioningUiState {
     this.managementCheckInFlight = false,
     this.busy = false,
     this.authorizationUrlAvailable = false,
+    this.reachability = CloudReachability.unknown,
     this.message,
   });
 
@@ -234,6 +243,9 @@ class ProvisioningUiState {
 
   /// True when this session still holds the authorization URL to re-open.
   final bool authorizationUrlAvailable;
+
+  /// Result of the last bounded project-host probe of a READY backend.
+  final CloudReachability reachability;
 
   final String? message;
 
@@ -258,6 +270,7 @@ class ProvisioningUiState {
     bool? managementCheckInFlight,
     bool? busy,
     bool? authorizationUrlAvailable,
+    CloudReachability? reachability,
   }) => ProvisioningUiState(
     phase: phase ?? this.phase,
     stage: stage,
@@ -271,6 +284,7 @@ class ProvisioningUiState {
     busy: busy ?? this.busy,
     authorizationUrlAvailable:
         authorizationUrlAvailable ?? this.authorizationUrlAvailable,
+    reachability: reachability ?? this.reachability,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -513,6 +527,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         _update(
           (current) => current.copyWith(
             managementCheckInFlight: false,
+            reachability: CloudReachability.reachable,
             message: result.emailConfirmationRedirectAdopted
                 ? cloudSetupReauthorizedWithRedirectMessage
                 : cloudSetupReauthorizedMessage,
@@ -595,17 +610,26 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     final probed = await ref
         .read(backendProjectProbeProvider)
         .probe(Uri.parse(projectUrl));
+    if (probed == BackendProjectProbeResult.exists) {
+      _update(
+        (current) => current.copyWith(
+          reachability: CloudReachability.reachable,
+          clearMessage: true,
+        ),
+      );
+      return;
+    }
     if (probed == BackendProjectProbeResult.indeterminate) {
       // A DNS failure, timeout, or outage proves nothing, so the backend stays
-      // READY. The card still tells the user how to get an authoritative
-      // answer, which is what makes a stale READY state recoverable.
-      if (state.value?.message == null) {
-        _update(
-          (current) => current.copyWith(
-            message: cloudSetupProjectUnreachableHintMessage,
-          ),
-        );
-      }
+      // READY. The card reports the connection as unavailable without ever
+      // claiming the project was deleted, and keeps an authoritative check
+      // reachable for the user.
+      _update(
+        (current) => current.copyWith(
+          reachability: CloudReachability.unavailable,
+          message: cloudSetupProjectUnreachableHintMessage,
+        ),
+      );
       return;
     }
     if (probed != BackendProjectProbeResult.missing) return;

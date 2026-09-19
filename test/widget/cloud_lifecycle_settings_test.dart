@@ -10,6 +10,7 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/sync/data/anonymous_data_adoption.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
+import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/connection_profile_store.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_coordinator.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
@@ -23,6 +24,7 @@ import 'package:personal_planner/features/sync/domain/provisioning_coordinator.d
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 import 'package:personal_planner/features/sync/domain/runtime_auth_namespaces.dart';
 import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
+import 'package:personal_planner/features/sync/presentation/controllers/provisioning_ui_controller.dart';
 import 'package:personal_planner/features/sync/presentation/screens/sync_settings_screen.dart';
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
@@ -146,7 +148,10 @@ void main() {
       // reloads after that belong to the lifecycle action under test.
       reloader.calls = 0;
 
-      await tester.tap(find.byKey(const ValueKey('cloud-disconnect-action')));
+      await _openAdvancedAccess(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-stop-using-cloud-action')),
+      );
       await settle(tester);
       expect(find.text(cloudDisconnectConfirmation), findsOneWidget);
 
@@ -195,7 +200,8 @@ void main() {
       reloader: reloader,
     );
 
-    expect(find.text('Cloud storage disconnected'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.text(cloudStorageDisconnectedStatus), findsOneWidget);
     expect(
       find.byKey(const ValueKey('cloud-reconnect-action')),
       findsOneWidget,
@@ -253,7 +259,10 @@ void main() {
       reloader.calls = 0;
       profileStore.armed = true;
 
-      await tester.tap(find.byKey(const ValueKey('cloud-disconnect-action')));
+      await _openAdvancedAccess(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-stop-using-cloud-action')),
+      );
       await settle(tester);
       await tester.tap(find.byKey(const ValueKey('cloud-disconnect-confirm')));
       // The disconnect has already published a null session and is now stopped
@@ -587,6 +596,11 @@ Future<_Harness> _pump(
       provisioningPollIntervalProvider.overrideWith(
         (ref) => const Duration(hours: 1),
       ),
+      // The cloud-storage card probes the project host while it is open; a real
+      // HttpClient cannot run under the widget test's fake clock.
+      backendProjectProbeProvider.overrideWithValue(
+        FakeProjectProbe()..result = BackendProjectProbeResult.exists,
+      ),
       browserLauncherProvider.overrideWithValue(FakeBrowserLauncher()),
       connectionProfileStoreProvider.overrideWithValue(profileStore),
       provisioningCapabilityStoreProvider.overrideWithValue(capabilities),
@@ -647,4 +661,13 @@ Future<void> _teardown(WidgetTester tester, _Harness harness) async {
     harness.closeGuard.closed = true;
     await harness.database.close();
   });
+}
+
+/// Opens the collapsed "Advanced · Supabase access" disclosure that now holds
+/// the cloud-lifecycle action.
+Future<void> _openAdvancedAccess(WidgetTester tester) async {
+  final tile = find.byKey(const ValueKey('cloud-advanced-access'));
+  await tester.ensureVisible(tile);
+  await tester.tap(tile);
+  await tester.pumpAndSettle();
 }
