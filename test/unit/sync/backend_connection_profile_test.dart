@@ -22,6 +22,7 @@ BackendConnectionProfile _ready({
   String? projectRef = _projectRef,
   String? projectUrl = _projectUrl,
   String? publishableKey = _publishableKey,
+  String? emailConfirmationRedirect,
 }) => BackendConnectionProfile(
   profileId: 'profile-a',
   generation: generation,
@@ -37,6 +38,7 @@ BackendConnectionProfile _ready({
     payloadVersions: const [1, 2],
   ),
   provisioningTransactionId: _transactionId,
+  authEmailConfirmationRedirect: emailConfirmationRedirect,
 );
 
 void main() {
@@ -161,6 +163,49 @@ void main() {
       expect(profile.toString(), contains('abcdefghijklmnopqrst'));
       expect(profile.toString(), isNot(contains('sb_publishable_')));
     });
+
+    test('records the Worker-verified email confirmation redirect', () {
+      const landingPage = 'https://worker.test/auth/confirmed';
+      final profile = _ready(emailConfirmationRedirect: landingPage);
+
+      final json = profile.toJson();
+      expect(json['auth_email_confirmation_redirect'], landingPage);
+      expect(
+        BackendConnectionProfile.fromJson(json).authEmailConfirmationRedirect,
+        landingPage,
+      );
+
+      // Absence keeps the original meaning: the app keeps its scheme callback.
+      expect(
+        _ready().toJson().containsKey('auth_email_confirmation_redirect'),
+        isFalse,
+      );
+      expect(
+        BackendConnectionProfile.fromJson(_ready().toJson())
+            .authEmailConfirmationRedirect,
+        isNull,
+      );
+    });
+
+    test(
+      'rejects an email confirmation redirect that is not a plain https URL',
+      () {
+        for (final value in <String>[
+          'com.personalplanner.personalplanner://login-callback',
+          'http://worker.test/auth/confirmed',
+          'https://worker.test/auth/confirmed,https://evil.test/',
+          'https://user:pass@worker.test/auth/confirmed',
+          'https://worker.test/auth/confirmed#fragment',
+          'https://worker.test/${'a' * 300}',
+        ]) {
+          expect(
+            () => _ready(emailConfirmationRedirect: value),
+            throwsA(isA<BackendProfileValidationException>()),
+            reason: 'rejected: $value',
+          );
+        }
+      },
+    );
   });
 
   group('field validation', () {

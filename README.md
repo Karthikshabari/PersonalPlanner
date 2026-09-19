@@ -80,6 +80,33 @@ flutter build apk --release
 Android packaging and local-data policy (application ID gate, signing, backup
 restrictions) is documented in [android/README.md](android/README.md).
 
+### Linux desktop URI integration
+
+Browsers can only hand a callback link back to the application when the desktop
+environment knows which application owns the scheme. Both platforms register the
+same scheme (`com.personalplanner.personalplanner`), with one destination per
+callback purpose:
+
+| URI | Purpose |
+|---|---|
+| `com.personalplanner.personalplanner://login-callback` | Planner user account confirmation |
+| `com.personalplanner.personalplanner://management-callback` | Supabase authorization returned to the app |
+
+Android registers both intent filters in `android/app/src/main/AndroidManifest.xml`.
+On Linux, install the per-user desktop entry and register the scheme after
+installing or building the bundle:
+
+```bash
+flutter build linux --release
+linux/packaging/register_uri_scheme.sh
+xdg-mime query default x-scheme-handler/com.personalplanner.personalplanner
+```
+
+The script only writes inside `$XDG_DATA_HOME` (default `~/.local/share`) and
+points the desktop entry at the bundle executable. Without it, a browser that a
+confirmation email or the provisioning Worker redirects to one of the URIs above
+cannot activate a running Personal Planner window.
+
 ## Tests and release gate
 
 ```bash

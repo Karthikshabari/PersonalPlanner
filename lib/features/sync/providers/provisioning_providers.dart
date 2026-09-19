@@ -94,6 +94,15 @@ abstract interface class ProvisioningApi {
   Future<ProvisioningResult> migrate();
 
   Future<ProvisioningResult> verify();
+
+  /// Reads the Supabase Management authorization retained for this backend.
+  Future<ManagementAuthorizationResult> managementAuthorizationStatus();
+
+  /// Starts a fresh Supabase Management authorization (browser consent).
+  Future<ManagementAuthorizationResult> startManagementAuthorization();
+
+  /// Revokes Personal Planner's Supabase Management authorization.
+  Future<ManagementAuthorizationResult> revokeManagementAuthorization();
 }
 
 class _CoordinatorProvisioningApi implements ProvisioningApi {
@@ -132,6 +141,18 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
 
   @override
   Future<ProvisioningResult> verify() => _coordinator.verify();
+
+  @override
+  Future<ManagementAuthorizationResult> managementAuthorizationStatus() =>
+      _coordinator.managementAuthorizationStatus();
+
+  @override
+  Future<ManagementAuthorizationResult> startManagementAuthorization() =>
+      _coordinator.startManagementAuthorization();
+
+  @override
+  Future<ManagementAuthorizationResult> revokeManagementAuthorization() =>
+      _coordinator.revokeManagementAuthorization();
 }
 
 /// Coordinator-backed provisioning API, or null when the control plane URL is

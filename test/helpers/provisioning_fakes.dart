@@ -92,6 +92,25 @@ class FakeProvisioningApi implements ProvisioningApi {
   ProvisioningResult verifyResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
   );
+  ManagementAuthorizationResult managementStatusResult =
+      const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+        status: ProvisioningManagementAuthorization(
+          // The normal state of a ready backend: the Worker released the
+          // authorization as soon as provisioning finished.
+          authorized: false,
+          pending: false,
+        ),
+      );
+  ManagementAuthorizationResult startManagementResult =
+      const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+        authorizationUrl: null,
+      );
+  ManagementAuthorizationResult revokeManagementResult =
+      const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+      );
 
   /// When set, [selectOrganization] waits until it completes.
   Completer<void>? holdSelect;
@@ -150,6 +169,24 @@ class FakeProvisioningApi implements ProvisioningApi {
   Future<ProvisioningResult> verify() async {
     calls.add('verify');
     return verifyResult;
+  }
+
+  @override
+  Future<ManagementAuthorizationResult> managementAuthorizationStatus() async {
+    calls.add('managementAuthorizationStatus');
+    return managementStatusResult;
+  }
+
+  @override
+  Future<ManagementAuthorizationResult> startManagementAuthorization() async {
+    calls.add('startManagementAuthorization');
+    return startManagementResult;
+  }
+
+  @override
+  Future<ManagementAuthorizationResult> revokeManagementAuthorization() async {
+    calls.add('revokeManagementAuthorization');
+    return revokeManagementResult;
   }
 }
 

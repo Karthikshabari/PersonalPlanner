@@ -1,15 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  MANAGEMENT_WINDOW_MS,
   PLANNER_AUTH_CALLBACK_URI,
+  PLANNER_EMAIL_CONFIRMATION_PATH,
+  PLANNER_MANAGEMENT_CALLBACK_URI,
   ProvisioningTransaction,
   canTransition,
   createReservationAllowed,
   ensureAuthRedirectConfigured,
   fetchRuntimeConfig,
   listOrganizations,
+  managementAuthorizationCompletedPage,
+  managementAuthorizationDeniedPage,
+  mergeAuthRedirectAllowLists,
   mergeAuthRedirectAllowList,
   oauthCredentialSaveAllowed,
   operationLeaseActive,
+  plannerEmailConfirmationPage,
+  plannerEmailConfirmationUri,
+  productionManagementAuthorization,
   productionFetch,
   reconcileMigrations,
   redact,
@@ -62,6 +71,11 @@ const snapshotAllowlist = new Set([
   "operation",
   "runtimeConfig",
 ]);
+
+// Every stubbed global (`fetch`, timers) must not leak between cases.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function durableTransaction() {
   let body: string | undefined;
@@ -137,7 +151,7 @@ describe("OAuth credential lifetime", () => {
     const expired = read()!;
     expired.expiresAt = Date.now() - 1;
     (tx as any).save(expired);
-    await expect(tx.saveOAuthFromCallback(oauthState, "management-token", Date.now() + 60_000, "subject")).rejects.toThrow("oauth_expired");
+    await expect(tx.saveOAuthFromCallback(oauthState, "management-token", undefined, Date.now() + 60_000, "subject")).rejects.toThrow("oauth_expired");
     expect(read()).toMatchObject({ state: "expired" });
     expect(read()?.tokenCiphertext).toBeUndefined();
   });
@@ -265,6 +279,527 @@ describe("migration and verification recovery", () => {
   });
 });
 
+describe("browser hand-off pages", () => {
+  it("offers a real app-return action without exposing any credential", () => {
+    const page = managementAuthorizationCompletedPage();
+    expect(page).toContain(PLANNER_MANAGEMENT_CALLBACK_URI);
+    expect(page).toContain("Open Personal Planner");
+    expect(page).toContain("Supabase authorization completed");
+    expect(page).not.toContain("POC");
+    for (const forbidden of ["access_token", "refresh_token", "sba_", "sb_secret"]) {
+      expect(page).not.toContain(forbidden);
+    }
+    // The app-return link is the only dynamic value, and it carries no data.
+    expect(page).not.toMatch(/management-callback\?/u);
+    expect(managementAuthorizationDeniedPage()).toContain("was cancelled");
+  });
+
+  it("confirms an email with a usable app-return link and never shows the code", () => {
+    const request = new Request(
+      "https://worker.test/auth/confirmed?code=abc123-def456_ghi",
+    );
+    const page = plannerEmailConfirmationPage(request);
+    expect(page.status).toBe(200);
+    return page.text().then((body) => {
+      expect(body).toContain("Email verified successfully");
+      expect(body).toContain("return to Personal Planner and log in");
+      expect(body).toContain(`${PLANNER_AUTH_CALLBACK_URI}?code=abc123-def456_ghi`);
+      // The code only ever appears as the `code=` value of the app-return link
+      // (the button plus the hidden automatic attempt), never as page text.
+      const aroundCode = body.split("abc123-def456_ghi");
+      expect(aroundCode).toHaveLength(3);
+      for (const part of aroundCode.slice(0, -1)) {
+        expect(part.endsWith("code=")).toBe(true);
+      }
+      expect(body).not.toContain("access_token");
+    });
+  });
+
+  it("explains expired, already-used, and malformed confirmation links instead of blank pages", async () => {
+    const expired = plannerEmailConfirmationPage(
+      new Request(
+        "https://worker.test/auth/confirmed?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired",
+      ),
+    );
+    expect(expired.status).toBe(400);
+    const expiredBody = await expired.text();
+    expect(expiredBody).toContain("could not be used");
+    expect(expiredBody).not.toContain("Email link is invalid");
+
+    const malformed = plannerEmailConfirmationPage(
+      new Request("https://worker.test/auth/confirmed"),
+    );
+    expect(malformed.status).toBe(400);
+    expect(await malformed.text()).toContain("incomplete");
+
+    const injected = plannerEmailConfirmationPage(
+      new Request("https://worker.test/auth/confirmed?code=%3Cscript%3E"),
+    );
+    expect(injected.status).toBe(400);
+    const injectedBody = await injected.text();
+    expect(injectedBody).not.toContain("<script>alert");
+  });
+});
+
+describe("email confirmation redirect configuration", () => {
+  it("derives only https Worker origins", () => {
+    expect(plannerEmailConfirmationUri("https://worker.test")).toBe(
+      `https://worker.test${PLANNER_EMAIL_CONFIRMATION_PATH}`,
+    );
+    expect(plannerEmailConfirmationUri("http://worker.test")).toBeNull();
+    expect(plannerEmailConfirmationUri("not a url")).toBeNull();
+  });
+
+  it("adds the landing page next to the custom-scheme callback", () => {
+    const plan = mergeAuthRedirectAllowLists(undefined, [
+      PLANNER_AUTH_CALLBACK_URI,
+      "https://worker.test/auth/confirmed",
+    ]);
+    expect(plan).toEqual({
+      list: `${PLANNER_AUTH_CALLBACK_URI},https://worker.test/auth/confirmed`,
+      changed: true,
+    });
+    expect(mergeAuthRedirectAllowLists(plan!.list, [PLANNER_AUTH_CALLBACK_URI])).toEqual({
+      list: plan!.list,
+      changed: false,
+    });
+    expect(mergeAuthRedirectAllowLists(undefined, [])).toBeNull();
+  });
+
+  it("requires every Planner redirect after patching", async () => {
+    const confirmation = "https://worker.test/auth/confirmed";
+    const calls: Array<{ path: string; method: string }> = [];
+    let allowList = "https://planner.test/callback";
+    const call = async (path: string, init?: RequestInit) => {
+      calls.push({ path, method: init?.method ?? "GET" });
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { uri_allow_list: string };
+        allowList = body.uri_allow_list;
+      }
+      return Response.json({ uri_allow_list: allowList });
+    };
+    expect(await ensureAuthRedirectConfigured(ref, call, [confirmation])).toBe(true);
+    expect(calls.map((entry) => entry.method)).toEqual(["GET", "PATCH", "GET"]);
+    expect(allowList.split(",")).toEqual([
+      "https://planner.test/callback",
+      PLANNER_AUTH_CALLBACK_URI,
+      confirmation,
+    ]);
+  });
+});
+
+describe("management authorization lifecycle", () => {
+  const authorizationUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/authorization`;
+  const capability = "a".repeat(48);
+
+  function environment(worker: Record<string, unknown>) {
+    return {
+      PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker },
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+      SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
+    };
+  }
+
+  function request(path: string, method: string, provided = capability) {
+    return new Request(`${authorizationUrl}${path}`, {
+      method,
+      headers: { authorization: `Provisioning ${provided}` },
+    });
+  }
+
+  it("reports the retained grant status without leaking any credential", async () => {
+    const worker = {
+      managementAuthorizationStatus: async () => ({
+        authorized: false,
+        pending: false,
+        revokedAt: Date.now(),
+        authorizationExpiresAt: Date.now() + MANAGEMENT_WINDOW_MS,
+        releaseUnconfirmed: false,
+        emailConfirmationRedirect: null,
+      }),
+    };
+    const response = await productionManagementAuthorization(
+      request("", "GET"),
+      environment(worker) as any,
+    );
+    expect(response!.status).toBe(200);
+    const body = (await response!.json()) as Record<string, unknown>;
+    expect(body.authorized).toBe(false);
+    expect(body.releaseUnconfirmed).toBe(false);
+    expect(Object.keys(body).sort()).toEqual([
+      "authorizationExpiresAt",
+      "authorized",
+      "emailConfirmationRedirect",
+      "pending",
+      "releaseUnconfirmed",
+      "revokedAt",
+    ]);
+    expect(JSON.stringify(body)).not.toContain(capability);
+    expect(JSON.stringify(body)).not.toContain("refresh");
+  });
+
+  it("requires the provisioning capability and rejects other methods", async () => {
+    const worker = {
+      managementAuthorizationStatus: async (provided: string) => {
+        if (provided !== capability) throw new Error("forbidden");
+        return { authorized: false };
+      },
+    };
+    const unauthorized = await productionManagementAuthorization(
+      request("", "GET", "not-the-capability"),
+      environment(worker) as any,
+    );
+    expect(unauthorized!.status).toBe(401);
+    expect(await unauthorized!.json()).toEqual({ error: "invalid_request" });
+    const wrongMethod = await productionManagementAuthorization(
+      request("", "DELETE"),
+      environment(worker) as any,
+    );
+    expect(wrongMethod!.status).toBe(405);
+    expect(await productionManagementAuthorization(
+      new Request("https://worker.test/v1/provisioning/transactions/x/authorization"),
+      environment(worker) as any,
+    )).toBeNull();
+  });
+
+  it("starts a re-authorization that binds the new state to this installation", async () => {
+    let alarmAt = 0;
+    const worker = {
+      beginManagementAuthorization: async () => {
+        alarmAt = Date.now() + MANAGEMENT_WINDOW_MS;
+        return { state: "new-state-secret", verifier: "new-verifier-secret", expiresIn: 1000 };
+      },
+    };
+    const response = await productionManagementAuthorization(
+      request("/start", "POST"),
+      environment(worker) as any,
+    );
+    expect(response!.status).toBe(200);
+    const body = (await response!.json()) as { authorizationUrl: string; expiresIn: number };
+    const parsed = new URL(body.authorizationUrl);
+    expect(parsed.origin + parsed.pathname).toBe("https://api.supabase.com/v1/oauth/authorize");
+    expect(parsed.searchParams.get("client_id")).toBe("client-id");
+    expect(parsed.searchParams.get("state")).toBe(`${transactionId}.new-state-secret`);
+    expect(parsed.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(parsed.searchParams.get("code_challenge")).not.toContain("new-verifier-secret");
+    expect(body.expiresIn).toBe(1000);
+    expect(alarmAt).toBeGreaterThan(Date.now());
+  });
+
+  it("revokes through Supabase and never returns the refresh token", async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const worker = {
+      takeManagementRefresh: async () => "oauth_refresh_token_value",
+      markManagementRevoked: async () => undefined,
+    };
+    vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(null, { status: 204 });
+    });
+    const response = await productionManagementAuthorization(
+      request("/revoke", "POST"),
+      environment(worker) as any,
+    );
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toEqual({ revoked: true, reason: "revoked" });
+    expect(seen).toEqual([{
+      client_id: "client-id",
+      client_secret: "client-secret",
+      refresh_token: "oauth_refresh_token_value",
+    }]);
+  });
+
+  it("keeps the grant and reports failure when Supabase refuses the revocation", async () => {
+    let cleared = false;
+    const worker = {
+      takeManagementRefresh: async () => "oauth_refresh_token_value",
+      markManagementRevoked: async () => {
+        cleared = true;
+      },
+    };
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 500 }));
+    const response = await productionManagementAuthorization(
+      request("/revoke", "POST"),
+      environment(worker) as any,
+    );
+    expect(response!.status).toBe(502);
+    expect(await response!.json()).toEqual({ error: "revocation_failed" });
+    expect(cleared).toBe(false);
+  });
+
+  it("reports a truthful limitation when no refresh token is retained", async () => {
+    const worker = { takeManagementRefresh: async () => null };
+    const response = await productionManagementAuthorization(
+      request("/revoke", "POST"),
+      environment(worker) as any,
+    );
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toEqual({ revoked: false, reason: "not_retained" });
+  });
+});
+
+describe("management grant durability", () => {
+  const access = "a".repeat(48);
+
+  it("holds a sealed Management credential only for the provisioning attempt", async () => {
+    const { tx, read } = durableTransaction();
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await tx.oauthCallback("s".repeat(48));
+    await tx.saveOAuthFromCallback(
+      "s".repeat(48),
+      "management-token",
+      "oauth_refresh_token_value",
+      Date.now() + 600_000,
+      "subject-1",
+    );
+    const granted = read()!;
+    expect(granted.refreshCipher).toBeTypeOf("string");
+    expect(granted.refreshCipher).not.toContain("oauth_refresh_token_value");
+    expect(granted.grantExpiresAt).toBeGreaterThan(Date.now());
+    expect(await tx.takeManagementRefresh(access)).toBe("oauth_refresh_token_value");
+
+    // Transaction expiry is the least-privilege backstop: nothing Management
+    // related outlives the provisioning attempt it belongs to.
+    (tx as any).expire(read()!);
+    expect(read()!.state).toBe("expired");
+    expect(read()!.tokenCiphertext).toBeUndefined();
+    expect(read()!.refreshCipher).toBeUndefined();
+    expect(await tx.takeManagementRefresh(access)).toBeNull();
+  });
+
+  it("stops accepting a Management credential once its window passed", async () => {
+    const { tx, read } = durableTransaction();
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await tx.oauthCallback("s".repeat(48));
+    await tx.saveOAuthFromCallback(
+      "s".repeat(48),
+      "management-token",
+      "oauth_refresh_token_value",
+      Date.now() + 600_000,
+      "subject-1",
+    );
+    const granted = read()!;
+    (tx as any).save({ ...granted, grantExpiresAt: Date.now() - 1 });
+    expect(await tx.takeManagementRefresh(access)).toBeNull();
+  });
+
+  it("accepts a management re-authorization only through its own single-use state", async () => {
+    const { tx, read } = await transactionAtVerifying();
+    const grant = await tx.beginManagementAuthorization(access);
+    expect(grant.state).toHaveLength(43);
+    expect(read()!.oauthPurpose).toBe("management");
+    expect(read()!.state).toBe("verifying");
+
+    // A provisioning claim cannot consume the management state, and a spent
+    // state cannot be replayed.
+    const claim = await tx.oauthCallback(grant.state);
+    expect(claim).toEqual({ verifier: grant.verifier, management: true });
+    expect(await tx.oauthCallback(grant.state)).toBeNull();
+
+    await tx.saveOAuthFromCallback(
+      grant.state,
+      "second-access-token",
+      "second-refresh-token",
+      Date.now() + 600_000,
+      "subject-2",
+    );
+    const updated = read()!;
+    expect(updated.oauthPurpose).toBeUndefined();
+    expect(updated.oauthStateHash).toBeUndefined();
+    expect(updated.projectRef).toBe(ref);
+    expect(updated.state).toBe("verifying");
+    // The re-authorization existed only to perform its management work, so the
+    // Worker released the grant again immediately.
+    expect(updated.refreshCipher).toBeUndefined();
+    expect(await tx.takeManagementRefresh(access)).toBeNull();
+  });
+
+  it("refuses a management re-authorization for a record with no project", async () => {
+    const { tx } = durableTransaction();
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await expect(tx.beginManagementAuthorization(access)).rejects.toThrow("invalid_request");
+  });
+
+  it("revokes the Management grant and destroys it as soon as provisioning is ready", async () => {
+    const revoked: Array<Record<string, unknown>> = [];
+    let bodies: string[] = [];
+    const sql = {
+      exec(query: string, ...values: unknown[]) {
+        if (query.startsWith("SELECT")) return { toArray: () => (bodies.length ? [{ body: bodies[bodies.length - 1]! }] : []) };
+        if (query.startsWith("INSERT")) bodies.push(String(values[0]));
+        return { toArray: () => [] };
+      },
+    };
+    const ctx = {
+      storage: { sql, setAlarm: async () => undefined },
+      blockConcurrencyWhile: (operation: () => Promise<unknown>) => operation(),
+    };
+    const tx = new ProvisioningTransaction(ctx as any, {
+      OAUTH_SESSION_KEY: "test-session-key",
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+    } as any);
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.supabase.com/v1/oauth/revoke");
+      revoked.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(null, { status: 204 });
+    });
+
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await tx.oauthCallback("s".repeat(48));
+    await tx.saveOAuthFromCallback(
+      "s".repeat(48),
+      "management-token",
+      "oauth_refresh_token_value",
+      Date.now() + 600_000,
+      "subject-1",
+    );
+    await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+    const create = await tx.reserveCreate(access);
+    await tx.recordProject(access, create.nonce, ref);
+    const migration = await tx.claimOperation(access, "migration");
+    await tx.finishMigration(access, migration.nonce, { kind: "complete" });
+    const verification = await tx.claimOperation(access, "verification");
+
+    const snapshot = await tx.finishVerification(
+      access,
+      verification.nonce,
+      "passed",
+      runtimeConfig,
+    ) as Record<string, unknown>;
+
+    expect(snapshot.state).toBe("ready");
+    expect(revoked).toEqual([{
+      client_id: "client-id",
+      client_secret: "client-secret",
+      refresh_token: "oauth_refresh_token_value",
+    }]);
+    const record = JSON.parse(bodies[bodies.length - 1]!) as Record<string, unknown>;
+    expect(record.refreshCipher).toBeUndefined();
+    expect(record.tokenCiphertext).toBeUndefined();
+    expect(record.oauthRevokedAt).toBeTypeOf("number");
+    expect(record.oauthReleaseUnconfirmed).toBeUndefined();
+    const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
+    expect(status.authorized).toBe(false);
+    expect(status.releaseUnconfirmed).toBe(false);
+  });
+
+  it("reports an unconfirmed revocation when Supabase cannot be reached", async () => {
+    let bodies: string[] = [];
+    const sql = {
+      exec(query: string, ...values: unknown[]) {
+        if (query.startsWith("SELECT")) return { toArray: () => (bodies.length ? [{ body: bodies[bodies.length - 1]! }] : []) };
+        if (query.startsWith("INSERT")) bodies.push(String(values[0]));
+        return { toArray: () => [] };
+      },
+    };
+    const ctx = {
+      storage: { sql, setAlarm: async () => undefined },
+      blockConcurrencyWhile: (operation: () => Promise<unknown>) => operation(),
+    };
+    const tx = new ProvisioningTransaction(ctx as any, {
+      OAUTH_SESSION_KEY: "test-session-key",
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+    } as any);
+    vi.stubGlobal("fetch", async () => {
+      throw new Error("network down");
+    });
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await tx.oauthCallback("s".repeat(48));
+    await tx.saveOAuthFromCallback(
+      "s".repeat(48),
+      "management-token",
+      "oauth_refresh_token_value",
+      Date.now() + 600_000,
+      "subject-1",
+    );
+    await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+    const create = await tx.reserveCreate(access);
+    await tx.recordProject(access, create.nonce, ref);
+    const migration = await tx.claimOperation(access, "migration");
+    await tx.finishMigration(access, migration.nonce, { kind: "complete" });
+    const verification = await tx.claimOperation(access, "verification");
+
+    await tx.finishVerification(access, verification.nonce, "passed", runtimeConfig);
+
+    const record = JSON.parse(bodies[bodies.length - 1]!) as Record<string, unknown>;
+    // The credential is destroyed even though the revocation could not be
+    // confirmed, so the app can tell the user the truth instead of pretending.
+    expect(record.refreshCipher).toBeUndefined();
+    expect(record.oauthReleaseUnconfirmed).toBe(true);
+    const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
+    expect(status.authorized).toBe(false);
+    expect(status.releaseUnconfirmed).toBe(true);
+  });
+
+  it("repairs the email confirmation redirect during a re-authorization", async () => {
+    const { tx, read } = await transactionAtVerifying();
+    let allowList = `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`;
+    const writes: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.endsWith(`/v1/projects/${ref}/config/auth`)) {
+        return new Response(null, { status: 404 });
+      }
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { uri_allow_list: string };
+        allowList = body.uri_allow_list;
+        writes.push(allowList);
+      }
+      return Response.json({ uri_allow_list: allowList });
+    });
+    const confirmation = "https://worker.test/auth/confirmed";
+
+    const grant = await tx.beginManagementAuthorization(access);
+    await tx.oauthCallback(grant.state);
+    await tx.saveOAuthFromCallback(
+      grant.state,
+      "second-access-token",
+      "second-refresh-token",
+      Date.now() + 600_000,
+      "subject-2",
+      confirmation,
+    );
+
+    expect(writes).toEqual([
+      `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI},${confirmation}`,
+    ]);
+    expect(read()!.emailRedirectConfigured).toBe(confirmation);
+    const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
+    expect(status.emailConfirmationRedirect).toBe(confirmation);
+    // No Management credential is retained after the re-authorization.
+    expect(status.authorized).toBe(false);
+    expect(read()!.refreshCipher).toBeUndefined();
+    expect(JSON.stringify(status)).not.toContain("second-refresh-token");
+  });
+
+  it("never claims a repaired redirect when Management refuses the update", async () => {
+    const { tx, read } = await transactionAtVerifying();
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 403 }));
+    const grant = await tx.beginManagementAuthorization(access);
+    await tx.oauthCallback(grant.state);
+
+    await tx.saveOAuthFromCallback(
+      grant.state,
+      "second-access-token",
+      "second-refresh-token",
+      Date.now() + 600_000,
+      "subject-2",
+      "https://worker.test/auth/confirmed",
+    );
+
+    // The re-authorization itself succeeded, but the optional redirect repair
+    // is unreported — and nothing Management-related is retained either way.
+    expect(read()!.emailRedirectConfigured).toBeUndefined();
+    expect(read()!.refreshCipher).toBeUndefined();
+    const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
+    expect(status.authorized).toBe(false);
+    expect(status.emailConfirmationRedirect).toBeNull();
+  });
+});
+
 describe("sanitization", () => {
   it("redacts credential-shaped diagnostics", () => {
     const output = redact("authorization=Bearer eyJheader.payload.signature password=hunter2 sb_secret_abcdefghijklmnopqrstuvwxyz refresh_token=long-token-value");
@@ -282,7 +817,7 @@ async function transactionAtVerifying() {
   const oauthState = "s".repeat(48);
   await tx.create(access, oauthState, "v".repeat(48));
   await tx.oauthCallback(oauthState);
-  await tx.saveOAuthFromCallback(oauthState, "management-token", Date.now() + 600_000, "subject-1");
+  await tx.saveOAuthFromCallback(oauthState, "management-token", "refresh-token-value", Date.now() + 600_000, "subject-1");
   await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
   const create = await tx.reserveCreate(access);
   await tx.recordProject(access, create.nonce, ref);
@@ -525,16 +1060,22 @@ describe("provisioning route contract", () => {
   const verifyUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/verify`;
 
   function fakeTransaction(overrides: Record<string, unknown> = {}) {
+    // The route now reads the transaction state before verifying (a repeated
+    // verification of a READY transaction must return the same ready snapshot
+    // rather than an error), so this fake tracks the state its own
+    // finishVerification call produced.
+    let state = "verifying";
     return {
       managementToken: async (capability: string) =>
         capability === "capability-1" ? "management-token" : null,
       createContext: async () => ({ state: "authorization_pending", projectRef: ref }),
       claimOperation: async () => ({ nonce: "op-nonce", projectRef: ref }),
-      finishVerification: async (_a: string, _n: string, result: string, config?: unknown) => ({
-        state: result === "passed" ? "ready" : result === "assertion_failed" ? "terminal_error" : "verifying",
-        runtimeConfig: config ?? null,
-      }),
-      get: async () => ({ state: "ready", runtimeConfig }),
+      finishVerification: async (_a: string, _n: string, result: string, config?: unknown) => {
+        state = result === "passed" ? "ready" : result === "assertion_failed" ? "terminal_error" : "verifying";
+        return { state, runtimeConfig: config ?? null };
+      },
+      get: async () => ({ state, runtimeConfig: state === "ready" ? runtimeConfig : null }),
+      create: async () => ({}),
       ...overrides,
     };
   }
@@ -576,6 +1117,21 @@ describe("provisioning route contract", () => {
     );
     expect(invalid!.status).toBe(401);
     expect(await invalid!.json()).toEqual({ error: "oauth_expired" });
+  });
+
+  it("answers a repeated verify with the ready snapshot instead of an error", async () => {
+    // READY now also releases the Management grant, so a client that retries
+    // verification (for example after its own timeout) must still be able to
+    // read the same ready configuration.
+    const response = await productionFetch(
+      postRequest(verifyUrl),
+      environment(
+        fakeTransaction({ get: async () => ({ state: "ready", runtimeConfig }) }),
+      ) as any,
+    );
+
+    expect(response!.status).toBe(200);
+    expect((await response!.json() as { state: string }).state).toBe("ready");
   });
 
   it("returns only the client-facing provisioning grant when a transaction is created", async () => {
@@ -674,12 +1230,20 @@ describe("provisioning route contract", () => {
 
     const body = await response!.json() as { state: string; runtimeConfig: unknown };
     expect(body.state).toBe("ready");
-    expect(body.runtimeConfig).toEqual(runtimeConfig);
+    expect(body.runtimeConfig).toEqual({
+      ...runtimeConfig,
+      emailConfirmationRedirect:
+        `https://worker.test${PLANNER_EMAIL_CONFIRMATION_PATH}`,
+    });
     expect(JSON.stringify(body)).not.toContain("management-token");
-    // The new project's Auth config now allows exactly the canonical callback,
-    // and nothing else was dropped because the list started empty.
+    // The new project's Auth config now allows the canonical app callback and
+    // the Worker's confirmation landing page, and nothing else was dropped
+    // because the list started empty.
     expect(authConfigWrites).toEqual([
-      { uri_allow_list: PLANNER_AUTH_CALLBACK_URI },
+      {
+        uri_allow_list:
+          `${PLANNER_AUTH_CALLBACK_URI},https://worker.test${PLANNER_EMAIL_CONFIRMATION_PATH}`,
+      },
     ]);
     expect(requested).toContain(`https://api.supabase.com/v1/projects/${ref}/api-keys/pub-1?reveal=true`);
   });

@@ -689,5 +689,155 @@ void main() {
         isNot(contains(_capability)),
       );
     });
+
+    test('reads the Management authorization status', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(<String, dynamic>{
+          'authorized': true,
+          'pending': false,
+          'revokedAt': null,
+          'authorizationExpiresAt': 1_800_000_000_000,
+          'releaseUnconfirmed': false,
+          'emailConfirmationRedirect': 'https://worker.test/auth/confirmed',
+        }),
+      );
+
+      final status = await _client(transport)
+          .managementAuthorization(_transactionId, capability: _capability);
+
+      expect(status.authorized, isTrue);
+      expect(status.pending, isFalse);
+      expect(status.revokedAt, isNull);
+      expect(
+        status.authorizationExpiresAt,
+        DateTime.fromMillisecondsSinceEpoch(1_800_000_000_000, isUtc: true),
+      );
+      expect(
+        status.emailConfirmationRedirect,
+        'https://worker.test/auth/confirmed',
+      );
+      expect(
+        transport.requests.single.uri.path,
+        '/v1/provisioning/transactions/$_transactionId/authorization',
+      );
+      expect(
+        transport.requests.single.headers['authorization'],
+        'Provisioning $_capability',
+      );
+    });
+
+    test('requires a https Management authorization URL', () async {
+      final request = await _client(
+        _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            'authorizationUrl':
+                'https://api.supabase.com/v1/oauth/authorize?state=x',
+            'expiresIn': 2592000,
+          }),
+        ),
+      ).startManagementAuthorization(_transactionId, capability: _capability);
+
+      expect(request.authorizationUrl.host, 'api.supabase.com');
+      expect(request.expiresIn, const Duration(days: 30));
+
+      await expectLater(
+        _client(
+          _FakeTransport(
+            (_) async => _json(<String, dynamic>{
+              'authorizationUrl': 'http://api.supabase.com/v1/oauth/authorize',
+              'expiresIn': 60,
+            }),
+          ),
+        ).startManagementAuthorization(_transactionId, capability: _capability),
+        _protocolError(),
+      );
+    });
+
+    test(
+      'reports revocation truthfully, including the retained-token limit',
+      () async {
+        final revoked =
+            await _client(
+              _FakeTransport(
+                (_) async => _json(<String, dynamic>{
+                  'revoked': true,
+                  'reason': 'revoked',
+                }),
+              ),
+            ).revokeManagementAuthorization(
+              _transactionId,
+              capability: _capability,
+            );
+        expect(revoked.revoked, isTrue);
+        expect(revoked.retainedTokenMissing, isFalse);
+
+        final notRetained =
+            await _client(
+              _FakeTransport(
+                (_) async => _json(<String, dynamic>{
+                  'revoked': false,
+                  'reason': 'not_retained',
+                }),
+              ),
+            ).revokeManagementAuthorization(
+              _transactionId,
+              capability: _capability,
+            );
+        expect(notRetained.revoked, isFalse);
+        expect(notRetained.retainedTokenMissing, isTrue);
+
+        await expectLater(
+          _client(
+            _FakeTransport(
+              (_) async => _json(<String, dynamic>{'revoked': 'yes'}),
+            ),
+          ).revokeManagementAuthorization(
+            _transactionId,
+            capability: _capability,
+          ),
+          _protocolError(),
+        );
+      },
+    );
+
+    test('accepts the Worker-verified email confirmation redirect', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(
+          _snapshot(
+            'ready',
+            projectRef: _projectRef,
+            runtimeConfig: <String, dynamic>{
+              ..._runtimeConfig(),
+              'emailConfirmationRedirect': 'https://worker.test/auth/confirmed',
+            },
+          ),
+        ),
+      );
+      final snapshot = await _client(transport)
+          .snapshot(_transactionId, capability: _capability);
+      expect(
+        snapshot.runtimeConfig?.emailConfirmationRedirect,
+        'https://worker.test/auth/confirmed',
+      );
+
+      await expectLater(
+        _client(
+          _FakeTransport(
+            (_) async => _json(
+              _snapshot(
+                'ready',
+                projectRef: _projectRef,
+                runtimeConfig: <String, dynamic>{
+                  ..._runtimeConfig(),
+                  'emailConfirmationRedirect':
+                      'com.personalplanner.personalplanner://login-callback',
+                },
+              ),
+            ),
+          ),
+        ).snapshot(_transactionId, capability: _capability),
+        _protocolError(),
+      );
+    });
   });
 }

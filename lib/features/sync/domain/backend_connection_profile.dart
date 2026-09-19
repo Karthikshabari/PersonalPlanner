@@ -156,6 +156,7 @@ class BackendConnectionProfile {
     this.resumeState,
     this.errorCode,
     this.provisioningTransactionId,
+    this.authEmailConfirmationRedirect,
     this.connectionDisabled = false,
   }) : createdAt = createdAt.toUtc(),
        updatedAt = updatedAt.toUtc() {
@@ -219,6 +220,17 @@ class BackendConnectionProfile {
   /// Provisioning transaction id used to resume an in-flight setup.
   final String? provisioningTransactionId;
 
+  /// Exact Supabase Auth redirect the provisioning Worker verified for this
+  /// project's confirmation emails, once a backend reaches READY.
+  ///
+  /// The Worker records it so the app only ever asks Supabase to send a
+  /// confirmation link back to a destination that project's own redirect allow
+  /// list accepts. It is absent for a backend verified before this field
+  /// existed, and the app then keeps its original scheme-based callback — which
+  /// is why absence must never be reinterpreted as "the Worker landing page is
+  /// configured".
+  final String? authEmailConfirmationRedirect;
+
   /// True when the user explicitly stopped using this provisioned backend
   /// without deleting it.
   ///
@@ -249,6 +261,8 @@ class BackendConnectionProfile {
     if (compatibility != null) 'compatibility': compatibility!.toJson(),
     if (provisioningTransactionId != null)
       'provisioning_transaction_id': provisioningTransactionId,
+    if (authEmailConfirmationRedirect != null)
+      'auth_email_confirmation_redirect': authEmailConfirmationRedirect,
     // Absent means "connected", so a document written before this field existed
     // keeps its exact original meaning.
     if (connectionDisabled) 'connection_disabled': true,
@@ -279,6 +293,7 @@ class BackendConnectionProfile {
       'installation_id',
       'compatibility',
       'provisioning_transaction_id',
+      'auth_email_confirmation_redirect',
       'connection_disabled',
       'created_at',
       'updated_at',
@@ -332,6 +347,10 @@ class BackendConnectionProfile {
         json,
         'provisioning_transaction_id',
       ),
+      authEmailConfirmationRedirect: _optionalString(
+        json,
+        'auth_email_confirmation_redirect',
+      ),
       connectionDisabled: _optionalBool(json, 'connection_disabled') ?? false,
     );
   }
@@ -354,6 +373,7 @@ class BackendConnectionProfile {
     Object? resumeState = _unset,
     Object? errorCode = _unset,
     Object? provisioningTransactionId = _unset,
+    Object? authEmailConfirmationRedirect = _unset,
     bool? connectionDisabled,
   }) => BackendConnectionProfile(
     profileId: profileId ?? this.profileId,
@@ -385,6 +405,10 @@ class BackendConnectionProfile {
     provisioningTransactionId: identical(provisioningTransactionId, _unset)
         ? this.provisioningTransactionId
         : provisioningTransactionId as String?,
+    authEmailConfirmationRedirect:
+        identical(authEmailConfirmationRedirect, _unset)
+        ? this.authEmailConfirmationRedirect
+        : authEmailConfirmationRedirect as String?,
     connectionDisabled: connectionDisabled ?? this.connectionDisabled,
   );
 
@@ -512,6 +536,26 @@ class BackendConnectionProfile {
         'provisioningTransactionId',
         'a 32-character lowercase hexadecimal transaction id',
       );
+    }
+
+    final confirmationRedirect = authEmailConfirmationRedirect;
+    if (confirmationRedirect != null) {
+      // Only the exact https landing page the Worker verified may be persisted:
+      // it is sent to Supabase Auth as `emailRedirectTo`, so a value that is
+      // not a plain https URL could redirect a confirmation link elsewhere.
+      final parsed = Uri.tryParse(confirmationRedirect);
+      if (confirmationRedirect.length > 256 ||
+          confirmationRedirect.contains(',') ||
+          parsed == null ||
+          parsed.scheme != 'https' ||
+          parsed.host.isEmpty ||
+          parsed.userInfo.isNotEmpty ||
+          parsed.hasFragment) {
+        throw const BackendProfileValidationException(
+          'Backend profile authEmailConfirmationRedirect must be a plain '
+          'https URL.',
+        );
+      }
     }
 
     for (final entry in <(String, String?)>[

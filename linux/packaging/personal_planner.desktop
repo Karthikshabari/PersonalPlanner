@@ -7,3 +7,10 @@ Terminal=false
 Type=Application
 Categories=Office;Utility;
 StartupNotify=true
+# Personal Planner handles its own callback URIs:
+#   ...://login-callback        (Planner user account confirmation)
+#   ...://management-callback   (Supabase authorization returned)
+# Desktop environments need this xdg scheme handler for a browser to be able to
+# hand those links to the app. Run linux/packaging/register_uri_scheme.sh (or
+# `update-desktop-database` plus `xdg-mime default`) after installing the app.
+MimeType=x-scheme-handler/com.personalplanner.personalplanner;

@@ -139,6 +139,7 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
     required this.projectRef,
     required this.projectUrl,
     required this.publishableKey,
+    this.emailConfirmationRedirect,
   });
 
   /// Builds the runtime backend for [profile], or null when the profile is not
@@ -174,6 +175,7 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
       projectRef: projectRef,
       projectUrl: projectUrl,
       publishableKey: publishableKey,
+      emailConfirmationRedirect: profile.authEmailConfirmationRedirect,
     );
   }
 
@@ -191,6 +193,10 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
 
   /// Client-safe Supabase publishable key. Never a secret key.
   final String publishableKey;
+
+  /// Verified Supabase Auth redirect for this project's confirmation emails, or
+  /// null when this backend was verified before the Worker recorded one.
+  final String? emailConfirmationRedirect;
 
   @override
   RuntimeAuthNamespaces get authNamespaces =>

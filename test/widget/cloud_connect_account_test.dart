@@ -97,7 +97,9 @@ void main() {
       });
       await settle(tester);
 
-      expect(find.text('Cloud account connected'), findsOneWidget);
+      // The Planner account is presented as its own concept, separate from the
+      // Supabase project and from Supabase management access.
+      expect(find.text('Planner account'), findsOneWidget);
       expect(find.textContaining('person@example.com'), findsOneWidget);
       expect(
         find.textContaining(

@@ -112,7 +112,13 @@ secret_scan() {
 migration_order() {
   local root="${1:-.}"
   local migrations_dir="${root%/}/supabase/migrations"
-  local manifest_source="${root%/}/provisioning_poc/src/index.ts"
+  # The Worker manifest lives beside the entry module, not in it: a Worker entry
+  # module in modules format may only export functions, so the migration bundle
+  # (and its digests) must be importable from a non-entry module.
+  local manifest_source="${root%/}/provisioning_poc/src/migrations.ts"
+  if [[ ! -f "$manifest_source" ]]; then
+    manifest_source="${root%/}/provisioning_poc/src/index.ts"
+  fi
   local work manifest expected_count index found_entry
   local -a found=()
   local -a manifest_names=()

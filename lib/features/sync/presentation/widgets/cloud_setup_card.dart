@@ -21,12 +21,14 @@ class CloudSetupCard extends ConsumerStatefulWidget {
   ConsumerState<CloudSetupCard> createState() => _CloudSetupCardState();
 }
 
-class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
+class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
+    with WidgetsBindingObserver {
   ProvisioningUiController? _controller;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Loading and resume happen when the user actually opens this screen; there
     // is no provisioning work at application startup.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,9 +54,70 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Presentation polling must never outlive the screen.
     _controller?.stopWatching();
     super.dispose();
+  }
+
+  /// Resumes provisioning when the app comes back from the browser.
+  ///
+  /// Returning from the authorization browser is the normal path even when the
+  /// automatic deep link did not fire (the user pressed the fallback button, or
+  /// the platform refused the scheme). Resuming on this lifecycle event means
+  /// the user never has to press "Check authorization" themselves.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final controller = _controller;
+    if (controller == null) return;
+    if (controller.current?.phase ==
+        ProvisioningUiPhase.waitingForAuthorization) {
+      unawaited(controller.checkAuthorization());
+      return;
+    }
+    // A re-authorization that is still outstanding is also resolved by coming
+    // back to the app, even when the automatic deep link did not fire.
+    if (controller.current?.managementAuthorization?.pending ?? false) {
+      unawaited(controller.refreshManagementAuthorization());
+    }
+  }
+
+  /// Confirms, then performs, real revocation of Personal Planner's Supabase
+  /// management access.
+  ///
+  /// Revocation is server-side: the Worker calls Supabase's own revocation
+  /// endpoint. Nothing local is deleted, and neither the Supabase project nor
+  /// the Planner account session is affected.
+  Future<void> _confirmSupabaseAccessDisconnect(
+    ProvisioningUiController controller,
+  ) async {
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Disconnect Supabase access?'),
+        content: const Text(
+          'This revokes Personal Planner\'s Supabase authorization.\n\n'
+          '• Your Supabase project and its data are not deleted.\n'
+          '• Your Planner account and session are not affected.\n'
+          '• Local Planner data stays on this device.\n'
+          '• You can re-authorize later from this screen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('cloud-revoke-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Disconnect Supabase access'),
+          ),
+        ],
+      ),
+    );
+    if (choice != true) return;
+    await controller.disconnectSupabaseAccess();
   }
 
   @override
@@ -287,22 +350,87 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard> {
       case ProvisioningUiPhase.ready:
         final profile = state.readyProfile;
         final projectRef = profile?.projectRef;
+        final management = state.managementAuthorization;
         return _CloudCard(
           icon: Icons.cloud_done_outlined,
           title: 'Cloud storage ready',
-          body: cloudSetupReadyBody,
+          // A lifecycle action on this card (re-authorize, disconnect Supabase
+          // access) reports its result here, so the ready body gives way to the
+          // explicit outcome message.
+          body: state.message ?? cloudSetupReadyBody,
           debugDetail: debugDetail,
           busy: busy,
-          actions: <Widget>[
-            if (projectRef != null)
-              TextButton(
-                key: const ValueKey('cloud-open-dashboard'),
-                onPressed: busy
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.dashboard_outlined),
+                title: const Text('Cloud project'),
+                subtitle: Text(
+                  projectRef == null
+                      ? 'This user-owned Supabase project is ready.'
+                      : 'Your own Supabase project is ready.',
+                ),
+                trailing: projectRef == null
                     ? null
-                    : () => unawaited(_openProjectDashboard(projectRef)),
-                child: const Text('Open Supabase dashboard'),
+                    : TextButton(
+                        key: const ValueKey('cloud-open-dashboard'),
+                        onPressed: busy
+                            ? null
+                            : () =>
+                                  unawaited(_openProjectDashboard(projectRef)),
+                        child: const Text('Open Supabase Dashboard'),
+                      ),
               ),
-          ],
+              const Divider(height: 1),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.key_outlined),
+                title: const Text('Advanced · Supabase access'),
+                subtitle: const Text(cloudSetupSupabaseAccessBody),
+                isThreeLine: true,
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: <Widget>[
+                  OutlinedButton(
+                    key: const ValueKey('cloud-reauthorize-action'),
+                    onPressed: busy
+                        ? null
+                        : controller.reauthorizeSupabaseAccess,
+                    child: const Text('Re-authorize Supabase'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('cloud-revoke-action'),
+                    onPressed: busy
+                        ? null
+                        : () => unawaited(
+                            _confirmSupabaseAccessDisconnect(controller),
+                          ),
+                    child: const Text('Disconnect Supabase access'),
+                  ),
+                ],
+              ),
+              if (management != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  management.authorized
+                      ? 'Personal Planner currently holds management access to '
+                            'this project.'
+                      : management.pending
+                      ? cloudSetupSupabaseAccessPending
+                      : management.releaseUnconfirmed
+                      ? cloudSetupSupabaseAccessReleased
+                      : 'Personal Planner does not hold management access to '
+                            'this project.',
+                  key: const ValueKey('cloud-management-status'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
         );
 
       case ProvisioningUiPhase.disconnected:

@@ -54,6 +54,19 @@
                     android:scheme="com.personalplanner.personalplanner"
                     android:host="login-callback" />
             </intent-filter>
+            <!-- Supabase Management authorization completion, delivered by the
+                 provisioning Worker's browser page. It carries no token or
+                 capability: the app only resumes its own durable provisioning
+                 attempt. Kept as a separate destination from the Planner user
+                 Auth callback above so one flow can never satisfy the other. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.personalplanner.personalplanner"
+                    android:host="management-callback" />
+            </intent-filter>
         </activity>
         <!-- Timer foreground service — do not change the service name. -->
         <service
