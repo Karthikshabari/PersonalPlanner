@@ -154,6 +154,109 @@ void main() {
       }
     },
   );
+
+  test(
+    'an idle account settles to synced and never announces syncing',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
+      );
+      final states = <SyncEngineState>[];
+      final subscription = engine.status.listen(
+        (snapshot) => states.add(snapshot.state),
+      );
+      try {
+        await engine.start();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        // Nothing was pending, so the cycle finished long before the notice
+        // delay: the screen never flashes "Syncing…" for a no-op cycle.
+        expect(states, isNot(contains(SyncEngineState.syncing)));
+        expect(states.last, SyncEngineState.synced);
+      } finally {
+        await subscription.cancel();
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
+
+  test('real work is announced as syncing while it runs', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final gate = Completer<void>();
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _GatedGateway(gate), 'account'),
+      connectivity,
+      syncingNoticeDelay: const Duration(milliseconds: 20),
+    );
+    final states = <SyncEngineState>[];
+    final subscription = engine.status.listen(
+      (snapshot) => states.add(snapshot.state),
+    );
+    try {
+      final started = engine.start();
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(states.last, SyncEngineState.syncing);
+
+      gate.complete();
+      await started;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(states.last, SyncEngineState.synced);
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await subscription.cancel();
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
+  test(
+    'a request that never returns cannot pin the engine in syncing',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _HangingPullGateway(), 'account'),
+        connectivity,
+        syncingNoticeDelay: const Duration(milliseconds: 10),
+        cycleTimeout: const Duration(milliseconds: 120),
+      );
+      final snapshots = <SyncStatusSnapshot>[];
+      final subscription = engine.status.listen(snapshots.add);
+      try {
+        unawaited(engine.start());
+        // The stalled transport is reported as active first…
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(snapshots.last.state, SyncEngineState.syncing);
+
+        // …and the bounded cycle then releases the engine instead of leaving
+        // the UI on a spinner forever.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(snapshots.last.state, SyncEngineState.error);
+        expect(snapshots.last.message, syncCycleStalledMessage);
+        // A second attempt is not blocked by the abandoned cycle.
+        await engine.syncNow().timeout(const Duration(seconds: 2));
+      } finally {
+        await subscription.cancel();
+        // Shutdown must not hang on the request that never returned.
+        await engine.stop().timeout(const Duration(seconds: 2));
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
 }
 
 class _FakeConnectivity implements SyncConnectivityMonitor {
@@ -214,6 +317,31 @@ class _CountingGateway extends _NoopGateway {
     pullCalls++;
     return super.pullChanges(afterChangeId: afterChangeId, limit: limit);
   }
+}
+
+/// A gateway whose pull only completes when the test releases it.
+class _GatedGateway extends _NoopGateway {
+  _GatedGateway(this._gate);
+
+  final Completer<void> _gate;
+
+  @override
+  Future<Object?> pullChanges({
+    required int afterChangeId,
+    required int limit,
+  }) async {
+    await _gate.future;
+    return const <Object>[];
+  }
+}
+
+/// A transport that never answers, like a half-open connection.
+class _HangingPullGateway extends _NoopGateway {
+  @override
+  Future<Object?> pullChanges({
+    required int afterChangeId,
+    required int limit,
+  }) => Completer<Object?>().future;
 }
 
 class _FakeAuthRepository implements AuthSessionRepository {

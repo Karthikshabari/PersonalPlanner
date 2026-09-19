@@ -144,9 +144,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final syncPreferenceCard = Card(
       child: SwitchListTile(
         key: const ValueKey('sync-enable-toggle'),
-        title: const Text('Enable sync'),
+        title: const Text('Sync'),
         subtitle: const Text(
-          'Disabling sync keeps the durable outbox and cursor intact.',
+          'Keep your Planner data up to date across your devices.',
         ),
         value: enabled,
         onChanged: (value) =>

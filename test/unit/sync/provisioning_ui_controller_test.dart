@@ -36,6 +36,36 @@ void main() {
     addTearDown(container.dispose);
   }
 
+  /// Container variant for the automatic-refresh tests, which need a poll
+  /// interval that actually elapses. Everything else stays identical.
+  void buildPollingContainer({
+    required ProvisioningApi api,
+    Duration interval = const Duration(milliseconds: 20),
+  }) {
+    container = ProviderContainer(
+      overrides: [
+        provisioningApiProvider.overrideWithValue(api),
+        browserLauncherProvider.overrideWithValue(launcher),
+        backendProjectProbeProvider.overrideWithValue(probe),
+        provisioningPollIntervalProvider.overrideWith((ref) => interval),
+      ],
+    );
+    addTearDown(container.dispose);
+  }
+
+  /// Deterministic wait: no fixed sleeps, just bounded polling for a condition.
+  Future<void> waitFor(
+    bool Function() condition, {
+    int attempts = 400,
+    String? reason,
+  }) async {
+    for (var attempt = 0; attempt < attempts; attempt += 1) {
+      if (condition()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    fail(reason ?? 'condition was not reached');
+  }
+
   Future<ProvisioningUiState> loadState() =>
       container.read(provisioningUiProvider.future);
 
@@ -492,6 +522,172 @@ void main() {
     );
   });
 
+  group('automatic progress refresh', () {
+    test('a waiting screen refreshes progress by itself', () async {
+      api.attempt = testAttempt(ProvisioningState.projectWaiting);
+      api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(() => api.calls.where((c) => c == 'migrate').length >= 2);
+
+      // No user action was needed: the screen checked twice on its own.
+      expect(current().phase, ProvisioningUiPhase.provisioning);
+      expect(current().busy, isFalse);
+    });
+
+    test('authorization completed on another device is detected', () async {
+      // Cross-device: no deep link ever reaches this process. The transaction
+      // is still authorization_pending until the Worker sees the consent, so
+      // the automatic check is what has to notice it.
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+      api.organizationsResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.restartRequired,
+        profile: testProfile(ProvisioningState.authorizationPending),
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+      await controller().startWatching();
+      await waitFor(
+        () => api.calls.contains('listOrganizations'),
+      );
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+
+      // The phone finishes the Supabase consent; the Worker now has the
+      // Management credential for this same transaction.
+      api.organizationsResult = testOrganizations(
+        const <ProvisioningOrganization>[
+          ProvisioningOrganization(id: 'org-1', name: 'Ks_Planner', slug: 'ks'),
+        ],
+      );
+
+      await waitFor(
+        () => current().phase == ProvisioningUiPhase.organizationSelection,
+        reason: 'automatic refresh must detect the completed authorization',
+      );
+      expect(current().authorizationConfirmed, isTrue);
+      expect(current().selectedOrganization?.slug, 'ks');
+    });
+
+    test('automatic refresh never overlaps a slow request', () async {
+      final slow = _CountingProvisioningApi()
+        ..attempt = testAttempt(ProvisioningState.projectWaiting)
+        ..migrateResult = testInProgress(
+          ProvisioningState.projectWaiting,
+          projectRef: testProjectRef,
+        );
+      buildPollingContainer(api: slow);
+      await loadState();
+
+      slow.gate = Completer<void>();
+      final watching = controller().startWatching();
+      await waitFor(() => slow.inFlight == 1);
+      // Several poll intervals elapse while the first request is still open.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(slow.maxInFlight, 1);
+      expect(slow.inFlight, 1);
+
+      slow.gate!.complete();
+      slow.gate = null;
+      await watching;
+      await waitFor(() => slow.inFlight == 0);
+    });
+
+    test('automatic refresh stops once the phase is terminal', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      api.verifyResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        ),
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(() => current().phase == ProvisioningUiPhase.ready);
+      final callsWhenReady = api.calls.length;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(api.calls.length, callsWhenReady);
+    });
+
+    test('automatic refresh stops when the screen is closed', () async {
+      api.attempt = testAttempt(ProvisioningState.projectWaiting);
+      api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(() => api.calls.contains('migrate'));
+      controller().stopWatching();
+      final callsWhenClosed = api.calls.length;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(api.calls.length, callsWhenClosed);
+    });
+
+    test('a transient refresh failure keeps the durable state', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+      await controller().startWatching();
+      await waitFor(() => api.calls.contains('migrate'));
+
+      // A transport problem on the next tick must not mark anything deleted or
+      // surface an error to the user.
+      api.migrateError = const ProvisioningApiException(
+        ProvisioningErrorKind.network,
+        'The provisioning service could not be reached.',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      expect(current().phase, ProvisioningUiPhase.provisioning);
+      expect(current().stage, CloudSetupStage.waitingForProject);
+      expect(current().busy, isFalse);
+      expect(api.calls, isNot(contains('markRemoteMissing')));
+    });
+
+    test('the manual refresh fallback still works', () async {
+      api.attempt = testAttempt(ProvisioningState.projectWaiting);
+      api.migrateResult = testInProgress(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().startWatching();
+
+      // startWatching already advanced once; the explicit action advances
+      // again along the same existing pathway.
+      final before = api.calls.where((c) => c == 'migrate').length;
+      await controller().advance();
+
+      expect(api.calls.where((c) => c == 'migrate').length, before + 1);
+      expect(current().phase, ProvisioningUiPhase.provisioning);
+    });
+  });
+
   group('Supabase access lifecycle', () {
     void readyAttempt() {
       api.attempt = testAttempt(
@@ -670,4 +866,24 @@ void main() {
       expect(current().message, cloudSetupProjectUnreachableHintMessage);
     });
   });
+}
+
+/// Records how many status requests are open at once, and can hold one open.
+class _CountingProvisioningApi extends FakeProvisioningApi {
+  int inFlight = 0;
+  int maxInFlight = 0;
+  Completer<void>? gate;
+
+  @override
+  Future<ProvisioningResult> migrate() async {
+    inFlight += 1;
+    maxInFlight = inFlight > maxInFlight ? inFlight : maxInFlight;
+    try {
+      final hold = gate;
+      if (hold != null) await hold.future;
+      return await super.migrate();
+    } finally {
+      inFlight -= 1;
+    }
+  }
 }

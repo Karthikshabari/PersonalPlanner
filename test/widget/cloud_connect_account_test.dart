@@ -65,7 +65,7 @@ void main() {
     expect(find.byKey(const ValueKey('sync-password')), findsOneWidget);
     // No sync surface exists for the provisioned path.
     expect(find.text('Sync now'), findsNothing);
-    expect(find.text('Enable sync'), findsNothing);
+    expect(find.byKey(const ValueKey('sync-enable-toggle')), findsNothing);
     // The newly ready backend is handed to the bootstrap exactly once.
     expect(reloader.calls, 1);
 
@@ -119,7 +119,7 @@ void main() {
       expect(find.text('Sync now'), findsNothing);
       // Phase H: the Cloud Sync preference is reachable before the baseline
       // exists, so automatic synchronization can always be switched off.
-      expect(find.text('Enable sync'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
       expect(find.text('Synced'), findsNothing);
       // The Phase G first-sync state is described honestly: the account is
       // connected, but cloud synchronization is not claimed to be active.
@@ -166,14 +166,21 @@ void main() {
         find.byKey(const ValueKey('provisioned-first-sync')),
         findsNothing,
       );
-      expect(find.text('Enable sync'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
       expect(find.text('Sync now'), findsOneWidget);
+      // Normal users never see the durable outbox or cursor terminology.
+      expect(
+        find.text('Keep your Planner data up to date across your devices.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('outbox'), findsNothing);
+      expect(find.textContaining('cursor'), findsNothing);
 
       // Switching sync off keeps the controls visible so they can be switched
       // back on; it never claims a synced state.
-      await tester.tap(find.text('Enable sync'));
+      await tester.tap(find.byKey(const ValueKey('sync-enable-toggle')));
       await settle(tester);
-      expect(find.text('Enable sync'), findsOneWidget);
+      expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
       expect(find.text('Sync now'), findsOneWidget);
       expect(
         await tester.runAsync(
@@ -269,7 +276,7 @@ void main() {
       find.textContaining('uses its own local SQLite database'),
       findsOneWidget,
     );
-    expect(find.text('Enable sync'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
     expect(find.text('Sync now'), findsOneWidget);
 
     await _teardown(tester, harness);
@@ -297,7 +304,7 @@ void main() {
       reloader: reloader,
     );
 
-    expect(find.text('Authorize Supabase'), findsOneWidget);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     expect(find.text(cloudStorageConnectedStatus), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsNothing);
     expect(reloader.calls, 0);
@@ -520,7 +527,7 @@ void main() {
         expect(tester.takeException(), isNull);
         // Every top-level section stays reachable at every width.
         expect(find.text('Planner account'), findsOneWidget);
-        expect(find.text('Enable sync'), findsOneWidget);
+        expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
         expect(find.text('Sync now'), findsOneWidget);
         expect(find.text(cloudStorageTitle), findsOneWidget);
         expect(find.byKey(const ValueKey('sync-status-card')), findsOneWidget);

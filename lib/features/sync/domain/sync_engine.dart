@@ -8,6 +8,29 @@ import '../data/sync_repository.dart';
 import 'auth_session_controller.dart';
 import 'sync_models.dart';
 
+/// Shortest time a cycle must be running before the UI is told it is syncing.
+///
+/// A quick no-op cycle (nothing pending, one empty pull page) finishes in well
+/// under this, so an idle account never flashes "Syncing…". A cycle that really
+/// transfers something outlives it and is reported as active.
+const Duration syncSyncingNoticeDelay = Duration(milliseconds: 400);
+
+/// Upper bound on one synchronization cycle.
+///
+/// The transport can hand back a request that never completes (a half-open
+/// connection, a stalled TLS read, an SDK refresh that never settles). Without
+/// a bound, that single request would keep the engine's "cycle in progress"
+/// flag set forever, so every later status computation would keep reporting
+/// `syncing` and the UI would spin indefinitely with no way back. The bound
+/// only decides when the *engine* stops claiming to be running; a late
+/// completion still updates the durable state normally.
+const Duration syncCycleTimeout = Duration(minutes: 1);
+
+/// User-facing message for a cycle that outlived [syncCycleTimeout].
+const String syncCycleStalledMessage =
+    'Sync is taking longer than expected. Your changes are safe on this '
+    'device.';
+
 /// Serializes automatic and manual sync attempts and owns all lifecycle
 /// triggers. Connectivity is treated as a transport hint only; the actual
 /// repository request remains the reachability check.
@@ -17,20 +40,30 @@ class SyncEngine with WidgetsBindingObserver {
     this._repository,
     this._connectivity, {
     this.authController,
+    this.syncingNoticeDelay = syncSyncingNoticeDelay,
+    this.cycleTimeout = syncCycleTimeout,
   });
 
   final AppDatabase _db;
   final SyncRepository _repository;
   final SyncConnectivityMonitor _connectivity;
   final AuthSessionController? authController;
+
+  /// How long real work must run before the UI is told it is syncing.
+  final Duration syncingNoticeDelay;
+
+  /// Upper bound on one cycle; see [syncCycleTimeout].
+  final Duration cycleTimeout;
   final _status = StreamController<SyncStatusSnapshot>.broadcast();
   final _subscriptions = <StreamSubscription<dynamic>>[];
   Timer? _writeDebounce;
   Timer? _periodic;
+  Timer? _syncingNotice;
   bool _started = false;
   bool _stopping = false;
   bool _disposed = false;
   bool _running = false;
+  bool _syncingVisible = false;
   bool _transportAvailable = false;
   String? _lastError;
   SyncEngineState? _failureState;
@@ -80,9 +113,10 @@ class SyncEngine with WidgetsBindingObserver {
 
   Future<void> _runSync() async {
     _running = true;
+    _syncingVisible = false;
     _lastError = null;
     _failureState = null;
-    await _emit(const SyncStatusSnapshot(state: SyncEngineState.syncing));
+    _scheduleSyncingNotice();
     try {
       final authController = this.authController;
       if (authController != null && !authController.hasUsableAccessToken()) {
@@ -91,7 +125,19 @@ class SyncEngine with WidgetsBindingObserver {
         _failureState = SyncEngineState.refreshPaused;
         return;
       }
-      final result = await _repository.sync();
+      final SyncCycleResult result;
+      try {
+        // Bounded: the transport can hand back a request that never completes,
+        // and an unbounded await would keep `_running` set forever — leaving
+        // every later status computation on "Syncing…" with no way back.
+        // Abandoning the wait never changes durable state: the outbox keeps
+        // every queued operation, so a later cycle still delivers it.
+        result = await _repository.sync().timeout(cycleTimeout);
+      } on TimeoutException {
+        _lastError = syncCycleStalledMessage;
+        _failureState = SyncEngineState.error;
+        return;
+      }
       if (result.succeeded) {
         _lastSuccessfulSync = DateTime.now().toUtc();
         await _db.syncDao.setSetting(
@@ -109,9 +155,21 @@ class SyncEngine with WidgetsBindingObserver {
       _failureState = SyncEngineState.error;
       if (!_stopping) await _refreshStatus();
     } finally {
+      _syncingNotice?.cancel();
+      _syncingVisible = false;
       _running = false;
       if (!_stopping) await _refreshStatus();
     }
+  }
+
+  /// Announces real work only once it has lasted long enough to be true.
+  void _scheduleSyncingNotice() {
+    _syncingNotice?.cancel();
+    _syncingNotice = Timer(syncingNoticeDelay, () {
+      if (!_running || _stopping || _disposed) return;
+      _syncingVisible = true;
+      _scheduleStatus();
+    });
   }
 
   void _onConnectivityChanged(List<ConnectivityResult> results) {
@@ -140,7 +198,10 @@ class SyncEngine with WidgetsBindingObserver {
     final pending = await _db.syncDao.pendingCount();
     final permanent = await _db.syncDao.firstPermanentOperation();
     final conflicts = await _countConflicts();
-    final state = _running
+    // Only a cycle that has been running long enough to be user-visible counts
+    // as "syncing"; the engine's internal in-flight flag alone must never pin
+    // the screen on a spinner.
+    final state = _syncingVisible
         ? SyncEngineState.syncing
         : conflicts > 0
         ? SyncEngineState.conflict
@@ -230,6 +291,8 @@ class SyncEngine with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _writeDebounce?.cancel();
     _periodic?.cancel();
+    _syncingNotice?.cancel();
+    _syncingVisible = false;
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
@@ -240,7 +303,10 @@ class SyncEngine with WidgetsBindingObserver {
       // stream when startup failed after allocating any of them.
     }
     try {
-      await _activeCycle;
+      // A wedged request must not be able to hang application shutdown.
+      await _activeCycle?.timeout(cycleTimeout);
+    } on TimeoutException {
+      // The durable outbox and cursor keep correctness; the process can exit.
     } catch (_) {
       // The active cycle already records transport failures. Do not let one
       // failed request prevent the database scope from closing.

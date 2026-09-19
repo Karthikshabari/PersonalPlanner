@@ -119,6 +119,9 @@ class FakeProvisioningApi implements ProvisioningApi {
   /// When set, [selectOrganization] waits until it completes.
   Completer<void>? holdSelect;
 
+  /// When set, [migrate] fails with this error instead of answering.
+  Object? migrateError;
+
   @override
   Future<ProvisioningAttempt?> loadAttempt() async {
     calls.add('loadAttempt');
@@ -166,6 +169,8 @@ class FakeProvisioningApi implements ProvisioningApi {
   @override
   Future<ProvisioningResult> migrate() async {
     calls.add('migrate');
+    final error = migrateError;
+    if (error != null) throw error;
     return migrateResult;
   }
 

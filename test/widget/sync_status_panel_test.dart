@@ -90,14 +90,34 @@ void main() {
       enabled: false,
       status: const SyncStatusSnapshot(state: SyncEngineState.synced),
     );
-    expect(find.text('Cloud Sync is off'), findsOneWidget);
-    expect(find.textContaining('Pending changes stay queued'), findsOneWidget);
+    expect(find.text('Sync is off'), findsOneWidget);
+    expect(
+      find.text('Changes will stay on this device until you turn sync back on.'),
+      findsOneWidget,
+    );
     expect(
       tester
           .widget<FilledButton>(find.byKey(const ValueKey('sync-now-action')))
           .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('an incomplete cycle explains itself and offers a retry', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: const SyncStatusSnapshot(
+        state: SyncEngineState.error,
+        message: 'Your changes are safe on this device.',
+      ),
+    );
+
+    expect(find.text("Sync couldn't complete"), findsOneWidget);
+    expect(find.text('Your changes are safe on this device.'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('pending work is reported compactly without animating', (

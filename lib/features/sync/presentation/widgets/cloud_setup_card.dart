@@ -217,14 +217,17 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.waitingForAuthorization:
         return _CloudCard(
           icon: Icons.verified_user_outlined,
-          title: 'Authorize Supabase',
+          title: cloudStorageTitle,
+          status: cloudStorageWaitingStatus,
+          statusTone: _StatusTone.pending,
           body: state.message ?? cloudSetupWaitingMessage,
           busy: busy,
+          progress: true,
           actions: <Widget>[
-            FilledButton(
+            OutlinedButton(
               key: const ValueKey('cloud-check-authorization'),
               onPressed: busy ? null : controller.checkAuthorization,
-              child: const Text('Check authorization'),
+              child: const Text('Refresh status'),
             ),
             if (state.authorizationUrlAvailable)
               TextButton(
@@ -250,6 +253,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               : 'Personal Planner will create one project in the organization '
                     'you choose. That project belongs to you.',
           busy: busy,
+          confirmation: state.authorizationConfirmed
+              ? cloudSetupAuthorizationConfirmedMessage
+              : null,
           content: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
@@ -291,18 +297,20 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.provisioning:
         return _CloudCard(
           icon: Icons.cloud_sync_outlined,
-          title: 'Setting up your cloud backend',
-          body: '${_stageLabel(state.stage)}\n\n$cloudSetupLeaveHint',
+          title: cloudStorageTitle,
+          status: _stageLabel(state.stage),
+          statusTone: _StatusTone.pending,
+          confirmation: state.authorizationConfirmed
+              ? cloudSetupAuthorizationConfirmedMessage
+              : null,
+          body: cloudSetupLeaveHint,
           busy: busy,
-          content: const Padding(
-            padding: EdgeInsets.only(top: 12),
-            child: LinearProgressIndicator(),
-          ),
+          progress: true,
           actions: <Widget>[
             TextButton(
               key: const ValueKey('cloud-check-progress'),
               onPressed: busy ? null : controller.advance,
-              child: const Text('Check progress'),
+              child: const Text('Refresh status'),
             ),
           ],
         );
@@ -479,21 +487,22 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
   }
 
   String _stageLabel(CloudSetupStage? stage) => switch (stage) {
-    CloudSetupStage.preparingProject => 'Preparing your cloud project',
-    CloudSetupStage.waitingForProject => 'Waiting for your cloud project',
-    CloudSetupStage.installingPlannerSchema => 'Installing Planner schema',
-    CloudSetupStage.verifyingCloudStorage => 'Verifying cloud storage',
-    null => 'Setting up your cloud backend',
+    CloudSetupStage.preparingProject => 'Creating your cloud project…',
+    CloudSetupStage.waitingForProject =>
+      'Waiting for your cloud project to be ready…',
+    CloudSetupStage.installingPlannerSchema => 'Configuring your database…',
+    CloudSetupStage.verifyingCloudStorage => 'Finishing setup…',
+    null => 'Setting up cloud storage…',
   };
 
 }
 
-/// Secondary "Advanced · Supabase access" area of a healthy cloud connection.
+/// Secondary "Supabase connection" area of a healthy cloud connection.
 ///
 /// It collapses by default so the ordinary screen only shows the state, what it
-/// means and the one useful action. Least privilege is unchanged: the temporary
-/// authorization is normally already released, so the passive status says so
-/// instead of offering a disconnect that would have nothing to revoke.
+/// means and the one useful action. Least privilege is unchanged, and the
+/// wording no longer needs to explain it: the normal case simply offers a check
+/// instead of a disconnect that would have nothing to revoke.
 class _SupabaseAccessSection extends StatelessWidget {
   const _SupabaseAccessSection({
     required this.state,
@@ -526,8 +535,8 @@ class _SupabaseAccessSection extends StatelessWidget {
             key: const ValueKey('cloud-advanced-access'),
             tilePadding: EdgeInsets.zero,
             childrenPadding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            leading: const Icon(Icons.key_outlined),
-            title: const Text('Advanced · Supabase access'),
+            leading: const Icon(Icons.link_outlined),
+            title: const Text(cloudSetupSupabaseAccessTitle),
             subtitle: const Text(cloudSetupSupabaseAccessBody),
             children: <Widget>[
               Align(
@@ -535,18 +544,14 @@ class _SupabaseAccessSection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    Text(
-                      inFlight
-                          ? cloudSetupSupabaseAccessPending
-                          : cloudSetupSupabaseAccessReleased,
-                      key: const ValueKey('cloud-management-status'),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      cloudSetupCheckConnectionHint,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    if (inFlight) ...[
+                      Text(
+                        cloudSetupSupabaseAccessPending,
+                        key: const ValueKey('cloud-management-status'),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                    ],
                     const SizedBox(height: AppSpacing.sm),
                     SyncActionGroup(
                       alignment: WrapAlignment.start,
@@ -567,20 +572,25 @@ class _SupabaseAccessSection extends StatelessWidget {
                               cloudSetupCheckConnectionLabel,
                             ),
                           ),
-                        if (onStopUsingCloud != null)
-                          TextButton(
-                            key: const ValueKey(
-                              'cloud-stop-using-cloud-action',
-                            ),
-                            onPressed: busy
-                                ? null
-                                : () => unawaited(onStopUsingCloud!()),
-                            child: const Text(
-                              cloudSetupStopUsingCloudLabel,
-                            ),
-                          ),
                       ],
                     ),
+                    // The device-level lifecycle action is deliberately
+                    // separated from the ordinary check above: it changes how
+                    // this device uses the cloud, and keeps its confirmation.
+                    if (onStopUsingCloud != null) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      const Divider(height: 1),
+                      ListTile(
+                        key: const ValueKey('cloud-stop-using-cloud-action'),
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.cloud_off_outlined),
+                        title: const Text(cloudSetupStopUsingCloudLabel),
+                        subtitle: const Text(cloudSetupStopUsingCloudSupport),
+                        onTap: busy
+                            ? null
+                            : () => unawaited(onStopUsingCloud!()),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -592,7 +602,7 @@ class _SupabaseAccessSection extends StatelessWidget {
   }
 }
 
-enum _StatusTone { neutral, success, warning, error }
+enum _StatusTone { neutral, pending, success, warning, error }
 
 class _CloudCard extends StatelessWidget {
   const _CloudCard({
@@ -605,6 +615,8 @@ class _CloudCard extends StatelessWidget {
     this.busy = false,
     this.status,
     this.statusTone = _StatusTone.neutral,
+    this.progress = false,
+    this.confirmation,
   });
 
   final IconData icon;
@@ -615,6 +627,12 @@ class _CloudCard extends StatelessWidget {
   final bool busy;
   final String? status;
   final _StatusTone statusTone;
+
+  /// True while this phase genuinely waits on server-side work.
+  final bool progress;
+
+  /// Optional inline acknowledgement of a step that just completed.
+  final String? confirmation;
 
   @override
   Widget build(BuildContext context) {
@@ -641,9 +659,16 @@ class _CloudCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              if (confirmation != null) ...[
+                _InlineConfirmation(message: confirmation!),
+                const SizedBox(height: 8),
+              ],
               Text(body),
               ?content,
-              if (busy) ...[
+              // Exactly one indeterminate indicator per card: either the
+              // phase's own waiting progress or the feedback for a user
+              // action. Two identical bars carried no extra meaning.
+              if (progress || busy) ...[
                 const SizedBox(height: 12),
                 const LinearProgressIndicator(),
               ],
@@ -655,6 +680,32 @@ class _CloudCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _InlineConfirmation extends StatelessWidget {
+  const _InlineConfirmation({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.check_circle, size: 16, color: tokens.success),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            message,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: tokens.success),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -676,6 +727,7 @@ class _CloudCardHeading extends StatelessWidget {
     final tokens = AppThemeTokens.of(context);
     final statusColor = switch (tone) {
       _StatusTone.success => tokens.success,
+      _StatusTone.pending => tokens.pending,
       _StatusTone.warning => tokens.warning,
       _StatusTone.error => tokens.error,
       _StatusTone.neutral => tokens.textSecondary,
@@ -692,6 +744,7 @@ class _CloudCardHeading extends StatelessWidget {
               Icon(
                 switch (tone) {
                   _StatusTone.success => Icons.check_circle,
+                  _StatusTone.pending => Icons.sync,
                   _StatusTone.warning => Icons.error_outline,
                   _StatusTone.error => Icons.report_problem_outlined,
                   _StatusTone.neutral => Icons.circle_outlined,

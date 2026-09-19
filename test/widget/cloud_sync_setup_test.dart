@@ -19,6 +19,7 @@ Future<void> _pumpCard(
   FakeProjectProbe? probe,
   Future<void> Function()? onUseOfflineOnly,
   Future<void> Function()? onStopUsingCloud,
+  Duration pollInterval = const Duration(hours: 1),
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -30,9 +31,7 @@ Future<void> _pumpCard(
         backendProjectProbeProvider.overrideWithValue(probe ?? _probe),
         // No periodic work during widget tests; the card still performs its
         // initial load/resume exactly once.
-        provisioningPollIntervalProvider.overrideWith(
-          (ref) => const Duration(hours: 1),
-        ),
+        provisioningPollIntervalProvider.overrideWith((ref) => pollInterval),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -60,12 +59,23 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// Advances the widget-test clock past several automatic refresh intervals
+/// without ever sleeping for real.
+Future<void> _pollTicks(WidgetTester tester, {int ticks = 10}) async {
+  for (var tick = 0; tick < ticks; tick += 1) {
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 2)),
+    );
+  }
+}
+
 Future<void> _unmount(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump();
 }
 
-/// Opens the collapsed "Advanced · Supabase access" disclosure.
+/// Opens the collapsed "Supabase connection" disclosure.
 Future<void> _openAdvancedAccess(WidgetTester tester) async {
   final tile = find.byKey(const ValueKey('cloud-advanced-access'));
   await tester.ensureVisible(tile);
@@ -175,7 +185,7 @@ void main() {
 
     expect(api.startAttemptCount, 1);
     expect(launcher.opened, <Uri>[testAuthorizationUrl]);
-    expect(find.text('Authorize Supabase'), findsOneWidget);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     // A second tap while the first attempt is running cannot start another.
     expect(find.byKey(const ValueKey('cloud-enable-action')), findsNothing);
 
@@ -218,7 +228,10 @@ void main() {
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
-    expect(find.text('Check authorization'), findsOneWidget);
+    // The manual control is the fallback, not the expected path: the screen
+    // refreshes itself while it waits.
+    expect(find.text('Refresh status'), findsOneWidget);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
     await _settle(tester);
 
@@ -309,12 +322,59 @@ void main() {
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
-    expect(find.text('Setting up your cloud backend'), findsOneWidget);
-    expect(find.textContaining('Installing Planner schema'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.textContaining('Configuring your database'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    // One card, one indicator, one truthful stage line. The waiting screen
+    // must never stack two identical indeterminate bars.
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.text('Refresh status'), findsOneWidget);
 
     await _unmount(tester);
   });
+
+  testWidgets(
+    'authorization completed elsewhere continues this device automatically',
+    (tester) async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.organizationsResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.restartRequired,
+        profile: testProfile(ProvisioningState.authorizationPending),
+      );
+      await _pumpCard(
+        tester,
+        api: api,
+        launcher: launcher,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+
+      expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
+
+      // The consent is finished on the phone. This device gets no deep link at
+      // all; the only way forward is the automatic status refresh.
+      api.organizationsResult = testOrganizations(
+        const <ProvisioningOrganization>[
+          ProvisioningOrganization(
+            id: 'org-1',
+            name: 'Ks_Planner',
+            slug: 'ks',
+          ),
+        ],
+      );
+      await _pollTicks(tester);
+
+      expect(
+        find.text(cloudSetupAuthorizationConfirmedMessage),
+        findsOneWidget,
+      );
+      expect(find.text('Choose a Supabase organization'), findsOneWidget);
+
+      await _unmount(tester);
+    },
+  );
 
   testWidgets('offers Retry after a transient failure', (tester) async {
     api.attempt = testAttempt(
@@ -379,7 +439,7 @@ void main() {
         verifyCallsBefore,
       );
       expect(launcher.opened, <Uri>[testAuthorizationUrl]);
-      expect(find.text('Authorize Supabase'), findsOneWidget);
+      expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
       // Transaction identifiers are never rendered, not even behind a
       // disclosure.
       expect(find.textContaining(newTransactionId), findsNothing);
@@ -407,7 +467,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('cloud-preflight-continue')));
       await _settle(tester);
-      expect(find.text('Authorize Supabase'), findsOneWidget);
+      expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
       await _settle(tester);
@@ -501,7 +561,7 @@ void main() {
     expect(find.byKey(const ValueKey('cloud-start-again')), findsNothing);
     expect(find.textContaining(testPublishableKey), findsNothing);
     // The advanced area is secondary and collapsed by default.
-    expect(find.text('Advanced · Supabase access'), findsOneWidget);
+    expect(find.text(cloudSetupSupabaseAccessTitle), findsOneWidget);
     expect(
       find.byKey(const ValueKey('cloud-reauthorize-action')),
       findsNothing,
@@ -535,8 +595,8 @@ void main() {
 
     expect(api.startAttemptCount, 0);
     expect(api.calls, contains('verify'));
-    expect(find.text('Setting up your cloud backend'), findsOneWidget);
-    expect(find.textContaining('Verifying cloud storage'), findsOneWidget);
+    expect(find.text(cloudStorageTitle), findsOneWidget);
+    expect(find.textContaining('Finishing setup'), findsOneWidget);
 
     await _unmount(tester);
   });
@@ -554,7 +614,7 @@ void main() {
     await _pumpCard(tester, api: api, launcher: launcher);
 
     expect(tester.takeException(), isNull);
-    expect(find.text('Authorize Supabase'), findsOneWidget);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     expect(
       find.byKey(const ValueKey('cloud-check-authorization')),
       findsOneWidget,
@@ -572,7 +632,7 @@ void main() {
       );
       await _pumpCard(tester, api: api, launcher: launcher);
 
-      expect(find.text('Advanced · Supabase access'), findsOneWidget);
+      expect(find.text(cloudSetupSupabaseAccessTitle), findsOneWidget);
       expect(find.text(cloudSetupSupabaseAccessBody), findsOneWidget);
       // Nothing prominent offers a revoke that would have nothing to revoke.
       expect(find.text('Disconnect Supabase access'), findsNothing);
@@ -585,17 +645,21 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('cloud-advanced-access')));
       await tester.pumpAndSettle();
 
+      // Nothing is held, so no passive "access released" line is needed and
+      // the ordinary check action is the only maintenance control.
       expect(
         find.byKey(const ValueKey('cloud-management-status')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(find.text(cloudSetupSupabaseAccessReleased), findsOneWidget);
-      expect(find.text(cloudSetupCheckConnectionHint), findsOneWidget);
       expect(
         find.byKey(const ValueKey('cloud-reauthorize-action')),
         findsOneWidget,
       );
       expect(find.text(cloudSetupCheckConnectionLabel), findsOneWidget);
+      // The device-level lifecycle action is separated from the check, and
+      // explains what it does not delete.
+      expect(find.text(cloudSetupStopUsingCloudLabel), findsOneWidget);
+      expect(find.text(cloudSetupStopUsingCloudSupport), findsOneWidget);
       expect(
         find.byKey(const ValueKey('cloud-stop-using-cloud-action')),
         findsOneWidget,
@@ -841,7 +905,10 @@ void main() {
     expect(find.text(cloudSetupNothingToRevokeMessage), findsOneWidget);
     // Nothing is held afterwards, so the prominent cancel action disappears.
     expect(find.byKey(const ValueKey('cloud-revoke-action')), findsNothing);
-    expect(find.text(cloudSetupSupabaseAccessReleased), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-management-status')),
+      findsNothing,
+    );
 
     await _unmount(tester);
   });
@@ -882,7 +949,7 @@ void main() {
       profile: testProfile(ProvisioningState.authorizationPending),
     );
     await _pumpCard(tester, api: api, launcher: launcher);
-    expect(find.text('Authorize Supabase'), findsOneWidget);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     final callsBeforeResume = api.calls.length;
 
     api.organizationsResult = testOrganizations(<ProvisioningOrganization>[

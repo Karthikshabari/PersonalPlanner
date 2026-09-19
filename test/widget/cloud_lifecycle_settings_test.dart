@@ -76,7 +76,7 @@ void main() {
       initialSyncPhase: InitialSyncPhase.retryable,
     );
 
-    expect(find.text('Enable sync'), findsOneWidget);
+    expect(find.byKey(const ValueKey('sync-enable-toggle')), findsOneWidget);
     final toggle = find.byType(Switch).first;
     expect(tester.widget<Switch>(toggle).value, isTrue);
 
@@ -105,8 +105,11 @@ void main() {
       ),
     );
     await settle(tester);
-    expect(find.text('Cloud Sync is off'), findsOneWidget);
-    expect(find.textContaining('Pending changes stay queued'), findsOneWidget);
+    expect(find.text('Sync is off'), findsOneWidget);
+    expect(
+      find.text('Changes will stay on this device until you turn sync back on.'),
+      findsOneWidget,
+    );
     expect(
       tester
           .widget<FilledButton>(
@@ -663,7 +666,7 @@ Future<void> _teardown(WidgetTester tester, _Harness harness) async {
   });
 }
 
-/// Opens the collapsed "Advanced · Supabase access" disclosure that now holds
+/// Opens the collapsed "Supabase connection" disclosure that now holds
 /// the cloud-lifecycle action.
 Future<void> _openAdvancedAccess(WidgetTester tester) async {
   final tile = find.byKey(const ValueKey('cloud-advanced-access'));

@@ -41,7 +41,7 @@ class SyncStatusPanel extends StatelessWidget {
     final action = FilledButton(
       key: const ValueKey('sync-now-action'),
       onPressed: enabled && !busy ? onSyncNow : null,
-      child: const Text('Sync now'),
+      child: Text(view.actionLabel),
     );
     final details = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,10 +53,12 @@ class SyncStatusPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs / 2),
         Text(view.subtitle),
-        if (status.pendingOperations > 0 && enabled && !view.active) ...[
+        if (status.pendingOperations > 0 && enabled) ...[
           const SizedBox(height: AppSpacing.xs / 2),
           Text(
-            _pendingLabel(status.pendingOperations),
+            view.active
+                ? _remainingLabel(status.pendingOperations)
+                : _pendingLabel(status.pendingOperations),
             key: const ValueKey('sync-pending-count'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -90,6 +92,10 @@ class SyncStatusPanel extends StatelessWidget {
   static String _pendingLabel(int count) => count == 1
       ? '1 change is waiting to sync.'
       : '$count changes are waiting to sync.';
+
+  static String _remainingLabel(int count) => count == 1
+      ? '1 change remaining.'
+      : '$count changes remaining.';
 }
 
 class _StatusGlyph extends StatelessWidget {
@@ -128,6 +134,7 @@ class SyncStatusView {
     required this.title,
     required this.subtitle,
     this.active = false,
+    this.actionLabel = 'Sync now',
   });
 
   final IconData icon;
@@ -137,6 +144,9 @@ class SyncStatusView {
 
   /// True only while a real synchronization cycle is running.
   final bool active;
+
+  /// Label of the manual action for this state.
+  final String actionLabel;
 }
 
 SyncStatusView syncStatusView(
@@ -149,10 +159,9 @@ SyncStatusView syncStatusView(
     return SyncStatusView(
       icon: Icons.cloud_off_outlined,
       color: tokens.offline,
-      title: 'Cloud Sync is off',
+      title: 'Sync is off',
       subtitle:
-          'Nothing is uploaded or downloaded. Pending changes stay queued in '
-          'this account until sync is switched back on.',
+          'Changes will stay on this device until you turn sync back on.',
     );
   }
   final lastSynced = status.lastSuccessfulSync;
@@ -201,6 +210,7 @@ SyncStatusView syncStatusView(
             status.message ??
             'Your cloud storage could not be reached. Your local data is '
                 'safe.',
+        actionLabel: 'Try again',
       );
     case SyncEngineState.authFailure:
       return SyncStatusView(
@@ -249,9 +259,9 @@ SyncStatusView syncStatusView(
       return SyncStatusView(
         icon: Icons.error_outline,
         color: tokens.error,
-        title: 'Sync problem',
-        subtitle:
-            status.message ?? 'Some changes could not be synchronized yet.',
+        title: "Sync couldn't complete",
+        subtitle: status.message ?? 'Your changes are safe on this device.',
+        actionLabel: 'Try again',
       );
     case SyncEngineState.notConfigured:
       return SyncStatusView(

@@ -37,17 +37,20 @@ const cloudStorageTitle = 'Cloud storage';
 const cloudStorageConnectedStatus = 'Connected';
 const cloudStorageUnreachableStatus = 'Connection unavailable';
 const cloudStorageDisconnectedStatus = 'Disconnected';
+const cloudStorageWaitingStatus = 'Waiting for Supabase authorization';
 const cloudSetupLocalOnlyBody =
     'Cloud sync is optional. Set up private cloud storage that belongs to you.';
 const cloudSetupAuthorizationBody =
     'Personal Planner will ask Supabase for permission to create and configure '
     'one project inside an organization you choose.';
 const cloudSetupWaitingMessage =
-    'Waiting for Supabase authorization. Finish the steps in your browser, then '
-    'choose Check authorization.';
+    'Waiting for Supabase authorization. Finish the steps in your browser — '
+    'setup continues automatically, even if you authorize on another device.';
 const cloudSetupStillWaitingMessage =
-    'Supabase authorization is not complete yet. Finish it in your browser, '
-    'then try again.';
+    'Supabase authorization is not complete yet. Finish it in your browser; '
+    'setup continues automatically.';
+const cloudSetupAuthorizationConfirmedMessage =
+    'Supabase authorization confirmed. Continuing setup…';
 const cloudSetupBrowserLaunchFailedMessage =
     'The authorization page could not be opened. Try again, or open it from '
     'your browser.';
@@ -70,7 +73,7 @@ const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
 const cloudSetupReadyBody =
-    'Your Planner data is stored in your own Supabase project.';
+    'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
     'this device and your Supabase project was not deleted. Reconnect to the '
@@ -79,13 +82,13 @@ const cloudSetupReconnectedBody =
     'Reconnected to your cloud backend. Sign in to the account that owns this '
     'project to resume synchronization. Your Planner data was not changed.';
 const cloudSetupLeaveHint =
-    'You can leave this screen. Setup continues safely and you can come back to '
-    'it later.';
+    'This can take a little while. You can leave this screen and come back '
+    'later — setup continues safely.';
 const cloudSetupAuthorizationReturnedMessage =
     'Supabase authorization returned. Continuing cloud setup…';
 const cloudSetupReauthorizeStartedMessage =
-    'Finish the Supabase authorization in your browser. Personal Planner will '
-    'continue when it returns.';
+    'Connecting to Supabase. Finish the authorization in your browser; '
+    'Personal Planner continues automatically.';
 const cloudSetupReauthorizeUnavailableMessage =
     'Supabase access cannot be re-authorized right now. Try again.';
 const cloudSetupRevokedMessage =
@@ -103,25 +106,21 @@ const cloudSetupManagementUnavailableMessage =
     'This device can no longer manage Supabase access for this backend. Start '
     'cloud setup again to restore it.';
 const cloudSetupSupabaseAccessBody =
-    'Used temporarily to create or check your cloud project. Separate from your '
-    'Planner account sign-in.';
-const cloudSetupSupabaseAccessReleased =
-    'No temporary Supabase access is active.';
+    'Personal Planner connects to Supabase only when it needs to set up or '
+    'check your cloud storage.';
+const cloudSetupSupabaseAccessTitle = 'Supabase connection';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
-const cloudSetupCheckConnectionHint =
-    'Temporarily connect to Supabase to check or repair your cloud project.';
-const cloudSetupCheckConnectionLabel = 'Check cloud connection';
+const cloudSetupCheckConnectionLabel = 'Check connection';
 const cloudSetupCancelAccessLabel = 'Cancel Supabase access';
 const cloudSetupStopUsingCloudLabel = 'Stop using cloud on this device';
+const cloudSetupStopUsingCloudSupport =
+    'Your local Planner data and Supabase project will remain.';
 const cloudSetupReauthorizeStartingMessage = 'Starting Supabase authorization…';
 const cloudSetupReauthorizedMessage =
-    'Supabase confirmed your cloud project still exists. Personal Planner '
-    'released the management access it used for the check.';
+    'Connection is working. Your Planner data can sync across your devices.';
 const cloudSetupReauthorizedWithRedirectMessage =
-    'Supabase confirmed your cloud project still exists, and the '
-    'confirmation-email link for this project was re-checked. Personal Planner '
-    'released the management access it used for the check.';
+    'Connection is working. Your Planner data can sync across your devices.';
 const cloudSetupReauthorizeIncompleteMessage =
     'The Supabase authorization was not completed, so nothing was checked. '
     'You can try again.';
@@ -221,6 +220,7 @@ class ProvisioningUiState {
     this.busy = false,
     this.authorizationUrlAvailable = false,
     this.reachability = CloudReachability.unknown,
+    this.authorizationConfirmed = false,
     this.message,
   });
 
@@ -247,6 +247,10 @@ class ProvisioningUiState {
   /// Result of the last bounded project-host probe of a READY backend.
   final CloudReachability reachability;
 
+  /// True for the brief transition that follows a detected Supabase
+  /// authorization, so the card can acknowledge it inline.
+  final bool authorizationConfirmed;
+
   final String? message;
 
   bool get isReady => phase == ProvisioningUiPhase.ready;
@@ -271,6 +275,7 @@ class ProvisioningUiState {
     bool? busy,
     bool? authorizationUrlAvailable,
     CloudReachability? reachability,
+    bool? authorizationConfirmed,
   }) => ProvisioningUiState(
     phase: phase ?? this.phase,
     stage: stage,
@@ -285,6 +290,7 @@ class ProvisioningUiState {
     authorizationUrlAvailable:
         authorizationUrlAvailable ?? this.authorizationUrlAvailable,
     reachability: reachability ?? this.reachability,
+    authorizationConfirmed: authorizationConfirmed ?? this.authorizationConfirmed,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -292,6 +298,7 @@ class ProvisioningUiState {
 class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Timer? _timer;
   bool _operationInFlight = false;
+  bool _watching = false;
   Uri? _authorizationUrl;
   StreamSubscription<String>? _linkSubscription;
 
@@ -331,10 +338,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// Called when the setup card becomes visible.
   ///
   /// Loads durable local state first (no network), then resumes an in-flight
-  /// attempt and starts conservative polling while the screen is open.
+  /// attempt and starts conservative refresh while the screen is open.
   Future<void> startWatching() async {
     final api = _api;
     if (api == null) return;
+    _watching = true;
     _applyState(await _loadLocal(api));
     final phase = state.value?.phase;
     if (phase == ProvisioningUiPhase.ready) {
@@ -355,13 +363,16 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     }
     if (phase == ProvisioningUiPhase.waitingForAuthorization ||
         phase == ProvisioningUiPhase.provisioning) {
-      _startTimer();
       await advance();
     }
   }
 
-  /// Called when the setup card is removed; polling never outlives the screen.
-  void stopWatching() => _cancelTimer();
+  /// Called when the setup card is removed; background refresh never outlives
+  /// the screen.
+  void stopWatching() {
+    _watching = false;
+    _cancelTimer();
+  }
 
   /// Reloads durable state without touching the network.
   Future<void> reload() async {
@@ -401,7 +412,6 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           message: cloudSetupWaitingMessage,
         ),
       );
-      _startTimer();
       return;
     }
     _applyResult(result);
@@ -708,7 +718,13 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   });
 
   /// Advances setup by exactly one authoritative step.
-  Future<void> advance() => _run(() async {
+  Future<void> advance() => _run(_advanceStep);
+
+  /// The authoritative "next step" of the durable attempt.
+  ///
+  /// Shared by the manual Refresh status action and the automatic background
+  /// refresh so both drive exactly the same state machine.
+  Future<void> _advanceStep() async {
     final api = _api;
     if (api == null) return;
     final attempt = await api.loadAttempt();
@@ -743,7 +759,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         _applyResult(await api.verify());
         return;
     }
-  });
+  }
 
   Future<void> _continueAfterAuthorization(ProvisioningApi api) async {
     final refreshed = await api.refresh();
@@ -779,6 +795,9 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             ? organizations.organizations.single
             : null,
         authorizationUrlAvailable: _authorizationUrl != null,
+        // The acknowledgement is inline and transient: it belongs to the step
+        // that follows the authorization and disappears with the next stage.
+        authorizationConfirmed: true,
         message: cloudSetupAuthorizationBody,
       ),
     );
@@ -1012,7 +1031,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   void _startTimer() {
     _cancelTimer();
     final interval = ref.read(provisioningPollIntervalProvider);
-    _timer = Timer.periodic(interval, (_) => unawaited(advance()));
+    _timer = Timer.periodic(interval, (_) => unawaited(_backgroundRefresh()));
   }
 
   void _cancelTimer() {
@@ -1020,7 +1039,52 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _timer = null;
   }
 
-  void _applyState(ProvisioningUiState next) => state = AsyncData(next);
+  /// True while the screen is open *and* the durable state is still waiting on
+  /// something the server does on its own.
+  ///
+  /// The refresh loop is derived from the phase, not from the action that
+  /// entered it: every path into a waiting phase (Continue, Retry, Resume,
+  /// reopening the screen, a lifecycle resume) gets the same automatic
+  /// behaviour, and every terminal phase stops it.
+  bool get _shouldRefreshInBackground {
+    if (!_watching) return false;
+    final phase = state.value?.phase;
+    return phase == ProvisioningUiPhase.waitingForAuthorization ||
+        phase == ProvisioningUiPhase.provisioning ||
+        phase == ProvisioningUiPhase.retryableError;
+  }
+
+  void _syncRefreshTimer() {
+    if (!_shouldRefreshInBackground) {
+      _cancelTimer();
+      return;
+    }
+    // Never restart an already-running loop: a poll changes `busy` twice, and
+    // re-arming on every state change would reset the period forever.
+    if (_timer != null) return;
+    _startTimer();
+  }
+
+  /// One automatic progress check.
+  ///
+  /// Deliberately quiet: it never marks the UI busy (that flag means "a user
+  /// action is running"), never surfaces an error, and cannot overlap another
+  /// operation because the controller serializes runs. A transient failure
+  /// simply waits for the next tick with the durable state untouched.
+  Future<void> _backgroundRefresh() async {
+    if (_operationInFlight || !_shouldRefreshInBackground) return;
+    try {
+      await _run(_advanceStep, markBusy: false);
+    } catch (_) {
+      // Background reconciliation never interrupts the user; the next tick
+      // retries and the durable attempt stays authoritative.
+    }
+  }
+
+  void _applyState(ProvisioningUiState next) {
+    state = AsyncData(next);
+    _syncRefreshTimer();
+  }
 
   void _update(
     ProvisioningUiState Function(ProvisioningUiState current) transform,
@@ -1029,19 +1093,23 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         state.value ??
         const ProvisioningUiState(phase: ProvisioningUiPhase.localOnly);
     state = AsyncData(transform(current));
+    _syncRefreshTimer();
   }
 
   /// Serializes UI actions so a double tap cannot start the same operation
   /// twice. The coordinator keeps its own durable protection.
-  Future<void> _run(Future<void> Function() body) async {
+  Future<void> _run(
+    Future<void> Function() body, {
+    bool markBusy = true,
+  }) async {
     if (_operationInFlight) return;
     _operationInFlight = true;
-    _update((current) => current.copyWith(busy: true));
+    if (markBusy) _update((current) => current.copyWith(busy: true));
     try {
       await body();
     } finally {
       _operationInFlight = false;
-      _update((current) => current.copyWith(busy: false));
+      if (markBusy) _update((current) => current.copyWith(busy: false));
     }
   }
 }
