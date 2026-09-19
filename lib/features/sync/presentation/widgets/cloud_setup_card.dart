@@ -15,7 +15,12 @@ import '../controllers/provisioning_ui_controller.dart';
 /// Presentation only: it drives [ProvisioningUiController] and never talks to
 /// the Worker, secure storage or the Durable Object directly.
 class CloudSetupCard extends ConsumerStatefulWidget {
-  const CloudSetupCard({super.key});
+  const CloudSetupCard({super.key, this.onUseOfflineOnly});
+
+  /// Lets the user stop using the (now missing) cloud backend from the
+  /// recovery card. The Settings screen owns that lifecycle action, so it is
+  /// injected rather than duplicated here.
+  final Future<void> Function()? onUseOfflineOnly;
 
   @override
   ConsumerState<CloudSetupCard> createState() => _CloudSetupCardState();
@@ -76,10 +81,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       unawaited(controller.checkAuthorization());
       return;
     }
-    // A re-authorization that is still outstanding is also resolved by coming
-    // back to the app, even when the automatic deep link did not fire.
-    if (controller.current?.managementAuthorization?.pending ?? false) {
-      unawaited(controller.refreshManagementAuthorization());
+    // A Management authorization that is still outstanding is also resolved by
+    // coming back to the app, even when the automatic deep link did not fire.
+    if (controller.current?.managementCheckInFlight ?? false) {
+      unawaited(controller.completeManagementCheck());
     }
   }
 
@@ -350,7 +355,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.ready:
         final profile = state.readyProfile;
         final projectRef = profile?.projectRef;
-        final management = state.managementAuthorization;
         return _CloudCard(
           icon: Icons.cloud_done_outlined,
           title: 'Cloud storage ready',
@@ -397,10 +401,14 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 children: <Widget>[
                   OutlinedButton(
                     key: const ValueKey('cloud-reauthorize-action'),
-                    onPressed: busy
+                    onPressed: busy || state.managementCheckInFlight
                         ? null
                         : controller.reauthorizeSupabaseAccess,
-                    child: const Text('Re-authorize Supabase'),
+                    child: Text(
+                      state.managementCheckInFlight
+                          ? 'Waiting for Supabase…'
+                          : 'Re-authorize Supabase',
+                    ),
                   ),
                   OutlinedButton(
                     key: const ValueKey('cloud-revoke-action'),
@@ -413,24 +421,48 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                   ),
                 ],
               ),
-              if (management != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  management.authorized
-                      ? 'Personal Planner currently holds management access to '
-                            'this project.'
-                      : management.pending
-                      ? cloudSetupSupabaseAccessPending
-                      : management.releaseUnconfirmed
-                      ? cloudSetupSupabaseAccessReleased
-                      : 'Personal Planner does not hold management access to '
-                            'this project.',
-                  key: const ValueKey('cloud-management-status'),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+              const SizedBox(height: 8),
+              Text(
+                state.managementCheckInFlight
+                    ? cloudSetupSupabaseAccessPending
+                    : cloudSetupSupabaseAccessReleased,
+                key: const ValueKey('cloud-management-status'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
+        );
+
+      case ProvisioningUiPhase.remoteMissing:
+        final profile = state.readyProfile;
+        return _CloudCard(
+          key: const ValueKey('cloud-remote-missing'),
+          icon: Icons.cloud_off_outlined,
+          title: cloudRemoteMissingTitle,
+          body: cloudRemoteMissingBody,
+          debugDetail: debugDetail,
+          busy: busy,
+          content: profile?.projectRef == null
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Deleted project: ${profile!.projectRef}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-setup-again-action'),
+              onPressed: busy ? null : controller.startAgain,
+              child: const Text('Set up cloud storage again'),
+            ),
+            OutlinedButton(
+              key: const ValueKey('cloud-use-offline-only-action'),
+              onPressed: busy ? null : widget.onUseOfflineOnly,
+              child: const Text('Use offline-only mode'),
+            ),
+          ],
         );
 
       case ProvisioningUiPhase.disconnected:
@@ -484,6 +516,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
 
 class _CloudCard extends StatelessWidget {
   const _CloudCard({
+    super.key,
     required this.icon,
     required this.title,
     required this.body,

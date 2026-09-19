@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/management_callback.dart';
+import '../../data/backend_project_probe.dart';
 import '../../data/provisioning_client.dart';
 import '../../domain/backend_connection_profile.dart';
 import '../../domain/provisioning_coordinator.dart';
@@ -111,9 +112,43 @@ const cloudSetupSupabaseAccessReleased =
     'applications; you can remove it in your Supabase account settings.';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
+const cloudSetupReauthorizeStartingMessage = 'Starting Supabase authorization…';
 const cloudSetupReauthorizedMessage =
-    'Supabase access re-authorized. The confirmation-email link for this '
-    'project was re-checked.';
+    'Supabase confirmed your cloud project still exists. Personal Planner '
+    'released the management access it used for the check.';
+const cloudSetupReauthorizedWithRedirectMessage =
+    'Supabase confirmed your cloud project still exists, and the '
+    'confirmation-email link for this project was re-checked. Personal Planner '
+    'released the management access it used for the check.';
+const cloudSetupReauthorizeIncompleteMessage =
+    'The Supabase authorization was not completed, so nothing was checked. '
+    'You can try again.';
+const cloudSetupCheckIndeterminateMessage =
+    'Supabase could not be reached to confirm your cloud project, so nothing '
+    'was changed. Your local Planner data is safe; try again later.';
+const cloudSetupRevokeCheckingMessage = 'Checking Supabase access…';
+const cloudSetupProjectUnreachableHintMessage =
+    'Personal Planner could not reach your cloud project just now. That can '
+    'simply mean you are offline, so nothing was changed. Use “Re-authorize '
+    'Supabase” if you want Supabase to confirm whether the project still '
+    'exists.';
+const cloudSetupNothingToRevokeMessage =
+    'Personal Planner is not currently holding Supabase management access for '
+    'this project, so there is nothing to disconnect. Access is released as '
+    'soon as each check finishes. If Supabase still lists Personal Planner '
+    'under your authorized applications, remove it in your Supabase account '
+    'settings.';
+const cloudSetupRevokeUnconfirmedMessage =
+    'Personal Planner destroyed the credential it held, but Supabase could not '
+    'confirm the authorization was revoked. Your project was not touched; if '
+    'Supabase still lists Personal Planner, remove it in your Supabase account '
+    'settings.';
+const cloudRemoteMissingTitle = 'Cloud project unavailable';
+const cloudRemoteMissingBody =
+    'The Supabase project this device was set up with no longer exists, so '
+    'cloud sync cannot continue. Nothing on this device was deleted: your '
+    'local Planner data, this device\'s account database, and the finished '
+    'first-sync history are all still here.';
 
 /// Presentation phases for the Settings → Sync cloud-setup card.
 ///
@@ -150,6 +185,11 @@ enum ProvisioningUiPhase {
   /// A verified backend is stored, but the user explicitly disconnected it on
   /// this device. It can be reconnected without provisioning anything new.
   disconnected,
+
+  /// Supabase authoritatively reported that the project this device is
+  /// configured for no longer exists. Nothing local was deleted: the user
+  /// chooses between setting up new cloud storage and staying offline-only.
+  remoteMissing,
 }
 
 /// User-facing progress stages inside [ProvisioningUiPhase.provisioning].
@@ -169,7 +209,7 @@ class ProvisioningUiState {
     this.organizations = const <ProvisioningOrganization>[],
     this.selectedOrganization,
     this.readyProfile,
-    this.managementAuthorization,
+    this.managementCheckInFlight = false,
     this.busy = false,
     this.authorizationUrlAvailable = false,
     this.message,
@@ -186,10 +226,9 @@ class ProvisioningUiState {
   final ProvisioningOrganization? selectedOrganization;
   final BackendConnectionProfile? readyProfile;
 
-  /// Supabase Management authorization state of this backend, when known.
-  ///
-  /// Never a credential: the Worker holds every token.
-  final ProvisioningManagementAuthorization? managementAuthorization;
+  /// True while a Supabase Management authorization this device started has not
+  /// been completed yet (the browser consent is still outstanding).
+  final bool managementCheckInFlight;
 
   final bool busy;
 
@@ -205,7 +244,10 @@ class ProvisioningUiState {
   bool get canStartSetup =>
       phase == ProvisioningUiPhase.localOnly ||
       phase == ProvisioningUiPhase.restartRequired ||
-      phase == ProvisioningUiPhase.terminalError;
+      phase == ProvisioningUiPhase.terminalError ||
+      phase == ProvisioningUiPhase.remoteMissing;
+
+  bool get isRemoteMissing => phase == ProvisioningUiPhase.remoteMissing;
 
   ProvisioningUiState copyWith({
     ProvisioningUiPhase? phase,
@@ -213,8 +255,7 @@ class ProvisioningUiState {
     bool clearMessage = false,
     ProvisioningOrganization? selectedOrganization,
     List<ProvisioningOrganization>? organizations,
-    ProvisioningManagementAuthorization? managementAuthorization,
-    bool clearManagementAuthorization = false,
+    bool? managementCheckInFlight,
     bool? busy,
     bool? authorizationUrlAvailable,
   }) => ProvisioningUiState(
@@ -225,9 +266,8 @@ class ProvisioningUiState {
     organizations: organizations ?? this.organizations,
     selectedOrganization: selectedOrganization ?? this.selectedOrganization,
     readyProfile: readyProfile,
-    managementAuthorization: clearManagementAuthorization
-        ? null
-        : (managementAuthorization ?? this.managementAuthorization),
+    managementCheckInFlight:
+        managementCheckInFlight ?? this.managementCheckInFlight,
     busy: busy ?? this.busy,
     authorizationUrlAvailable:
         authorizationUrlAvailable ?? this.authorizationUrlAvailable,
@@ -284,7 +324,20 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _applyState(await _loadLocal(api));
     final phase = state.value?.phase;
     if (phase == ProvisioningUiPhase.ready) {
-      await _refreshManagementAuthorization();
+      // A Management authorization may still be out in the browser (for example
+      // when the app was restarted), so restore the in-flight marker before the
+      // probe below.
+      final pending = await api.hasPendingManagementAuthorization();
+      if (pending) {
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: true,
+            message: cloudSetupReauthorizeStartedMessage,
+          ),
+        );
+      }
+      await verifyProjectHost();
+      return;
     }
     if (phase == ProvisioningUiPhase.waitingForAuthorization ||
         phase == ProvisioningUiPhase.provisioning) {
@@ -360,20 +413,31 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     await _continueAfterAuthorization(api);
   });
 
-  /// Re-authorizes Personal Planner's Supabase management access.
+  /// Starts a fresh Supabase Management authorization (browser consent).
   ///
-  /// The Worker starts a fresh single-use authorization and returns the
-  /// Supabase consent URL; the browser callback deep-links back into the app,
-  /// where [_onManagementAuthorizationReturned] refreshes this screen.
+  /// The browser hands control back through
+  /// [_onManagementAuthorizationReturned], which completes the check.
+  ///
+  /// The Worker issues a single-use consent URL; the callback page deep-links
+  /// back into the app, and [_onManagementAuthorizationReturned] completes the
+  /// check. This works for a READY backend even though the provisioning
+  /// capability was destroyed when setup finished.
   Future<void> reauthorizeSupabaseAccess() => _run(() async {
     final api = _api;
     if (api == null) return;
-    final result = await api.startManagementAuthorization();
+    _update(
+      (current) => current.copyWith(
+        managementCheckInFlight: true,
+        message: cloudSetupReauthorizeStartingMessage,
+      ),
+    );
+    final result = await api.startManagementCheck();
     final url = result.authorizationUrl;
-    if (result.outcome != ManagementAuthorizationOutcome.completed ||
+    if (result.outcome != ManagementStartOutcome.authorizationReady ||
         url == null) {
       _update(
         (current) => current.copyWith(
+          managementCheckInFlight: false,
           message: result.message ?? cloudSetupReauthorizeUnavailableMessage,
         ),
       );
@@ -382,96 +446,132 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     final opened = await ref.read(browserLauncherProvider).open(url);
     _update(
       (current) => current.copyWith(
+        managementCheckInFlight: opened,
         message: opened
             ? cloudSetupReauthorizeStartedMessage
             : cloudSetupBrowserLaunchFailedMessage,
       ),
     );
-    if (opened) await _refreshManagementAuthorization();
   });
 
-  /// Revokes Personal Planner's Supabase management access (real revocation).
+  /// Revokes the Supabase Management authorization this device currently holds.
   ///
-  /// The Worker calls Supabase's official revocation endpoint and then drops
-  /// every credential it holds. The Supabase project, the Planner account
-  /// session, and local Planner data are never touched.
+  /// The credential exists only while a Management authorization is in flight,
+  /// so this is a real revocation when there is something to revoke and an
+  /// explicit "nothing is held" answer otherwise — never a fake success. The
+  /// Supabase project, the Planner account session, and local Planner data are
+  /// never touched.
   Future<void> disconnectSupabaseAccess() => _run(() async {
     final api = _api;
     if (api == null) return;
-    final result = await api.revokeManagementAuthorization();
+    _update(
+      (current) => current.copyWith(
+        managementCheckInFlight: false,
+        message: cloudSetupRevokeCheckingMessage,
+      ),
+    );
+    final result = await api.revokeManagementAccess();
     switch (result.outcome) {
-      case ManagementAuthorizationOutcome.completed:
+      case ManagementRevokeOutcome.revoked:
         _update(
-          (current) => current.copyWith(
-            clearManagementAuthorization: true,
-            message: cloudSetupRevokedMessage,
-          ),
+          (current) => current.copyWith(message: cloudSetupRevokedMessage),
         );
         return;
-      case ManagementAuthorizationOutcome.notRetained:
-        _update(
-          (current) => current.copyWith(
-            clearManagementAuthorization: true,
-            message: cloudSetupRevokeNotRetainedMessage,
-          ),
-        );
-        return;
-      case ManagementAuthorizationOutcome.capabilityMissing:
+      case ManagementRevokeOutcome.nothingHeld:
         _update(
           (current) =>
-              current.copyWith(message: cloudSetupManagementUnavailableMessage),
+              current.copyWith(message: cloudSetupNothingToRevokeMessage),
         );
         return;
-      case ManagementAuthorizationOutcome.notApplicable:
+      case ManagementRevokeOutcome.unconfirmed:
+        _update(
+          (current) =>
+              current.copyWith(message: cloudSetupRevokeUnconfirmedMessage),
+        );
+        return;
+      case ManagementRevokeOutcome.retryable:
+      case ManagementRevokeOutcome.protocolError:
         _update(
           (current) => current.copyWith(
-            message: result.message ?? cloudSetupManagementUnavailableMessage,
+            message: result.message ?? cloudSetupRevokeFailedMessage,
           ),
-        );
-        return;
-      case ManagementAuthorizationOutcome.retryable:
-      case ManagementAuthorizationOutcome.protocolError:
-        _update(
-          (current) => current.copyWith(message: cloudSetupRevokeFailedMessage),
         );
         return;
     }
   });
 
-  /// Loads the Supabase Management authorization state for the Advanced card.
-  Future<void> refreshManagementAuthorization() =>
-      _refreshManagementAuthorization();
-
-  Future<void> _refreshManagementAuthorization() async {
+  /// Completes an in-flight Management authorization with Supabase's answer.
+  ///
+  /// Only an authoritative 404 marks the backend remote-missing; a network
+  /// failure leaves READY untouched and reports a retryable message.
+  Future<void> completeManagementCheck() => _run(() async {
     final api = _api;
     if (api == null) return;
-    final result = await api.managementAuthorizationStatus();
-    final status = result.status;
-    if (status == null) return;
-    final wasPending = state.value?.managementAuthorization?.pending ?? false;
-    _update(
-      (current) => current.copyWith(
-        managementAuthorization: status,
-        message: wasPending && !status.pending
-            ? cloudSetupReauthorizedMessage
-            : null,
-      ),
-    );
-    if (result.adoptedEmailConfirmationRedirect) {
-      // The Worker verified a confirmation redirect this backend did not have
-      // yet, so the runtime Auth client must be re-resolved to use it for the
-      // next sign-up.
-      await ref.read(runtimeBackendReloaderProvider)?.reload();
+    final result = await api.completeManagementCheck();
+    switch (result.outcome) {
+      case ManagementCheckOutcome.exists:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: result.emailConfirmationRedirectAdopted
+                ? cloudSetupReauthorizedWithRedirectMessage
+                : cloudSetupReauthorizedMessage,
+          ),
+        );
+        if (result.emailConfirmationRedirectAdopted) {
+          await ref.read(runtimeBackendReloaderProvider)?.reload();
+        }
+        return;
+      case ManagementCheckOutcome.missing:
+        _showRemoteMissing(status: result.status);
+        return;
+      case ManagementCheckOutcome.needsAuthorization:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: cloudSetupReauthorizeIncompleteMessage,
+          ),
+        );
+        return;
+      case ManagementCheckOutcome.indeterminate:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: cloudSetupCheckIndeterminateMessage,
+          ),
+        );
+        return;
+      case ManagementCheckOutcome.retryable:
+      case ManagementCheckOutcome.protocolError:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: result.message ?? cloudSetupCheckIndeterminateMessage,
+          ),
+        );
+        return;
+      case ManagementCheckOutcome.notApplicable:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: cloudSetupNothingToRevokeMessage,
+          ),
+        );
+        return;
     }
-  }
+  });
 
   /// Handles the browser handing a Supabase authorization back to the app.
+  ///
+  /// A Management authorization completes the project check the user started;
+  /// a provisioning authorization keeps its original meaning and resumes
+  /// provisioning.
   Future<void> _onManagementAuthorizationReturned() async {
     final phase = state.value?.phase;
     if (phase == null) return;
-    if (phase == ProvisioningUiPhase.ready ||
-        phase == ProvisioningUiPhase.disconnected) {
-      await _refreshManagementAuthorization();
+    final inFlight = state.value?.managementCheckInFlight ?? false;
+    if (inFlight || phase == ProvisioningUiPhase.ready) {
+      await completeManagementCheck();
       return;
     }
     if (phase == ProvisioningUiPhase.waitingForAuthorization) {
@@ -482,6 +582,39 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     }
     await advance();
   }
+
+  /// Bounded probe of the user's own project host, run while this card is open.
+  ///
+  /// Only a 404 is authoritative ("the project is gone"); DNS failures,
+  /// timeouts, and outages prove nothing and leave READY untouched.
+  Future<void> verifyProjectHost() => _run(() async {
+    final api = _api;
+    final profile = state.value?.readyProfile;
+    final projectUrl = profile?.projectUrl;
+    if (api == null || projectUrl == null) return;
+    final probed = await ref
+        .read(backendProjectProbeProvider)
+        .probe(Uri.parse(projectUrl));
+    if (probed == BackendProjectProbeResult.indeterminate) {
+      // A DNS failure, timeout, or outage proves nothing, so the backend stays
+      // READY. The card still tells the user how to get an authoritative
+      // answer, which is what makes a stale READY state recoverable.
+      if (state.value?.message == null) {
+        _update(
+          (current) => current.copyWith(
+            message: cloudSetupProjectUnreachableHintMessage,
+          ),
+        );
+      }
+      return;
+    }
+    if (probed != BackendProjectProbeResult.missing) return;
+    // The project host answered 404 for this exact project, which is the only
+    // authoritative answer this probe accepts.
+    final marked = await api.markRemoteMissing();
+    if (!marked) return;
+    _showRemoteMissing(status: 'host_not_found');
+  });
 
   /// Selects an organization locally; nothing is provisioned until Continue.
   void selectOrganization(ProvisioningOrganization organization) {
@@ -837,6 +970,19 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
     }
+  }
+
+  /// Switches the card to the authoritative deleted-project recovery state.
+  void _showRemoteMissing({required String? status}) {
+    _cancelTimer();
+    _applyState(
+      ProvisioningUiState(
+        phase: ProvisioningUiPhase.remoteMissing,
+        transactionId: state.value?.transactionId,
+        readyProfile: state.value?.readyProfile,
+        errorCode: status,
+      ),
+    );
   }
 
   void _startTimer() {

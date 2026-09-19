@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/backend_connection_profile.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
@@ -92,25 +93,28 @@ class FakeProvisioningApi implements ProvisioningApi {
   ProvisioningResult verifyResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
   );
-  ManagementAuthorizationResult managementStatusResult =
-      const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
-        status: ProvisioningManagementAuthorization(
-          // The normal state of a ready backend: the Worker released the
-          // authorization as soon as provisioning finished.
-          authorized: false,
-          pending: false,
-        ),
-      );
-  ManagementAuthorizationResult startManagementResult =
-      const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
-        authorizationUrl: null,
-      );
-  ManagementAuthorizationResult revokeManagementResult =
-      const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
-      );
+
+  /// Scripted result of starting a Management authorization.
+  ManagementStartResult startManagementResult = const ManagementStartResult(
+    outcome: ManagementStartOutcome.authorizationReady,
+    authorizationUrl: null,
+  );
+
+  /// Scripted result of completing the Management project check.
+  ManagementCheckResult completeManagementResult = const ManagementCheckResult(
+    outcome: ManagementCheckOutcome.exists,
+  );
+
+  /// Scripted result of revoking Management access.
+  ManagementRevokeResult revokeManagementResult = const ManagementRevokeResult(
+    outcome: ManagementRevokeOutcome.nothingHeld,
+  );
+
+  /// Scripted answer for "is a Management authorization in flight?".
+  bool pendingManagementAuthorization = false;
+
+  /// Scripted answer for the authoritative host probe.
+  bool remoteMissingRecorded = false;
 
   /// When set, [selectOrganization] waits until it completes.
   Completer<void>? holdSelect;
@@ -172,21 +176,33 @@ class FakeProvisioningApi implements ProvisioningApi {
   }
 
   @override
-  Future<ManagementAuthorizationResult> managementAuthorizationStatus() async {
-    calls.add('managementAuthorizationStatus');
-    return managementStatusResult;
-  }
-
-  @override
-  Future<ManagementAuthorizationResult> startManagementAuthorization() async {
-    calls.add('startManagementAuthorization');
+  Future<ManagementStartResult> startManagementCheck() async {
+    calls.add('startManagementCheck');
     return startManagementResult;
   }
 
   @override
-  Future<ManagementAuthorizationResult> revokeManagementAuthorization() async {
-    calls.add('revokeManagementAuthorization');
+  Future<ManagementCheckResult> completeManagementCheck() async {
+    calls.add('completeManagementCheck');
+    return completeManagementResult;
+  }
+
+  @override
+  Future<ManagementRevokeResult> revokeManagementAccess() async {
+    calls.add('revokeManagementAccess');
     return revokeManagementResult;
+  }
+
+  @override
+  Future<bool> hasPendingManagementAuthorization() async {
+    calls.add('hasPendingManagementAuthorization');
+    return pendingManagementAuthorization;
+  }
+
+  @override
+  Future<bool> markRemoteMissing() async {
+    calls.add('markRemoteMissing');
+    return remoteMissingRecorded;
   }
 }
 
@@ -199,4 +215,22 @@ class FakeBrowserLauncher implements BrowserLauncher {
     opened.add(url);
     return succeeds;
   }
+}
+
+/// Scriptable stand-in for the bounded project-host probe.
+class FakeProjectProbe implements BackendProjectProbe {
+  BackendProjectProbeResult result = BackendProjectProbeResult.indeterminate;
+  final List<Uri> probed = <Uri>[];
+
+  @override
+  Duration get timeout => const Duration(seconds: 1);
+
+  @override
+  Future<BackendProjectProbeResult> probe(Uri projectUrl) async {
+    probed.add(projectUrl);
+    return result;
+  }
+
+  @override
+  void close() {}
 }

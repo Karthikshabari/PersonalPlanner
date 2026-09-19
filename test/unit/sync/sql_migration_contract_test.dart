@@ -28,7 +28,13 @@ void main() {
   });
 
   test('the provisioning bundle hashes match every migration on disk', () {
-    final manifest = File('provisioning_poc/src/index.ts').readAsStringSync();
+    // The Worker's migration bundle lives in a non-entry module, because a
+    // Worker entry module in modules format may only export functions.
+    final bundle = File('provisioning_poc/src/migrations.ts');
+    final manifest = (bundle.existsSync()
+            ? bundle
+            : File('provisioning_poc/src/index.ts'))
+        .readAsStringSync();
     final entries = RegExp(
       r'name: "([0-9a-z_]+)",\s*\n\s*query: [A-Za-z0-9]+,\s*\n\s*sha256: "([0-9a-f]{64})"',
     ).allMatches(manifest).toList();

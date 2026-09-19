@@ -5,11 +5,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:personal_planner/features/sync/data/connection_profile_store.dart';
+import 'package:personal_planner/features/sync/data/management_attempt_store.dart';
 import 'package:personal_planner/features/sync/data/provisioning_capability_store.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/backend_connection_profile.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
+
+import '../../helpers/runtime_auth_fakes.dart';
 
 const _projectRef = 'abcdefghijklmnopqrst';
 const _publishableKey = 'sb_publishable_CuLX_Y3xWuD0cuItKbm-Xw_NJMQ84zu';
@@ -182,6 +185,7 @@ void main() {
   late Directory directory;
   late _FailingProfileStore profileStore;
   late _MemoryCapabilityStore capabilityStore;
+  late ManagementAttemptStore attemptStore;
   late _FakeTransport transport;
   late DateTime clock;
   var profileCounter = 0;
@@ -191,6 +195,7 @@ void main() {
     directory = Directory.systemTemp.createTempSync('planner_provisioning_');
     profileStore = _FailingProfileStore(directory: directory);
     capabilityStore = _MemoryCapabilityStore();
+    attemptStore = ManagementAttemptStore(storage: FakeSecureKeyValueStore());
     transport = _FakeTransport();
     clock = DateTime.utc(2026, 9, 16, 12);
     profileCounter = 0;
@@ -203,6 +208,7 @@ void main() {
   ProvisioningCoordinator buildCoordinator() => ProvisioningCoordinator(
     profileStore: profileStore,
     capabilityStore: capabilityStore,
+    managementAttemptStore: attemptStore,
     client: ProvisioningClient(
       baseUrl: Uri.parse('https://worker.test'),
       transport: transport,
@@ -963,146 +969,160 @@ void main() {
   });
 
   group('Supabase Management access lifecycle', () {
-    String authorizationPath(String action) =>
-        '${_snapshotPath(_transactionA)}/authorization$action';
+    String checkPath() => '${_snapshotPath(_transactionA)}/project-check';
 
     test('is not applicable until a backend is ready on this device', () async {
       await seedProfile(state: ProvisioningState.verifying, withProject: true);
 
-      final result = await buildCoordinator().managementAuthorizationStatus();
+      final result = await buildCoordinator().startManagementCheck();
 
-      expect(result.outcome, ManagementAuthorizationOutcome.notApplicable);
+      expect(result.outcome, ManagementStartOutcome.notApplicable);
       expect(transport.keys, isEmpty);
     });
 
-    test('reports a missing capability instead of guessing', () async {
-      await seedProfile(
-        state: ProvisioningState.ready,
-        withProject: true,
-        withCapability: false,
-      );
+    test('starts a check with a fresh short-lived transaction', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
 
-      final result = await buildCoordinator().managementAuthorizationStatus();
+      final result = await buildCoordinator().startManagementCheck();
 
-      expect(result.outcome, ManagementAuthorizationOutcome.capabilityMissing);
-      expect(transport.keys, isEmpty);
+      expect(result.outcome, ManagementStartOutcome.authorizationReady);
+      expect(result.authorizationUrl?.host, 'api.supabase.com');
+      final stored = await attemptStore.read();
+      expect(stored?.transactionId, _transactionB);
+      expect(stored?.projectRef, _projectRef);
+      // The durable READY profile is untouched by starting a check.
+      final profile = (await profileStore.read())!;
+      expect(profile.state, ProvisioningState.ready);
+      expect(profile.projectRef, _projectRef);
     });
 
     test(
-      'reads the retained grant status with the provisioning capability',
+      'records a confirmed project and adopts the verified redirect',
       () async {
         await seedProfile(state: ProvisioningState.ready, withProject: true);
-        transport.reply('GET', authorizationPath(''), <String, dynamic>{
-          'authorized': true,
-          'pending': false,
-          'revokedAt': null,
-          'authorizationExpiresAt': 1_800_000_000_000,
-          'releaseUnconfirmed': false,
-        });
-
-        final result = await buildCoordinator().managementAuthorizationStatus();
-
-        expect(result.outcome, ManagementAuthorizationOutcome.completed);
-        expect(result.status?.authorized, isTrue);
-        expect(transport.keys, <String>['GET ${authorizationPath('')}']);
-        expect(
-          transport.requests.single.headers['authorization'],
-          'Provisioning $_capability',
-        );
-      },
-    );
-
-    test(
-      'adopts a Worker-verified confirmation redirect exactly once',
-      () async {
-        await seedProfile(state: ProvisioningState.ready, withProject: true);
-        transport.reply('GET', authorizationPath(''), <String, dynamic>{
-          'authorized': true,
-          'pending': false,
-          'revokedAt': null,
-          'authorizationExpiresAt': 1_800_000_000_000,
-          'releaseUnconfirmed': false,
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': true,
+          'projectStatus': 'ACTIVE_HEALTHY',
           'emailConfirmationRedirect': 'https://worker.test/auth/confirmed',
+          'grantReleased': true,
         });
 
-        final first = await buildCoordinator().managementAuthorizationStatus();
+        final result = await buildCoordinator().completeManagementCheck();
 
-        expect(first.adoptedEmailConfirmationRedirect, isTrue);
+        expect(result.outcome, ManagementCheckOutcome.exists);
+        expect(result.status, 'ACTIVE_HEALTHY');
+        expect(result.emailConfirmationRedirectAdopted, isTrue);
+        final profile = (await profileStore.read())!;
+        expect(profile.state, ProvisioningState.ready);
+        expect(profile.remoteMissing, isFalse);
         expect(
-          (await profileStore.read())!.authEmailConfirmationRedirect,
+          profile.authEmailConfirmationRedirect,
           'https://worker.test/auth/confirmed',
         );
-
-        // A later read must not rewrite the durable profile again.
-        final generation = (await profileStore.read())!.generation;
-        final second = await buildCoordinator().managementAuthorizationStatus();
-        expect(second.adoptedEmailConfirmationRedirect, isFalse);
-        expect((await profileStore.read())!.generation, generation);
+        // The device keeps no control-plane credential after the check.
+        expect(await attemptStore.read(), isNull);
       },
     );
 
-    test('starts a fresh Management authorization without provisioning', () async {
-      final seeded = await seedProfile(
-        state: ProvisioningState.ready,
-        withProject: true,
-      );
-      transport.reply('POST', authorizationPath('/start'), <String, dynamic>{
-        'authorizationUrl':
-            'https://api.supabase.com/v1/oauth/authorize?client_id=x',
-        'expiresIn': 2_592_000,
-      });
+    test(
+      'marks the backend remote-missing only on an authoritative 404',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': false,
+          'projectStatus': 'missing',
+          'emailConfirmationRedirect': null,
+          'grantReleased': true,
+        });
 
-      final result = await buildCoordinator().startManagementAuthorization();
+        final result = await buildCoordinator().completeManagementCheck();
 
-      expect(result.outcome, ManagementAuthorizationOutcome.completed);
-      expect(result.authorizationUrl?.host, 'api.supabase.com');
-      // Nothing about the durable project identity, capability, or state moved.
-      final stored = (await profileStore.read())!;
-      expect(stored.projectRef, seeded.projectRef);
-      expect(stored.state, ProvisioningState.ready);
-      expect(
-        await capabilityStore.read(transactionId: _transactionA),
-        _capability,
+        expect(result.outcome, ManagementCheckOutcome.missing);
+        final profile = (await profileStore.read())!;
+        expect(profile.remoteMissing, isTrue);
+        // Nothing else about the stored connection is touched: no deletion, no
+        // data loss, and the project ref is kept for diagnosis.
+        expect(profile.state, ProvisioningState.ready);
+        expect(profile.projectRef, _projectRef);
+        expect(profile.publishableKey, _publishableKey);
+        expect(profile.generation, greaterThan(1));
+        expect(await attemptStore.read(), isNull);
+      },
+    );
+
+    test(
+      'never marks the backend missing for an indeterminate answer',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': null,
+          'projectStatus': 'indeterminate',
+          'emailConfirmationRedirect': null,
+          'grantReleased': true,
+        });
+
+        final result = await buildCoordinator().completeManagementCheck();
+
+        expect(result.outcome, ManagementCheckOutcome.indeterminate);
+        final profile = (await profileStore.read())!;
+        expect(profile.remoteMissing, isFalse);
+        expect(profile.state, ProvisioningState.ready);
+      },
+    );
+
+    test('revokes the authorization it actually holds', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+      await buildCoordinator().startManagementCheck();
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/authorization/revoke',
+        <String, dynamic>{'revoked': true, 'reason': 'revoked'},
       );
+
+      final result = await buildCoordinator().revokeManagementAccess();
+
+      expect(result.outcome, ManagementRevokeOutcome.revoked);
+      expect(await attemptStore.read(), isNull);
     });
 
-    test('reports a completed revocation', () async {
+    test('reports nothing held instead of faking a revoke', () async {
       await seedProfile(state: ProvisioningState.ready, withProject: true);
-      transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
-        'revoked': true,
-        'reason': 'revoked',
-      });
 
-      final result = await buildCoordinator().revokeManagementAuthorization();
+      final result = await buildCoordinator().revokeManagementAccess();
 
-      expect(result.outcome, ManagementAuthorizationOutcome.completed);
-      expect(result.succeeded, isTrue);
+      expect(result.outcome, ManagementRevokeOutcome.nothingHeld);
+      expect(transport.keys, isEmpty);
     });
 
     test(
-      'reports the retained-token limitation instead of a fake success',
+      'records host-404 evidence and clears it after a confirmed project',
       () async {
         await seedProfile(state: ProvisioningState.ready, withProject: true);
-        transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
-          'revoked': false,
-          'reason': 'not_retained',
+
+        expect(await buildCoordinator().markRemoteMissing(), isTrue);
+        expect((await profileStore.read())!.remoteMissing, isTrue);
+
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': true,
+          'projectStatus': 'ACTIVE_HEALTHY',
+          'emailConfirmationRedirect': null,
+          'grantReleased': true,
         });
+        final result = await buildCoordinator().completeManagementCheck();
 
-        final result = await buildCoordinator().revokeManagementAuthorization();
-
-        expect(result.outcome, ManagementAuthorizationOutcome.notRetained);
+        expect(result.outcome, ManagementCheckOutcome.exists);
+        expect((await profileStore.read())!.remoteMissing, isFalse);
       },
     );
-
-    test('classifies a revocation transport failure as retryable', () async {
-      await seedProfile(state: ProvisioningState.ready, withProject: true);
-      transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
-        'error': 'revocation_failed',
-      }, status: 502);
-
-      final result = await buildCoordinator().revokeManagementAuthorization();
-
-      expect(result.outcome, ManagementAuthorizationOutcome.retryable);
-    });
   });
 }

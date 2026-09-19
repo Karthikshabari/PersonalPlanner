@@ -22,6 +22,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:personal_planner/features/sync/data/connection_profile_store.dart';
+import 'package:personal_planner/features/sync/data/management_attempt_store.dart';
+import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
 import 'package:personal_planner/features/sync/data/provisioning_capability_store.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/backend_connection_profile.dart';
@@ -55,6 +57,9 @@ SecureProvisioningCapabilityStore _capabilityStore() =>
 ProvisioningCoordinator _coordinator() => ProvisioningCoordinator(
   profileStore: _profileStore(),
   capabilityStore: _capabilityStore(),
+  managementAttemptStore: ManagementAttemptStore(
+    storage: FlutterSecureKeyValueStore(),
+  ),
   client: _client(),
 );
 
