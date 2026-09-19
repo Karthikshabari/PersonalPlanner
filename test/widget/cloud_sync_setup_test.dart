@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
@@ -14,20 +15,29 @@ Future<void> _pumpCard(
   WidgetTester tester, {
   required ProvisioningApi? api,
   required FakeBrowserLauncher launcher,
+  FakeProjectProbe? probe,
+  Future<void> Function()? onUseOfflineOnly,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         provisioningApiProvider.overrideWithValue(api),
         browserLauncherProvider.overrideWithValue(launcher),
+        // The ready card probes its own project host; tests script the answer
+        // so no real network call is attempted.
+        backendProjectProbeProvider.overrideWithValue(probe ?? _probe),
         // No periodic work during widget tests; the card still performs its
         // initial load/resume exactly once.
         provisioningPollIntervalProvider.overrideWith(
           (ref) => const Duration(hours: 1),
         ),
       ],
-      child: const MaterialApp(
-        home: Scaffold(body: SingleChildScrollView(child: CloudSetupCard())),
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: CloudSetupCard(onUseOfflineOnly: onUseOfflineOnly),
+          ),
+        ),
       ),
     ),
   );
@@ -48,6 +58,8 @@ Future<void> _unmount(WidgetTester tester) async {
   await tester.pump();
 }
 
+final FakeProjectProbe _probe = FakeProjectProbe();
+
 void main() {
   late FakeProvisioningApi api;
   late FakeBrowserLauncher launcher;
@@ -55,6 +67,9 @@ void main() {
   setUp(() {
     api = FakeProvisioningApi();
     launcher = FakeBrowserLauncher();
+    _probe
+      ..result = BackendProjectProbeResult.indeterminate
+      ..probed.clear();
   });
 
   testWidgets('shows an unavailable state without a control plane', (
@@ -448,27 +463,25 @@ void main() {
       );
       await _pumpCard(tester, api: api, launcher: launcher);
 
-      // The cloud project is one card, with the dashboard behind its own action.
       expect(find.text('Cloud project'), findsOneWidget);
       expect(find.text('Open Supabase Dashboard'), findsOneWidget);
-
-      // Management access is a distinct, clearly-labelled advanced section whose
-      // two actions have different consequences.
       expect(find.text('Advanced · Supabase access'), findsOneWidget);
       expect(find.text(cloudSetupSupabaseAccessBody), findsOneWidget);
       expect(find.text('Re-authorize Supabase'), findsOneWidget);
       expect(find.text('Disconnect Supabase access'), findsOneWidget);
-      expect(find.byKey(const ValueKey('cloud-sign-out-action')), findsNothing);
+      // The status line states the least-privilege model instead of implying a
+      // credential is being kept.
       expect(
         find.byKey(const ValueKey('cloud-management-status')),
         findsOneWidget,
       );
+      expect(find.text(cloudSetupSupabaseAccessReleased), findsOneWidget);
 
       await _unmount(tester);
     },
   );
 
-  testWidgets('re-authorizes Supabase access by opening the consent page', (
+  testWidgets('Re-authorize opens the consent page and shows progress', (
     tester,
   ) async {
     api.attempt = testAttempt(
@@ -478,8 +491,8 @@ void main() {
     final consent = Uri.parse(
       'https://api.supabase.com/v1/oauth/authorize?client_id=client',
     );
-    api.startManagementResult = ManagementAuthorizationResult(
-      outcome: ManagementAuthorizationOutcome.completed,
+    api.startManagementResult = ManagementStartResult(
+      outcome: ManagementStartOutcome.authorizationReady,
       authorizationUrl: consent,
     );
     await _pumpCard(tester, api: api, launcher: launcher);
@@ -487,31 +500,82 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
     await _settle(tester);
 
-    expect(api.calls, contains('startManagementAuthorization'));
+    expect(api.calls, contains('startManagementCheck'));
     expect(launcher.opened, contains(consent));
     expect(find.text(cloudSetupReauthorizeStartedMessage), findsOneWidget);
+    // While the browser consent is outstanding the action reports progress
+    // instead of looking dead.
+    expect(find.text('Waiting for Supabase…'), findsOneWidget);
 
     await _unmount(tester);
   });
 
-  testWidgets('tells the user when a released authorization is unconfirmed', (
+  testWidgets('Re-authorize explains an unavailable Worker', (tester) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.startManagementResult = const ManagementStartResult(
+      outcome: ManagementStartOutcome.retryable,
+      message: 'The provisioning service could not be reached.',
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
+    await _settle(tester);
+
+    expect(launcher.opened, isEmpty);
+    expect(
+      find.text('The provisioning service could not be reached.'),
+      findsOneWidget,
+    );
+
+    await _unmount(tester);
+  });
+
+  testWidgets('an authoritative missing answer shows the recovery card', (
     tester,
   ) async {
     api.attempt = testAttempt(
       ProvisioningState.ready,
       projectRef: testProjectRef,
     );
-    api.managementStatusResult = const ManagementAuthorizationResult(
-      outcome: ManagementAuthorizationOutcome.completed,
-      status: ProvisioningManagementAuthorization(
-        authorized: false,
-        pending: false,
-        releaseUnconfirmed: true,
+    api.completeManagementResult = const ManagementCheckResult(
+      outcome: ManagementCheckOutcome.missing,
+      status: 'missing',
+    );
+    api.startManagementResult = ManagementStartResult(
+      outcome: ManagementStartOutcome.authorizationReady,
+      authorizationUrl: Uri.parse(
+        'https://api.supabase.com/v1/oauth/authorize?client_id=client',
       ),
     );
-    await _pumpCard(tester, api: api, launcher: launcher);
+    var usedOffline = false;
+    await _pumpCard(
+      tester,
+      api: api,
+      launcher: launcher,
+      onUseOfflineOnly: () async => usedOffline = true,
+    );
 
-    expect(find.text(cloudSetupSupabaseAccessReleased), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
+    await _settle(tester);
+
+    // The user completes the consent in the browser and returns to the app.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+
+    expect(find.text(cloudRemoteMissingTitle), findsOneWidget);
+    expect(find.text(cloudRemoteMissingBody), findsOneWidget);
+    expect(find.text('Set up cloud storage again'), findsOneWidget);
+    expect(find.text('Use offline-only mode'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('cloud-use-offline-only-action')),
+    );
+    await _settle(tester);
+    expect(usedOffline, isTrue);
 
     await _unmount(tester);
   });
@@ -521,8 +585,8 @@ void main() {
       ProvisioningState.ready,
       projectRef: testProjectRef,
     );
-    api.revokeManagementResult = const ManagementAuthorizationResult(
-      outcome: ManagementAuthorizationOutcome.completed,
+    api.revokeManagementResult = const ManagementRevokeResult(
+      outcome: ManagementRevokeOutcome.revoked,
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
@@ -530,31 +594,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Disconnect Supabase access?'), findsOneWidget);
 
-    // Leaving the dialog alone must not revoke anything.
     await tester.tap(find.text('Cancel'));
     await _settle(tester);
-    expect(api.calls, isNot(contains('revokeManagementAuthorization')));
+    expect(api.calls, isNot(contains('revokeManagementAccess')));
 
     await tester.tap(find.byKey(const ValueKey('cloud-revoke-action')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('cloud-revoke-confirm')));
     await _settle(tester);
 
-    expect(api.calls, contains('revokeManagementAuthorization'));
+    expect(api.calls, contains('revokeManagementAccess'));
     expect(find.text(cloudSetupRevokedMessage), findsOneWidget);
 
     await _unmount(tester);
   });
 
-  testWidgets('explains the retained-token limitation instead of faking it', (
-    tester,
-  ) async {
+  testWidgets('never claims a disconnect it did not perform', (tester) async {
     api.attempt = testAttempt(
       ProvisioningState.ready,
       projectRef: testProjectRef,
     );
-    api.revokeManagementResult = const ManagementAuthorizationResult(
-      outcome: ManagementAuthorizationOutcome.notRetained,
+    api.revokeManagementResult = const ManagementRevokeResult(
+      outcome: ManagementRevokeOutcome.nothingHeld,
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
@@ -563,7 +624,29 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('cloud-revoke-confirm')));
     await _settle(tester);
 
-    expect(find.text(cloudSetupRevokeNotRetainedMessage), findsOneWidget);
+    expect(find.text(cloudSetupNothingToRevokeMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('explains an unconfirmed revocation instead of faking it', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.revokeManagementResult = const ManagementRevokeResult(
+      outcome: ManagementRevokeOutcome.unconfirmed,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-confirm')));
+    await _settle(tester);
+
+    expect(find.text(cloudSetupRevokeUnconfirmedMessage), findsOneWidget);
 
     await _unmount(tester);
   });
@@ -584,7 +667,6 @@ void main() {
     expect(find.text('Authorize Supabase'), findsOneWidget);
     final callsBeforeResume = api.calls.length;
 
-    // The user finished in the browser and came back; no button was pressed.
     api.organizationsResult = testOrganizations(<ProvisioningOrganization>[
       const ProvisioningOrganization(
         id: 'org-1',

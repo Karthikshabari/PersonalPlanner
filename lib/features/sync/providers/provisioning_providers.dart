@@ -2,10 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/provisioning_config.dart';
+import '../data/backend_project_probe.dart';
 import '../data/cloud_lifecycle_service.dart';
 import '../data/connection_profile_store.dart';
+import '../data/management_attempt_store.dart';
 import '../data/provisioning_capability_store.dart';
 import '../data/provisioning_client.dart';
+import '../data/secure_session_storage.dart';
 import '../domain/provisioning_coordinator.dart';
 
 /// External-browser handoff for the Supabase authorization page.
@@ -96,13 +99,19 @@ abstract interface class ProvisioningApi {
   Future<ProvisioningResult> verify();
 
   /// Reads the Supabase Management authorization retained for this backend.
-  Future<ManagementAuthorizationResult> managementAuthorizationStatus();
+  Future<ManagementStartResult> startManagementCheck();
 
-  /// Starts a fresh Supabase Management authorization (browser consent).
-  Future<ManagementAuthorizationResult> startManagementAuthorization();
+  /// Completes the in-flight Supabase Management authorization.
+  Future<ManagementCheckResult> completeManagementCheck();
 
   /// Revokes Personal Planner's Supabase Management authorization.
-  Future<ManagementAuthorizationResult> revokeManagementAuthorization();
+  Future<ManagementRevokeResult> revokeManagementAccess();
+
+  /// True when a Management authorization is still in flight on this device.
+  Future<bool> hasPendingManagementAuthorization();
+
+  /// Records authoritative "the project host answered 404" evidence.
+  Future<bool> markRemoteMissing();
 }
 
 class _CoordinatorProvisioningApi implements ProvisioningApi {
@@ -143,16 +152,23 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
   Future<ProvisioningResult> verify() => _coordinator.verify();
 
   @override
-  Future<ManagementAuthorizationResult> managementAuthorizationStatus() =>
-      _coordinator.managementAuthorizationStatus();
+  Future<ManagementStartResult> startManagementCheck() =>
+      _coordinator.startManagementCheck();
 
   @override
-  Future<ManagementAuthorizationResult> startManagementAuthorization() =>
-      _coordinator.startManagementAuthorization();
+  Future<ManagementCheckResult> completeManagementCheck() =>
+      _coordinator.completeManagementCheck();
 
   @override
-  Future<ManagementAuthorizationResult> revokeManagementAuthorization() =>
-      _coordinator.revokeManagementAuthorization();
+  Future<ManagementRevokeResult> revokeManagementAccess() =>
+      _coordinator.revokeManagementAccess();
+
+  @override
+  Future<bool> hasPendingManagementAuthorization() =>
+      _coordinator.hasPendingManagementAuthorization();
+
+  @override
+  Future<bool> markRemoteMissing() => _coordinator.markRemoteMissing();
 }
 
 /// Coordinator-backed provisioning API, or null when the control plane URL is
@@ -164,9 +180,22 @@ final provisioningApiProvider = Provider<ProvisioningApi?>((ref) {
     ProvisioningCoordinator(
       profileStore: ref.watch(connectionProfileStoreProvider),
       capabilityStore: ref.watch(provisioningCapabilityStoreProvider),
+      managementAttemptStore: ref.watch(managementAttemptStoreProvider),
       client: client,
     ),
   );
+});
+
+/// Secure storage for the single in-flight Management authorization.
+final managementAttemptStoreProvider = Provider<ManagementAttemptStore>(
+  (ref) => ManagementAttemptStore(storage: FlutterSecureKeyValueStore()),
+);
+
+/// Bounded probe of the user's own Supabase project host.
+final backendProjectProbeProvider = Provider<BackendProjectProbe>((ref) {
+  final probe = BackendProjectProbe();
+  ref.onDispose(probe.close);
+  return probe;
 });
 
 /// Polling interval used only while the cloud-setup card is on screen.

@@ -225,7 +225,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             // compile-time developer config: the legacy path below is
             // unchanged.
             if (backend is LocalOnlyRuntimeBackend) ...[
-              const CloudSetupCard(),
+              CloudSetupCard(onUseOfflineOnly: _disconnect),
               const SizedBox(height: 12),
               const _CloudProfileHealthCard(),
               const Card(

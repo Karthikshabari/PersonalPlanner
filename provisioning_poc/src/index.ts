@@ -1,6 +1,6 @@
 import titleHistoryRuntimeTest from "../../supabase/tests/database/title_history_conflict_ordering_test.sql";
 import { MIGRATIONS, SCHEMA_VERIFICATION_SQL } from "./migrations";
-import { ProvisioningTransaction, plannerEmailConfirmationPage, productionFetch, productionManagementAuthorization, productionOAuthCallback } from "./production";
+import { ProvisioningTransaction, plannerEmailConfirmationPage, productionFetch, productionManagementAuthorization, productionOAuthCallback, productionProjectCheck } from "./production";
 
 export { ProvisioningTransaction };
 
@@ -1251,6 +1251,8 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const productionCallback = await productionOAuthCallback(request, env);
     if (productionCallback !== null) return productionCallback;
+    const projectCheck = await productionProjectCheck(request, env);
+    if (projectCheck !== null) return projectCheck;
     const managementAuthorization = await productionManagementAuthorization(
       request,
       env,

@@ -276,6 +276,35 @@ class ProvisioningRuntimeConfig {
       'projectUrl: $projectUrl)';
 }
 
+/// Authoritative answer to "does the project this device uses still exist?".
+///
+/// Only [missing] may invalidate a READY backend: it comes from Supabase
+/// answering 404 for the exact project ref. Transport failures, timeouts,
+/// outages, rate limits, and authorization failures are [indeterminate] and
+/// must leave the stored backend untouched.
+enum ProjectExistence { exists, missing, indeterminate }
+
+/// Result of the authoritative project check performed by the Worker.
+class ProjectCheckResult {
+  const ProjectCheckResult({
+    required this.existence,
+    required this.status,
+    required this.emailConfirmationRedirect,
+  });
+
+  final ProjectExistence existence;
+
+  /// Bounded status label reported by Supabase (for example `ACTIVE_HEALTHY`,
+  /// `missing`, `not_authorized`, `indeterminate`). Never an upstream body.
+  final String status;
+
+  /// The exact confirmation-email redirect the Worker verified for the project,
+  /// or null when it could not confirm one.
+  final String? emailConfirmationRedirect;
+
+  bool get emailRedirectConfigured => emailConfirmationRedirect != null;
+}
+
 /// State of the Supabase **Management** authorization this installation
 /// retains after the Worker completed a Management OAuth flow.
 ///
@@ -543,6 +572,51 @@ class ProvisioningClient {
     String transactionId, {
     required String capability,
   }) => _post(transactionId, capability: capability, operation: 'verify');
+
+  /// Asks the Worker to check, with Supabase, whether [projectRef] still exists.
+  ///
+  /// Runs inside the Management authorization the user just granted, and the
+  /// Worker releases that authorization before answering. A 404 is the only
+  /// authoritative "missing" answer; every other failure is indeterminate.
+  Future<ProjectCheckResult> checkProject(
+    String projectRef, {
+    required String transactionId,
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    if (!_projectRefPattern.hasMatch(projectRef)) {
+      throw _protocol('A project ref must be 20 lowercase letters.');
+    }
+    final json = _decodeObject(
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/project-check',
+        capability: capability,
+        body: <String, dynamic>{'projectRef': projectRef},
+      ),
+    );
+    final exists = json['projectExists'];
+    if (exists != null && exists is! bool) {
+      throw _protocol(
+        'The provisioning service returned an unusable project check.',
+      );
+    }
+    final status = _requireString(json, 'projectStatus');
+    if (status.length > 64) {
+      throw _protocol(
+        'The provisioning service returned an unusable project status.',
+      );
+    }
+    return ProjectCheckResult(
+      existence: switch (exists) {
+        true => ProjectExistence.exists,
+        false => ProjectExistence.missing,
+        _ => ProjectExistence.indeterminate,
+      },
+      status: status,
+      emailConfirmationRedirect: _optionalEmailRedirect(json),
+    );
+  }
 
   /// Reads the Management authorization status of this installation.
   ///

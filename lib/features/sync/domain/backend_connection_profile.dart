@@ -157,6 +157,7 @@ class BackendConnectionProfile {
     this.errorCode,
     this.provisioningTransactionId,
     this.authEmailConfirmationRedirect,
+    this.remoteMissing = false,
     this.connectionDisabled = false,
   }) : createdAt = createdAt.toUtc(),
        updatedAt = updatedAt.toUtc() {
@@ -231,6 +232,17 @@ class BackendConnectionProfile {
   /// configured".
   final String? authEmailConfirmationRedirect;
 
+  /// True only after authoritative evidence that the user's Supabase project no
+  /// longer exists (a 404 from Supabase for this exact project).
+  ///
+  /// Absence keeps the original meaning ("not known to be deleted"), so a
+  /// profile written before this field existed is never reinterpreted. A
+  /// transient network failure, outage, or rate limit never sets it: the local
+  /// profile and every local Planner database stay exactly as they are, and the
+  /// user chooses explicitly between setting up new cloud storage and staying
+  /// offline-only. Nothing here deletes the old profile or its history.
+  final bool remoteMissing;
+
   /// True when the user explicitly stopped using this provisioned backend
   /// without deleting it.
   ///
@@ -263,6 +275,7 @@ class BackendConnectionProfile {
       'provisioning_transaction_id': provisioningTransactionId,
     if (authEmailConfirmationRedirect != null)
       'auth_email_confirmation_redirect': authEmailConfirmationRedirect,
+    if (remoteMissing) 'remote_missing': true,
     // Absent means "connected", so a document written before this field existed
     // keeps its exact original meaning.
     if (connectionDisabled) 'connection_disabled': true,
@@ -294,6 +307,7 @@ class BackendConnectionProfile {
       'compatibility',
       'provisioning_transaction_id',
       'auth_email_confirmation_redirect',
+      'remote_missing',
       'connection_disabled',
       'created_at',
       'updated_at',
@@ -351,6 +365,7 @@ class BackendConnectionProfile {
         json,
         'auth_email_confirmation_redirect',
       ),
+      remoteMissing: _optionalBool(json, 'remote_missing') ?? false,
       connectionDisabled: _optionalBool(json, 'connection_disabled') ?? false,
     );
   }
@@ -374,6 +389,7 @@ class BackendConnectionProfile {
     Object? errorCode = _unset,
     Object? provisioningTransactionId = _unset,
     Object? authEmailConfirmationRedirect = _unset,
+    bool? remoteMissing,
     bool? connectionDisabled,
   }) => BackendConnectionProfile(
     profileId: profileId ?? this.profileId,
@@ -409,6 +425,7 @@ class BackendConnectionProfile {
         identical(authEmailConfirmationRedirect, _unset)
         ? this.authEmailConfirmationRedirect
         : authEmailConfirmationRedirect as String?,
+    remoteMissing: remoteMissing ?? this.remoteMissing,
     connectionDisabled: connectionDisabled ?? this.connectionDisabled,
   );
 

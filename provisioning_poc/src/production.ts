@@ -353,6 +353,66 @@ async function pkce(v:string){const d=await crypto.subtle.digest("SHA-256",new T
  * the grant is released as soon as provisioning finishes), revocation reports
  * `revoked:false, reason:"not_retained"` instead of pretending it succeeded.
  */
+/**
+ * Authoritatively checks whether the project a device already uses still exists.
+ *
+ * The app can only learn this from Supabase itself, so the check runs inside a
+ * Management authorization the user just granted in the browser (the device
+ * starts the flow and then calls here with its short-lived capability):
+ *
+ * * 200 from the Management API is authoritative "exists" (the reported status
+ *   is returned so a paused/inactive project is described accurately);
+ * * 404 is authoritative "missing" — the user deleted the project;
+ * * 401/403, 429, 5xx, transport failures and timeouts are `indeterminate` and
+ *   must never be reported as deletion.
+ *
+ * The Management credential exists only for this check: it is released (the
+ * OAuth grant is revoked through Supabase's documented endpoint) before the
+ * response is returned, so nothing Management-related is retained afterwards.
+ */
+export async function productionProjectCheck(r:Request,env:Env):Promise<Response|null>{
+  const u=new URL(r.url);
+  const match=/^\/v1\/provisioning\/transactions\/([a-f0-9]{32})\/project-check$/u.exec(u.pathname);
+  if(match===null)return null;
+  if(r.method!=="POST")return new Response(null,{status:405,headers:new Headers({allow:"POST","cache-control":"no-store"})});
+  const access=cap(r);
+  if(access===null)return fail("invalid_request",401);
+  const input=await json(r);
+  if(input===null)return fail("invalid_request",400);
+  const projectRef=typeof input.projectRef==="string"?input.projectRef:"";
+  if(!validProjectRef(projectRef))return fail("invalid_request",400);
+  const d=tx(env,match[1]!);
+  try{
+    const token=await d.managementToken(access);
+    if(token===null)return fail("oauth_expired",401);
+    let projectExists:boolean|null=null,projectStatus="indeterminate",emailConfirmationRedirect:string|null=null;
+    try{
+      const response=await management(token,`/v1/projects/${encodeURIComponent(projectRef)}`);
+      if(response.ok){
+        const payload:unknown=await response.json();
+        projectExists=true;
+        projectStatus=record(payload)&&typeof payload.status==="string"?payload.status:"unknown";
+      }else if(response.status===404){
+        projectExists=false;projectStatus="missing";
+      }else if(response.status===401||response.status===403){
+        projectExists=null;projectStatus="not_authorized";
+      }
+    }catch{projectExists=null;projectStatus="indeterminate";}
+    if(projectExists===true){
+      const confirmationUri=plannerEmailConfirmationUri(u.origin);
+      if(confirmationUri!==null){try{if(await ensureAuthRedirectConfigured(projectRef,(path,init={})=>management(token,path,init),[confirmationUri]))emailConfirmationRedirect=confirmationUri;}catch{emailConfirmationRedirect=null;}}
+    }
+    // Least privilege: this credential existed only for this check.
+    await d.releaseManagementGrant();
+    console.info(JSON.stringify({event:"project_check_completed",projectExists,projectStatus}));
+    return Response.json({projectExists,projectStatus,emailConfirmationRedirect,grantReleased:true},{headers:headers()});
+  }catch(error){
+    const message=error instanceof Error?error.message:"";
+    if(message==="expired")return fail("provisioning_expired",410);
+    if(message==="forbidden")return fail("invalid_request",401);
+    return fail("invalid_request",400);
+  }
+}
 export async function productionManagementAuthorization(r:Request,env:Env):Promise<Response|null>{
   const u=new URL(r.url);
   const match=/^\/v1\/provisioning\/transactions\/([a-f0-9]{32})\/authorization(?:\/(start|revoke))?$/u.exec(u.pathname);

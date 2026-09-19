@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../../core/utils/uuid.dart';
 import '../data/connection_profile_store.dart';
+import '../data/management_attempt_store.dart';
 import '../data/provisioning_capability_store.dart';
 import '../data/provisioning_client.dart';
 import 'backend_connection_profile.dart';
@@ -88,23 +89,17 @@ class ProvisioningAttempt {
   bool get isResumable => isActive && hasCapability;
 }
 
-/// Outcome of one Supabase **Management** authorization lifecycle action.
+/// Outcome of starting a Supabase **Management** authorization.
 ///
-/// These actions never change the provisioning state machine, the durable
-/// project identity, the Planner session, or local Planner data.
-enum ManagementAuthorizationOutcome {
-  /// The action completed.
-  completed,
+/// The authorization exists only to run one check (and, when the project still
+/// exists, to re-verify the confirmation-email redirect); the Worker releases
+/// the grant again as soon as that check finishes.
+enum ManagementStartOutcome {
+  /// The consent URL is ready to open in the browser.
+  authorizationReady,
 
-  /// Revocation was requested but the Worker no longer retains the refresh
-  /// token Supabase's revocation endpoint requires, so nothing was revoked.
-  notRetained,
-
-  /// There is no READY provisioned backend to manage.
+  /// There is no READY backend on this device to check.
   notApplicable,
-
-  /// The durable attempt exists but its short-lived capability is gone.
-  capabilityMissing,
 
   /// A transient problem; retrying is safe.
   retryable,
@@ -113,38 +108,91 @@ enum ManagementAuthorizationOutcome {
   protocolError,
 }
 
-/// Typed result of a Management authorization lifecycle action.
-class ManagementAuthorizationResult {
-  const ManagementAuthorizationResult({
+/// Typed result of starting a Management authorization.
+class ManagementStartResult {
+  const ManagementStartResult({
     required this.outcome,
-    this.status,
     this.authorizationUrl,
     this.message,
-    this.adoptedEmailConfirmationRedirect = false,
   });
 
-  final ManagementAuthorizationOutcome outcome;
-  final ProvisioningManagementAuthorization? status;
+  final ManagementStartOutcome outcome;
   final Uri? authorizationUrl;
   final String? message;
+}
 
-  /// True when this action adopted a Worker-verified email confirmation
-  /// redirect into the durable profile, so the runtime backend must be
+/// Outcome of the authoritative project check.
+enum ManagementCheckOutcome {
+  /// Supabase confirmed the project still exists.
+  exists,
+
+  /// Supabase authoritatively reported that the project no longer exists.
+  missing,
+
+  /// The check could not be completed (offline, outage, rate limit, no access).
+  /// The stored READY backend is left exactly as it was.
+  indeterminate,
+
+  /// The browser consent never completed on this device.
+  needsAuthorization,
+
+  /// There is no in-flight Management authorization to complete.
+  notApplicable,
+
+  /// A transient problem; retrying is safe.
+  retryable,
+
+  /// The control plane answered with something this client cannot trust.
+  protocolError,
+}
+
+/// Typed result of the authoritative project check.
+class ManagementCheckResult {
+  const ManagementCheckResult({
+    required this.outcome,
+    this.status,
+    this.emailConfirmationRedirectAdopted = false,
+    this.message,
+  });
+
+  final ManagementCheckOutcome outcome;
+
+  /// Bounded status label from the Worker (never an upstream body).
+  final String? status;
+
+  /// True when this check recorded the Worker-verified confirmation-email
+  /// redirect into the durable profile, so the runtime Auth client must be
   /// re-resolved before the next sign-up uses it.
-  final bool adoptedEmailConfirmationRedirect;
+  final bool emailConfirmationRedirectAdopted;
 
-  bool get succeeded =>
-      outcome == ManagementAuthorizationOutcome.completed ||
-      outcome == ManagementAuthorizationOutcome.notRetained;
+  final String? message;
+}
 
-  ManagementAuthorizationResult withAdoptedEmailConfirmationRedirect() =>
-      ManagementAuthorizationResult(
-        outcome: outcome,
-        status: status,
-        authorizationUrl: authorizationUrl,
-        message: message,
-        adoptedEmailConfirmationRedirect: true,
-      );
+/// Outcome of asking the Worker to revoke Personal Planner's Supabase access.
+enum ManagementRevokeOutcome {
+  /// Supabase confirmed the authorization was revoked.
+  revoked,
+
+  /// The Worker held no credential to revoke.
+  nothingHeld,
+
+  /// The credential was destroyed but Supabase could not be reached, so the
+  /// grant may still be listed in the user's Supabase account.
+  unconfirmed,
+
+  /// A transient problem; retrying is safe.
+  retryable,
+
+  /// The control plane answered with something this client cannot trust.
+  protocolError,
+}
+
+/// Typed result of a revocation request.
+class ManagementRevokeResult {
+  const ManagementRevokeResult({required this.outcome, this.message});
+
+  final ManagementRevokeOutcome outcome;
+  final String? message;
 }
 
 /// Orchestrates the frozen production provisioning API against durable local
@@ -160,6 +208,7 @@ class ProvisioningCoordinator {
     required this.profileStore,
     required this.capabilityStore,
     required this.client,
+    required this.managementAttemptStore,
     String Function()? profileIdFactory,
     DateTime Function()? clock,
   }) : _newProfileId = profileIdFactory ?? _defaultProfileId,
@@ -175,6 +224,14 @@ class ProvisioningCoordinator {
 
   /// Secure storage for the short-lived provisioning capability.
   final ProvisioningCapabilityStore capabilityStore;
+
+  /// Secure storage for the single in-flight Management authorization.
+  ///
+  /// Deliberately separate from [capabilityStore]: the provisioning capability
+  /// belongs to one provisioning attempt and is destroyed when it reaches
+  /// READY, while this record lives only for the duration of a Management
+  /// check the user started afterwards.
+  final ManagementAttemptStore managementAttemptStore;
 
   /// Typed client for the frozen provisioning API.
   final ProvisioningClient client;
@@ -450,49 +507,233 @@ class ProvisioningCoordinator {
   );
 
   /// Reads the Worker's durable Management authorization status.
-  Future<ManagementAuthorizationResult> managementAuthorizationStatus() =>
-      _serialized(
-        () => _withManagementCapability((attempt, capability) async {
-          final status = await client.managementAuthorization(
-            attempt.transactionId,
-            capability: capability,
-          );
-          final adopted = await _adoptEmailConfirmationRedirect(
-            attempt,
-            status,
-          );
-          return ManagementAuthorizationResult(
-            outcome: ManagementAuthorizationOutcome.completed,
-            status: status,
-            adoptedEmailConfirmationRedirect: adopted,
-          );
-        }),
-      );
-
-  /// Records the Worker-verified email confirmation redirect of a backend that
-  /// was verified before the HTTPS landing page existed.
+  /// Starts a fresh Supabase Management authorization for this device.
   ///
-  /// Only an absent value is ever filled in, so this cannot rewrite a redirect
-  /// this installation already uses. A failed write leaves the previous
-  /// behaviour (the canonical custom-scheme callback) untouched.
-  Future<bool> _adoptEmailConfirmationRedirect(
-    ProvisioningAttempt attempt,
-    ProvisioningManagementAuthorization status,
-  ) async {
-    final redirect = status.emailConfirmationRedirect;
-    if (redirect == null) return false;
-    final profile = attempt.profile;
-    if (profile.authEmailConfirmationRedirect != null) return false;
+  /// Nothing is provisioned, migrated, verified, or deleted. A short-lived
+  /// control-plane capability is stored in secure storage only for the duration
+  /// of this check and is deleted as soon as the outcome is read — the
+  /// provisioning capability of the finished attempt is deliberately gone at
+  /// READY and is never reused as a management credential.
+  Future<ManagementStartResult> startManagementCheck() => _serialized(() async {
+    final profile = await _profileOrNull();
+    final projectRef = profile?.projectRef;
+    if (profile == null ||
+        profile.state != ProvisioningState.ready ||
+        projectRef == null) {
+      return const ManagementStartResult(
+        outcome: ManagementStartOutcome.notApplicable,
+        message:
+            'Supabase access can be checked once cloud storage is ready on '
+            'this device.',
+      );
+    }
+    final ProvisioningGrant grant;
+    try {
+      grant = await client.createTransaction();
+    } on ProvisioningApiException catch (error) {
+      return ManagementStartResult(
+        outcome: _managementFailure(error),
+        message: error.message,
+      );
+    }
+    try {
+      await managementAttemptStore.write(
+        ManagementAttempt(
+          transactionId: grant.transactionId,
+          capability: grant.capability,
+          projectRef: projectRef,
+        ),
+      );
+    } on SecureManagementAttemptStoreException {
+      return const ManagementStartResult(
+        outcome: ManagementStartOutcome.retryable,
+        message:
+            'Secure storage is unavailable, so Supabase access cannot be '
+            'checked right now.',
+      );
+    }
+    return ManagementStartResult(
+      outcome: ManagementStartOutcome.authorizationReady,
+      authorizationUrl: grant.authorizationUrl,
+    );
+  });
+
+  /// Completes an in-flight Management authorization with Supabase's answer.
+  ///
+  /// Only a 404 from Supabase marks the durable backend remote-missing; every
+  /// other failure is reported as indeterminate and changes nothing. The local
+  /// profile, its project ref, and every local Planner database are preserved.
+  Future<ManagementCheckResult> completeManagementCheck() => _serialized(
+    () async {
+      final ManagementAttempt? attempt;
+      try {
+        attempt = await managementAttemptStore.read();
+      } on SecureManagementAttemptStoreException {
+        return const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.retryable,
+          message:
+              'Secure storage is unavailable, so the Supabase check could '
+              'not be completed.',
+        );
+      }
+      if (attempt == null) {
+        return const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.notApplicable,
+        );
+      }
+      final ProjectCheckResult check;
+      try {
+        check = await client.checkProject(
+          attempt.projectRef,
+          transactionId: attempt.transactionId,
+          capability: attempt.capability,
+        );
+      } on ProvisioningApiException catch (error) {
+        // A capability that expired before the user finished the browser flow
+        // means the consent simply did not complete; anything transient keeps
+        // the attempt so the user can retry.
+        final outcome = error.failureClass == ProvisioningFailureClass.protocol
+            ? ManagementCheckOutcome.protocolError
+            : error.failureClass == ProvisioningFailureClass.restartRequired
+            ? ManagementCheckOutcome.needsAuthorization
+            : ManagementCheckOutcome.retryable;
+        if (outcome != ManagementCheckOutcome.retryable) {
+          await _discardManagementAttempt();
+        }
+        return ManagementCheckResult(outcome: outcome, message: error.message);
+      }
+      await _discardManagementAttempt();
+      switch (check.existence) {
+        case ProjectExistence.exists:
+          final adopted = await _recordVerifiedProject(check);
+          return ManagementCheckResult(
+            outcome: ManagementCheckOutcome.exists,
+            status: check.status,
+            emailConfirmationRedirectAdopted: adopted,
+          );
+        case ProjectExistence.missing:
+          await _markRemoteMissing(attempt.projectRef);
+          return ManagementCheckResult(
+            outcome: ManagementCheckOutcome.missing,
+            status: check.status,
+          );
+        case ProjectExistence.indeterminate:
+          return ManagementCheckResult(
+            outcome: ManagementCheckOutcome.indeterminate,
+            status: check.status,
+          );
+      }
+    },
+  );
+
+  /// Asks the Worker to revoke the Management authorization this device holds.
+  ///
+  /// The credential exists only while a Management authorization is in flight,
+  /// so this is a real revocation when there is something to revoke and a
+  /// truthful "nothing held" answer otherwise — never a fake success.
+  Future<ManagementRevokeResult> revokeManagementAccess() =>
+      _serialized(() async {
+        final ManagementAttempt? attempt;
+        try {
+          attempt = await managementAttemptStore.read();
+        } on SecureManagementAttemptStoreException {
+          return const ManagementRevokeResult(
+            outcome: ManagementRevokeOutcome.retryable,
+            message:
+                'Secure storage is unavailable, so Supabase access could not '
+                'be disconnected.',
+          );
+        }
+        if (attempt == null) {
+          return const ManagementRevokeResult(
+            outcome: ManagementRevokeOutcome.nothingHeld,
+          );
+        }
+        final ProvisioningRevocation revocation;
+        try {
+          revocation = await client.revokeManagementAuthorization(
+            attempt.transactionId,
+            capability: attempt.capability,
+          );
+        } on ProvisioningApiException catch (error) {
+          return ManagementRevokeResult(
+            outcome: error.failureClass == ProvisioningFailureClass.protocol
+                ? ManagementRevokeOutcome.protocolError
+                : ManagementRevokeOutcome.retryable,
+            message: error.message,
+          );
+        }
+        await _discardManagementAttempt();
+        if (revocation.revoked) {
+          return const ManagementRevokeResult(
+            outcome: ManagementRevokeOutcome.revoked,
+          );
+        }
+        return const ManagementRevokeResult(
+          outcome: ManagementRevokeOutcome.unconfirmed,
+        );
+      });
+
+  /// Records authoritative "the project host answered 404" evidence.
+  ///
+  /// Returns true only when the durable READY profile was actually marked
+  /// remote-missing. Nothing is deleted: the profile keeps its project ref and
+  /// history so the user can inspect the state and choose what happens next.
+  Future<bool> markRemoteMissing() => _serialized(() async {
+    final profile = await _profileOrNull();
+    final projectRef = profile?.projectRef;
+    if (profile == null ||
+        profile.state != ProvisioningState.ready ||
+        projectRef == null ||
+        profile.remoteMissing) {
+      return profile?.remoteMissing ?? false;
+    }
+    await _markRemoteMissing(projectRef);
+    return true;
+  });
+
+  /// True when a Management authorization is in flight on this device.
+  Future<bool> hasPendingManagementAuthorization() async {
+    try {
+      return await managementAttemptStore.read() != null;
+    } on SecureManagementAttemptStoreException {
+      return false;
+    }
+  }
+
+  Future<void> _discardManagementAttempt() async {
+    try {
+      await managementAttemptStore.clear();
+    } on SecureManagementAttemptStoreException {
+      // A leftover attempt cannot be used without its capability and expires in
+      // the Worker, so this is best effort.
+    }
+  }
+
+  /// Records a confirmed project and the redirect the Worker verified for it.
+  Future<bool> _recordVerifiedProject(ProjectCheckResult check) async {
+    final profile = await _profileOrNull();
+    if (profile == null || profile.state != ProvisioningState.ready) {
+      return false;
+    }
+    final redirect = check.emailRedirectConfigured
+        ? check.emailConfirmationRedirect
+        : null;
+    final needsRedirect =
+        redirect != null && profile.authEmailConfirmationRedirect == null;
+    final needsClear = profile.remoteMissing;
+    if (!needsRedirect && !needsClear) return false;
     try {
       await profileStore.save(
         profile.copyWith(
           generation: profile.generation + 1,
           updatedAt: _clock().toUtc(),
+          remoteMissing: false,
           authEmailConfirmationRedirect: redirect,
         ),
         expectedGeneration: profile.generation,
       );
-      return true;
+      return needsRedirect;
     } on ConnectionProfileStoreException {
       return false;
     } on StaleConnectionProfileException {
@@ -502,116 +743,43 @@ class ProvisioningCoordinator {
     }
   }
 
-  /// Starts a fresh Supabase Management authorization for this installation.
+  /// Marks the durable backend remote-missing after authoritative evidence.
   ///
-  /// Nothing is provisioned, migrated, verified, or deleted: the Worker only
-  /// records a new single-use authorization state that the browser callback can
-  /// claim, and the returned URL is the Supabase consent page.
-  Future<ManagementAuthorizationResult> startManagementAuthorization() =>
-      _serialized(
-        () => _withManagementCapability((attempt, capability) async {
-          final request = await client.startManagementAuthorization(
-            attempt.transactionId,
-            capability: capability,
-          );
-          return ManagementAuthorizationResult(
-            outcome: ManagementAuthorizationOutcome.completed,
-            authorizationUrl: request.authorizationUrl,
-          );
-        }),
-      );
-
-  /// Revokes Personal Planner's Supabase Management authorization.
-  ///
-  /// The Worker calls Supabase's official revocation endpoint with its own
-  /// client credentials plus the Management credential it currently holds (the
-  /// normal case is none, because the Worker releases the authorization as soon
-  /// as provisioning finishes), then drops every credential. The Supabase
-  /// project, the Planner account session, and all local Planner data are
-  /// untouched.
-  Future<ManagementAuthorizationResult> revokeManagementAuthorization() =>
-      _serialized(
-        () => _withManagementCapability((attempt, capability) async {
-          final revocation = await client.revokeManagementAuthorization(
-            attempt.transactionId,
-            capability: capability,
-          );
-          return ManagementAuthorizationResult(
-            outcome: revocation.revoked
-                ? ManagementAuthorizationOutcome.completed
-                : ManagementAuthorizationOutcome.notRetained,
-          );
-        }),
-      );
-
-  /// Runs a Management lifecycle action for a READY attempt with its capability.
-  ///
-  /// Management access is only meaningful for a backend this installation
-  /// actually owns, so a missing READY profile or capability is reported rather
-  /// than retried with a guess.
-  ///
-  /// The durable profile is read directly (never through the public
-  /// [loadAttempt], which serializes on the same tail) so a Management action
-  /// cannot deadlock behind itself.
-  Future<ManagementAuthorizationResult> _withManagementCapability(
-    Future<ManagementAuthorizationResult> Function(
-      ProvisioningAttempt attempt,
-      String capability,
-    )
-    action,
-  ) async {
+  /// Nothing is deleted: the profile keeps its project ref, generation history,
+  /// and the local account databases stay untouched, so the user can still
+  /// inspect the state and choose between a new project and offline-only use.
+  Future<void> _markRemoteMissing(String projectRef) async {
     final profile = await _profileOrNull();
-    final transactionId = profile?.provisioningTransactionId;
     if (profile == null ||
         profile.state != ProvisioningState.ready ||
-        transactionId == null) {
-      return const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.notApplicable,
-        message:
-            'Supabase access can be managed once cloud storage is ready on '
-            'this device.',
-      );
-    }
-    final String? capability;
-    try {
-      capability = await capabilityStore.read(transactionId: transactionId);
-    } on ProvisioningCapabilityStoreException {
-      return const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.capabilityMissing,
-        message:
-            'This device can no longer manage Supabase access for this '
-            'backend. Start cloud setup again to restore it.',
-      );
-    }
-    if (capability == null) {
-      return const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.capabilityMissing,
-        message:
-            'This device can no longer manage Supabase access for this '
-            'backend. Start cloud setup again to restore it.',
-      );
+        profile.projectRef != projectRef ||
+        profile.remoteMissing) {
+      return;
     }
     try {
-      return await action(
-        ProvisioningAttempt(
-          profile: profile,
-          transactionId: transactionId,
-          hasCapability: true,
+      await profileStore.save(
+        profile.copyWith(
+          generation: profile.generation + 1,
+          updatedAt: _clock().toUtc(),
+          remoteMissing: true,
         ),
-        capability,
+        expectedGeneration: profile.generation,
       );
-    } on ProvisioningApiException catch (error) {
-      return ManagementAuthorizationResult(
-        outcome:
-            error.failureClass == ProvisioningFailureClass.protocol ||
-                error.failureClass == ProvisioningFailureClass.terminal ||
-                error.failureClass == ProvisioningFailureClass.actionRequired
-            ? ManagementAuthorizationOutcome.protocolError
-            : ManagementAuthorizationOutcome.retryable,
-        message: error.message,
-      );
+    } on ConnectionProfileStoreException {
+      // Best effort: the UI still reports the authoritative answer it received.
+    } on StaleConnectionProfileException {
+      // A newer profile is authoritative.
+    } on BackendProfileValidationException {
+      // Never write a profile this build cannot read back.
     }
   }
+
+  ManagementStartOutcome _managementFailure(ProvisioningApiException error) =>
+      switch (error.failureClass) {
+        ProvisioningFailureClass.protocol =>
+          ManagementStartOutcome.protocolError,
+        _ => ManagementStartOutcome.retryable,
+      };
 
   Future<ProvisioningResult> _withAttempt(
     Future<ProvisioningResult> Function(

@@ -20,6 +20,7 @@ import {
   plannerEmailConfirmationUri,
   productionManagementAuthorization,
   productionFetch,
+  productionProjectCheck,
   reconcileMigrations,
   redact,
   runCanonicalMigrations,
@@ -389,6 +390,156 @@ describe("email confirmation redirect configuration", () => {
 });
 
 describe("management authorization lifecycle", () => {
+  const checkUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/project-check`;
+
+  function checkRequest(body: unknown, capabilityValue = "a".repeat(48)) {
+    return new Request(checkUrl, {
+      method: "POST",
+      headers: {
+        authorization: `Provisioning ${capabilityValue}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function checkEnvironment(worker: Record<string, unknown>) {
+    return {
+      PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker },
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+      SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
+    };
+  }
+
+  it("reports an existing project, repairs its redirects, and releases the credential", async () => {
+    let released = 0;
+    const worker = {
+      managementToken: async () => "management-token",
+      releaseManagementGrant: async () => {
+        released += 1;
+        return { released: true, revoked: true, unconfirmed: false };
+      },
+    };
+    let allowList = PLANNER_AUTH_CALLBACK_URI;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ status: "ACTIVE_HEALTHY" });
+      if (url.endsWith(`/v1/projects/${ref}/config/auth`)) {
+        if (init?.method === "PATCH") {
+          allowList = (JSON.parse(String(init.body)) as { uri_allow_list: string }).uri_allow_list;
+        }
+        return Response.json({ uri_allow_list: allowList });
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const response = await productionProjectCheck(
+      checkRequest({ projectRef: ref }),
+      checkEnvironment(worker) as any,
+    );
+
+    expect(response!.status).toBe(200);
+    const body = (await response!.json()) as Record<string, unknown>;
+    expect(body.projectExists).toBe(true);
+    expect(body.projectStatus).toBe("ACTIVE_HEALTHY");
+    expect(body.emailConfirmationRedirect).toBe(
+      `https://worker.test/auth/confirmed`,
+    );
+    expect(body.grantReleased).toBe(true);
+    expect(released).toBe(1);
+    expect(JSON.stringify(body)).not.toContain("management-token");
+  });
+
+  it("reports a deleted project as missing and still releases the credential", async () => {
+    let released = 0;
+    const calls: string[] = [];
+    const worker = {
+      managementToken: async () => "management-token",
+      releaseManagementGrant: async () => {
+        released += 1;
+        return { released: true, revoked: true, unconfirmed: false };
+      },
+    };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ message: "Project not found" }), { status: 404 });
+    });
+
+    const response = await productionProjectCheck(
+      checkRequest({ projectRef: ref }),
+      checkEnvironment(worker) as any,
+    );
+
+    const body = (await response!.json()) as Record<string, unknown>;
+    expect(body.projectExists).toBe(false);
+    expect(body.projectStatus).toBe("missing");
+    expect(body.emailConfirmationRedirect).toBeNull();
+    expect(released).toBe(1);
+    // No redirect repair is attempted for a project that does not exist.
+    expect(calls).toEqual([`https://api.supabase.com/v1/projects/${ref}`]);
+  });
+
+  it("never reports deletion for transport, outage, or authorization failures", async () => {
+    const worker = {
+      managementToken: async () => "management-token",
+      releaseManagementGrant: async () => ({ released: true, revoked: false, unconfirmed: true }),
+    };
+    const cases: Array<[() => Promise<Response>, string]> = [
+      [async () => new Response(null, { status: 500 }), "indeterminate"],
+      [async () => new Response(null, { status: 429 }), "indeterminate"],
+      [async () => new Response(null, { status: 403 }), "not_authorized"],
+      [
+        async () => {
+          throw new Error("network down");
+        },
+        "indeterminate",
+      ],
+    ];
+    for (const [handler, expected] of cases) {
+      vi.stubGlobal("fetch", handler);
+      const response = await productionProjectCheck(
+        checkRequest({ projectRef: ref }),
+        checkEnvironment(worker) as any,
+      );
+      const body = (await response!.json()) as Record<string, unknown>;
+      expect(body.projectExists).toBeNull();
+      expect(body.projectStatus).toBe(expected);
+      expect(body.emailConfirmationRedirect).toBeNull();
+    }
+  });
+
+  it("requires a capability, a project ref, and POST", async () => {
+    const worker = { managementToken: async () => "management-token" };
+    const missingCapability = await productionProjectCheck(
+      new Request(checkUrl, { method: "POST", body: JSON.stringify({ projectRef: ref }) }),
+      checkEnvironment(worker) as any,
+    );
+    expect(missingCapability!.status).toBe(401);
+
+    const badRef = await productionProjectCheck(
+      checkRequest({ projectRef: "not-a-ref" }),
+      checkEnvironment(worker) as any,
+    );
+    expect(badRef!.status).toBe(400);
+
+    const wrongMethod = await productionProjectCheck(
+      new Request(checkUrl, { headers: { authorization: `Provisioning ${"a".repeat(48)}` } }),
+      checkEnvironment(worker) as any,
+    );
+    expect(wrongMethod!.status).toBe(405);
+
+    const unauthorized = await productionProjectCheck(
+      checkRequest({ projectRef: ref }),
+      checkEnvironment({
+        managementToken: async () => {
+          throw new Error("forbidden");
+        },
+      }) as any,
+    );
+    expect(unauthorized!.status).toBe(401);
+  });
+
   const authorizationUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/authorization`;
   const capability = "a".repeat(48);
 

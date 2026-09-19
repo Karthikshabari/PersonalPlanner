@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/config/management_callback.dart';
 import 'package:personal_planner/features/sync/data/app_link_source.dart';
+import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
@@ -16,6 +17,7 @@ import '../../helpers/provisioning_fakes.dart';
 void main() {
   late FakeProvisioningApi api;
   late FakeBrowserLauncher launcher;
+  late FakeProjectProbe probe;
   late ProviderContainer container;
 
   void buildContainer({ProvisioningApi? withApi, AppLinkSource? linkSource}) {
@@ -25,6 +27,7 @@ void main() {
         browserLauncherProvider.overrideWithValue(launcher),
         if (linkSource != null)
           appLinkSourceProvider.overrideWithValue(linkSource),
+        backendProjectProbeProvider.overrideWithValue(probe),
         provisioningPollIntervalProvider.overrideWith(
           (ref) => const Duration(hours: 1),
         ),
@@ -45,6 +48,7 @@ void main() {
   setUp(() {
     api = FakeProvisioningApi();
     launcher = FakeBrowserLauncher();
+    probe = FakeProjectProbe();
   });
 
   test(
@@ -446,34 +450,46 @@ void main() {
       expect(current().phase, ProvisioningUiPhase.organizationSelection);
     });
 
-    test('refreshes the management status of a ready backend', () async {
-      final links = StreamController<String>();
-      addTearDown(links.close);
-      final source = AppLinkSource(platformLinks: links.stream);
-      addTearDown(source.dispose);
-      await source.start();
+    test(
+      'a Management callback completes the check the user started',
+      () async {
+        final links = StreamController<String>();
+        addTearDown(links.close);
+        final source = AppLinkSource(platformLinks: links.stream);
+        addTearDown(source.dispose);
+        await source.start();
 
-      api.attempt = testAttempt(
-        ProvisioningState.ready,
-        projectRef: testProjectRef,
-      );
-      api.managementStatusResult = const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
-        status: ProvisioningManagementAuthorization(
-          authorized: true,
-          pending: false,
-        ),
-      );
-      buildContainer(withApi: api, linkSource: source);
-      await loadState();
+        api.attempt = testAttempt(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        );
+        api.startManagementResult = ManagementStartResult(
+          outcome: ManagementStartOutcome.authorizationReady,
+          authorizationUrl: Uri.parse(
+            'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+          ),
+        );
+        api.completeManagementResult = const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.exists,
+          status: 'ACTIVE_HEALTHY',
+        );
+        buildContainer(withApi: api, linkSource: source);
+        await loadState();
 
-      links.add(ManagementCallback.redirectUrl);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+        await controller().reauthorizeSupabaseAccess();
+        expect(launcher.opened, hasLength(1));
+        expect(current().managementCheckInFlight, isTrue);
 
-      expect(api.calls, contains('managementAuthorizationStatus'));
-      expect(current().managementAuthorization?.authorized, isTrue);
-    });
+        links.add(ManagementCallback.redirectUrl);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(api.calls, contains('completeManagementCheck'));
+        expect(current().managementCheckInFlight, isFalse);
+        expect(current().message, cloudSetupReauthorizedMessage);
+        expect(current().phase, ProvisioningUiPhase.ready);
+      },
+    );
   });
 
   group('Supabase access lifecycle', () {
@@ -484,13 +500,13 @@ void main() {
       );
     }
 
-    test('opens the Supabase consent page for re-authorization', () async {
+    test('Re-authorize opens the Supabase consent page', () async {
       readyAttempt();
       final consent = Uri.parse(
         'https://api.supabase.com/v1/oauth/authorize?client_id=client',
       );
-      api.startManagementResult = ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
+      api.startManagementResult = ManagementStartResult(
+        outcome: ManagementStartOutcome.authorizationReady,
         authorizationUrl: consent,
       );
       buildContainer(withApi: api);
@@ -498,16 +514,17 @@ void main() {
 
       await controller().reauthorizeSupabaseAccess();
 
-      expect(api.calls, contains('startManagementAuthorization'));
+      expect(api.calls, contains('startManagementCheck'));
       expect(launcher.opened, <Uri>[consent]);
       expect(current().message, cloudSetupReauthorizeStartedMessage);
+      expect(current().managementCheckInFlight, isTrue);
     });
 
     test('reports a refused browser hand-off instead of pretending', () async {
       readyAttempt();
       launcher.succeeds = false;
-      api.startManagementResult = ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
+      api.startManagementResult = ManagementStartResult(
+        outcome: ManagementStartOutcome.authorizationReady,
         authorizationUrl: Uri.parse(
           'https://api.supabase.com/v1/oauth/authorize?client_id=client',
         ),
@@ -518,94 +535,139 @@ void main() {
       await controller().reauthorizeSupabaseAccess();
 
       expect(current().message, cloudSetupBrowserLaunchFailedMessage);
+      expect(current().managementCheckInFlight, isFalse);
     });
 
-    test('reports a completed revocation and drops the local status', () async {
+    test('reports an unavailable Worker instead of a silent no-op', () async {
       readyAttempt();
-      api.revokeManagementResult = const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.completed,
+      api.startManagementResult = const ManagementStartResult(
+        outcome: ManagementStartOutcome.retryable,
+        message: 'offline',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().reauthorizeSupabaseAccess();
+
+      expect(launcher.opened, isEmpty);
+      expect(current().message, 'offline');
+    });
+
+    test('an authoritative missing answer switches to recovery', () async {
+      readyAttempt();
+      api.completeManagementResult = const ManagementCheckResult(
+        outcome: ManagementCheckOutcome.missing,
+        status: 'missing',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().completeManagementCheck();
+
+      expect(current().phase, ProvisioningUiPhase.remoteMissing);
+      expect(current().errorCode, 'missing');
+      // The stored profile is preserved for the recovery card.
+      expect(current().readyProfile?.projectRef, testProjectRef);
+    });
+
+    test(
+      'an indeterminate answer keeps READY and explains the retry',
+      () async {
+        readyAttempt();
+        api.completeManagementResult = const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.indeterminate,
+          status: 'indeterminate',
+        );
+        buildContainer(withApi: api);
+        await loadState();
+
+        await controller().completeManagementCheck();
+
+        expect(current().phase, ProvisioningUiPhase.ready);
+        expect(current().message, cloudSetupCheckIndeterminateMessage);
+      },
+    );
+
+    test('reports a completed revocation', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementRevokeResult(
+        outcome: ManagementRevokeOutcome.revoked,
       );
       buildContainer(withApi: api);
       await loadState();
 
       await controller().disconnectSupabaseAccess();
 
-      expect(api.calls, contains('revokeManagementAuthorization'));
+      expect(api.calls, contains('revokeManagementAccess'));
       expect(current().message, cloudSetupRevokedMessage);
-      expect(current().managementAuthorization, isNull);
     });
 
-    test(
-      'reports the retained-token limitation instead of a fake revoke',
-      () async {
-        readyAttempt();
-        api.revokeManagementResult = const ManagementAuthorizationResult(
-          outcome: ManagementAuthorizationOutcome.notRetained,
-        );
-        buildContainer(withApi: api);
-        await loadState();
+    test('never claims success when no credential was held', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementRevokeResult(
+        outcome: ManagementRevokeOutcome.nothingHeld,
+      );
+      buildContainer(withApi: api);
+      await loadState();
 
-        await controller().disconnectSupabaseAccess();
+      await controller().disconnectSupabaseAccess();
 
-        expect(current().message, cloudSetupRevokeNotRetainedMessage);
-      },
-    );
+      expect(current().message, cloudSetupNothingToRevokeMessage);
+    });
+
+    test('reports an unconfirmed revocation as a limitation', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementRevokeResult(
+        outcome: ManagementRevokeOutcome.unconfirmed,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().disconnectSupabaseAccess();
+
+      expect(current().message, cloudSetupRevokeUnconfirmedMessage);
+    });
 
     test('reports a transient revocation failure as retryable', () async {
       readyAttempt();
-      api.revokeManagementResult = const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.retryable,
+      api.revokeManagementResult = const ManagementRevokeResult(
+        outcome: ManagementRevokeOutcome.retryable,
+        message: 'offline',
       );
       buildContainer(withApi: api);
       await loadState();
 
       await controller().disconnectSupabaseAccess();
 
-      expect(current().message, cloudSetupRevokeFailedMessage);
+      expect(current().message, 'offline');
     });
 
-    test(
-      'reports a completed re-authorization after a pending grant',
-      () async {
-        readyAttempt();
-        api.managementStatusResult = const ManagementAuthorizationResult(
-          outcome: ManagementAuthorizationOutcome.completed,
-          status: ProvisioningManagementAuthorization(
-            authorized: false,
-            pending: true,
-          ),
-        );
-        buildContainer(withApi: api);
-        await loadState();
-        await controller().refreshManagementAuthorization();
-        expect(current().managementAuthorization?.pending, isTrue);
-
-        api.managementStatusResult = const ManagementAuthorizationResult(
-          outcome: ManagementAuthorizationOutcome.completed,
-          status: ProvisioningManagementAuthorization(
-            authorized: true,
-            pending: false,
-          ),
-        );
-        await controller().refreshManagementAuthorization();
-
-        expect(current().message, cloudSetupReauthorizedMessage);
-        expect(current().managementAuthorization?.authorized, isTrue);
-      },
-    );
-
-    test('reports a missing capability without touching the backend', () async {
+    test('a 404 from the project host switches to recovery', () async {
       readyAttempt();
-      api.revokeManagementResult = const ManagementAuthorizationResult(
-        outcome: ManagementAuthorizationOutcome.capabilityMissing,
-      );
+      probe.result = BackendProjectProbeResult.missing;
+      api.remoteMissingRecorded = true;
       buildContainer(withApi: api);
       await loadState();
 
-      await controller().disconnectSupabaseAccess();
+      await controller().verifyProjectHost();
 
-      expect(current().message, cloudSetupManagementUnavailableMessage);
+      expect(api.calls, contains('markRemoteMissing'));
+      expect(current().phase, ProvisioningUiPhase.remoteMissing);
+    });
+
+    test('a network failure at the project host changes nothing', () async {
+      readyAttempt();
+      probe.result = BackendProjectProbeResult.indeterminate;
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().verifyProjectHost();
+
+      expect(api.calls, isNot(contains('markRemoteMissing')));
       expect(current().phase, ProvisioningUiPhase.ready);
+      // READY is preserved, and the user is told how to get an authoritative
+      // answer instead of being left with a state that looks healthy.
+      expect(current().message, cloudSetupProjectUnreachableHintMessage);
     });
   });
 }
