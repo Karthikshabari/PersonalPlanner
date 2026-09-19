@@ -60,12 +60,14 @@ ProvisionedRuntimeBackend testProvisionedBackend({
   String publishableKey = publishableKeyA,
   String profileId = 'profile-1',
   int generation = 1,
+  String? emailConfirmationRedirect,
 }) => ProvisionedRuntimeBackend(
   profileId: profileId,
   generation: generation,
   projectRef: projectRef,
   projectUrl: 'https://$projectRef.supabase.co',
   publishableKey: publishableKey,
+  emailConfirmationRedirect: emailConfirmationRedirect,
 );
 
 BackendConnectionProfile testReadyProfile({
@@ -74,6 +76,7 @@ BackendConnectionProfile testReadyProfile({
   String profileId = 'profile-1',
   int generation = 1,
   String transactionId = '0123456789abcdef0123456789abcdef',
+  String? emailConfirmationRedirect,
 }) => BackendConnectionProfile(
   profileId: profileId,
   generation: generation,
@@ -81,6 +84,7 @@ BackendConnectionProfile testReadyProfile({
   createdAt: runtimeAuthTestClock,
   updatedAt: runtimeAuthTestClock,
   provisioningTransactionId: transactionId,
+  authEmailConfirmationRedirect: emailConfirmationRedirect,
   projectRef: projectRef,
   projectUrl: 'https://$projectRef.supabase.co',
   publishableKey: publishableKey,

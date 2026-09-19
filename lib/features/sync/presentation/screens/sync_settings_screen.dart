@@ -436,9 +436,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error is AnonymousDataAdoptionException
-              ? error.message
-              : 'Import could not be completed. The offline-only data was kept.';
+          _error = error is AnonymousDataAdoptionException ? error.message : 'Import could not be completed. The offline-only data was kept.';
         });
       }
     } finally {
@@ -1268,8 +1266,8 @@ class _CloudAccountCard extends StatelessWidget {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.cloud_done_outlined),
-            title: const Text('Cloud account connected'),
+            leading: const Icon(Icons.account_circle_outlined),
+            title: const Text('Planner account'),
             subtitle: Text(
               [
                 session.user.email ?? 'Signed-in account',
@@ -1306,7 +1304,10 @@ class _CloudAccountCard extends StatelessWidget {
           ),
           Text(
             '$cloudDisconnectExplanation\n'
-            'Logging out only ends the session on this device.',
+            'Logging out only ends the Planner account session on this device. '
+            'It never deletes your Supabase project, never removes Personal '
+            "Planner's Supabase authorization, and never signs the browser out "
+            'of supabase.com.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -1360,9 +1361,14 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
           children: [
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(_icon(status.phase), color: _color(tokens, status.phase)),
+              leading: Icon(
+                _icon(status.phase),
+                color: _color(tokens, status.phase),
+              ),
               title: Text(_title(status.phase)),
-              subtitle: Text(status.message ?? provisionedPhaseDescription(status.phase)),
+              subtitle: Text(
+                status.message ?? provisionedPhaseDescription(status.phase),
+              ),
             ),
             if (waiting && syncEnabled) const LinearProgressIndicator(),
             if (!syncEnabled) ...[
@@ -1480,8 +1486,8 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
     InitialSyncPhase.conflict => Icons.warning_amber,
     InitialSyncPhase.recoveryRequired => Icons.health_and_safety_outlined,
     InitialSyncPhase.retryable => Icons.sync_problem,
-    InitialSyncPhase.unresolved || InitialSyncPhase.complete =>
-      Icons.cloud_queue,
+    InitialSyncPhase.unresolved ||
+    InitialSyncPhase.complete => Icons.cloud_queue,
   };
 
   static Color? _color(AppThemeTokens tokens, InitialSyncPhase phase) =>
@@ -1587,7 +1593,12 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
           ? await auth.signUp(email.text, password.text)
           : await auth.signIn(email.text, password.text);
       if (registering && response.session == null && mounted) {
-        setState(() => message = 'Check your email to confirm the account.');
+        setState(
+          () => message =
+              'Check your email to confirm the account. Confirmation works on '
+              'any device: open the link, then log in here with the same '
+              'email and password.',
+        );
       }
     } catch (error) {
       if (mounted) setState(() => this.error = safeAuthError(error));
@@ -1613,10 +1624,7 @@ class _AuthCallbackNotice extends ConsumerWidget {
     }
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        notice.message,
-        key: const ValueKey('auth-callback-notice'),
-      ),
+      child: Text(notice.message, key: const ValueKey('auth-callback-notice')),
     );
   }
 }

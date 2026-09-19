@@ -9,6 +9,7 @@ import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
 import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
+import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
 import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
@@ -65,9 +66,7 @@ void main() {
         updatedAt: DateTime.utc(2026, 9, 17),
       ),
     );
-    final foreignKey = RuntimeAuthNamespaces.forProject(
-      projectRefB,
-    ).sessionKey;
+    final foreignKey = RuntimeAuthNamespaces.forProject(projectRefB).sessionKey;
     harness.secureStore.values[foreignKey] = 'project-b-session';
 
     await stackA.client.signOut();
@@ -169,7 +168,9 @@ void main() {
       projectRef: projectRefA,
       authUserId: authUserIdX,
     );
-    final databaseA = harness.databaseFor(_accountId(projectRefA, authUserIdX))!;
+    final databaseA = harness.databaseFor(
+      _accountId(projectRefA, authUserIdX),
+    )!;
     await InitialSyncStateStore(databaseA).write(
       InitialSyncRecord(
         phase: InitialSyncPhase.complete,
@@ -262,10 +263,7 @@ void main() {
       final provisioned = harness.activeContainer(tester);
       // Precondition: the provisioned runtime really is installed for A/X.
       expect(provisioned.read(runtimeBackendProvider), stackA.backend);
-      expect(
-        provisioned.read(runtimeAuthStackProvider).hasRuntimeAuth,
-        isTrue,
-      );
+      expect(provisioned.read(runtimeAuthStackProvider).hasRuntimeAuth, isTrue);
       expect(provisioned.read(authRepositoryProvider), same(stackA.repository));
 
       // The durable profile no longer resolves (connection_disabled).
@@ -275,7 +273,10 @@ void main() {
 
       // Direct assertions on the resulting runtime graph.
       final local = harness.activeContainer(tester);
-      expect(local.read(runtimeBackendProvider), isA<LocalOnlyRuntimeBackend>());
+      expect(
+        local.read(runtimeBackendProvider),
+        isA<LocalOnlyRuntimeBackend>(),
+      );
       final stack = local.read(runtimeAuthStackProvider);
       expect(stack.backend, isA<LocalOnlyRuntimeBackend>());
       expect(stack.repository, isNull);
@@ -466,10 +467,7 @@ class _Harness {
     required String projectRef,
     required String authUserId,
   }) async {
-    final stack = await prepare(
-      projectRef: projectRef,
-      authUserId: authUserId,
-    );
+    final stack = await prepare(projectRef: projectRef, authUserId: authUserId);
     install(stack);
     await pump(tester);
     return stack;
@@ -558,8 +556,7 @@ class _Harness {
       }
     });
     await pumpFrames(tester, 10);
-    if (!appMounted(tester) ||
-        identical(activeContainer(tester), previous)) {
+    if (!appMounted(tester) || identical(activeContainer(tester), previous)) {
       fail(
         'Runtime reload did not publish a new provider container'
         '\n  opened: $openedAccountIds'
@@ -623,7 +620,10 @@ class _Harness {
     container.dispose();
   }
 
-  Future<void> _install(ProvisionedRuntimeBackend backend) async {
+  Future<void> _install(
+    ProvisionedRuntimeBackend backend,
+    AppLinkSource links,
+  ) async {
     final pending = _pendingInstall;
     if (pending == null || pending.backend != backend) {
       throw StateError('No prepared runtime Auth stack for $backend');

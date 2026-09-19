@@ -9,6 +9,7 @@ import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
 import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
+import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
 import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
@@ -528,7 +529,10 @@ class _BootstrapHarness {
     // closes every database it handed out.
   }
 
-  Future<void> _install(ProvisionedRuntimeBackend backend) async {
+  Future<void> _install(
+    ProvisionedRuntimeBackend backend,
+    AppLinkSource links,
+  ) async {
     final pending = _pendingInstall;
     if (pending == null || pending.backend != backend) {
       throw StateError('No prepared runtime Auth stack for $backend');

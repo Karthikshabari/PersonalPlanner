@@ -961,4 +961,148 @@ void main() {
       );
     });
   });
+
+  group('Supabase Management access lifecycle', () {
+    String authorizationPath(String action) =>
+        '${_snapshotPath(_transactionA)}/authorization$action';
+
+    test('is not applicable until a backend is ready on this device', () async {
+      await seedProfile(state: ProvisioningState.verifying, withProject: true);
+
+      final result = await buildCoordinator().managementAuthorizationStatus();
+
+      expect(result.outcome, ManagementAuthorizationOutcome.notApplicable);
+      expect(transport.keys, isEmpty);
+    });
+
+    test('reports a missing capability instead of guessing', () async {
+      await seedProfile(
+        state: ProvisioningState.ready,
+        withProject: true,
+        withCapability: false,
+      );
+
+      final result = await buildCoordinator().managementAuthorizationStatus();
+
+      expect(result.outcome, ManagementAuthorizationOutcome.capabilityMissing);
+      expect(transport.keys, isEmpty);
+    });
+
+    test(
+      'reads the retained grant status with the provisioning capability',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('GET', authorizationPath(''), <String, dynamic>{
+          'authorized': true,
+          'pending': false,
+          'revokedAt': null,
+          'authorizationExpiresAt': 1_800_000_000_000,
+          'releaseUnconfirmed': false,
+        });
+
+        final result = await buildCoordinator().managementAuthorizationStatus();
+
+        expect(result.outcome, ManagementAuthorizationOutcome.completed);
+        expect(result.status?.authorized, isTrue);
+        expect(transport.keys, <String>['GET ${authorizationPath('')}']);
+        expect(
+          transport.requests.single.headers['authorization'],
+          'Provisioning $_capability',
+        );
+      },
+    );
+
+    test(
+      'adopts a Worker-verified confirmation redirect exactly once',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('GET', authorizationPath(''), <String, dynamic>{
+          'authorized': true,
+          'pending': false,
+          'revokedAt': null,
+          'authorizationExpiresAt': 1_800_000_000_000,
+          'releaseUnconfirmed': false,
+          'emailConfirmationRedirect': 'https://worker.test/auth/confirmed',
+        });
+
+        final first = await buildCoordinator().managementAuthorizationStatus();
+
+        expect(first.adoptedEmailConfirmationRedirect, isTrue);
+        expect(
+          (await profileStore.read())!.authEmailConfirmationRedirect,
+          'https://worker.test/auth/confirmed',
+        );
+
+        // A later read must not rewrite the durable profile again.
+        final generation = (await profileStore.read())!.generation;
+        final second = await buildCoordinator().managementAuthorizationStatus();
+        expect(second.adoptedEmailConfirmationRedirect, isFalse);
+        expect((await profileStore.read())!.generation, generation);
+      },
+    );
+
+    test('starts a fresh Management authorization without provisioning', () async {
+      final seeded = await seedProfile(
+        state: ProvisioningState.ready,
+        withProject: true,
+      );
+      transport.reply('POST', authorizationPath('/start'), <String, dynamic>{
+        'authorizationUrl':
+            'https://api.supabase.com/v1/oauth/authorize?client_id=x',
+        'expiresIn': 2_592_000,
+      });
+
+      final result = await buildCoordinator().startManagementAuthorization();
+
+      expect(result.outcome, ManagementAuthorizationOutcome.completed);
+      expect(result.authorizationUrl?.host, 'api.supabase.com');
+      // Nothing about the durable project identity, capability, or state moved.
+      final stored = (await profileStore.read())!;
+      expect(stored.projectRef, seeded.projectRef);
+      expect(stored.state, ProvisioningState.ready);
+      expect(
+        await capabilityStore.read(transactionId: _transactionA),
+        _capability,
+      );
+    });
+
+    test('reports a completed revocation', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
+        'revoked': true,
+        'reason': 'revoked',
+      });
+
+      final result = await buildCoordinator().revokeManagementAuthorization();
+
+      expect(result.outcome, ManagementAuthorizationOutcome.completed);
+      expect(result.succeeded, isTrue);
+    });
+
+    test(
+      'reports the retained-token limitation instead of a fake success',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
+          'revoked': false,
+          'reason': 'not_retained',
+        });
+
+        final result = await buildCoordinator().revokeManagementAuthorization();
+
+        expect(result.outcome, ManagementAuthorizationOutcome.notRetained);
+      },
+    );
+
+    test('classifies a revocation transport failure as retryable', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', authorizationPath('/revoke'), <String, dynamic>{
+        'error': 'revocation_failed',
+      }, status: 502);
+
+      final result = await buildCoordinator().revokeManagementAuthorization();
+
+      expect(result.outcome, ManagementAuthorizationOutcome.retryable);
+    });
+  });
 }

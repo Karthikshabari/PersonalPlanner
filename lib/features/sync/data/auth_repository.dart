@@ -107,7 +107,15 @@ class AuthRepository implements AuthSessionRepository {
   }
 
   /// Signs up on exactly this backend, asking the confirmation email to return
-  /// to the canonical Planner callback.
+  /// to the destination this project's Supabase Auth configuration actually
+  /// allows.
+  ///
+  /// A backend provisioned by a Worker that verified the HTTPS landing page
+  /// uses that page, so a confirmation opened on a device without the app still
+  /// gets a usable result. A backend verified before that page existed keeps
+  /// the canonical custom-scheme callback: asking Supabase for a redirect the
+  /// project rejects would silently fall back to the project Site URL and make
+  /// the confirmation link useless.
   ///
   /// For the provisioned path the pending flow is recorded *before* the request
   /// is sent, so the marker and the PKCE verifier the SDK writes are created
@@ -119,7 +127,8 @@ class AuthRepository implements AuthSessionRepository {
       final response = await client.signUp(
         email: email.trim(),
         password: password,
-        emailRedirectTo: AuthCallback.redirectUrl,
+        emailRedirectTo:
+            flow?.backend.emailConfirmationRedirect ?? AuthCallback.redirectUrl,
       );
       if (response.session != null) {
         // Confirmation is not required: there is no pending email link.
@@ -203,6 +212,11 @@ String safeAuthError(Object error) {
   if (message.contains('already registered') ||
       message.contains('user already exists')) {
     return 'That email is already registered.';
+  }
+  if (message.contains('email not confirmed') ||
+      message.contains('not confirmed')) {
+    return 'This email has not been confirmed yet. Open the confirmation link '
+        'from your email, then log in again.';
   }
   if (message.contains('email') && message.contains('invalid')) {
     return 'Enter a valid email address.';

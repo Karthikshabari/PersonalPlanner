@@ -252,11 +252,21 @@ class ProvisioningRuntimeConfig {
     required this.projectRef,
     required this.projectUrl,
     required this.publishableKey,
+    this.emailConfirmationRedirect,
   });
 
   final String projectRef;
   final String projectUrl;
   final String publishableKey;
+
+  /// Supabase Auth redirect the Worker verified for this project's confirmation
+  /// emails, when the Worker that provisioned it recorded one.
+  ///
+  /// Null means the project was verified before the Worker configured an
+  /// HTTPS confirmation landing page, so the app keeps the canonical
+  /// custom-scheme callback instead of asking Supabase for a redirect the
+  /// project may reject.
+  final String? emailConfirmationRedirect;
 
   /// Intentionally omits [publishableKey]: it is client-safe, but it has no
   /// business being echoed into diagnostics.
@@ -264,6 +274,76 @@ class ProvisioningRuntimeConfig {
   String toString() =>
       'ProvisioningRuntimeConfig(projectRef: $projectRef, '
       'projectUrl: $projectUrl)';
+}
+
+/// State of the Supabase **Management** authorization this installation
+/// retains after the Worker completed a Management OAuth flow.
+///
+/// Nothing here is a credential: it only says whether the Worker still holds a
+/// revocation-capable grant for this installation's project.
+class ProvisioningManagementAuthorization {
+  const ProvisioningManagementAuthorization({
+    required this.authorized,
+    required this.pending,
+    this.revokedAt,
+    this.authorizationExpiresAt,
+    this.releaseUnconfirmed = false,
+    this.emailConfirmationRedirect,
+  });
+
+  /// True only while the Worker currently holds a Management credential.
+  ///
+  /// The Worker releases (revokes) the authorization as soon as the operation
+  /// it was requested for has finished, so this is false for a ready backend.
+  final bool authorized;
+
+  /// True while a re-authorization the user started has not returned yet.
+  final bool pending;
+
+  final DateTime? revokedAt;
+
+  /// Deadline for an authorization that is still pending (browser round-trip).
+  final DateTime? authorizationExpiresAt;
+
+  /// True when the Worker destroyed its credential but could not confirm that
+  /// Supabase revoked the authorization itself. The app then tells the user to
+  /// remove Personal Planner in their Supabase account.
+  final bool releaseUnconfirmed;
+
+  /// The exact email confirmation redirect the Worker has verified for this
+  /// project, when it can still manage the project's Auth configuration.
+  ///
+  /// Null means the Worker has not confirmed one, so the app keeps whatever it
+  /// already had (the canonical custom-scheme callback for a backend verified
+  /// before the landing page existed).
+  final String? emailConfirmationRedirect;
+}
+
+/// A fresh Supabase Management authorization the app can open in a browser.
+class ProvisioningAuthorizationRequest {
+  const ProvisioningAuthorizationRequest({
+    required this.authorizationUrl,
+    required this.expiresIn,
+  });
+
+  final Uri authorizationUrl;
+  final Duration expiresIn;
+}
+
+/// Result of asking the Worker to revoke Personal Planner's Supabase
+/// authorization.
+///
+/// [revoked] is false only when the Worker no longer retains the OAuth refresh
+/// token that Supabase's revocation endpoint requires. That is reported rather
+/// than faked, and the UI tells the user to remove the authorization in their
+/// Supabase account instead.
+class ProvisioningRevocation {
+  const ProvisioningRevocation({required this.revoked, this.reason});
+
+  final bool revoked;
+  final String? reason;
+
+  bool get retainedTokenMissing => !revoked && reason == 'not_retained';
 }
 
 /// The subset of the transaction snapshot Flutter actually needs.
@@ -464,6 +544,103 @@ class ProvisioningClient {
     required String capability,
   }) => _post(transactionId, capability: capability, operation: 'verify');
 
+  /// Reads the Management authorization status of this installation.
+  ///
+  /// This is a read of the Worker's durable record, so it also works for a
+  /// READY backend whose provisioning transaction itself has expired.
+  Future<ProvisioningManagementAuthorization> managementAuthorization(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final json = _decodeObject(
+      await _send(
+        method: 'GET',
+        path: '${_transactionPath(transactionId)}/authorization',
+        capability: capability,
+      ),
+    );
+    return ProvisioningManagementAuthorization(
+      authorized: _requireBool(json, 'authorized'),
+      pending: _requireBool(json, 'pending'),
+      revokedAt: _optionalTimestamp(json, 'revokedAt'),
+      authorizationExpiresAt: _optionalTimestamp(
+        json,
+        'authorizationExpiresAt',
+      ),
+      releaseUnconfirmed: _requireBool(json, 'releaseUnconfirmed'),
+      emailConfirmationRedirect: _optionalEmailRedirect(json),
+    );
+  }
+
+  /// Starts a fresh Management authorization for this installation.
+  Future<ProvisioningAuthorizationRequest> startManagementAuthorization(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final json = _decodeObject(
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/authorization/start',
+        capability: capability,
+        body: const <String, dynamic>{},
+      ),
+    );
+    final authorizationUrl = Uri.tryParse(
+      _requireString(json, 'authorizationUrl'),
+    );
+    if (authorizationUrl == null ||
+        authorizationUrl.scheme != 'https' ||
+        authorizationUrl.host.isEmpty) {
+      throw _protocol(
+        'The provisioning service returned an invalid authorization URL.',
+      );
+    }
+    final expiresIn = json['expiresIn'];
+    // The window of a pending Management authorization (the browser
+    // round-trip), not a period during which a working credential is retained.
+    if (expiresIn is! num ||
+        expiresIn <= 0 ||
+        expiresIn != expiresIn.roundToDouble() ||
+        expiresIn > 366 * 24 * 60 * 60) {
+      throw _protocol('The provisioning service returned an invalid expiry.');
+    }
+    return ProvisioningAuthorizationRequest(
+      authorizationUrl: authorizationUrl,
+      expiresIn: Duration(seconds: expiresIn.toInt()),
+    );
+  }
+
+  /// Asks the Worker to revoke Personal Planner's Supabase authorization.
+  Future<ProvisioningRevocation> revokeManagementAuthorization(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final json = _decodeObject(
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/authorization/revoke',
+        capability: capability,
+        body: const <String, dynamic>{},
+      ),
+    );
+    final revoked = json['revoked'];
+    if (revoked is! bool) {
+      throw _protocol(
+        'The provisioning service returned an unusable revocation result.',
+      );
+    }
+    final reason = _optionalString(json, 'reason');
+    if (!revoked && reason != 'not_retained') {
+      throw _protocol(
+        'The provisioning service returned an unusable revocation reason.',
+      );
+    }
+    return ProvisioningRevocation(revoked: revoked, reason: reason);
+  }
+
   Future<ProvisioningSnapshot> _post(
     String transactionId, {
     required String capability,
@@ -548,6 +725,7 @@ class ProvisioningClient {
         projectRef: _requireString(rawConfig, 'projectRef'),
         projectUrl: _requireString(rawConfig, 'projectUrl'),
         publishableKey: _requireString(rawConfig, 'publishableKey'),
+        emailConfirmationRedirect: _optionalEmailRedirect(rawConfig),
       );
     }
     // The frozen contract exposes the configuration only once the backend is
@@ -644,6 +822,54 @@ String _requireString(Map<String, dynamic> json, String key) {
     throw ProvisioningApiException(
       ProvisioningErrorKind.protocol,
       'The provisioning response is missing $key.',
+    );
+  }
+  return value;
+}
+
+bool _requireBool(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! bool) {
+    throw ProvisioningApiException(
+      ProvisioningErrorKind.protocol,
+      'The provisioning response is missing $key.',
+    );
+  }
+  return value;
+}
+
+DateTime? _optionalTimestamp(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! int || value <= 0) {
+    throw ProvisioningApiException(
+      ProvisioningErrorKind.protocol,
+      'The provisioning response has an unusable $key.',
+    );
+  }
+  return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+}
+
+/// The Worker-verified email confirmation redirect, or null when the Worker
+/// did not report one.
+///
+/// A reported value is contract-bound to a plain https URL, because it is sent
+/// to Supabase Auth as `emailRedirectTo`; anything else is a protocol error
+/// rather than a value to guess with.
+String? _optionalEmailRedirect(Map<String, dynamic> json) {
+  final value = _optionalString(json, 'emailConfirmationRedirect');
+  if (value == null) return null;
+  final parsed = Uri.tryParse(value);
+  if (value.length > 256 ||
+      value.contains(',') ||
+      parsed == null ||
+      parsed.scheme != 'https' ||
+      parsed.host.isEmpty ||
+      parsed.userInfo.isNotEmpty ||
+      parsed.hasFragment) {
+    throw ProvisioningApiException(
+      ProvisioningErrorKind.protocol,
+      'The provisioning service returned an unusable email redirect.',
     );
   }
   return value;

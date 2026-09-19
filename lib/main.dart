@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stack_trace/stack_trace.dart';
@@ -17,6 +16,7 @@ import 'core/widgets/error_panel.dart';
 import 'features/recurring/providers/recurring_providers.dart';
 import 'features/settings/providers/notification_settings_providers.dart';
 import 'features/sync/data/auth_repository.dart';
+import 'features/sync/data/app_link_source.dart';
 import 'features/sync/data/connection_profile_store.dart';
 import 'features/sync/data/initial_sync_state_store.dart';
 import 'features/sync/data/runtime_auth_client.dart';
@@ -28,6 +28,7 @@ import 'features/sync/domain/auth_session_controller.dart';
 import 'features/sync/domain/runtime_backend.dart';
 import 'features/sync/domain/sync_engine.dart';
 import 'features/sync/providers/runtime_backend_providers.dart';
+import 'features/sync/providers/deep_link_providers.dart';
 import 'features/sync/providers/sync_providers.dart';
 import 'features/timer/domain/notification_service.dart';
 import 'features/timer/domain/timer_service.dart';
@@ -120,6 +121,7 @@ class PlannerBootstrapSeams {
   const PlannerBootstrapSeams({
     this.readProvisionedBackend = _readProvisionedBackend,
     this.installProvisionedRuntimeAuth = _createProvisionedRuntimeAuth,
+    this.appLinkSource,
     this.openDatabase = AppDatabase.open,
     this.initializeLocalServices = _initializeLocalServices,
     this.shutdownLocalServices = _shutdownLocalServicesForSeam,
@@ -134,8 +136,21 @@ class PlannerBootstrapSeams {
   final Future<ProvisionedBackendRead> Function() readProvisionedBackend;
 
   /// Installs the runtime Auth resources of [backend].
-  final Future<void> Function(ProvisionedRuntimeBackend backend)
+  ///
+  /// The app-lifetime deep-link source travels with it so the Planner Auth
+  /// callback router observes the same single platform subscription as the
+  /// provisioning UI.
+  final Future<void> Function(
+    ProvisionedRuntimeBackend backend,
+    AppLinkSource links,
+  )
   installProvisionedRuntimeAuth;
+
+  /// App-lifetime deep-link source, or null for an inert one.
+  ///
+  /// Production always supplies the started source; tests that never deliver a
+  /// link leave it null.
+  final AppLinkSource? appLinkSource;
 
   /// Opens the database of an account scope id (null is the anonymous one).
   final Future<AppDatabase> Function({String? accountId}) openDatabase;
@@ -228,16 +243,22 @@ class _AccountDatabaseTarget {
   int get hashCode => Object.hash(accountScope, identityHashCode(runtimeAuth));
 }
 
-Future<void> main() async {
+Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.demangleStackTrace = _demangleStackTrace;
   ErrorWidget.builder = (_) => const ErrorPanel(
     message: 'This screen could not be displayed. Please retry.',
   );
+  // Exactly one subscription to the platform deep-link stream for the whole app
+  // lifetime, started before anything can deliver a link. Linux cold starts
+  // reach the process as command-line arguments, so they are replayed here.
+  final appLinkSource = AppLinkSource(launchArguments: arguments);
+  await appLinkSource.start();
+  final seams = PlannerBootstrapSeams(appLinkSource: appLinkSource);
   Object? bootstrapError;
   var profileHealth = BackendProfileHealth.ok;
   try {
-    profileHealth = await _initializeRuntimeAuth();
+    profileHealth = await _initializeRuntimeAuth(seams);
   } catch (error, stack) {
     bootstrapError = error;
     FlutterError.reportError(
@@ -248,6 +269,7 @@ Future<void> main() async {
     plannerBootstrap(
       initialBootstrapError: bootstrapError,
       initialProfileHealth: profileHealth,
+      seams: seams,
     ),
   );
 }
@@ -280,7 +302,10 @@ Future<BackendProfileHealth> _initializeRuntimeAuth([
     await _disposeRuntimeAuthBootstrap();
     return read.health;
   }
-  await seams.installProvisionedRuntimeAuth(backend);
+  await seams.installProvisionedRuntimeAuth(
+    backend,
+    seams.appLinkSource ?? AppLinkSource.inert(),
+  );
   return read.health;
 }
 
@@ -313,6 +338,7 @@ Future<ProvisionedBackendRead> _readProvisionedBackend() async {
 /// capability, Management token, or secret key is reachable from this path.
 Future<void> _createProvisionedRuntimeAuth(
   ProvisionedRuntimeBackend backend,
+  AppLinkSource links,
 ) async {
   // One secure key-value boundary, shared by this project's session, PKCE
   // verifier, and pending-callback marker namespaces.
@@ -342,9 +368,9 @@ Future<void> _createProvisionedRuntimeAuth(
     backend: backend,
     client: runtimeAuthClient,
     flow: flow,
-    // Raw strings: the registered scheme contains an underscore, which Dart's
-    // Uri parser rejects, so the plugin's Uri stream would drop the callback.
-    links: AppLinks().stringLinkStream,
+    // Raw strings, because a delivered link is routed by exact destination and
+    // because the shared source already owns the single platform subscription.
+    links: links.links,
     onOutcome: (outcome) =>
         controller.recordAuthCallbackOutcome(outcome.notice),
   );
@@ -488,11 +514,15 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   Object? _error;
   Object? _bootstrapError;
   late BackendProfileHealth _profileHealth;
+
+  /// App-lifetime deep-link source of this bootstrap, or an inert one.
+  late final AppLinkSource _appLinkSource;
   bool _switching = true;
 
   @override
   void initState() {
     super.initState();
+    _appLinkSource = widget.seams.appLinkSource ?? AppLinkSource.inert();
     WidgetsBinding.instance.addObserver(this);
     _bootstrapError = widget.initialBootstrapError;
     _profileHealth = widget.initialProfileHealth;
@@ -686,7 +716,7 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       // (the subscription callback also verifies its own stack identity).
       unawaited(_authSubscription?.cancel());
       _authSubscription = null;
-      await widget.seams.installProvisionedRuntimeAuth(backend);
+      await widget.seams.installProvisionedRuntimeAuth(backend, _appLinkSource);
       if (!mounted) return;
       final container = _container;
       final resources = _runtimeAuthBootstrap;
@@ -775,6 +805,9 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
           runtimeBackendReloaderProvider.overrideWithValue(
             _BootstrapRuntimeReloader(this),
           ),
+          // The app-lifetime deep-link stream, so the provisioning UI observes
+          // the same single platform subscription as the Auth callback router.
+          appLinkSourceProvider.overrideWithValue(_appLinkSource),
           backendProfileHealthProvider.overrideWith(
             () => BackendProfileHealthNotifier(_profileHealth),
           ),

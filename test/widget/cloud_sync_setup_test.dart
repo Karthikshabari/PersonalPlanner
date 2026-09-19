@@ -438,4 +438,167 @@ void main() {
 
     await _unmount(tester);
   });
+
+  testWidgets(
+    'separates the Planner account, the cloud project, and Supabase access',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      // The cloud project is one card, with the dashboard behind its own action.
+      expect(find.text('Cloud project'), findsOneWidget);
+      expect(find.text('Open Supabase Dashboard'), findsOneWidget);
+
+      // Management access is a distinct, clearly-labelled advanced section whose
+      // two actions have different consequences.
+      expect(find.text('Advanced · Supabase access'), findsOneWidget);
+      expect(find.text(cloudSetupSupabaseAccessBody), findsOneWidget);
+      expect(find.text('Re-authorize Supabase'), findsOneWidget);
+      expect(find.text('Disconnect Supabase access'), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-sign-out-action')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('cloud-management-status')),
+        findsOneWidget,
+      );
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets('re-authorizes Supabase access by opening the consent page', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    final consent = Uri.parse(
+      'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+    );
+    api.startManagementResult = ManagementAuthorizationResult(
+      outcome: ManagementAuthorizationOutcome.completed,
+      authorizationUrl: consent,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
+    await _settle(tester);
+
+    expect(api.calls, contains('startManagementAuthorization'));
+    expect(launcher.opened, contains(consent));
+    expect(find.text(cloudSetupReauthorizeStartedMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('tells the user when a released authorization is unconfirmed', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.managementStatusResult = const ManagementAuthorizationResult(
+      outcome: ManagementAuthorizationOutcome.completed,
+      status: ProvisioningManagementAuthorization(
+        authorized: false,
+        pending: false,
+        releaseUnconfirmed: true,
+      ),
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    expect(find.text(cloudSetupSupabaseAccessReleased), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('confirms before disconnecting Supabase access', (tester) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.revokeManagementResult = const ManagementAuthorizationResult(
+      outcome: ManagementAuthorizationOutcome.completed,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-action')));
+    await tester.pumpAndSettle();
+    expect(find.text('Disconnect Supabase access?'), findsOneWidget);
+
+    // Leaving the dialog alone must not revoke anything.
+    await tester.tap(find.text('Cancel'));
+    await _settle(tester);
+    expect(api.calls, isNot(contains('revokeManagementAuthorization')));
+
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-confirm')));
+    await _settle(tester);
+
+    expect(api.calls, contains('revokeManagementAuthorization'));
+    expect(find.text(cloudSetupRevokedMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('explains the retained-token limitation instead of faking it', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.revokeManagementResult = const ManagementAuthorizationResult(
+      outcome: ManagementAuthorizationOutcome.notRetained,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-revoke-confirm')));
+    await _settle(tester);
+
+    expect(find.text(cloudSetupRevokeNotRetainedMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('resumes setup when the app returns from the browser', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    // The first pass still sees no completed authorization: the Worker has no
+    // Management credential yet, which the controller reports as "still
+    // waiting" rather than as a failure.
+    api.organizationsResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.restartRequired,
+      profile: testProfile(ProvisioningState.authorizationPending),
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+    expect(find.text('Authorize Supabase'), findsOneWidget);
+    final callsBeforeResume = api.calls.length;
+
+    // The user finished in the browser and came back; no button was pressed.
+    api.organizationsResult = testOrganizations(<ProvisioningOrganization>[
+      const ProvisioningOrganization(
+        id: 'org-1',
+        name: 'Ks_Planner',
+        slug: 'ks',
+      ),
+    ]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+
+    expect(api.calls.length, greaterThan(callsBeforeResume));
+    expect(find.text('Choose a Supabase organization'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _unmount(tester);
+  });
 }

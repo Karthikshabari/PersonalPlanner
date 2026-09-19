@@ -22,6 +22,17 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // Single-instance behaviour: a second launch (for example `xdg-open
+  // com.personalplanner.personalplanner://management-callback`) is delivered to
+  // this process through GApplication's command-line signal, and must present
+  // the existing window instead of creating a second one.
+  GList* windows = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (windows != nullptr) {
+    gtk_window_present(GTK_WINDOW(windows->data));
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -106,7 +117,11 @@ static gboolean my_application_local_command_line(GApplication* application,
   g_application_activate(application);
   *exit_status = 0;
 
-  return TRUE;
+  // Returning FALSE lets GApplication run its default command-line handling,
+  // which emits `command-line` for this primary instance. The `gtk` plugin
+  // (used by `app_links`) listens for that signal, so a URI delivered on the
+  // process command line reaches Dart. Returning TRUE would swallow it.
+  return FALSE;
 }
 
 // Implements GApplication::startup.
@@ -152,7 +167,14 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
+  // HANDLES_COMMAND_LINE and HANDLES_OPEN are required by the `app_links`
+  // Linux implementation (through the `gtk` plugin): without them no
+  // `command-line`/`open` signal is ever emitted, so a URI could never reach
+  // the app. NON_UNIQUE would also start a second process instead of
+  // activating the running one.
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_HANDLES_COMMAND_LINE |
+                                         G_APPLICATION_HANDLES_OPEN,
+                                     nullptr));
 }

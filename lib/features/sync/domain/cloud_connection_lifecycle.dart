@@ -48,7 +48,10 @@ const cloudDisconnectConfirmation =
     '• Local Planner data stays on this device.\n'
     '• Your Supabase project is not deleted.\n'
     '• You are signed out on this device and normal sync stops.\n'
-    '• Reconnecting to the same project reuses this device\'s Planner data.';
+    '• Reconnecting to the same project reuses this device\'s Planner data.\n\n'
+    'This removes the device credential that can revoke Personal Planner\'s '
+    'Supabase authorization, so use Advanced → Disconnect Supabase access '
+    'first if you want to remove that too.';
 const cloudDisconnectFailedMessage =
     'The cloud connection could not be updated on this device, so it was left '
     'unchanged. Local Planner data is safe.';

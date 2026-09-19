@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/config/auth_callback.dart';
+import 'package:personal_planner/core/config/management_callback.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/runtime_auth_callback.dart';
 import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
@@ -202,6 +203,27 @@ void main() {
           AuthCallback.redirectUrl,
         );
         expect(await flow.pendingProjectRef(), projectRefA);
+      },
+    );
+
+    test(
+      'provisioned sign-up uses the Worker-verified landing page when recorded',
+      () async {
+        const landingPage = 'https://worker.test/auth/confirmed';
+        final store = FakeSecureKeyValueStore();
+        final flow = ProvisionedAuthCallbackFlow(
+          backend: testProvisionedBackend(
+            emailConfirmationRedirect: landingPage,
+          ),
+          storage: store,
+        );
+        final client = FakeRuntimeAuthClient();
+        final repository = AuthRepository(client, provisionedAuthFlow: flow);
+        addTearDown(client.close);
+
+        await repository.signUp('person@example.com', 'password');
+
+        expect(client.signUpCalls.single.emailRedirectTo, landingPage);
       },
     );
   });
@@ -637,7 +659,7 @@ void main() {
   });
 
   group('Android deep-link registration', () {
-    test('registers exactly the canonical callback scheme and host', () {
+    test('registers the two Planner callback destinations separately', () {
       final manifest = File('android/app/src/main/AndroidManifest.xml')
           .readAsStringSync();
       final viewFilters =
@@ -649,20 +671,42 @@ void main() {
               )
               .toList();
 
-      expect(viewFilters, hasLength(1));
-      final filter = viewFilters.single.group(0)!;
+      // One filter per callback purpose: the Planner user Auth confirmation and
+      // the Supabase Management authorization return.
+      expect(viewFilters, hasLength(2));
+      final authFilter = viewFilters
+          .map((match) => match.group(0)!)
+          .singleWhere((filter) => filter.contains(AuthCallback.host));
+      final managementFilter = viewFilters
+          .map((match) => match.group(0)!)
+          .singleWhere((filter) => filter.contains(ManagementCallback.host));
+      expect(authFilter, isNot(equals(managementFilter)));
+
+      final filter = authFilter;
       expect(filter, contains('android:scheme="${AuthCallback.scheme}"'));
       expect(filter, contains('android:host="${AuthCallback.host}"'));
       expect(filter, contains('android.intent.category.BROWSABLE'));
       expect(filter, contains('android.intent.category.DEFAULT'));
-      // Only the Planner scheme: no http/https interception and no path
-      // restriction that would drop the callback.
-      expect(
-        RegExp(r'android:scheme="[^"]*"').allMatches(filter),
-        hasLength(1),
-      );
       expect(filter, isNot(contains('android:pathPrefix')));
       expect(filter, isNot(contains('android:pathPattern')));
+
+      expect(
+        managementFilter,
+        contains('android:scheme="${ManagementCallback.scheme}"'),
+      );
+      expect(
+        managementFilter,
+        contains('android:host="${ManagementCallback.host}"'),
+      );
+      expect(managementFilter, isNot(contains('android:pathPrefix')));
+      // Only the Planner scheme is ever intercepted: no http/https app links.
+      for (final candidate in viewFilters) {
+        final schemes = RegExp(r'android:scheme="([^"]*)"')
+            .allMatches(candidate.group(0)!)
+            .map((match) => match.group(1))
+            .toSet();
+        expect(schemes, <String>{AuthCallback.scheme});
+      }
     });
   });
 }

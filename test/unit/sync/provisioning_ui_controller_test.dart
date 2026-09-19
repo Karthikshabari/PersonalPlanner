@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/config/management_callback.dart';
+import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 import 'package:personal_planner/features/sync/presentation/controllers/provisioning_ui_controller.dart';
+import 'package:personal_planner/features/sync/providers/deep_link_providers.dart';
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
 
 import '../../helpers/provisioning_fakes.dart';
@@ -15,11 +18,13 @@ void main() {
   late FakeBrowserLauncher launcher;
   late ProviderContainer container;
 
-  void buildContainer({ProvisioningApi? withApi}) {
+  void buildContainer({ProvisioningApi? withApi, AppLinkSource? linkSource}) {
     container = ProviderContainer(
       overrides: [
         provisioningApiProvider.overrideWithValue(withApi),
         browserLauncherProvider.overrideWithValue(launcher),
+        if (linkSource != null)
+          appLinkSourceProvider.overrideWithValue(linkSource),
         provisioningPollIntervalProvider.overrideWith(
           (ref) => const Duration(hours: 1),
         ),
@@ -411,5 +416,196 @@ void main() {
     await Future.wait(<Future<void>>[first, second]);
 
     expect(api.selections, hasLength(1));
+  });
+
+  group('Supabase authorization returns from the browser', () {
+    test('resumes provisioning without the user pressing anything', () async {
+      final links = StreamController<String>();
+      addTearDown(links.close);
+      final source = AppLinkSource(platformLinks: links.stream);
+      addTearDown(source.dispose);
+      await source.start();
+
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.organizationsResult = testOrganizations(<ProvisioningOrganization>[
+        const ProvisioningOrganization(id: 'org-1', name: 'Ks', slug: 'ks'),
+      ]);
+      buildContainer(withApi: api, linkSource: source);
+      await loadState();
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+
+      links.add(ManagementCallback.redirectUrl);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(api.calls, contains('refresh'));
+      expect(api.calls, contains('listOrganizations'));
+      expect(current().phase, ProvisioningUiPhase.organizationSelection);
+    });
+
+    test('refreshes the management status of a ready backend', () async {
+      final links = StreamController<String>();
+      addTearDown(links.close);
+      final source = AppLinkSource(platformLinks: links.stream);
+      addTearDown(source.dispose);
+      await source.start();
+
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      api.managementStatusResult = const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+        status: ProvisioningManagementAuthorization(
+          authorized: true,
+          pending: false,
+        ),
+      );
+      buildContainer(withApi: api, linkSource: source);
+      await loadState();
+
+      links.add(ManagementCallback.redirectUrl);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(api.calls, contains('managementAuthorizationStatus'));
+      expect(current().managementAuthorization?.authorized, isTrue);
+    });
+  });
+
+  group('Supabase access lifecycle', () {
+    void readyAttempt() {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+    }
+
+    test('opens the Supabase consent page for re-authorization', () async {
+      readyAttempt();
+      final consent = Uri.parse(
+        'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+      );
+      api.startManagementResult = ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+        authorizationUrl: consent,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().reauthorizeSupabaseAccess();
+
+      expect(api.calls, contains('startManagementAuthorization'));
+      expect(launcher.opened, <Uri>[consent]);
+      expect(current().message, cloudSetupReauthorizeStartedMessage);
+    });
+
+    test('reports a refused browser hand-off instead of pretending', () async {
+      readyAttempt();
+      launcher.succeeds = false;
+      api.startManagementResult = ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+        authorizationUrl: Uri.parse(
+          'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().reauthorizeSupabaseAccess();
+
+      expect(current().message, cloudSetupBrowserLaunchFailedMessage);
+    });
+
+    test('reports a completed revocation and drops the local status', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.completed,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().disconnectSupabaseAccess();
+
+      expect(api.calls, contains('revokeManagementAuthorization'));
+      expect(current().message, cloudSetupRevokedMessage);
+      expect(current().managementAuthorization, isNull);
+    });
+
+    test(
+      'reports the retained-token limitation instead of a fake revoke',
+      () async {
+        readyAttempt();
+        api.revokeManagementResult = const ManagementAuthorizationResult(
+          outcome: ManagementAuthorizationOutcome.notRetained,
+        );
+        buildContainer(withApi: api);
+        await loadState();
+
+        await controller().disconnectSupabaseAccess();
+
+        expect(current().message, cloudSetupRevokeNotRetainedMessage);
+      },
+    );
+
+    test('reports a transient revocation failure as retryable', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.retryable,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().disconnectSupabaseAccess();
+
+      expect(current().message, cloudSetupRevokeFailedMessage);
+    });
+
+    test(
+      'reports a completed re-authorization after a pending grant',
+      () async {
+        readyAttempt();
+        api.managementStatusResult = const ManagementAuthorizationResult(
+          outcome: ManagementAuthorizationOutcome.completed,
+          status: ProvisioningManagementAuthorization(
+            authorized: false,
+            pending: true,
+          ),
+        );
+        buildContainer(withApi: api);
+        await loadState();
+        await controller().refreshManagementAuthorization();
+        expect(current().managementAuthorization?.pending, isTrue);
+
+        api.managementStatusResult = const ManagementAuthorizationResult(
+          outcome: ManagementAuthorizationOutcome.completed,
+          status: ProvisioningManagementAuthorization(
+            authorized: true,
+            pending: false,
+          ),
+        );
+        await controller().refreshManagementAuthorization();
+
+        expect(current().message, cloudSetupReauthorizedMessage);
+        expect(current().managementAuthorization?.authorized, isTrue);
+      },
+    );
+
+    test('reports a missing capability without touching the backend', () async {
+      readyAttempt();
+      api.revokeManagementResult = const ManagementAuthorizationResult(
+        outcome: ManagementAuthorizationOutcome.capabilityMissing,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().disconnectSupabaseAccess();
+
+      expect(current().message, cloudSetupManagementUnavailableMessage);
+      expect(current().phase, ProvisioningUiPhase.ready);
+    });
   });
 }

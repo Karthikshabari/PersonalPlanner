@@ -1,27 +1,22 @@
 import 'package:flutter/foundation.dart' show immutable;
 
+import 'planner_uri_scheme.dart';
+
 /// Canonical Planner Auth callback destination.
 ///
 /// One definition for the whole application: provisioned email sign-up sends
-/// it as `emailRedirectTo`, the provisioned deep-link handler accepts only it,
-/// and the canonical provisioning Worker adds it to a new project's Supabase
-/// Auth redirect allow list.
+/// either it or the Worker's HTTPS confirmation landing page as
+/// `emailRedirectTo`, the provisioned deep-link handler accepts only it, and
+/// the canonical provisioning Worker adds both to a new project's Supabase Auth
+/// redirect allow list.
 ///
 /// The Android manifest registers the same scheme and host. The URI is
 /// deliberately free of query parameters and of a trailing slash: Supabase
 /// appends the authorization code as a query parameter, so the exact value is
 /// also the value stored in a project's redirect allow list.
 abstract final class AuthCallback {
-  /// Custom URL scheme owned by the Planner.
-  ///
-  /// RFC 3986-valid: schemes may contain letters, digits, `+`, `-`, and `.`,
-  /// but not `_`. The previous value contained an underscore, which made the
-  /// callback unusable: Supabase Auth rejected the redirect and fell back to
-  /// the project Site URL, and Dart's `Uri` parser dropped the delivered link.
-  ///
-  /// This is the deep-link scheme only. The Android applicationId/package and
-  /// the Linux GApplication id are separate identifiers and are unchanged.
-  static const String scheme = 'com.personalplanner.personalplanner';
+  /// The shared Planner custom URL scheme.
+  static const String scheme = PlannerUriScheme.value;
 
   /// Host part of the callback URI (`...://login-callback`).
   static const String host = 'login-callback';
