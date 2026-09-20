@@ -57,7 +57,10 @@ class SyncRepository {
   );
 
   Future<SyncCycleResult> sync() async {
-    if (_cycleRunning) return const SyncCycleResult();
+    // A second entry point must not be able to fabricate a successful cycle:
+    // nothing was sent or pulled, so the caller is told the attempt was
+    // skipped instead of receiving an empty "success".
+    if (_cycleRunning) return const SyncCycleResult.skipped();
     _cycleRunning = true;
     try {
       final pushFailure = await push();

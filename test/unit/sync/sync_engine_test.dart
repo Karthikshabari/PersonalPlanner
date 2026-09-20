@@ -220,6 +220,201 @@ void main() {
     }
   });
 
+  test('only a real successful cycle records the last successful sync', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+      connectivity,
+    );
+    try {
+      expect(await db.syncDao.getSetting('sync.last_success_at'), null);
+
+      await engine.start();
+
+      final recorded = await db.syncDao.getSetting('sync.last_success_at');
+      expect(recorded, isA<String>());
+      expect(DateTime.tryParse(recorded!), isA<DateTime>());
+    } finally {
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
+  test('a failed cycle never moves the last successful sync instant', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final previous = DateTime.utc(2026, 9, 19, 18, 12);
+    await db.syncDao.setSetting(
+      'sync.last_success_at',
+      previous.toIso8601String(),
+    );
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _FailingPullGateway(), 'account'),
+      connectivity,
+    );
+    final snapshots = <SyncStatusSnapshot>[];
+    final subscription = engine.status.listen(snapshots.add);
+    try {
+      await engine.start();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        await db.syncDao.getSetting('sync.last_success_at'),
+        previous.toIso8601String(),
+      );
+      expect(snapshots.last.lastSuccessfulSync, previous);
+      expect(snapshots.last.state, SyncEngineState.backendUnavailable);
+      expect(snapshots.last.state, isNot(SyncEngineState.synced));
+    } finally {
+      await subscription.cancel();
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
+  test('a status refresh alone never moves the instant', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final previous = DateTime.utc(2026, 9, 19, 18, 12);
+    await db.syncDao.setSetting(
+      'sync.last_success_at',
+      previous.toIso8601String(),
+    );
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+      connectivity,
+    );
+    try {
+      await engine.start();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // Losing and regaining the transport hint re-emits status and re-checks
+      // reachability. Only a completed real cycle may change the instant.
+      final recordedAfterStart = await db.syncDao.getSetting(
+        'sync.last_success_at',
+      );
+      connectivity.emit(const [ConnectivityResult.none]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        await db.syncDao.getSetting('sync.last_success_at'),
+        recordedAfterStart,
+      );
+      expect(recordedAfterStart, isNot(previous.toIso8601String()));
+    } finally {
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
+  test('queued work waiting on retry backoff is not a successful sync', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final category = await CategoryRepository(db).insertCategory(
+      Category(
+        id: 'queued-category',
+        name: 'Queued',
+        colorHex: '#4285F4',
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+      ),
+    );
+    final operation = (await db.syncDao.getActiveOperationsForRecord(
+      'categories',
+      category.id,
+    )).single;
+    await db.syncDao.markRetryableError(
+      operation.operationId,
+      now: DateTime.now().toUtc(),
+      nextAttemptAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      error: 'Network unavailable; retry scheduled.',
+    );
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+      connectivity,
+    );
+    try {
+      await engine.start();
+
+      // Push skipped the ineligible operation while the pull round-tripped.
+      // The change is still unsynchronized, so no fresh instant may be
+      // recorded for it.
+      expect(await db.syncDao.getSetting('sync.last_success_at'), null);
+    } finally {
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
+  test('a skipped repository cycle is never a successful sync', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gate = Completer<void>();
+    final repository = SyncRepository.withGateway(
+      db,
+      _GatedGateway(gate),
+      'account',
+    );
+    try {
+      final first = repository.sync();
+      final second = await repository.sync();
+      expect(second.skipped, isTrue);
+      expect(second.succeeded, isFalse);
+      expect(second.firstFailure, null);
+      gate.complete();
+      expect((await first).succeeded, isTrue);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('an out-of-band unreachable verdict never moves the instant', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.none]);
+    final previous = DateTime.utc(2026, 9, 19, 18, 12);
+    await db.syncDao.setSetting(
+      'sync.last_success_at',
+      previous.toIso8601String(),
+    );
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+      connectivity,
+    );
+    final snapshots = <SyncStatusSnapshot>[];
+    final subscription = engine.status.listen(snapshots.add);
+    try {
+      await engine.start();
+      engine.noteBackendUnreachable();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        await db.syncDao.getSetting('sync.last_success_at'),
+        previous.toIso8601String(),
+      );
+      expect(snapshots.last.state, SyncEngineState.offline);
+      expect(snapshots.last.lastSuccessfulSync, previous);
+    } finally {
+      await subscription.cancel();
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
   test(
     'a request that never returns cannot pin the engine in syncing',
     () async {
@@ -272,6 +467,8 @@ class _FakeConnectivity implements SyncConnectivityMonitor {
   Future<List<ConnectivityResult>> check() => checkResult;
 
   int get activeListeners => _controller.hasListener ? 1 : 0;
+
+  void emit(List<ConnectivityResult> results) => _controller.add(results);
 
   Future<void> close() => _controller.close();
 }
@@ -342,6 +539,20 @@ class _HangingPullGateway extends _NoopGateway {
     required int afterChangeId,
     required int limit,
   }) => Completer<Object?>().future;
+}
+
+/// A transport that reports the account's own project host as unreachable.
+class _FailingPullGateway extends _NoopGateway {
+  @override
+  Future<Object?> pullChanges({
+    required int afterChangeId,
+    required int limit,
+  }) => Future<Object?>.error(
+    Exception(
+      "ClientException with SocketException: Failed host lookup: "
+      "'project.supabase.co'",
+    ),
+  );
 }
 
 class _FakeAuthRepository implements AuthSessionRepository {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/theme/app_theme.dart';
@@ -6,14 +7,14 @@ import 'package:personal_planner/features/sync/presentation/widgets/sync_action_
 import 'package:personal_planner/features/sync/presentation/widgets/sync_status_card.dart';
 
 /// Sync-status presentation: still when idle, active only during real work, and
-/// responsive by available width rather than by platform.
+/// responsive by available width rather than by platform. The last-sync text is
+/// a stable wall-clock instant, never a relative phrase recomputed on rebuild.
 void main() {
   Future<void> pumpPanel(
     WidgetTester tester, {
     required SyncStatusSnapshot status,
     bool enabled = true,
     double width = 420,
-    DateTime? now,
   }) async {
     tester.view.physicalSize = Size(width, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -27,7 +28,6 @@ void main() {
               status: status,
               enabled: enabled,
               busy: false,
-              now: now ?? DateTime(2026, 9, 19, 21, 50),
               onSyncNow: () {},
             ),
           ),
@@ -49,7 +49,7 @@ void main() {
     );
 
     expect(find.text('Up to date'), findsOneWidget);
-    expect(find.text('Last synced 3 minutes ago'), findsOneWidget);
+    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
     // Idle never animates, even though sync is enabled.
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
@@ -114,9 +114,12 @@ void main() {
       ),
     );
 
-    expect(find.text("Sync couldn't complete"), findsOneWidget);
+    expect(find.text("Couldn't sync"), findsOneWidget);
     expect(find.text('Your changes are safe on this device.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+    // Nothing has ever completed, so no instant is invented.
+    expect(find.text('Not synced yet'), findsOneWidget);
+    expect(find.textContaining('Last successful sync at'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
@@ -134,8 +137,153 @@ void main() {
 
     expect(find.text('Waiting to sync'), findsOneWidget);
     expect(find.text('3 changes are waiting to sync.'), findsOneWidget);
-    expect(find.text('Last synced 50 minutes ago'), findsOneWidget);
+    expect(find.text('Last synced at 9:00 PM'), findsOneWidget);
+    expect(
+      find.text('Changes will sync when the cloud connection is available.'),
+      findsOneWidget,
+    );
     expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('an account that never synced is never called up to date', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: const SyncStatusSnapshot(state: SyncEngineState.synced),
+    );
+
+    expect(find.text('Not synced yet'), findsOneWidget);
+    expect(find.text('Up to date'), findsNothing);
+    expect(find.textContaining('Last synced at'), findsNothing);
+  });
+
+  testWidgets(
+    'an unreachable cloud keeps the previous successful instant',
+    (tester) async {
+      await pumpPanel(
+        tester,
+        status: SyncStatusSnapshot(
+          state: SyncEngineState.backendUnavailable,
+          message: 'Your cloud backend could not be reached.',
+          lastSuccessfulSync: DateTime(2026, 9, 19, 23, 42),
+        ),
+      );
+
+      expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
+      expect(find.text('Your cloud backend could not be reached.'), findsOneWidget);
+      expect(find.text('Last successful sync at 11:42 PM'), findsOneWidget);
+      // A temporary outage never claims a fresh successful synchronization.
+      expect(find.text('Up to date'), findsNothing);
+      expect(find.textContaining('Last synced at'), findsNothing);
+      expect(find.text('Try again'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an unreachable cloud that never synced invents no instant', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: const SyncStatusSnapshot(
+        state: SyncEngineState.backendUnavailable,
+      ),
+    );
+
+    expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
+    expect(find.text('Not synced yet'), findsOneWidget);
+    expect(find.textContaining('Last successful sync at'), findsNothing);
+    expect(find.text('Up to date'), findsNothing);
+  });
+
+  testWidgets('a later failure keeps the last successful instant', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: SyncStatusSnapshot(
+        state: SyncEngineState.error,
+        message: 'Network unavailable; retry scheduled.',
+        lastSuccessfulSync: DateTime(2026, 9, 19, 23, 53),
+      ),
+    );
+
+    expect(find.text("Couldn't sync"), findsOneWidget);
+    expect(find.text('Network unavailable; retry scheduled.'), findsOneWidget);
+    expect(find.text('Last successful sync at 11:53 PM'), findsOneWidget);
+    expect(find.text('Up to date'), findsNothing);
+  });
+
+  testWidgets('re-authorization is requested instead of a deleted project', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: const SyncStatusSnapshot(
+        state: SyncEngineState.authFailure,
+        message: 'Session ended. Sign in again.',
+      ),
+    );
+
+    expect(find.text('Reauthorization required'), findsOneWidget);
+    expect(find.text('Session ended. Sign in again.'), findsOneWidget);
+    expect(find.textContaining('Project unavailable'), findsNothing);
+  });
+
+  testWidgets('the last-sync text never changes as time passes', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: SyncStatusSnapshot(
+        state: SyncEngineState.synced,
+        lastSuccessfulSync: DateTime(2026, 9, 19, 21, 47),
+      ),
+    );
+    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
+
+    // Any relative wording ("just now", "5 minutes ago") would have changed
+    // here, and a pending per-second timer would fail the test at teardown.
+    await tester.pump(const Duration(minutes: 5));
+    await tester.pump(const Duration(hours: 3));
+    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
+    expect(find.textContaining('ago'), findsNothing);
+    expect(find.textContaining('Just now'), findsNothing);
+  });
+
+  testWidgets('android and linux render the same semantic status', (
+    tester,
+  ) async {
+    Future<List<String>> render(TargetPlatform platform) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        await pumpPanel(
+          tester,
+          status: SyncStatusSnapshot(
+            state: SyncEngineState.backendUnavailable,
+            lastSuccessfulSync: DateTime(2026, 9, 19, 23, 42),
+          ),
+        );
+        final texts = <String>[];
+        for (final element in find
+            .byType(Text)
+            .evaluate()
+            .map((element) => element.widget)
+            .whereType<Text>()) {
+          if (element.data != null) texts.add(element.data!);
+        }
+        return texts;
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+
+    final android = await render(TargetPlatform.android);
+    final linux = await render(TargetPlatform.linux);
+
+    expect(android, linux);
+    expect(android, contains("Couldn't reach cloud storage"));
+    expect(android, contains('Try again'));
   });
 
   testWidgets('actions stack on a phone and share a row on a wider surface', (
@@ -234,6 +382,12 @@ void main() {
         ),
         isNot(contains('.')),
       );
+    });
+
+    test('the sync panel clock form is absolute', () {
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 23, 51)), '11:51 PM');
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 0, 5)), '12:05 AM');
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 12, 0)), '12:00 PM');
     });
   });
 }

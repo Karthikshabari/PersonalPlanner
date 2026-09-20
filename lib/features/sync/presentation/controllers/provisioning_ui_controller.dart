@@ -111,7 +111,12 @@ const cloudSetupSupabaseAccessBody =
 const cloudSetupSupabaseAccessTitle = 'Supabase connection';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
-const cloudSetupCheckConnectionLabel = 'Check connection';
+/// Label of the *authoritative* project check: it asks Supabase directly
+/// (through a short Management authorization in the browser) whether this
+/// backend still exists. It is deliberately distinct from the lightweight
+/// "Try again" host probe, which can only say reachable / not reachable and
+/// can never prove deletion.
+const cloudSetupVerifyWithSupabaseLabel = 'Verify with Supabase';
 const cloudSetupCancelAccessLabel = 'Cancel Supabase access';
 const cloudSetupStopUsingCloudLabel = 'Stop using cloud on this device';
 const cloudSetupStopUsingCloudSupport =

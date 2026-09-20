@@ -72,9 +72,23 @@ class SyncCycleResult {
   final SyncFailure? pushFailure;
   final SyncFailure? pullFailure;
 
-  const SyncCycleResult({this.pushFailure, this.pullFailure});
+  const SyncCycleResult({this.pushFailure, this.pullFailure})
+    : skipped = false;
 
-  bool get succeeded => pushFailure == null && pullFailure == null;
+  /// A cycle that was never run because the repository was already busy with
+  /// another cycle.
+  ///
+  /// Nothing was pushed, nothing was pulled and no remote state was observed,
+  /// so this must never be presented as a successful synchronization.
+  const SyncCycleResult.skipped()
+    : pushFailure = null,
+      pullFailure = null,
+      skipped = true;
+
+  /// True when this result describes no work at all.
+  final bool skipped;
+
+  bool get succeeded => !skipped && pushFailure == null && pullFailure == null;
 
   SyncFailure? get firstFailure => pushFailure ?? pullFailure;
 }

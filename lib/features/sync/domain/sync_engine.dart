@@ -65,6 +65,7 @@ class SyncEngine with WidgetsBindingObserver {
   bool _running = false;
   bool _syncingVisible = false;
   bool _transportAvailable = false;
+  bool _backendReportedUnreachable = false;
   String? _lastError;
   SyncEngineState? _failureState;
   DateTime? _lastSuccessfulSync;
@@ -114,8 +115,6 @@ class SyncEngine with WidgetsBindingObserver {
   Future<void> _runSync() async {
     _running = true;
     _syncingVisible = false;
-    _lastError = null;
-    _failureState = null;
     _scheduleSyncingNotice();
     try {
       final authController = this.authController;
@@ -138,12 +137,31 @@ class SyncEngine with WidgetsBindingObserver {
         _failureState = SyncEngineState.error;
         return;
       }
+      if (result.skipped) {
+        // Another cycle owned this account's transport. Nothing was sent or
+        // pulled, so this attempt must neither be recorded as a successful
+        // synchronization nor overwrite a verdict that is still current.
+        return;
+      }
+      // Only a real round trip may supersede the previous verdict.
+      _lastError = null;
+      _failureState = null;
+      // A successful feed read is direct evidence that the user's own project
+      // answered, so the out-of-band unreachable verdict no longer applies.
+      if (result.pullFailure == null) _backendReportedUnreachable = false;
       if (result.succeeded) {
-        _lastSuccessfulSync = DateTime.now().toUtc();
-        await _db.syncDao.setSetting(
-          'sync.last_success_at',
-          _lastSuccessfulSync!.toIso8601String(),
-        );
+        // `sync.last_success_at` means "the last time a real synchronization
+        // left nothing outstanding". A cycle that skipped queued work (for
+        // example, while a retry backoff was still running) round-tripped but
+        // did not synchronize the local change, so it must not move the
+        // instant forward.
+        if (await _db.syncDao.pendingCount() == 0) {
+          _lastSuccessfulSync = DateTime.now().toUtc();
+          await _db.syncDao.setSetting(
+            'sync.last_success_at',
+            _lastSuccessfulSync!.toIso8601String(),
+          );
+        }
       } else {
         final failure = result.firstFailure!;
         _lastError = failure.message;
@@ -170,6 +188,21 @@ class SyncEngine with WidgetsBindingObserver {
       _syncingVisible = true;
       _scheduleStatus();
     });
+  }
+
+  /// Records an out-of-band reachability verdict (the bounded project-host
+  /// probe) for every surface that renders [status].
+  ///
+  /// This is deliberately not a synchronization outcome: it never touches the
+  /// persisted last-successful-sync instant and must never be presented as
+  /// evidence that data was synchronized. A later real cycle supersedes it,
+  /// and only a genuinely reachable verdict starts that cycle.
+  void noteBackendUnreachable({String? message}) {
+    if (_stopping || _disposed) return;
+    _backendReportedUnreachable = true;
+    _lastError = message ?? cloudBackendUnreachableMessage;
+    _failureState = SyncEngineState.backendUnavailable;
+    _scheduleStatus();
   }
 
   void _onConnectivityChanged(List<ConnectivityResult> results) {
@@ -242,6 +275,14 @@ class SyncEngine with WidgetsBindingObserver {
     }
     if (failure.kind == SyncFailureKind.permanent) {
       return SyncEngineState.permanentFailure;
+    }
+    if (failure.kind == SyncFailureKind.retryable &&
+        _backendReportedUnreachable) {
+      // The bounded project-host probe already established that this project
+      // could not be reached. Keep the transport failure in that same state
+      // until a real cycle succeeds, so the cloud card, the Sync panel and the
+      // status action can never disagree about the same connection.
+      return SyncEngineState.backendUnavailable;
     }
     if ((result.pushFailure == null) != (result.pullFailure == null)) {
       return SyncEngineState.partialSuccess;

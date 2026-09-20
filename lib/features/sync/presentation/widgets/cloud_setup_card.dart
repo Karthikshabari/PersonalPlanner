@@ -8,6 +8,7 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../providers/runtime_backend_providers.dart';
 import '../../providers/provisioning_providers.dart';
+import '../../providers/sync_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
 import 'cloud_setup_preflight.dart';
 import 'sync_action_group.dart';
@@ -158,9 +159,11 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       final becameReady =
           (next.value?.isReady ?? false) &&
           !(previous?.value?.isReady ?? false);
-      if (!becameReady) return;
-      final pending = ref.read(runtimeBackendReloaderProvider)?.reload();
-      if (pending != null) unawaited(pending);
+      if (becameReady) {
+        final pending = ref.read(runtimeBackendReloaderProvider)?.reload();
+        if (pending != null) unawaited(pending);
+      }
+      _bridgeReachability(previous, next);
     });
     return ref
         .watch(provisioningUiProvider)
@@ -183,6 +186,32 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           ),
           data: _buildPhase,
         );
+  }
+
+  /// Hands this card's bounded project-host verdict to the sync engine, which
+  /// owns the single semantic sync status used by every screen.
+  ///
+  /// A connectivity check is never a synchronization: an unreachable verdict
+  /// is published immediately (and never touches the last-successful-sync
+  /// instant), while a recovered host is only *confirmed* by a real cycle.
+  /// The provider is never created here, so a card shown without a sync
+  /// runtime cannot start an engine as a side effect of rendering.
+  void _bridgeReachability(
+    AsyncValue<ProvisioningUiState>? previous,
+    AsyncValue<ProvisioningUiState> next,
+  ) {
+    final reachability = next.value?.reachability;
+    if (reachability == null) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    if (!container.exists(syncEngineProvider)) return;
+    final engine = container.read(syncEngineProvider);
+    if (engine == null) return;
+    if (reachability == CloudReachability.unavailable) {
+      engine.noteBackendUnreachable();
+    } else if (reachability == CloudReachability.reachable &&
+        previous?.value?.reachability == CloudReachability.unavailable) {
+      unawaited(engine.syncNow());
+    }
   }
 
   Widget _buildPhase(ProvisioningUiState state) {
@@ -410,7 +439,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 child: Text(
                   state.managementCheckInFlight
                       ? 'Waiting for Supabase…'
-                      : cloudSetupCheckConnectionLabel,
+                      : cloudSetupVerifyWithSupabaseLabel,
                 ),
               ),
             if (!unreachable && projectRef != null)
@@ -569,7 +598,7 @@ class _SupabaseAccessSection extends StatelessWidget {
                                 ? null
                                 : controller.reauthorizeSupabaseAccess,
                             child: const Text(
-                              cloudSetupCheckConnectionLabel,
+                              cloudSetupVerifyWithSupabaseLabel,
                             ),
                           ),
                       ],

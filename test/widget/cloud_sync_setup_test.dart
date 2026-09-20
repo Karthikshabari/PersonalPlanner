@@ -566,7 +566,7 @@ void main() {
       find.byKey(const ValueKey('cloud-reauthorize-action')),
       findsNothing,
     );
-    expect(find.text(cloudSetupCheckConnectionLabel), findsNothing);
+    expect(find.text(cloudSetupVerifyWithSupabaseLabel), findsNothing);
     expect(find.byKey(const ValueKey('cloud-open-dashboard')), findsOneWidget);
     expect(find.text('Open Supabase'), findsOneWidget);
 
@@ -655,7 +655,7 @@ void main() {
         find.byKey(const ValueKey('cloud-reauthorize-action')),
         findsOneWidget,
       );
-      expect(find.text(cloudSetupCheckConnectionLabel), findsOneWidget);
+      expect(find.text(cloudSetupVerifyWithSupabaseLabel), findsOneWidget);
       // The device-level lifecycle action is separated from the check, and
       // explains what it does not delete.
       expect(find.text(cloudSetupStopUsingCloudLabel), findsOneWidget);

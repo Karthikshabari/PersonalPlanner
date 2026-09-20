@@ -9,8 +9,9 @@ import 'sync_action_group.dart';
 ///
 /// The panel is deliberately still: it animates only while a real sync cycle is
 /// running. An enabled-but-idle account shows a plain status line, never a
-/// spinner, and the last-sync timestamp is humanised instead of printed as a
-/// raw instant.
+/// spinner, and the last-sync timestamp is a stable wall-clock instant. The
+/// panel never owns a clock, so it can redraw for any reason without the
+/// last-sync text changing under the user.
 class SyncStatusPanel extends StatelessWidget {
   const SyncStatusPanel({
     super.key,
@@ -18,7 +19,6 @@ class SyncStatusPanel extends StatelessWidget {
     required this.enabled,
     required this.busy,
     required this.onSyncNow,
-    this.now,
   });
 
   final SyncStatusSnapshot status;
@@ -26,18 +26,10 @@ class SyncStatusPanel extends StatelessWidget {
   final bool busy;
   final VoidCallback onSyncNow;
 
-  /// Injectable clock so tests can assert the humanised timestamp.
-  final DateTime? now;
-
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    final view = syncStatusView(
-      status,
-      enabled: enabled,
-      tokens: tokens,
-      now: now,
-    );
+    final view = syncStatusView(status, enabled: enabled, tokens: tokens);
     final action = FilledButton(
       key: const ValueKey('sync-now-action'),
       onPressed: enabled && !busy ? onSyncNow : null,
@@ -53,6 +45,14 @@ class SyncStatusPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs / 2),
         Text(view.subtitle),
+        if (view.lastSyncLine != null) ...[
+          const SizedBox(height: AppSpacing.xs / 2),
+          Text(
+            view.lastSyncLine!,
+            key: const ValueKey('sync-last-sync-line'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
         if (status.pendingOperations > 0 && enabled) ...[
           const SizedBox(height: AppSpacing.xs / 2),
           Text(
@@ -135,6 +135,7 @@ class SyncStatusView {
     required this.subtitle,
     this.active = false,
     this.actionLabel = 'Sync now',
+    this.lastSyncLine,
   });
 
   final IconData icon;
@@ -147,13 +148,16 @@ class SyncStatusView {
 
   /// Label of the manual action for this state.
   final String actionLabel;
+
+  /// Stable statement of the last successful synchronization, rendered as its
+  /// own line when the subtitle already says something else.
+  final String? lastSyncLine;
 }
 
 SyncStatusView syncStatusView(
   SyncStatusSnapshot status, {
   required bool enabled,
   required AppThemeTokens tokens,
-  DateTime? now,
 }) {
   if (!enabled) {
     return SyncStatusView(
@@ -165,9 +169,16 @@ SyncStatusView syncStatusView(
     );
   }
   final lastSynced = status.lastSuccessfulSync;
+  // Wall-clock wording only: it never ages by itself, so a rebuild can never
+  // change it. Nothing here may run on a timer.
   final lastLine = lastSynced == null
       ? 'Not synced yet'
-      : 'Last synced ${_relativeTimestamp(lastSynced, now: now)}';
+      : 'Last synced at ${formatSyncClockTime(lastSynced)}';
+  final lastSuccessfulLine = lastSynced == null
+      ? 'Not synced yet'
+      : 'Last successful sync at ${formatSyncClockTime(lastSynced)}';
+  const willSyncLine =
+      'Changes will sync when the cloud connection is available.';
   switch (status.state) {
     case SyncEngineState.syncing:
       return SyncStatusView(
@@ -180,6 +191,16 @@ SyncStatusView syncStatusView(
         active: true,
       );
     case SyncEngineState.synced:
+      if (lastSynced == null) {
+        // A reachable account that has never completed a real synchronization
+        // must not claim to be up to date.
+        return SyncStatusView(
+          icon: Icons.cloud_queue,
+          color: tokens.offline,
+          title: 'Not synced yet',
+          subtitle: 'No successful synchronization has completed yet.',
+        );
+      }
       return SyncStatusView(
         icon: Icons.check_circle,
         color: tokens.success,
@@ -191,7 +212,8 @@ SyncStatusView syncStatusView(
         icon: Icons.cloud_upload_outlined,
         color: tokens.pending,
         title: 'Waiting to sync',
-        subtitle: status.message ?? lastLine,
+        subtitle: status.message ?? willSyncLine,
+        lastSyncLine: lastLine,
       );
     case SyncEngineState.offline:
       return SyncStatusView(
@@ -200,24 +222,26 @@ SyncStatusView syncStatusView(
         title: 'Cloud sync paused',
         subtitle:
             "You're offline. Changes will sync when you're connected again.",
+        lastSyncLine: lastLine,
       );
     case SyncEngineState.backendUnavailable:
       return SyncStatusView(
         icon: Icons.cloud_off_outlined,
         color: tokens.error,
-        title: 'Cloud unavailable',
-        subtitle:
-            status.message ??
-            'Your cloud storage could not be reached. Your local data is '
-                'safe.',
+        title: "Couldn't reach cloud storage",
+        subtitle: status.message ?? willSyncLine,
+        lastSyncLine: lastSuccessfulLine,
         actionLabel: 'Try again',
       );
     case SyncEngineState.authFailure:
       return SyncStatusView(
         icon: Icons.lock_outline,
         color: tokens.error,
-        title: 'Sign in required',
-        subtitle: status.message ?? 'Log in again to continue syncing.',
+        title: 'Reauthorization required',
+        subtitle:
+            status.message ??
+            'Sign in again to resume syncing. Local data stays on this device.',
+        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.conflict:
       return SyncStatusView(
@@ -227,6 +251,7 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'Choose which copy to keep for the records listed below.',
+        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.permanentFailure:
       return SyncStatusView(
@@ -236,6 +261,7 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'A change could not be uploaded and is listed below.',
+        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.initialSyncPending:
       return SyncStatusView(
@@ -252,6 +278,7 @@ SyncStatusView syncStatusView(
         title: 'Sync paused',
         subtitle:
             status.message ?? 'Sync resumes after the session is refreshed.',
+        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.partialSuccess:
     case SyncEngineState.invalidData:
@@ -259,8 +286,11 @@ SyncStatusView syncStatusView(
       return SyncStatusView(
         icon: Icons.error_outline,
         color: tokens.error,
-        title: "Sync couldn't complete",
-        subtitle: status.message ?? 'Your changes are safe on this device.',
+        title: "Couldn't sync",
+        subtitle:
+            status.message ??
+            'Your changes are safe on this device and will be retried.',
+        lastSyncLine: lastSuccessfulLine,
         actionLabel: 'Try again',
       );
     case SyncEngineState.notConfigured:
@@ -275,8 +305,17 @@ SyncStatusView syncStatusView(
   }
 }
 
+/// Stable clock form used by the Sync screen: "11:51 PM".
+///
+/// This is deliberately not relative: the Sync screen must not re-render
+/// "just now"/"N minutes ago" as a clock ticks.
+String formatSyncClockTime(DateTime value) => _clockTime(value.toLocal());
+
 /// Human-friendly form of a sync instant: "Just now", "5 minutes ago",
 /// "Today at 9:47 PM", "Yesterday at 9:47 PM".
+///
+/// Retained for non-sync surfaces that genuinely want a relative phrase. The
+/// Sync panel itself uses [formatSyncClockTime] so its text is stable.
 String formatSyncTimestamp(DateTime value, {DateTime? now}) {
   final local = value.toLocal();
   final reference = (now ?? DateTime.now()).toLocal();
@@ -294,14 +333,6 @@ String formatSyncTimestamp(DateTime value, {DateTime? now}) {
   if (days == 1) return 'Yesterday at $clock';
   return '${local.year}-${_twoDigits(local.month)}-${_twoDigits(local.day)} '
       'at $clock';
-}
-
-/// Lower-cased form used inside a sentence ("Last synced 5 minutes ago").
-String _relativeTimestamp(DateTime value, {DateTime? now}) {
-  final formatted = formatSyncTimestamp(value, now: now);
-  return formatted.isEmpty
-      ? formatted
-      : formatted[0].toLowerCase() + formatted.substring(1);
 }
 
 String _clockTime(DateTime local) {

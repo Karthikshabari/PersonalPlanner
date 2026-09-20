@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,8 @@ import 'package:personal_planner/features/sync/data/anonymous_data_adoption.dart
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
+import 'package:personal_planner/features/sync/data/sync_repository.dart';
+import 'package:personal_planner/features/sync/domain/sync_engine.dart';
 import 'package:personal_planner/features/sync/domain/initial_sync_models.dart';
 import 'package:personal_planner/features/sync/data/secure_session_storage.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
@@ -239,6 +242,95 @@ void main() {
 
     await _teardown(tester, harness);
   });
+
+  testWidgets(
+    'an unreachable project never renders as up to date with a fresh sync',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      final previousSuccess = DateTime(2026, 9, 19, 21, 0);
+      final harness = await _pumpSyncSettings(
+        tester,
+        backend: testProvisionedBackend(),
+        api: api,
+        signedIn: true,
+        withSyncEngine: true,
+        // The link is up but the project request fails, so the engine can only
+        // report a transport failure unless the host probe has something
+        // better to say.
+        syncPullError: Exception('SocketException: Connection timed out'),
+        projectProbe: BackendProjectProbeResult.indeterminate,
+        seedLastSuccessfulSync: previousSuccess,
+      );
+      await tester.runAsync(() async {
+        await InitialSyncStateStore(harness.database).write(
+          InitialSyncRecord(
+            phase: InitialSyncPhase.complete,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        );
+      });
+      // The engine's own database work needs real-async turns, exactly like
+      // the rest of this suite's drift setup.
+      await _settleWithRealAsync(tester);
+
+      // The two cards are allowed to describe the same connection differently
+      // only when both are true. Here they agree that the cloud cannot be
+      // reached, while the Planner account stays signed in.
+      expect(find.text(cloudStorageTitle), findsOneWidget);
+      expect(find.text(cloudStorageUnreachableStatus), findsOneWidget);
+      expect(find.text(cloudSetupProjectUnreachableHintMessage), findsOneWidget);
+      expect(find.byKey(const ValueKey('planner-account-card')), findsOneWidget);
+      expect(find.textContaining('person@example.com'), findsOneWidget);
+
+      // The sync surface tells the same truth and keeps the real last
+      // successful instant instead of claiming a fresh one.
+      expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
+      expect(find.text('Up to date'), findsNothing);
+      expect(find.textContaining('Last synced at'), findsNothing);
+      expect(find.text('Last successful sync at 9:00 PM'), findsOneWidget);
+      final recorded = await tester.runAsync(
+        () => harness.database.syncDao.getSetting('sync.last_success_at'),
+      );
+      expect(recorded, previousSuccess.toIso8601String());
+
+      // "Try again" re-runs the reachability work without inventing a
+      // synchronization: a still-unreachable host changes nothing durable.
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-retry-probe-action')),
+      );
+      await _settleWithRealAsync(tester);
+      expect(
+        await tester.runAsync(
+          () => harness.database.syncDao.getSetting('sync.last_success_at'),
+        ),
+        previousSuccess.toIso8601String(),
+      );
+      expect(find.text('Up to date'), findsNothing);
+
+      // A connectivity check that *succeeds* is still not a synchronization.
+      // The card returns to Connected, the workflow restarts through a real
+      // cycle, and because that cycle cannot reach the project the Sync panel
+      // never claims to be up to date.
+      harness.projectProbe.result = BackendProjectProbeResult.exists;
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-retry-probe-action')),
+      );
+      await _settleWithRealAsync(tester);
+      expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
+      expect(find.text('Up to date'), findsNothing);
+      expect(
+        await tester.runAsync(
+          () => harness.database.syncDao.getSetting('sync.last_success_at'),
+        ),
+        previousSuccess.toIso8601String(),
+      );
+
+      await _teardown(tester, harness);
+    },
+  );
 
   testWidgets('the compile-time developer path keeps its account UI', (
     tester,
@@ -556,6 +648,18 @@ class _RecordingReloader implements RuntimeBackendReloader {
   }
 }
 
+/// Transport hint for the screen-level engine: a connected link, exactly what
+/// `connectivity_plus` reports while a project is unreachable.
+class _AlwaysConnectedConnectivity implements SyncConnectivityMonitor {
+  @override
+  Stream<List<ConnectivityResult>> get changes =>
+      const Stream<List<ConnectivityResult>>.empty();
+
+  @override
+  Future<List<ConnectivityResult>> check() =>
+      Future.value(const <ConnectivityResult>[ConnectivityResult.wifi]);
+}
+
 class _Harness {
   const _Harness({
     required this.container,
@@ -563,6 +667,7 @@ class _Harness {
     required this.client,
     required this.store,
     required this.anonymous,
+    required this.projectProbe,
   });
 
   final ProviderContainer container;
@@ -570,6 +675,7 @@ class _Harness {
   final FakeRuntimeAuthClient client;
   final FakeSecureKeyValueStore store;
   final AnonymousDatabaseFixture anonymous;
+  final FakeProjectProbe projectProbe;
 }
 
 Future<_Harness> _pumpSyncSettings(
@@ -580,6 +686,10 @@ Future<_Harness> _pumpSyncSettings(
   RuntimeBackendReloader? reloader,
   Set<String> foreignSessionKeys = const <String>{},
   Size surfaceSize = const Size(1200, 2600),
+  bool withSyncEngine = false,
+  Object? syncPullError,
+  BackendProjectProbeResult projectProbe = BackendProjectProbeResult.exists,
+  DateTime? seedLastSuccessfulSync,
 }) async {
   final store = FakeSecureKeyValueStore();
   final client = FakeRuntimeAuthClient();
@@ -594,7 +704,8 @@ Future<_Harness> _pumpSyncSettings(
   // signed-in account is shown in its honest pre-baseline state.
   final initialSync = FakeInitialSyncGateway(calls: calls)
     ..stateError = Exception('SocketException: network is unreachable');
-  final syncRemote = FakeSyncRemoteGateway(calls: calls);
+  final syncRemote = FakeSyncRemoteGateway(calls: calls)
+    ..pullError = syncPullError;
   final namespaces =
       backend.authNamespaces ?? const RuntimeAuthNamespaces.legacyStatic();
   final storage = SecureSupabaseLocalStorage(
@@ -617,6 +728,15 @@ Future<_Harness> _pumpSyncSettings(
   await controller.start();
 
   final database = AppDatabase(NativeDatabase.memory());
+  final projectProbeHost = FakeProjectProbe()..result = projectProbe;
+  if (seedLastSuccessfulSync != null) {
+    await tester.runAsync(
+      () => database.syncDao.setSetting(
+        'sync.last_success_at',
+        seedLastSuccessfulSync.toIso8601String(),
+      ),
+    );
+  }
   final container = ProviderContainer(
     overrides: [
       appDatabaseProvider.overrideWithValue(database),
@@ -640,7 +760,7 @@ Future<_Harness> _pumpSyncSettings(
       // HttpClient cannot run under the widget test's fake clock, so the answer
       // is scripted. A reachable host is the normal READY case.
       backendProjectProbeProvider.overrideWithValue(
-        FakeProjectProbe()..result = BackendProjectProbeResult.exists,
+        projectProbeHost,
       ),
       browserLauncherProvider.overrideWithValue(FakeBrowserLauncher()),
       runtimeBackendReloaderProvider.overrideWithValue(reloader),
@@ -656,7 +776,19 @@ Future<_Harness> _pumpSyncSettings(
       // test's fake clock. The sync DATA path stays covered by
       // test/unit/sync (see provisioned_sync_boundary_test.dart); this suite
       // only verifies which UI each backend shows.
-      syncRepositoryProvider.overrideWith((ref) => null),
+      if (withSyncEngine)
+        syncRepositoryProvider.overrideWith(
+          (ref) => SyncRepository.withGateway(
+            database,
+            syncRemote,
+            backend.accountScopeFor(authUserIdX)?.storageId ?? 'account',
+          ),
+        )
+      else
+        syncRepositoryProvider.overrideWith((ref) => null),
+      syncConnectivityMonitorProvider.overrideWith(
+        (ref) => _AlwaysConnectedConnectivity(),
+      ),
       // The legacy path inspects the anonymous database; keep this test free of
       // the platform path provider.
       anonymousDataSummaryProvider.overrideWith(
@@ -685,7 +817,17 @@ Future<_Harness> _pumpSyncSettings(
     client: client,
     store: store,
     anonymous: anonymous,
+    projectProbe: projectProbeHost,
   );
+}
+
+Future<void> _settleWithRealAsync(WidgetTester tester) async {
+  for (var i = 0; i < 8; i += 1) {
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+    );
+  }
 }
 
 Future<void> _teardown(WidgetTester tester, _Harness harness) async {
