@@ -434,7 +434,7 @@ void main() {
   );
 
   test(
-    'paused session resumes with the same ID after a database reopen',
+    'pause and resume remain durable across repeated database reopens',
     () async {
       final directory = await Directory.systemTemp.createTemp('planner_timer_');
       final file = File('${directory.path}/planner.sqlite');
@@ -461,6 +461,15 @@ void main() {
         first = null;
 
         reopened = AppDatabase(NativeDatabase(file));
+        var persisted = await reopened.timerDao.getSessionById(
+          started.session!.id,
+        );
+        expect(persisted?.state, TimerSessionState.paused.dbValue);
+        expect(persisted?.runningSince, isNull);
+        expect(persisted?.durationSec, const Duration(minutes: 3).inSeconds);
+
+        // Paused wall time must not enter the accumulated duration.
+        clock = clock.add(const Duration(minutes: 10));
         final resumed = await TimerService(
           reopened,
           clock: () => clock,
@@ -470,6 +479,33 @@ void main() {
         expect(
           resumed.session?.durationSec,
           const Duration(minutes: 3).inSeconds,
+        );
+        await reopened.close();
+        reopened = null;
+
+        clock = clock.add(const Duration(minutes: 7));
+        reopened = AppDatabase(NativeDatabase(file));
+        persisted = await reopened.timerDao.getSessionById(started.session!.id);
+        expect(persisted?.state, TimerSessionState.running.dbValue);
+        expect(
+          persisted!.durationSec +
+              clock.difference(persisted.runningSince!).inSeconds,
+          const Duration(minutes: 10).inSeconds,
+        );
+
+        final stopped = await TimerService(
+          reopened,
+          clock: () => clock,
+        ).stopSession(started.session!.id);
+        expect(stopped.session?.state, TimerSessionState.finished);
+        expect(
+          stopped.session?.durationSec,
+          const Duration(minutes: 10).inSeconds,
+        );
+        expect(
+          (await TaskRepository(reopened).getTaskById(task.id))
+              ?.actualDurationMin,
+          10,
         );
       } finally {
         await first?.close();

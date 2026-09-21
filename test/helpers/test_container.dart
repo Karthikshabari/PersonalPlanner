@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
-import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/analytics/providers/analytics_providers.dart';
 
@@ -32,7 +31,6 @@ Future<ProviderContainer> buildTestContainer(
       ],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();
-    await database.syncDao.setSetting(onboardingCompletedKey, 'true');
   });
   return container;
 }

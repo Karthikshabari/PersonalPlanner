@@ -18,7 +18,6 @@ import '../../../../core/widgets/error_panel.dart';
 import '../../../analytics/providers/analytics_providers.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../inbox/providers/inbox_provider.dart';
-import '../../../onboarding/providers/onboarding_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../providers/notification_settings_providers.dart';
@@ -498,7 +497,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(categoriesProvider);
     ref.invalidate(inboxClockProvider);
     ref.invalidate(inboxProvider);
-    ref.invalidate(onboardingCompletedProvider);
     ref.invalidate(recurringRuleProvider);
     ref.invalidate(dayMaterializationProvider);
     ref.invalidate(dailyReviewProvider);

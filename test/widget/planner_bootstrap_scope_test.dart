@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
-import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/domain/auth_session_controller.dart';
@@ -500,8 +499,6 @@ class _BootstrapHarness {
     openedAccountIds.add(accountId);
     final database = AppDatabase(NativeDatabase.memory());
     openedDatabases.add(database);
-    // Keep the app tree on the planner shell instead of onboarding.
-    await database.syncDao.setSetting(onboardingCompletedKey, 'true');
     final hook = beforeReturningDatabase;
     if (hook != null) await hook(accountId);
     return database;

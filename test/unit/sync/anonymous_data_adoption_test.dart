@@ -5,7 +5,6 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/features/categories/data/category_repository.dart';
-import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 import 'package:personal_planner/features/sync/data/anonymous_data_adoption.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 
@@ -296,40 +295,6 @@ void main() {
           anonymousDatabaseFactory: sourceFactory,
         ).adopt(),
         throwsA(isA<AnonymousDataAdoptionException>()),
-      );
-    } finally {
-      await account.close();
-    }
-  });
-
-  test('onboarding completion does not block local task adoption', () async {
-    final account = AppDatabase(NativeDatabase.memory());
-    await CategoryRepository(account).seedDefaultsIfEmpty();
-    await account.syncDao.setSetting(onboardingCompletedKey, 'false');
-
-    Future<AppDatabase> sourceFactory() async {
-      final source = AppDatabase(NativeDatabase.memory());
-      await CategoryRepository(source).seedDefaultsIfEmpty();
-      await source.syncDao.setSetting(onboardingCompletedKey, 'true');
-      await _insertTask(
-        source,
-        id: '00000000-0000-7000-8000-000000000012',
-        title: 'Onboarding task',
-      );
-      return source;
-    }
-
-    try {
-      await AnonymousDataAdoptionService(
-        account,
-        anonymousDatabaseFactory: sourceFactory,
-      ).adopt();
-      expect(await account.syncDao.getSetting(onboardingCompletedKey), 'true');
-      expect(
-        (await account.taskDao.getTaskById(
-          '00000000-0000-7000-8000-000000000012',
-        ))?.title,
-        'Onboarding task',
       );
     } finally {
       await account.close();

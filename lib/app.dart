@@ -5,7 +5,6 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_mode_provider.dart';
 import 'core/widgets/error_panel.dart';
-import 'features/onboarding/presentation/onboarding_gate.dart';
 import 'platform/desktop/keyboard_shortcuts.dart';
 
 class PersonalPlannerApp extends ConsumerWidget {
@@ -35,9 +34,8 @@ class PersonalPlannerApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       routerConfig: appRouter,
-      builder: (context, child) => OnboardingGate(
-        child: KeyboardShortcutHandler(child: child ?? const SizedBox.shrink()),
-      ),
+      builder: (context, child) =>
+          KeyboardShortcutHandler(child: child ?? const SizedBox.shrink()),
     );
   }
 }

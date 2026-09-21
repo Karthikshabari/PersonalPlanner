@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
-import 'package:personal_planner/features/onboarding/providers/onboarding_provider.dart';
 import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
@@ -598,7 +597,6 @@ class _Harness {
     if (existing != null) return existing;
     final database = AppDatabase(NativeDatabase.memory());
     databases[accountId] = database;
-    await database.syncDao.setSetting(onboardingCompletedKey, 'true');
     return database;
   }
 

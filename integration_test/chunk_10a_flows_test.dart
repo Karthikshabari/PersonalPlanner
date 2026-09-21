@@ -243,7 +243,6 @@ Future<AppDatabase> _newDatabase() async =>
 Future<ProviderContainer> _mountApp(WidgetTester tester) async {
   final database = await _newDatabase();
   await CategoryRepository(database).seedDefaultsIfEmpty();
-  await database.syncDao.setSetting('onboarding.completed', 'true');
   final container = ProviderContainer(
     overrides: [appDatabaseProvider.overrideWithValue(database)],
   );

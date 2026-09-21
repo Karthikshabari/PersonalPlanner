@@ -126,6 +126,11 @@ class BackupService {
   Map<String, dynamic> _decodeAndValidate(String source) {
     final data = BackupCodec.decodeData(source);
     BackupValidator().validate(data);
+    // Pre-guide-removal backups may contain this inert preference. Accept the
+    // document for compatibility, but do not recreate dead onboarding state.
+    (data['settings'] as Map<String, dynamic>).remove(
+      legacyOnboardingCompletedSettingKey,
+    );
     return data;
   }
 }

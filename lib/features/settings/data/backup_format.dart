@@ -16,7 +16,15 @@ const Set<String> portableSettingKeys = {
   'theme_mode',
   'review_reminder_enabled',
   'review_reminder_time',
-  'onboarding.completed',
+};
+
+/// Accepted on import so backups created before the generic guide was removed
+/// remain valid. The setting is discarded after validation and is never
+/// exported or restored.
+const String legacyOnboardingCompletedSettingKey = 'onboarding.completed';
+const Set<String> acceptedPortableSettingKeys = {
+  ...portableSettingKeys,
+  legacyOnboardingCompletedSettingKey,
 };
 
 enum BackupConflictKind { differing, blocked }

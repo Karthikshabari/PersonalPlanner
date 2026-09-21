@@ -1195,23 +1195,34 @@ Future<void> _shutdownLocalServices(
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
-  TimerTransitionResult paused;
-  try {
-    paused = await container.read(timerServiceProvider).pauseAt(DateTime.now());
-  } catch (err, stack) {
-    // Do not close this account database after a failed persisted transition:
-    // doing so would silently lose the user's recorded running segment.
-    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
-    rethrow;
-  }
-  try {
-    if (paused.session != null) {
-      await AndroidForegroundTimer().clearSession(paused.session!.id);
-    } else {
-      await AndroidForegroundTimer().stopService();
+  // `persistWindow == false` is the desktop window-close path. Keep its
+  // durable running segment intact so reopening can derive elapsed wall time
+  // from runningSince. Account switches still pause the old account's timer.
+  if (persistWindow) {
+    TimerTransitionResult paused;
+    try {
+      paused = await container
+          .read(timerServiceProvider)
+          .pauseAt(DateTime.now());
+    } catch (err, stack) {
+      // Do not close this account database after a failed persisted transition:
+      // doing so would silently lose the user's recorded running segment.
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: err, stack: stack),
+      );
+      rethrow;
     }
-  } catch (err, stack) {
-    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
+    try {
+      if (paused.session != null) {
+        await AndroidForegroundTimer().clearSession(paused.session!.id);
+      } else {
+        await AndroidForegroundTimer().stopService();
+      }
+    } catch (err, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: err, stack: stack),
+      );
+    }
   }
   try {
     await container.read(notificationServiceProvider).cancelReminder();

@@ -185,6 +185,9 @@ final syncAccountBindingProvider = Provider<SyncAccountBinding?>((ref) {
   final scopedClient = SupabaseClient(
     endpoint.url,
     endpoint.publishableKey,
+    // This client authenticates every request through the captured callback;
+    // it has no Auth session of its own to refresh.
+    authOptions: const AuthClientOptions(autoRefreshToken: false),
     accessToken: () async {
       if (controller.current.session?.user.id != session.user.id ||
           !controller.hasUsableAccessToken(session)) {

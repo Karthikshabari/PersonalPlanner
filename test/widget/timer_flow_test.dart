@@ -77,12 +77,23 @@ void main() {
     expect(find.byKey(const ValueKey('block-timer-chip')), findsNothing);
     expect(find.text('00:00:00'), findsWidgets);
 
+    final persistedBeforeTicks = (await runDb(
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(alpha.id),
+    )).single;
+
     // Widget frame time is not the persisted wall clock. R15 deliberately
     // removed the old tick-count floor, so fake frames must not manufacture
     // work that was never recorded by the session clock.
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('00:00:00'), findsWidgets);
     expect(find.byKey(const ValueKey('overlay-timer-elapsed')), findsOneWidget);
+    final persistedAfterTicks = (await runDb(
+      tester,
+      () => timerRepoOf(container).getSessionsForTask(alpha.id),
+    )).single;
+    expect(persistedAfterTicks.durationSec, persistedBeforeTicks.durationSec);
+    expect(persistedAfterTicks.updatedAt, persistedBeforeTicks.updatedAt);
 
     // Auto-status: planned → in progress (Chunk 6 #11).
     final reloaded = await runDb(

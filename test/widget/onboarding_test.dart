@@ -1,32 +1,42 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/core/theme/app_theme.dart';
-import 'package:personal_planner/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/features/timeline/presentation/screens/day_view_screen.dart';
+
+import '../helpers/test_container.dart';
 
 void main() {
-  testWidgets('first-launch guide reaches the planner', (tester) async {
-    var completed = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.darkTheme,
-        home: OnboardingScreen(onComplete: () => completed = true),
-      ),
+  testWidgets('first launch opens the planner without the generic guide', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/day');
+
+    await pumpApp(tester, container);
+
+    expect(find.byType(DayViewScreen), findsOneWidget);
+    expect(find.text('Plan your day with confidence'), findsNothing);
+    expect(find.text('Skip guide'), findsNothing);
+    await finish(tester, container);
+  });
+
+  testWidgets('legacy onboarding preference cannot block returning users', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    await runDb(
+      tester,
+      () => container
+          .read(appDatabaseProvider)
+          .syncDao
+          .setSetting('onboarding.completed', 'false'),
     );
+    appRouter.go('/day');
 
-    expect(find.text('Plan your day with confidence'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('onboarding-next')));
-    await tester.pumpAndSettle();
-    expect(find.text('Start with a category'), findsOneWidget);
+    await pumpApp(tester, container);
 
-    await tester.tap(find.byKey(const ValueKey('onboarding-next')));
-    await tester.pumpAndSettle();
-    expect(find.text('Create your first task'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('onboarding-next')));
-    await tester.pumpAndSettle();
-    expect(find.text('Use Inbox for unscheduled ideas'), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('onboarding-start')));
-    expect(completed, isTrue);
+    expect(find.byType(DayViewScreen), findsOneWidget);
+    expect(find.text('Plan your day with confidence'), findsNothing);
+    await finish(tester, container);
   });
 }

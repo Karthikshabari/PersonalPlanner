@@ -231,7 +231,7 @@ class BackupValidator {
 
     final settings = _map(data['settings'], 'settings');
     for (final entry in settings.entries) {
-      if (!portableSettingKeys.contains(entry.key)) {
+      if (!acceptedPortableSettingKeys.contains(entry.key)) {
         throw BackupValidationException(
           'Setting is not portable: ${entry.key}',
         );
@@ -784,7 +784,7 @@ class BackupValidator {
           throw const BackupValidationException('theme_mode is invalid.');
         }
       case 'review_reminder_enabled':
-      case 'onboarding.completed':
+      case legacyOnboardingCompletedSettingKey:
         if (!const {'true', 'false'}.contains(value)) {
           throw BackupValidationException('$key must be true or false.');
         }

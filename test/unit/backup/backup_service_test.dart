@@ -8,6 +8,7 @@ import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/features/settings/data/backup_codec.dart';
+import 'package:personal_planner/features/settings/data/backup_format.dart';
 import 'package:personal_planner/features/settings/data/backup_service.dart';
 import 'package:personal_planner/features/day_context/data/day_context_repository.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
@@ -92,6 +93,40 @@ void main() {
       expect(await restored.syncDao.pendingCount(), greaterThanOrEqualTo(10));
     },
   );
+
+  test('legacy onboarding setting is accepted but never restored', () async {
+    await _seedDatabase(database);
+    await database.syncDao.setSetting(
+      legacyOnboardingCompletedSettingKey,
+      'true',
+    );
+
+    final exported = await BackupService(database).exportJson();
+    final document = jsonDecode(exported) as Map<String, dynamic>;
+    final data =
+        (document['content'] as Map<String, dynamic>)['data']
+            as Map<String, dynamic>;
+    expect(
+      data['settings'] as Map<String, dynamic>,
+      isNot(contains(legacyOnboardingCompletedSettingKey)),
+    );
+
+    data['settings'] = {
+      ...(data['settings'] as Map<String, dynamic>),
+      legacyOnboardingCompletedSettingKey: 'false',
+    };
+    final legacyBackup = BackupCodec.encodeData(data);
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+
+    await BackupService(restored)
+        .importJson(legacyBackup, ownershipConfirmed: true);
+
+    expect(
+      await restored.syncDao.getSetting(legacyOnboardingCompletedSettingKey),
+      isNull,
+    );
+  });
 
   test('backup round trips recurrence rule-exclusion provenance', () async {
     await _seedDatabase(database);
