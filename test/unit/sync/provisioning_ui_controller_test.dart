@@ -545,7 +545,9 @@ void main() {
       // is still authorization_pending until the Worker sees the consent, so
       // the automatic check is what has to notice it.
       api.attempt = testAttempt(ProvisioningState.authorizationPending);
-      api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
       api.organizationsResult = ProvisioningResult(
         outcome: ProvisioningOutcome.restartRequired,
         profile: testProfile(ProvisioningState.authorizationPending),
@@ -553,9 +555,7 @@ void main() {
       buildPollingContainer(api: api);
       await loadState();
       await controller().startWatching();
-      await waitFor(
-        () => api.calls.contains('listOrganizations'),
-      );
+      await waitFor(() => api.calls.contains('listOrganizations'));
       expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
 
       // The phone finishes the Supabase consent; the Worker now has the
@@ -864,6 +864,24 @@ void main() {
       // READY is preserved, and the user is told how to get an authoritative
       // answer instead of being left with a state that looks healthy.
       expect(current().message, cloudSetupProjectUnreachableHintMessage);
+    });
+
+    test('a successful runtime sync clears transient unavailability without management access', () async {
+      readyAttempt();
+      probe.result = BackendProjectProbeResult.indeterminate;
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().verifyProjectHost();
+
+      final callsBeforeRecovery = List<String>.of(api.calls);
+      controller().noteRuntimeReachable();
+
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().reachability, CloudReachability.reachable);
+      expect(current().message, isNull);
+      expect(api.calls, callsBeforeRecovery);
+      expect(api.calls, isNot(contains('startManagementCheck')));
+      expect(api.calls, isNot(contains('markRemoteMissing')));
     });
   });
 }

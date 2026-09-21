@@ -69,6 +69,7 @@ class SyncEngine with WidgetsBindingObserver {
   String? _lastError;
   SyncEngineState? _failureState;
   DateTime? _lastSuccessfulSync;
+  SyncStatusSnapshot? _lastEmittedStatus;
   Future<void>? _startFuture;
   Future<void>? _activeCycle;
   Future<void>? _stopFuture;
@@ -115,7 +116,11 @@ class SyncEngine with WidgetsBindingObserver {
   Future<void> _runSync() async {
     _running = true;
     _syncingVisible = false;
-    _scheduleSyncingNotice();
+    // A remote feed check can be slow even when it contains no changes. Do not
+    // turn that ordinary reachability/no-op check into visible sync activity.
+    // Only known queued local work earns an in-progress indication.
+    final hadPendingWork = await _db.syncDao.pendingCount() > 0;
+    if (hadPendingWork) _scheduleSyncingNotice();
     try {
       final authController = this.authController;
       if (authController != null && !authController.hasUsableAccessToken()) {
@@ -155,7 +160,8 @@ class SyncEngine with WidgetsBindingObserver {
         // example, while a retry backoff was still running) round-tripped but
         // did not synchronize the local change, so it must not move the
         // instant forward.
-        if (await _db.syncDao.pendingCount() == 0) {
+        if (await _db.syncDao.pendingCount() == 0 &&
+            (_lastSuccessfulSync == null || hadPendingWork)) {
           _lastSuccessfulSync = DateTime.now().toUtc();
           await _db.syncDao.setSetting(
             'sync.last_success_at',
@@ -246,7 +252,7 @@ class SyncEngine with WidgetsBindingObserver {
         ? _failureState!
         : permanent != null
         ? SyncEngineState.permanentFailure
-        : pending > 0
+        : pending > 0 || _lastSuccessfulSync == null
         ? SyncEngineState.pending
         : SyncEngineState.synced;
     await _emit(
@@ -300,8 +306,21 @@ class SyncEngine with WidgetsBindingObserver {
 
   Future<void> _emit(SyncStatusSnapshot value) async {
     if (_stopping || _disposed) return;
+    if (_sameStatus(_lastEmittedStatus, value)) return;
+    _lastEmittedStatus = value;
     if (!_status.isClosed) _status.add(value);
   }
+
+  static bool _sameStatus(
+    SyncStatusSnapshot? previous,
+    SyncStatusSnapshot next,
+  ) =>
+      previous != null &&
+      previous.state == next.state &&
+      previous.pendingOperations == next.pendingOperations &&
+      previous.conflictCount == next.conflictCount &&
+      previous.lastSuccessfulSync == next.lastSuccessfulSync &&
+      previous.message == next.message;
 
   static bool _hasTransport(List<ConnectivityResult> results) =>
       results.any((result) => result != ConnectivityResult.none);

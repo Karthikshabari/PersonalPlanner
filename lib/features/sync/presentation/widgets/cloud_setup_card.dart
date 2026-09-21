@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../domain/sync_models.dart';
 import '../../providers/runtime_backend_providers.dart';
 import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
@@ -97,6 +98,14 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     // coming back to the app, even when the automatic deep link did not fire.
     if (controller.current?.managementCheckInFlight ?? false) {
       unawaited(controller.completeManagementCheck());
+      return;
+    }
+    // READY is durable provisioning state. If only the lightweight runtime
+    // reachability probe failed, resume is a useful bounded recovery event and
+    // does not require Supabase Management authorization.
+    if (controller.current?.phase == ProvisioningUiPhase.ready &&
+        controller.current?.reachability == CloudReachability.unavailable) {
+      unawaited(controller.verifyProjectHost());
     }
   }
 
@@ -165,6 +174,15 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       }
       _bridgeReachability(previous, next);
     });
+    ref.listen(syncStatusProvider.select((status) => status.value?.state), (
+      previous,
+      next,
+    ) {
+      if (next == SyncEngineState.synced &&
+          previous != SyncEngineState.synced) {
+        ref.read(provisioningUiProvider.notifier).noteRuntimeReachable();
+      }
+    });
     return ref
         .watch(provisioningUiProvider)
         .when(
@@ -208,6 +226,11 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     if (engine == null) return;
     if (reachability == CloudReachability.unavailable) {
       engine.noteBackendUnreachable();
+      // Reconcile the lightweight host failure against the authenticated data
+      // path once. Connectivity restoration and the engine's existing
+      // five-minute safety cycle provide later retries without aggressive
+      // polling.
+      unawaited(engine.syncNow());
     } else if (reachability == CloudReachability.reachable &&
         previous?.value?.reachability == CloudReachability.unavailable) {
       unawaited(engine.syncNow());
@@ -408,8 +431,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.ready:
         final profile = state.readyProfile;
         final projectRef = profile?.projectRef;
-        final unreachable =
-            state.reachability == CloudReachability.unavailable;
+        final unreachable = state.reachability == CloudReachability.unavailable;
         return _CloudCard(
           key: const ValueKey('cloud-storage-ready'),
           icon: Icons.cloud_done_outlined,
@@ -523,7 +545,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     CloudSetupStage.verifyingCloudStorage => 'Finishing setup…',
     null => 'Setting up cloud storage…',
   };
-
 }
 
 /// Secondary "Supabase connection" area of a healthy cloud connection.
@@ -557,9 +578,7 @@ class _SupabaseAccessSection extends StatelessWidget {
         Theme(
           // An expansion tile is used as a plain disclosure control; the
           // surrounding card already supplies the visual boundary.
-          data: Theme.of(
-            context,
-          ).copyWith(dividerColor: Colors.transparent),
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             key: const ValueKey('cloud-advanced-access'),
             tilePadding: EdgeInsets.zero,
@@ -729,9 +748,8 @@ class _InlineConfirmation extends StatelessWidget {
         Expanded(
           child: Text(
             message,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: tokens.success),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: tokens.success),
           ),
         ),
       ],

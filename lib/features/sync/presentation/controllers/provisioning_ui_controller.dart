@@ -72,8 +72,7 @@ const cloudSetupStaleMessage =
 const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
-const cloudSetupReadyBody =
-    'Your Planner data can sync across your devices.';
+const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
     'this device and your Supabase project was not deleted. Reconnect to the '
@@ -111,6 +110,7 @@ const cloudSetupSupabaseAccessBody =
 const cloudSetupSupabaseAccessTitle = 'Supabase connection';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
+
 /// Label of the *authoritative* project check: it asks Supabase directly
 /// (through a short Management authorization in the browser) whether this
 /// backend still exists. It is deliberately distinct from the lightweight
@@ -295,7 +295,8 @@ class ProvisioningUiState {
     authorizationUrlAvailable:
         authorizationUrlAvailable ?? this.authorizationUrlAvailable,
     reachability: reachability ?? this.reachability,
-    authorizationConfirmed: authorizationConfirmed ?? this.authorizationConfirmed,
+    authorizationConfirmed:
+        authorizationConfirmed ?? this.authorizationConfirmed,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -654,6 +655,26 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     if (!marked) return;
     _showRemoteMissing(status: 'host_not_found');
   });
+
+  /// Reconciles an earlier lightweight-probe failure with stronger evidence
+  /// from the normal Planner data path.
+  ///
+  /// A successful sync round trip proves that the configured project is
+  /// reachable. It says nothing about Management authorization and therefore
+  /// must not start or complete a provisioning/OAuth operation.
+  void noteRuntimeReachable() {
+    final current = state.value;
+    if (current?.phase != ProvisioningUiPhase.ready ||
+        current?.reachability != CloudReachability.unavailable) {
+      return;
+    }
+    _update(
+      (value) => value.copyWith(
+        reachability: CloudReachability.reachable,
+        clearMessage: true,
+      ),
+    );
+  }
 
   /// Selects an organization locally; nothing is provisioned until Continue.
   void selectOrganization(ProvisioningOrganization organization) {

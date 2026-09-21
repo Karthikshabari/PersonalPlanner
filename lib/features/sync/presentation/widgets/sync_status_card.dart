@@ -7,11 +7,9 @@ import 'sync_action_group.dart';
 
 /// Compact presentation of the current synchronization state.
 ///
-/// The panel is deliberately still: it animates only while a real sync cycle is
-/// running. An enabled-but-idle account shows a plain status line, never a
-/// spinner, and the last-sync timestamp is a stable wall-clock instant. The
-/// panel never owns a clock, so it can redraw for any reason without the
-/// last-sync text changing under the user.
+/// The panel is deliberately still: it animates only while queued data is
+/// actually being synchronized. The compact app-bar action is the primary
+/// indicator, so this panel avoids a continuously refreshed timestamp.
 class SyncStatusPanel extends StatelessWidget {
   const SyncStatusPanel({
     super.key,
@@ -45,14 +43,6 @@ class SyncStatusPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs / 2),
         Text(view.subtitle),
-        if (view.lastSyncLine != null) ...[
-          const SizedBox(height: AppSpacing.xs / 2),
-          Text(
-            view.lastSyncLine!,
-            key: const ValueKey('sync-last-sync-line'),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
         if (status.pendingOperations > 0 && enabled) ...[
           const SizedBox(height: AppSpacing.xs / 2),
           Text(
@@ -93,9 +83,8 @@ class SyncStatusPanel extends StatelessWidget {
       ? '1 change is waiting to sync.'
       : '$count changes are waiting to sync.';
 
-  static String _remainingLabel(int count) => count == 1
-      ? '1 change remaining.'
-      : '$count changes remaining.';
+  static String _remainingLabel(int count) =>
+      count == 1 ? '1 change remaining.' : '$count changes remaining.';
 }
 
 class _StatusGlyph extends StatelessWidget {
@@ -135,7 +124,6 @@ class SyncStatusView {
     required this.subtitle,
     this.active = false,
     this.actionLabel = 'Sync now',
-    this.lastSyncLine,
   });
 
   final IconData icon;
@@ -148,10 +136,6 @@ class SyncStatusView {
 
   /// Label of the manual action for this state.
   final String actionLabel;
-
-  /// Stable statement of the last successful synchronization, rendered as its
-  /// own line when the subtitle already says something else.
-  final String? lastSyncLine;
 }
 
 SyncStatusView syncStatusView(
@@ -164,19 +148,9 @@ SyncStatusView syncStatusView(
       icon: Icons.cloud_off_outlined,
       color: tokens.offline,
       title: 'Sync is off',
-      subtitle:
-          'Changes will stay on this device until you turn sync back on.',
+      subtitle: 'Changes will stay on this device until you turn sync back on.',
     );
   }
-  final lastSynced = status.lastSuccessfulSync;
-  // Wall-clock wording only: it never ages by itself, so a rebuild can never
-  // change it. Nothing here may run on a timer.
-  final lastLine = lastSynced == null
-      ? 'Not synced yet'
-      : 'Last synced at ${formatSyncClockTime(lastSynced)}';
-  final lastSuccessfulLine = lastSynced == null
-      ? 'Not synced yet'
-      : 'Last successful sync at ${formatSyncClockTime(lastSynced)}';
   const willSyncLine =
       'Changes will sync when the cloud connection is available.';
   switch (status.state) {
@@ -186,12 +160,11 @@ SyncStatusView syncStatusView(
         color: tokens.info,
         title: 'Syncing…',
         subtitle:
-            status.message ??
-            'Uploading and downloading your latest changes.',
+            status.message ?? 'Uploading and downloading your latest changes.',
         active: true,
       );
     case SyncEngineState.synced:
-      if (lastSynced == null) {
+      if (status.lastSuccessfulSync == null) {
         // A reachable account that has never completed a real synchronization
         // must not claim to be up to date.
         return SyncStatusView(
@@ -204,8 +177,8 @@ SyncStatusView syncStatusView(
       return SyncStatusView(
         icon: Icons.check_circle,
         color: tokens.success,
-        title: 'Up to date',
-        subtitle: lastLine,
+        title: 'Synced',
+        subtitle: 'Your Planner data is synchronized.',
       );
     case SyncEngineState.pending:
       return SyncStatusView(
@@ -213,7 +186,6 @@ SyncStatusView syncStatusView(
         color: tokens.pending,
         title: 'Waiting to sync',
         subtitle: status.message ?? willSyncLine,
-        lastSyncLine: lastLine,
       );
     case SyncEngineState.offline:
       return SyncStatusView(
@@ -222,7 +194,6 @@ SyncStatusView syncStatusView(
         title: 'Cloud sync paused',
         subtitle:
             "You're offline. Changes will sync when you're connected again.",
-        lastSyncLine: lastLine,
       );
     case SyncEngineState.backendUnavailable:
       return SyncStatusView(
@@ -230,7 +201,6 @@ SyncStatusView syncStatusView(
         color: tokens.error,
         title: "Couldn't reach cloud storage",
         subtitle: status.message ?? willSyncLine,
-        lastSyncLine: lastSuccessfulLine,
         actionLabel: 'Try again',
       );
     case SyncEngineState.authFailure:
@@ -241,7 +211,6 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'Sign in again to resume syncing. Local data stays on this device.',
-        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.conflict:
       return SyncStatusView(
@@ -251,7 +220,6 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'Choose which copy to keep for the records listed below.',
-        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.permanentFailure:
       return SyncStatusView(
@@ -261,7 +229,6 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'A change could not be uploaded and is listed below.',
-        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.initialSyncPending:
       return SyncStatusView(
@@ -269,7 +236,8 @@ SyncStatusView syncStatusView(
         color: tokens.pending,
         title: 'Setting up sync',
         subtitle:
-            status.message ?? 'Your first synchronization is still in progress.',
+            status.message ??
+            'Your first synchronization is still in progress.',
       );
     case SyncEngineState.refreshPaused:
       return SyncStatusView(
@@ -278,7 +246,6 @@ SyncStatusView syncStatusView(
         title: 'Sync paused',
         subtitle:
             status.message ?? 'Sync resumes after the session is refreshed.',
-        lastSyncLine: lastSuccessfulLine,
       );
     case SyncEngineState.partialSuccess:
     case SyncEngineState.invalidData:
@@ -290,7 +257,6 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ??
             'Your changes are safe on this device and will be retried.',
-        lastSyncLine: lastSuccessfulLine,
         actionLabel: 'Try again',
       );
     case SyncEngineState.notConfigured:

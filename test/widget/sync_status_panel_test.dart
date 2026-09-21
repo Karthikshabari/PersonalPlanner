@@ -7,8 +7,7 @@ import 'package:personal_planner/features/sync/presentation/widgets/sync_action_
 import 'package:personal_planner/features/sync/presentation/widgets/sync_status_card.dart';
 
 /// Sync-status presentation: still when idle, active only during real work, and
-/// responsive by available width rather than by platform. The last-sync text is
-/// a stable wall-clock instant, never a relative phrase recomputed on rebuild.
+/// responsive by available width rather than by platform.
 void main() {
   Future<void> pumpPanel(
     WidgetTester tester, {
@@ -37,30 +36,32 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('idle healthy state shows up to date without animating', (
-    tester,
-  ) async {
-    await pumpPanel(
-      tester,
-      status: SyncStatusSnapshot(
-        state: SyncEngineState.synced,
-        lastSuccessfulSync: DateTime(2026, 9, 19, 21, 47),
-      ),
-    );
+  testWidgets(
+    'idle healthy state shows synced without a timestamp or animation',
+    (tester) async {
+      await pumpPanel(
+        tester,
+        status: SyncStatusSnapshot(
+          state: SyncEngineState.synced,
+          lastSuccessfulSync: DateTime(2026, 9, 19, 21, 47),
+        ),
+      );
 
-    expect(find.text('Up to date'), findsOneWidget);
-    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
-    // Idle never animates, even though sync is enabled.
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(find.text('Sync now'), findsOneWidget);
+      expect(find.text('Synced'), findsOneWidget);
+      expect(find.text('Your Planner data is synchronized.'), findsOneWidget);
+      expect(find.textContaining('Last synced'), findsNothing);
+      // Idle never animates, even though sync is enabled.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.text('Sync now'), findsOneWidget);
 
-    // The action is never disabled by an idle state.
-    final button = tester.widget<FilledButton>(
-      find.byKey(const ValueKey('sync-now-action')),
-    );
-    expect(button.onPressed, isNotNull);
-  });
+      // The action is never disabled by an idle state.
+      final button = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('sync-now-action')),
+      );
+      expect(button.onPressed, isNotNull);
+    },
+  );
 
   testWidgets('an active sync cycle is visibly active', (tester) async {
     await pumpPanel(
@@ -92,7 +93,9 @@ void main() {
     );
     expect(find.text('Sync is off'), findsOneWidget);
     expect(
-      find.text('Changes will stay on this device until you turn sync back on.'),
+      find.text(
+        'Changes will stay on this device until you turn sync back on.',
+      ),
       findsOneWidget,
     );
     expect(
@@ -117,8 +120,8 @@ void main() {
     expect(find.text("Couldn't sync"), findsOneWidget);
     expect(find.text('Your changes are safe on this device.'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
-    // Nothing has ever completed, so no instant is invented.
-    expect(find.text('Not synced yet'), findsOneWidget);
+    // Nothing has ever completed, and the timestamp-era extra line is gone.
+    expect(find.text('Not synced yet'), findsNothing);
     expect(find.textContaining('Last successful sync at'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
@@ -137,7 +140,7 @@ void main() {
 
     expect(find.text('Waiting to sync'), findsOneWidget);
     expect(find.text('3 changes are waiting to sync.'), findsOneWidget);
-    expect(find.text('Last synced at 9:00 PM'), findsOneWidget);
+    expect(find.textContaining('Last synced'), findsNothing);
     expect(
       find.text('Changes will sync when the cloud connection is available.'),
       findsOneWidget,
@@ -154,31 +157,33 @@ void main() {
     );
 
     expect(find.text('Not synced yet'), findsOneWidget);
-    expect(find.text('Up to date'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
     expect(find.textContaining('Last synced at'), findsNothing);
   });
 
-  testWidgets(
-    'an unreachable cloud keeps the previous successful instant',
-    (tester) async {
-      await pumpPanel(
-        tester,
-        status: SyncStatusSnapshot(
-          state: SyncEngineState.backendUnavailable,
-          message: 'Your cloud backend could not be reached.',
-          lastSuccessfulSync: DateTime(2026, 9, 19, 23, 42),
-        ),
-      );
+  testWidgets('an unreachable cloud keeps the previous successful instant', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      status: SyncStatusSnapshot(
+        state: SyncEngineState.backendUnavailable,
+        message: 'Your cloud backend could not be reached.',
+        lastSuccessfulSync: DateTime(2026, 9, 19, 23, 42),
+      ),
+    );
 
-      expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
-      expect(find.text('Your cloud backend could not be reached.'), findsOneWidget);
-      expect(find.text('Last successful sync at 11:42 PM'), findsOneWidget);
-      // A temporary outage never claims a fresh successful synchronization.
-      expect(find.text('Up to date'), findsNothing);
-      expect(find.textContaining('Last synced at'), findsNothing);
-      expect(find.text('Try again'), findsOneWidget);
-    },
-  );
+    expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
+    expect(
+      find.text('Your cloud backend could not be reached.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Last successful sync at'), findsNothing);
+    // A temporary outage never claims a fresh successful synchronization.
+    expect(find.text('Synced'), findsNothing);
+    expect(find.textContaining('Last synced at'), findsNothing);
+    expect(find.text('Try again'), findsOneWidget);
+  });
 
   testWidgets('an unreachable cloud that never synced invents no instant', (
     tester,
@@ -191,9 +196,9 @@ void main() {
     );
 
     expect(find.text("Couldn't reach cloud storage"), findsOneWidget);
-    expect(find.text('Not synced yet'), findsOneWidget);
+    expect(find.text('Not synced yet'), findsNothing);
     expect(find.textContaining('Last successful sync at'), findsNothing);
-    expect(find.text('Up to date'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
   });
 
   testWidgets('a later failure keeps the last successful instant', (
@@ -210,8 +215,8 @@ void main() {
 
     expect(find.text("Couldn't sync"), findsOneWidget);
     expect(find.text('Network unavailable; retry scheduled.'), findsOneWidget);
-    expect(find.text('Last successful sync at 11:53 PM'), findsOneWidget);
-    expect(find.text('Up to date'), findsNothing);
+    expect(find.textContaining('Last successful sync at'), findsNothing);
+    expect(find.text('Synced'), findsNothing);
   });
 
   testWidgets('re-authorization is requested instead of a deleted project', (
@@ -230,7 +235,7 @@ void main() {
     expect(find.textContaining('Project unavailable'), findsNothing);
   });
 
-  testWidgets('the last-sync text never changes as time passes', (
+  testWidgets('the sync panel never exposes the last-sync timestamp', (
     tester,
   ) async {
     await pumpPanel(
@@ -240,13 +245,15 @@ void main() {
         lastSuccessfulSync: DateTime(2026, 9, 19, 21, 47),
       ),
     );
-    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.textContaining('Last synced'), findsNothing);
 
     // Any relative wording ("just now", "5 minutes ago") would have changed
     // here, and a pending per-second timer would fail the test at teardown.
     await tester.pump(const Duration(minutes: 5));
     await tester.pump(const Duration(hours: 3));
-    expect(find.text('Last synced at 9:47 PM'), findsOneWidget);
+    expect(find.text('Synced'), findsOneWidget);
+    expect(find.textContaining('Last synced'), findsNothing);
     expect(find.textContaining('ago'), findsNothing);
     expect(find.textContaining('Just now'), findsNothing);
   });
@@ -265,11 +272,12 @@ void main() {
           ),
         );
         final texts = <String>[];
-        for (final element in find
-            .byType(Text)
-            .evaluate()
-            .map((element) => element.widget)
-            .whereType<Text>()) {
+        for (final element
+            in find
+                .byType(Text)
+                .evaluate()
+                .map((element) => element.widget)
+                .whereType<Text>()) {
           if (element.data != null) texts.add(element.data!);
         }
         return texts;

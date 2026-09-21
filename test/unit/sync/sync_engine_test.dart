@@ -192,9 +192,22 @@ void main() {
     final connectivity = _FakeConnectivity()
       ..checkResult = Future.value(const [ConnectivityResult.wifi]);
     final gate = Completer<void>();
+    final category = await CategoryRepository(db).insertCategory(
+      Category(
+        id: 'queued-category',
+        name: 'Queued',
+        colorHex: '#4285F4',
+        createdAt: DateTime.utc(2026, 1, 1),
+        updatedAt: DateTime.utc(2026, 1, 1),
+      ),
+    );
+    final operation = (await db.syncDao.getActiveOperationsForRecord(
+      'categories',
+      category.id,
+    )).single;
     final engine = SyncEngine(
       db,
-      SyncRepository.withGateway(db, _GatedGateway(gate), 'account'),
+      _GatedRepository(db, gate, operation.operationId),
       connectivity,
       syncingNoticeDelay: const Duration(milliseconds: 20),
     );
@@ -220,29 +233,32 @@ void main() {
     }
   });
 
-  test('only a real successful cycle records the last successful sync', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    final connectivity = _FakeConnectivity()
-      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
-    final engine = SyncEngine(
-      db,
-      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
-      connectivity,
-    );
-    try {
-      expect(await db.syncDao.getSetting('sync.last_success_at'), null);
+  test(
+    'only a real successful cycle records the last successful sync',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
+      );
+      try {
+        expect(await db.syncDao.getSetting('sync.last_success_at'), null);
 
-      await engine.start();
+        await engine.start();
 
-      final recorded = await db.syncDao.getSetting('sync.last_success_at');
-      expect(recorded, isA<String>());
-      expect(DateTime.tryParse(recorded!), isA<DateTime>());
-    } finally {
-      await engine.stop();
-      await connectivity.close();
-      await db.close();
-    }
-  });
+        final recorded = await db.syncDao.getSetting('sync.last_success_at');
+        expect(recorded, isA<String>());
+        expect(DateTime.tryParse(recorded!), isA<DateTime>());
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
 
   test('a failed cycle never moves the last successful sync instant', () async {
     final db = AppDatabase(NativeDatabase.memory());
@@ -279,85 +295,91 @@ void main() {
     }
   });
 
-  test('a status refresh alone never moves the instant', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    final connectivity = _FakeConnectivity()
-      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
-    final previous = DateTime.utc(2026, 9, 19, 18, 12);
-    await db.syncDao.setSetting(
-      'sync.last_success_at',
-      previous.toIso8601String(),
-    );
-    final engine = SyncEngine(
-      db,
-      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
-      connectivity,
-    );
-    try {
-      await engine.start();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-
-      // Losing and regaining the transport hint re-emits status and re-checks
-      // reachability. Only a completed real cycle may change the instant.
-      final recordedAfterStart = await db.syncDao.getSetting(
+  test(
+    'no-op checks and status refreshes never move an existing instant',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final previous = DateTime.utc(2026, 9, 19, 18, 12);
+      await db.syncDao.setSetting(
         'sync.last_success_at',
+        previous.toIso8601String(),
       );
-      connectivity.emit(const [ConnectivityResult.none]);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-
-      expect(
-        await db.syncDao.getSetting('sync.last_success_at'),
-        recordedAfterStart,
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
       );
-      expect(recordedAfterStart, isNot(previous.toIso8601String()));
-    } finally {
-      await engine.stop();
-      await connectivity.close();
-      await db.close();
-    }
-  });
+      try {
+        await engine.start();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-  test('queued work waiting on retry backoff is not a successful sync', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    final connectivity = _FakeConnectivity()
-      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
-    final category = await CategoryRepository(db).insertCategory(
-      Category(
-        id: 'queued-category',
-        name: 'Queued',
-        colorHex: '#4285F4',
-        createdAt: DateTime.utc(2026, 1, 1),
-        updatedAt: DateTime.utc(2026, 1, 1),
-      ),
-    );
-    final operation = (await db.syncDao.getActiveOperationsForRecord(
-      'categories',
-      category.id,
-    )).single;
-    await db.syncDao.markRetryableError(
-      operation.operationId,
-      now: DateTime.now().toUtc(),
-      nextAttemptAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
-      error: 'Network unavailable; retry scheduled.',
-    );
-    final engine = SyncEngine(
-      db,
-      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
-      connectivity,
-    );
-    try {
-      await engine.start();
+        // Startup performed a successful but empty remote check. That is useful
+        // reachability evidence, not new synchronized data.
+        final recordedAfterStart = await db.syncDao.getSetting(
+          'sync.last_success_at',
+        );
+        connectivity.emit(const [ConnectivityResult.none]);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      // Push skipped the ineligible operation while the pull round-tripped.
-      // The change is still unsynchronized, so no fresh instant may be
-      // recorded for it.
-      expect(await db.syncDao.getSetting('sync.last_success_at'), null);
-    } finally {
-      await engine.stop();
-      await connectivity.close();
-      await db.close();
-    }
-  });
+        expect(
+          await db.syncDao.getSetting('sync.last_success_at'),
+          recordedAfterStart,
+        );
+        expect(recordedAfterStart, previous.toIso8601String());
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
+
+  test(
+    'queued work waiting on retry backoff is not a successful sync',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final category = await CategoryRepository(db).insertCategory(
+        Category(
+          id: 'queued-category',
+          name: 'Queued',
+          colorHex: '#4285F4',
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+        ),
+      );
+      final operation = (await db.syncDao.getActiveOperationsForRecord(
+        'categories',
+        category.id,
+      )).single;
+      await db.syncDao.markRetryableError(
+        operation.operationId,
+        now: DateTime.now().toUtc(),
+        nextAttemptAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+        error: 'Network unavailable; retry scheduled.',
+      );
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
+      );
+      try {
+        await engine.start();
+
+        // Push skipped the ineligible operation while the pull round-tripped.
+        // The change is still unsynchronized, so no fresh instant may be
+        // recorded for it.
+        expect(await db.syncDao.getSetting('sync.last_success_at'), null);
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
 
   test('a skipped repository cycle is never a successful sync', () async {
     final db = AppDatabase(NativeDatabase.memory());
@@ -415,6 +437,45 @@ void main() {
     }
   });
 
+  test('transient backend failure recovers on connectivity restoration without duplicate states', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final gateway = _RecoveringGateway()..fail = true;
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, gateway, 'account'),
+      connectivity,
+    );
+    final states = <SyncEngineState>[];
+    final subscription = engine.status.listen(
+      (snapshot) => states.add(snapshot.state),
+    );
+    try {
+      await engine.start();
+      expect(states.last, SyncEngineState.backendUnavailable);
+      states.clear();
+
+      gateway.fail = false;
+      connectivity.emit(const [ConnectivityResult.none]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      connectivity.emit(const [ConnectivityResult.wifi]);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(states.last, SyncEngineState.synced);
+      expect(
+        states.where((state) => state == SyncEngineState.synced).length,
+        1,
+      );
+      expect(gateway.pullCalls, 2);
+    } finally {
+      await subscription.cancel();
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
   test(
     'a request that never returns cannot pin the engine in syncing',
     () async {
@@ -432,9 +493,10 @@ void main() {
       final subscription = engine.status.listen(snapshots.add);
       try {
         unawaited(engine.start());
-        // The stalled transport is reported as active first…
+        // An empty feed check is not shown as active merely because the
+        // transport stalls.
         await Future<void>.delayed(const Duration(milliseconds: 60));
-        expect(snapshots.last.state, SyncEngineState.syncing);
+        expect(snapshots.last.state, SyncEngineState.pending);
 
         // …and the bounded cycle then releases the engine instead of leaving
         // the UI on a spinner forever.
@@ -529,6 +591,44 @@ class _GatedGateway extends _NoopGateway {
   }) async {
     await _gate.future;
     return const <Object>[];
+  }
+}
+
+class _GatedRepository extends SyncRepository {
+  _GatedRepository(this._db, this._gate, this._operationId)
+    : super.withGateway(_db, _NoopGateway(), 'account');
+
+  final AppDatabase _db;
+  final Completer<void> _gate;
+  final String _operationId;
+
+  @override
+  Future<SyncCycleResult> sync() async {
+    await _gate.future;
+    await _db.syncDao.markAcknowledged(_operationId, DateTime.utc(2026, 1, 1));
+    return const SyncCycleResult();
+  }
+}
+
+class _RecoveringGateway extends _NoopGateway {
+  bool fail = false;
+  int pullCalls = 0;
+
+  @override
+  Future<Object?> pullChanges({
+    required int afterChangeId,
+    required int limit,
+  }) {
+    pullCalls += 1;
+    if (fail) {
+      return Future<Object?>.error(
+        Exception(
+          "ClientException with SocketException: Failed host lookup: "
+          "'project.supabase.co'",
+        ),
+      );
+    }
+    return Future<Object?>.value(const <Object>[]);
   }
 }
 
