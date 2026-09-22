@@ -50,6 +50,35 @@ class TimerService {
     return _db.transaction(() => _startInTransaction(taskId, owner));
   });
 
+  /// Atomically validates a scheduled reminder and starts its task.
+  ///
+  /// The notification payload is only a proposed action. A task can be
+  /// rescheduled, completed, deleted, or started by another connection after
+  /// that payload was displayed, so every precondition is checked in the same
+  /// transaction that performs the normal start transition.
+  Future<TimerTransitionResult> startFromReminder(
+    String taskId, {
+    required DateTime expectedPlannedStart,
+  }) => _serialize(() async {
+    final owner = await _repository.localDeviceId();
+    return _db.transaction(() async {
+      final task = await _db.taskDao.getTaskById(taskId);
+      if (task == null ||
+          task.deletedAt != null ||
+          task.isInbox ||
+          TaskStatus.fromDb(task.status) != TaskStatus.planned ||
+          task.startTime?.toUtc() != expectedPlannedStart.toUtc() ||
+          (await _db.timerDao.getSessionsForTask(taskId)).isNotEmpty) {
+        return const TimerTransitionResult(
+          session: null,
+          didChange: false,
+          didFinish: false,
+        );
+      }
+      return _startInTransaction(taskId, owner);
+    });
+  });
+
   Future<TimerTransitionResult> _startInTransaction(
     String taskId,
     String owner,

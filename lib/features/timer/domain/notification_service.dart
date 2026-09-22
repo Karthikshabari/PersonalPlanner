@@ -19,11 +19,23 @@ typedef PlannerNotificationResponseHandler = Future<void> Function(
   DateTime occurredAt,
 );
 
+abstract interface class NotificationPermissionGateway {
+  Future<bool> requestPermission();
+  Future<bool> notificationsEnabled();
+}
+
 /// Thin OS adapter. Timer and task state never live here: payloads carry only
 /// compare-and-act preconditions for the persisted domain state.
-class NotificationService implements PlannerNotificationGateway {
-  NotificationService({LinuxReminderScheduler? linuxScheduler})
-    : _linuxScheduler = linuxScheduler ?? const LinuxReminderScheduler();
+class NotificationService
+    implements PlannerNotificationGateway, NotificationPermissionGateway {
+  NotificationService({
+    LinuxReminderScheduler? linuxScheduler,
+    this.androidTaskReminderScheduler,
+    bool Function()? isAndroid,
+    bool Function()? isLinux,
+  }) : _linuxScheduler = linuxScheduler ?? const LinuxReminderScheduler(),
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _isLinux = isLinux ?? (() => Platform.isLinux);
 
   static const int reviewReminderId = 4201;
   static const int activeTimerId = 4202;
@@ -34,6 +46,10 @@ class NotificationService implements PlannerNotificationGateway {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   final LinuxReminderScheduler _linuxScheduler;
+  final Future<void> Function(TaskReminderSnapshot snapshot)?
+  androidTaskReminderScheduler;
+  final bool Function() _isAndroid;
+  final bool Function() _isLinux;
   bool _initialized = false;
 
   Future<void> init({
@@ -86,6 +102,7 @@ class NotificationService implements PlannerNotificationGateway {
     }
   }
 
+  @override
   Future<bool> requestPermission() async {
     if (!_initialized) return false;
     if (!Platform.isAndroid) return true;
@@ -100,6 +117,7 @@ class NotificationService implements PlannerNotificationGateway {
     }
   }
 
+  @override
   Future<bool> notificationsEnabled() async {
     if (!_initialized || !Platform.isAndroid) return true;
     try {
@@ -163,7 +181,9 @@ class NotificationService implements PlannerNotificationGateway {
     }
   }
 
-  Future<void> cancelReminder() => _bestEffortCancel(reviewReminderId);
+  Future<void> cancelReminder() async {
+    await _bestEffortCancel(reviewReminderId);
+  }
 
   @override
   Future<void> showTimer(TimerNotificationSnapshot snapshot) async {
@@ -232,22 +252,29 @@ class NotificationService implements PlannerNotificationGateway {
   }
 
   @override
-  Future<void> cancelTimer() => _bestEffortCancel(activeTimerId);
+  Future<void> cancelTimer() async {
+    await _bestEffortCancel(activeTimerId);
+  }
 
   @override
-  Future<void> scheduleTaskReminder(TaskReminderSnapshot snapshot) async {
-    if (Platform.isLinux) {
+  Future<bool> scheduleTaskReminder(TaskReminderSnapshot snapshot) async {
+    if (_isLinux()) {
       try {
-        await _linuxScheduler.schedule(snapshot);
+        return await _linuxScheduler.schedule(snapshot);
       } on Object {
-        // Scheduling is presentation-only. Planner data remains authoritative.
+        return false;
       }
-      return;
     }
-    if (!Platform.isAndroid || !_initialized) return;
+    if (!_isAndroid()) return false;
     try {
+      final testScheduler = androidTaskReminderScheduler;
+      if (testScheduler != null) {
+        await testScheduler(snapshot);
+        return true;
+      }
+      if (!_initialized) return false;
       await _plugin.zonedSchedule(
-        id: taskReminderId(snapshot.taskId),
+        id: taskReminderPresentationId(snapshot.identity),
         title: '${snapshot.taskTitle} hasn\'t started',
         body: 'Planned for ${_formatClock(snapshot.plannedStart)}',
         payload: snapshot.payload.encode(),
@@ -270,8 +297,9 @@ class NotificationService implements PlannerNotificationGateway {
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
+      return true;
     } on Object {
-      // Best effort; the coordinator will reconcile again on the next change.
+      return false;
     }
   }
 
@@ -279,7 +307,7 @@ class NotificationService implements PlannerNotificationGateway {
   Future<void> showTaskReminder(TaskReminderSnapshot snapshot) async {
     try {
       await _plugin.show(
-        id: taskReminderId(snapshot.taskId),
+        id: taskReminderPresentationId(snapshot.identity),
         title: '${snapshot.taskTitle} hasn\'t started',
         body: 'Planned for ${_formatClock(snapshot.plannedStart)}',
         payload: snapshot.payload.encode(),
@@ -312,28 +340,40 @@ class NotificationService implements PlannerNotificationGateway {
   }
 
   @override
-  Future<void> cancelTaskReminder(String taskId) async {
-    if (Platform.isLinux) {
+  Future<bool> cancelTaskReminder(TaskReminderIdentity identity) async {
+    if (_isLinux()) {
+      var cancelled = false;
       try {
-        await _linuxScheduler.cancel(taskId);
+        cancelled = await _linuxScheduler.cancel(identity);
       } on Object {
-        // A missing user systemd manager must not affect Planner data.
+        cancelled = false;
       }
+      await _bestEffortCancel(taskReminderPresentationId(identity));
+      return cancelled;
     }
-    await _bestEffortCancel(taskReminderId(taskId));
+    return _bestEffortCancel(taskReminderPresentationId(identity));
   }
 
-  Future<void> _bestEffortCancel(int id) async {
+  Future<bool> _bestEffortCancel(int id) async {
     try {
       await _plugin.cancel(id: id);
+      return true;
     } on Object {
-      // Cancellation is presentation cleanup; domain state already won.
+      return false;
     }
   }
 
   static int taskReminderId(String taskId) {
+    return _stablePresentationId(taskId);
+  }
+
+  static int taskReminderPresentationId(TaskReminderIdentity identity) {
+    return _stablePresentationId(identity.ledgerKey);
+  }
+
+  static int _stablePresentationId(String value) {
     var hash = 0x811c9dc5;
-    for (final byte in utf8.encode(taskId)) {
+    for (final byte in utf8.encode(value)) {
       hash ^= byte;
       hash = (hash * 0x01000193) & 0x7fffffff;
     }
@@ -446,14 +486,15 @@ class LinuxReminderScheduler {
   )
   processRunner;
 
-  Future<void> schedule(TaskReminderSnapshot snapshot) async {
-    if (!Platform.isLinux || !snapshot.remindAt.isAfter(DateTime.now())) return;
-    await cancel(snapshot.taskId);
+  Future<bool> schedule(TaskReminderSnapshot snapshot) async {
+    if (!Platform.isLinux || !snapshot.remindAt.isAfter(DateTime.now())) {
+      return false;
+    }
     final payload = base64Url.encode(utf8.encode(snapshot.payload.encode()));
-    final unit = _unit(snapshot.taskId);
+    final unit = _unit(snapshot.identity);
     final at = DateFormat('yyyy-MM-dd HH:mm:ss')
         .format(snapshot.remindAt.toUtc());
-    await processRunner('systemd-run', <String>[
+    final result = await processRunner('systemd-run', <String>[
       '--user',
       '--collect',
       '--unit=$unit',
@@ -465,27 +506,39 @@ class LinuxReminderScheduler {
       NotificationService._workerArgument,
       payload,
     ]);
+    return result.exitCode == 0;
   }
 
-  Future<void> cancel(String taskId) async {
-    if (!Platform.isLinux) return;
-    final unit = _unit(taskId);
-    await processRunner('systemctl', <String>[
+  Future<bool> cancel(TaskReminderIdentity identity) async {
+    if (!Platform.isLinux) return true;
+    final unit = _unit(identity);
+    final stopped = await processRunner('systemctl', <String>[
       '--user',
       'stop',
       '$unit.timer',
       '$unit.service',
     ]);
-    await processRunner('systemctl', <String>[
+    if (stopped.exitCode != 0 && !_isMissingUnit(stopped)) return false;
+    final reset = await processRunner('systemctl', <String>[
       '--user',
       'reset-failed',
       '$unit.timer',
       '$unit.service',
     ]);
+    return reset.exitCode == 0 || _isMissingUnit(reset);
   }
 
-  static String _unit(String taskId) =>
-      'personal-planner-reminder-${NotificationService.taskReminderId(taskId)}';
+  static bool _isMissingUnit(ProcessResult result) {
+    final output = '${result.stdout}\n${result.stderr}'.toLowerCase();
+    return output.contains('not loaded') ||
+        output.contains('not found') ||
+        output.contains('could not be found') ||
+        output.contains('does not exist');
+  }
+
+  static String _unit(TaskReminderIdentity identity) =>
+      'personal-planner-reminder-'
+      '${NotificationService.taskReminderPresentationId(identity)}';
 }
 
 Future<void> initializeTimezone() async {

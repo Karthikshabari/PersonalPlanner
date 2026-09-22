@@ -25,6 +25,9 @@ final plannerNotificationCoordinatorProvider =
         database: ref.watch(appDatabaseProvider),
         notifications: ref.watch(notificationServiceProvider),
         accountId: ref.watch(openAccountScopeProvider)?.storageId,
+        ensureNotificationPermission: ref
+            .watch(notificationPermissionControllerProvider)
+            .ensureForFeatureUse,
       );
     });
 

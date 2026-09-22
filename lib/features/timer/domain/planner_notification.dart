@@ -146,6 +146,12 @@ class TaskReminderSnapshot {
 
   DateTime get remindAt => plannedStart.add(const Duration(minutes: 5));
 
+  TaskReminderIdentity get identity => TaskReminderIdentity(
+    accountId: accountId,
+    taskId: taskId,
+    plannedStart: plannedStart,
+  );
+
   PlannerNotificationPayload get payload => PlannerNotificationPayload(
     kind: PlannerNotificationKind.taskReminder,
     accountId: accountId,
@@ -154,12 +160,47 @@ class TaskReminderSnapshot {
   );
 }
 
+/// Stable local presentation identity for one planned occurrence.
+///
+/// Including account and planned start prevents account switches and stale
+/// reschedules from addressing a different reminder that happens to share a
+/// task id.
+class TaskReminderIdentity {
+  const TaskReminderIdentity({
+    required this.accountId,
+    required this.taskId,
+    required this.plannedStart,
+  });
+
+  final String? accountId;
+  final String taskId;
+  final DateTime plannedStart;
+
+  String get ledgerKey =>
+      '${accountId ?? '<anonymous>'}:$taskId:'
+      '${plannedStart.toUtc().microsecondsSinceEpoch}';
+
+  @override
+  bool operator ==(Object other) =>
+      other is TaskReminderIdentity &&
+      other.accountId == accountId &&
+      other.taskId == taskId &&
+      other.plannedStart.toUtc() == plannedStart.toUtc();
+
+  @override
+  int get hashCode => Object.hash(
+    accountId,
+    taskId,
+    plannedStart.toUtc().microsecondsSinceEpoch,
+  );
+}
+
 abstract interface class PlannerNotificationGateway {
   Future<void> showTimer(TimerNotificationSnapshot snapshot);
   Future<void> cancelTimer();
-  Future<void> scheduleTaskReminder(TaskReminderSnapshot snapshot);
+  Future<bool> scheduleTaskReminder(TaskReminderSnapshot snapshot);
   Future<void> showTaskReminder(TaskReminderSnapshot snapshot);
-  Future<void> cancelTaskReminder(String taskId);
+  Future<bool> cancelTaskReminder(TaskReminderIdentity identity);
 }
 
 /// Shared action boundary for foreground, Android background-isolate and Linux
@@ -170,12 +211,14 @@ class PlannerNotificationActionDispatcher {
     required this.notifications,
     required this.accountId,
     DateTime Function()? clock,
+    this.beforeAuthoritativeReminderStart,
   }) : _clock = clock ?? DateTime.now;
 
   final AppDatabase database;
   final PlannerNotificationGateway notifications;
   final String? accountId;
   final DateTime Function() _clock;
+  final Future<void> Function()? beforeAuthoritativeReminderStart;
 
   Future<bool> dispatch(
     PlannerNotificationAction action,
@@ -272,23 +315,33 @@ class PlannerNotificationActionDispatcher {
     final taskId = payload.taskId;
     final expectedStart = payload.expectedTaskStart;
     if (taskId == null || expectedStart == null) return false;
+    final reminderIdentity = TaskReminderIdentity(
+      accountId: payload.accountId,
+      taskId: taskId,
+      plannedStart: expectedStart,
+    );
     if (action == PlannerNotificationAction.dismiss) {
-      await notifications.cancelTaskReminder(taskId);
+      await notifications.cancelTaskReminder(reminderIdentity);
       return true;
     }
     if (action != PlannerNotificationAction.startNow) return false;
     final row = await database.taskDao.getTaskById(taskId);
     if (!await reminderStillApplies(database, row, expectedStart)) {
-      await notifications.cancelTaskReminder(taskId);
+      await notifications.cancelTaskReminder(reminderIdentity);
       return false;
     }
+    await beforeAuthoritativeReminderStart?.call();
     final transition = await TimerService(
       database,
       clock: _clock,
-    ).start(taskId);
+    ).startFromReminder(taskId, expectedPlannedStart: expectedStart);
     final session = transition.session;
-    await notifications.cancelTaskReminder(taskId);
-    if (session == null || session.ownerDeviceId == null) return false;
+    await notifications.cancelTaskReminder(reminderIdentity);
+    if (!transition.didChange ||
+        session == null ||
+        session.ownerDeviceId == null) {
+      return false;
+    }
     final refreshed = await database.timerDao.getSessionById(session.id);
     final task = await database.taskDao.getTaskById(taskId);
     if (refreshed == null || task == null) return false;

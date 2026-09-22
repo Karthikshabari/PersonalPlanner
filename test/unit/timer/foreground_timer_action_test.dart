@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
@@ -60,6 +61,12 @@ void main() {
         accountId: null,
         clock: () => now,
       );
+
+  Future<void> settle() async {
+    for (var i = 0; i < 8; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
 
   test('payload round-trips exact persisted timer identity', () {
     final decoded = PlannerNotificationPayload.tryDecode(
@@ -188,6 +195,139 @@ void main() {
       await coordinator.dispose();
     },
   );
+
+  test(
+    'same-clock A to B switch always presents and controls running B',
+    () async {
+      final taskB = await TaskRepository(database, clock: () => now).insertTask(
+        Task(
+          id: '22222222-2222-4222-8222-222222222222',
+          title: 'Second task',
+          startTime: now,
+          endTime: now.add(const Duration(hours: 1)),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final startedB = await TimerService(
+        database,
+        clock: () => now,
+      ).start(taskB.id);
+      final sessionA = await database.timerDao.getSessionById(
+        running.sessionId,
+      );
+      final sessionB = await database.timerDao.getSessionById(
+        startedB.session!.id,
+      );
+      expect(sessionA?.state, 'paused');
+      expect(sessionB?.state, 'running');
+      expect(sessionA?.updatedAt, sessionB?.updatedAt);
+
+      final coordinator = PlannerNotificationCoordinator(
+        database: database,
+        notifications: notifications,
+        accountId: null,
+        clock: () => now,
+      );
+      await coordinator.start();
+      await settle();
+      final selected = notifications.timerSnapshots.last;
+      expect(selected.sessionId, sessionB?.id);
+
+      expect(
+        await dispatcher().dispatch(
+          PlannerNotificationAction.pause,
+          selected.payload,
+        ),
+        isTrue,
+      );
+      expect(
+        (await database.timerDao.getSessionById(sessionB!.id))?.state,
+        'paused',
+      );
+      expect(
+        (await database.timerDao.getSessionById(sessionA!.id))?.state,
+        'paused',
+      );
+
+      final pausedB = notifications.timerSnapshots.last;
+      expect(pausedB.sessionId, sessionB.id);
+      expect(
+        await dispatcher().dispatch(
+          PlannerNotificationAction.stop,
+          pausedB.payload,
+        ),
+        isTrue,
+      );
+      expect(
+        (await database.timerDao.getSessionById(sessionB.id))?.state,
+        'finished',
+      );
+      expect(
+        (await database.timerDao.getSessionById(sessionA.id))?.state,
+        'paused',
+      );
+      await coordinator.dispose();
+    },
+  );
+
+  test(
+    'paused fallback is used only when no local running session exists',
+    () async {
+      now = now.add(const Duration(minutes: 1));
+      await TimerService(database, clock: () => now).pause();
+      final coordinator = PlannerNotificationCoordinator(
+        database: database,
+        notifications: notifications,
+        accountId: null,
+        clock: () => now,
+      );
+      await coordinator.start();
+      await settle();
+      expect(notifications.timerSnapshots.last.sessionId, running.sessionId);
+      expect(notifications.timerSnapshots.last.state, TimerSessionState.paused);
+      await coordinator.dispose();
+    },
+  );
+
+  test(
+    'foreign running session cannot displace local running session',
+    () async {
+      final taskB = await TaskRepository(database, clock: () => now).insertTask(
+        Task(
+          id: '33333333-3333-4333-8333-333333333333',
+          title: 'Foreign task',
+          startTime: now,
+          endTime: now.add(const Duration(hours: 1)),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final later = now.add(const Duration(hours: 1));
+      await database.timerDao.insertSession(
+        TimerSessionsCompanion.insert(
+          id: '44444444-4444-4444-8444-444444444444',
+          taskId: taskB.id,
+          startedAt: later,
+          state: const Value('running'),
+          runningSince: Value(later),
+          ownerDeviceId: const Value('foreign-device'),
+          createdAt: later,
+          updatedAt: later,
+        ),
+      );
+      final coordinator = PlannerNotificationCoordinator(
+        database: database,
+        notifications: notifications,
+        accountId: null,
+        clock: () => now,
+      );
+      await coordinator.start();
+      await settle();
+      expect(notifications.timerSnapshots.last.sessionId, running.sessionId);
+      await coordinator.dispose();
+    },
+  );
 }
 
 class _FakeNotifications implements PlannerNotificationGateway {
@@ -195,13 +335,14 @@ class _FakeNotifications implements PlannerNotificationGateway {
   int timerCancelCount = 0;
 
   @override
-  Future<void> cancelTaskReminder(String taskId) async {}
+  Future<bool> cancelTaskReminder(TaskReminderIdentity identity) async => true;
 
   @override
   Future<void> cancelTimer() async => timerCancelCount++;
 
   @override
-  Future<void> scheduleTaskReminder(TaskReminderSnapshot snapshot) async {}
+  Future<bool> scheduleTaskReminder(TaskReminderSnapshot snapshot) async =>
+      true;
 
   @override
   Future<void> showTaskReminder(TaskReminderSnapshot snapshot) async {}

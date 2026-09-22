@@ -1054,15 +1054,10 @@ Future<SyncEngine?> _initializeLocalServices(
     final enabled = await container.read(reviewReminderEnabledProvider.future);
     final minutes = await container.read(reviewReminderMinutesProvider.future);
     if (enabled) {
-      final armed = await notifications.scheduleDailyReminder(
+      await notifications.scheduleDailyReminder(
         hour: minutes ~/ 60,
         minute: minutes % 60,
       );
-      if (notifications.schedulingSupported && !armed) {
-        await container
-            .read(reviewReminderEnabledProvider.notifier)
-            .setEnabled(false);
-      }
     } else {
       await notifications.cancelReminder();
     }

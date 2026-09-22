@@ -1,15 +1,63 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
+import '../../sync/data/secure_session_storage.dart';
 import '../../timer/domain/notification_service.dart';
 
 const String reminderEnabledKey = 'review_reminder_enabled';
 const String reminderTimeKey = 'review_reminder_time';
+const String notificationPermissionAttemptedKey =
+    'personal_planner.notification_permission_attempted.v1';
 const int defaultReminderMinutes = 21 * 60; // 21:00 per planner.md Chunk 6 #13
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
 });
+
+final notificationPermissionAttemptStoreProvider =
+    Provider<SecureKeyValueStore>((ref) => FlutterSecureKeyValueStore());
+
+final notificationPermissionControllerProvider =
+    Provider<NotificationPermissionController>((ref) {
+      return NotificationPermissionController(
+        notifications: ref.watch(notificationServiceProvider),
+        store: ref.watch(notificationPermissionAttemptStoreProvider),
+      );
+    });
+
+/// One-time Android notification capability request, independent of every
+/// notification feature's own enabled preference.
+class NotificationPermissionController {
+  NotificationPermissionController({
+    required this.notifications,
+    required this.store,
+    bool Function()? runtimePermissionRequired,
+  }) : _runtimePermissionRequired =
+           runtimePermissionRequired ?? (() => Platform.isAndroid);
+
+  final NotificationPermissionGateway notifications;
+  final SecureKeyValueStore store;
+  final bool Function() _runtimePermissionRequired;
+  Future<bool>? _inFlight;
+
+  Future<bool> ensureForFeatureUse() {
+    return _inFlight ??= _ensure().whenComplete(() => _inFlight = null);
+  }
+
+  Future<bool> _ensure() async {
+    if (!_runtimePermissionRequired()) return true;
+    if (await notifications.notificationsEnabled()) return true;
+    if (await store.containsKey(key: notificationPermissionAttemptedKey)) {
+      return false;
+    }
+    // Persist before handing control to Android so denial, process death, or a
+    // plugin failure cannot create a prompt loop on every launch/action.
+    await store.write(key: notificationPermissionAttemptedKey, value: '1');
+    return notifications.requestPermission();
+  }
+}
 
 /// Whether the daily review reminder is enabled (default: on).
 final reviewReminderEnabledProvider =
@@ -31,13 +79,9 @@ class ReviewReminderEnabledNotifier extends AsyncNotifier<bool> {
     final previous = state.value ?? true;
     try {
       if (value && ref.read(notificationServiceProvider).schedulingSupported) {
-        final notifications = ref.read(notificationServiceProvider);
-        final granted = await notifications.requestPermission();
-        if (!granted) {
-          state = const AsyncData(false);
-          await _persist(false);
-          return;
-        }
+        await ref
+            .read(notificationPermissionControllerProvider)
+            .ensureForFeatureUse();
       }
       // Optimistic update for the UI…
       state = AsyncData(value);
@@ -47,11 +91,7 @@ class ReviewReminderEnabledNotifier extends AsyncNotifier<bool> {
       ref.invalidateSelf();
       await future;
 
-      final applied = await _apply();
-      if (value && !applied) {
-        state = const AsyncData(false);
-        await _persist(false);
-      }
+      await _apply();
     } catch (_) {
       state = AsyncData(previous);
       rethrow;
@@ -117,19 +157,12 @@ class ReviewReminderMinutesNotifier extends AsyncNotifier<int> {
 
       if (ref.read(reviewReminderEnabledProvider).value ?? true) {
         if (!ref.read(notificationServiceProvider).schedulingSupported) return;
-        final scheduled = await ref
+        await ref
             .read(notificationServiceProvider)
             .scheduleDailyReminder(
               hour: effective ~/ 60,
               minute: effective % 60,
             );
-        if (!scheduled) {
-          // Keep the stored time, but do not claim that an enabled reminder is
-          // armed when the platform denied or cannot schedule it.
-          await ref
-              .read(reviewReminderEnabledProvider.notifier)
-              .setEnabled(false);
-        }
       }
     } catch (_) {
       state = AsyncData(previous);
