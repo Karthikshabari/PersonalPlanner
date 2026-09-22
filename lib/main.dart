@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' as drift show TableUpdate;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stack_trace/stack_trace.dart';
@@ -246,8 +247,13 @@ class _AccountDatabaseTarget {
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
   if (NotificationService.isReminderWorker(arguments)) {
-    await NotificationService.runReminderWorker(arguments[1]);
-    exit(0);
+    try {
+      await NotificationService.runReminderWorker(arguments[1]);
+    } finally {
+      // A malformed or stale systemd activation must never leave a hidden
+      // Flutter process resident.
+      exit(0);
+    }
   }
   FlutterError.demangleStackTrace = _demangleStackTrace;
   ErrorWidget.builder = (_) => const ErrorPanel(
@@ -537,6 +543,15 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _runtimeAuthBootstrap?.authController.recordLifecycle(state);
     if (state == AppLifecycleState.resumed) {
+      // Android notification actions execute in a short-lived background
+      // Flutter engine with its own Drift connection. Invalidate this engine's
+      // streams so resumed UI, notification reconciliation, and sync observe
+      // the committed transition immediately.
+      _database?.notifyUpdates({
+        const drift.TableUpdate('tasks'),
+        const drift.TableUpdate('timer_sessions'),
+        const drift.TableUpdate('sync_log'),
+      });
       unawaited(_refreshPlannerTimezone());
     }
   }

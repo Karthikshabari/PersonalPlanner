@@ -237,7 +237,11 @@ class NotificationService implements PlannerNotificationGateway {
   @override
   Future<void> scheduleTaskReminder(TaskReminderSnapshot snapshot) async {
     if (Platform.isLinux) {
-      await _linuxScheduler.schedule(snapshot);
+      try {
+        await _linuxScheduler.schedule(snapshot);
+      } on Object {
+        // Scheduling is presentation-only. Planner data remains authoritative.
+      }
       return;
     }
     if (!Platform.isAndroid || !_initialized) return;
@@ -309,7 +313,13 @@ class NotificationService implements PlannerNotificationGateway {
 
   @override
   Future<void> cancelTaskReminder(String taskId) async {
-    if (Platform.isLinux) await _linuxScheduler.cancel(taskId);
+    if (Platform.isLinux) {
+      try {
+        await _linuxScheduler.cancel(taskId);
+      } on Object {
+        // A missing user systemd manager must not affect Planner data.
+      }
+    }
     await _bestEffortCancel(taskReminderId(taskId));
   }
 
@@ -411,9 +421,11 @@ Future<void> plannerNotificationTapBackground(
   }
   final database = await AppDatabase.open(accountId: payload.accountId);
   try {
+    final notifications = NotificationService();
+    await notifications.init(onSelect: (_) {});
     await PlannerNotificationActionDispatcher(
       database: database,
-      notifications: NotificationService(),
+      notifications: notifications,
       accountId: payload.accountId,
       clock: () => occurredAt,
     ).dispatch(action, payload);

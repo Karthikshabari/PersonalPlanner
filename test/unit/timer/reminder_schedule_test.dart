@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -285,6 +287,39 @@ void main() {
       },
     );
   });
+
+  test(
+    'Linux scheduler delegates the wait to one transient user timer',
+    () async {
+      final calls = <({String executable, List<String> arguments})>[];
+      final scheduler = LinuxReminderScheduler(
+        processRunner: (executable, arguments) async {
+          calls.add((executable: executable, arguments: arguments));
+          return ProcessResult(1, 0, '', '');
+        },
+      );
+      final snapshot = TaskReminderSnapshot(
+        accountId: null,
+        taskId: '11111111-1111-4111-8111-111111111111',
+        taskTitle: 'Planned task',
+        plannedStart: DateTime.now().add(const Duration(hours: 1)),
+      );
+
+      await scheduler.schedule(snapshot);
+
+      expect(calls, hasLength(3));
+      expect(calls.last.executable, 'systemd-run');
+      expect(calls.last.arguments, contains('--user'));
+      expect(calls.last.arguments, contains('--collect'));
+      expect(
+        calls.last.arguments,
+        contains('--timer-property=AccuracySec=1min'),
+      );
+      expect(calls.last.arguments, contains('--planner-reminder-worker'));
+      expect(calls.last.arguments, contains(startsWith('--on-calendar=')));
+    },
+    skip: !Platform.isLinux,
+  );
 }
 
 class _FakeNotifications implements PlannerNotificationGateway {

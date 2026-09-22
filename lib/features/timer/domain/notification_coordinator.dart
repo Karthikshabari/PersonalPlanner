@@ -84,17 +84,35 @@ class PlannerNotificationCoordinator {
         _enqueue(() => _reconcileReminders(rows));
       }),
     );
+    // Timer rows are watched separately because imported/synced data may be
+    // applied in more than one transaction. A timer session is independently
+    // sufficient evidence that the task has started, even if its task status
+    // has not arrived yet.
+    _subscriptions.add(
+      database.select(database.timerSessions).watch().listen((_) {
+        _enqueue(() async {
+          await _reconcileReminders(
+            await database.select(database.tasks).get(),
+          );
+        });
+      }),
+    );
     await _tail;
   }
 
   Future<void> _reconcileReminders(List<TaskRow> rows) async {
     final now = _clock();
+    final startedTaskIds = (await database.select(database.timerSessions).get())
+        .where((row) => row.deletedAt == null)
+        .map((row) => row.taskId)
+        .toSet();
     final wanted = <String, TaskReminderSnapshot>{};
     for (final row in rows) {
       final start = row.startTime;
       if (row.deletedAt != null ||
           row.isInbox ||
           TaskStatus.fromDb(row.status) != TaskStatus.planned ||
+          startedTaskIds.contains(row.id) ||
           start == null) {
         continue;
       }
