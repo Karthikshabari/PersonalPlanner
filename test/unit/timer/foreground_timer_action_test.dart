@@ -1,116 +1,213 @@
-import 'dart:convert';
-
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/features/timer/platform/android_foreground_timer.dart';
+import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/core/models/timer_session.dart';
+import 'package:personal_planner/features/timeline/data/task_repository.dart';
+import 'package:personal_planner/features/timer/domain/notification_coordinator.dart';
+import 'package:personal_planner/features/timer/domain/planner_notification.dart';
+import 'package:personal_planner/features/timer/domain/timer_service.dart';
+
+import '../../helpers/sqlite_setup.dart';
 
 void main() {
-  late _FakePendingActionStore store;
+  setupSqliteForTests();
 
-  setUp(() {
-    store = _FakePendingActionStore();
-    AndroidForegroundTimer.pendingActionStore = store;
-    AndroidForegroundTimer.pendingAction.value = null;
+  late AppDatabase database;
+  late _FakeNotifications notifications;
+  late DateTime now;
+  late Task task;
+  late TimerNotificationSnapshot running;
+
+  setUp(() async {
+    database = AppDatabase(NativeDatabase.memory());
+    notifications = _FakeNotifications();
+    now = DateTime.utc(2026, 9, 21, 9);
+    task = await TaskRepository(database, clock: () => now).insertTask(
+      Task(
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Notification task',
+        startTime: now,
+        endTime: now.add(const Duration(hours: 1)),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final started = await TimerService(
+      database,
+      clock: () => now,
+    ).start(task.id);
+    final row = await database.timerDao.getSessionById(started.session!.id);
+    running = TimerNotificationSnapshot(
+      accountId: null,
+      taskTitle: task.title,
+      sessionId: row!.id,
+      taskId: row.taskId,
+      ownerDeviceId: row.ownerDeviceId!,
+      state: TimerSessionState.running,
+      runningSince: row.runningSince,
+      durationSec: row.durationSec,
+      revision: row.revision,
+    );
   });
 
-  tearDown(() {
-    AndroidForegroundTimer.pendingActionStore = null;
-    AndroidForegroundTimer.pendingAction.value = null;
-  });
+  tearDown(() => database.close());
 
-  test('foreground action preserves the exact persisted timer identity', () {
-    final at = DateTime.utc(2026, 2, 1, 9, 10, 11);
-    final action = PendingForegroundTimerAction(
-      actionId: 'action-1',
-      action: AndroidForegroundTimer.pauseButtonId,
-      taskId: 'task-1',
-      sessionId: '11111111-1111-4111-8111-111111111111',
-      accountId: 'account-1',
-      ownerDeviceId: '22222222-2222-4222-8222-222222222222',
-      expectedRunningSince: at,
-      expectedDurationSec: 90,
-      expectedStateRevision: 7,
-      occurredAt: at.add(const Duration(seconds: 3)),
-    );
+  PlannerNotificationActionDispatcher dispatcher() =>
+      PlannerNotificationActionDispatcher(
+        database: database,
+        notifications: notifications,
+        accountId: null,
+        clock: () => now,
+      );
 
-    final decoded = PendingForegroundTimerAction.fromJsonString(
-      jsonEncode(action.toJson()),
+  test('payload round-trips exact persisted timer identity', () {
+    final decoded = PlannerNotificationPayload.tryDecode(
+      running.payload.encode(),
     );
-    expect(decoded?.actionId, action.actionId);
-    expect(decoded?.sessionId, action.sessionId);
-    expect(decoded?.accountId, action.accountId);
-    expect(decoded?.ownerDeviceId, action.ownerDeviceId);
-    expect(decoded?.expectedRunningSince, action.expectedRunningSince);
-    expect(decoded?.expectedDurationSec, action.expectedDurationSec);
-    expect(decoded?.expectedStateRevision, action.expectedStateRevision);
-    expect(decoded?.occurredAt, action.occurredAt);
+    expect(decoded?.sessionId, running.sessionId);
+    expect(decoded?.taskId, running.taskId);
+    expect(decoded?.ownerDeviceId, running.ownerDeviceId);
+    expect(
+      decoded?.expectedRunningSince?.millisecondsSinceEpoch,
+      running.runningSince?.millisecondsSinceEpoch,
+    );
+    expect(decoded?.expectedDurationSec, running.durationSec);
+    expect(decoded?.expectedRevision, running.revision);
   });
 
   test(
-    'malformed foreground envelopes are ignored without a database action',
-    () {
-      expect(PendingForegroundTimerAction.fromJsonString('not-json'), isNull);
+    'Pause and Resume use the persisted TimerService state machine',
+    () async {
+      now = now.add(const Duration(minutes: 7));
       expect(
-        PendingForegroundTimerAction.fromJson(const {
-          'action_id': 'missing-time',
-          'action': AndroidForegroundTimer.stopButtonId,
-        }),
-        isNull,
+        await dispatcher().dispatch(
+          PlannerNotificationAction.pause,
+          running.payload,
+        ),
+        isTrue,
+      );
+      final paused = await database.timerDao.getSessionById(running.sessionId);
+      expect(paused?.state, 'paused');
+      expect(paused?.durationSec, 7 * 60);
+      expect(
+        notifications.timerSnapshots.single.state,
+        TimerSessionState.paused,
+      );
+
+      final pausedPayload = notifications.timerSnapshots.single.payload;
+      now = now.add(const Duration(minutes: 3));
+      expect(
+        await dispatcher().dispatch(
+          PlannerNotificationAction.resume,
+          pausedPayload,
+        ),
+        isTrue,
+      );
+      final resumed = await database.timerDao.getSessionById(running.sessionId);
+      expect(resumed?.state, 'running');
+      expect(resumed?.durationSec, 7 * 60);
+      expect(
+        resumed?.runningSince?.millisecondsSinceEpoch,
+        now.millisecondsSinceEpoch,
       );
     },
   );
 
+  test('Stop computes Actual Duration exactly like in-app Stop', () async {
+    now = now.add(const Duration(minutes: 12, seconds: 40));
+    expect(
+      await dispatcher().dispatch(
+        PlannerNotificationAction.stop,
+        running.payload,
+      ),
+      isTrue,
+    );
+    final stopped = await database.timerDao.getSessionById(running.sessionId);
+    final updatedTask = await database.taskDao.getTaskById(task.id);
+    expect(stopped?.state, 'finished');
+    expect(stopped?.durationSec, 12 * 60 + 40);
+    expect(updatedTask?.actualDurationMin, 12);
+    expect(notifications.timerCancelCount, 1);
+  });
+
+  test('stale action cannot mutate a newer running segment', () async {
+    now = now.add(const Duration(minutes: 2));
+    await TimerService(
+      database,
+      clock: () => now,
+    ).pauseSession(running.sessionId);
+    now = now.add(const Duration(minutes: 1));
+    await TimerService(
+      database,
+      clock: () => now,
+    ).resumeSession(running.sessionId);
+
+    expect(
+      await dispatcher().dispatch(
+        PlannerNotificationAction.stop,
+        running.payload,
+      ),
+      isFalse,
+    );
+    final current = await database.timerDao.getSessionById(running.sessionId);
+    expect(current?.state, 'running');
+    expect(
+      current?.runningSince?.millisecondsSinceEpoch,
+      now.millisecondsSinceEpoch,
+    );
+  });
+
   test(
-    'failed action dispatch retains its injected durable envelope for retry',
+    'startup reconciliation restores and later removes one notification',
     () async {
-      final at = DateTime.utc(2026, 2, 1, 9, 10, 11);
-      final action = PendingForegroundTimerAction(
-        actionId: 'retry-action',
-        action: AndroidForegroundTimer.stopButtonId,
-        taskId: 'task-1',
-        sessionId: '11111111-1111-4111-8111-111111111111',
-        accountId: 'account-1',
-        ownerDeviceId: '22222222-2222-4222-8222-222222222222',
-        expectedRunningSince: at,
-        expectedDurationSec: 90,
-        expectedStateRevision: 7,
-        occurredAt: at,
+      final coordinator = PlannerNotificationCoordinator(
+        database: database,
+        notifications: notifications,
+        accountId: null,
+        clock: () => now,
       );
+      await coordinator.start();
+      for (var i = 0; i < 6; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(notifications.timerSnapshots, hasLength(1));
+      expect(notifications.timerSnapshots.single.sessionId, running.sessionId);
+      expect(await database.timerDao.getSessionsForTask(task.id), hasLength(1));
 
-      await AndroidForegroundTimer.persistPendingAction(action);
-      expect(
-        (await AndroidForegroundTimer.takePendingAction())?.actionId,
-        'retry-action',
-      );
-
-      // A failed dispatcher does not call acknowledge. The original envelope
-      // and original timestamp remain available to a restart retry.
-      expect(
-        (await AndroidForegroundTimer.takePendingAction())?.occurredAt,
-        at,
-      );
-      await AndroidForegroundTimer().acknowledgePendingAction('other-action');
-      expect(store.raw, isNotNull);
-
-      await AndroidForegroundTimer().acknowledgePendingAction(action.actionId);
-      expect(store.raw, isNull);
-      expect(await AndroidForegroundTimer.takePendingAction(), isNull);
+      now = now.add(const Duration(minutes: 1));
+      await TimerService(
+        database,
+        clock: () => now,
+      ).stopSession(running.sessionId);
+      for (var i = 0; i < 6; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(notifications.timerCancelCount, greaterThanOrEqualTo(1));
+      expect(await database.timerDao.getSessionsForTask(task.id), hasLength(1));
+      await coordinator.dispose();
     },
   );
 }
 
-class _FakePendingActionStore implements PendingForegroundTimerActionStore {
-  String? raw;
+class _FakeNotifications implements PlannerNotificationGateway {
+  final List<TimerNotificationSnapshot> timerSnapshots = [];
+  int timerCancelCount = 0;
 
   @override
-  Future<void> remove() async {
-    raw = null;
-  }
+  Future<void> cancelTaskReminder(String taskId) async {}
 
   @override
-  Future<String?> read() async => raw;
+  Future<void> cancelTimer() async => timerCancelCount++;
 
   @override
-  Future<void> write(String value) async {
-    raw = value;
+  Future<void> scheduleTaskReminder(TaskReminderSnapshot snapshot) async {}
+
+  @override
+  Future<void> showTaskReminder(TaskReminderSnapshot snapshot) async {}
+
+  @override
+  Future<void> showTimer(TimerNotificationSnapshot snapshot) async {
+    timerSnapshots.add(snapshot);
   }
 }

@@ -15,7 +15,6 @@ import 'package:personal_planner/features/sync/domain/runtime_backend.dart';
 import 'package:personal_planner/features/sync/domain/sync_engine.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_providers.dart';
-import 'package:personal_planner/features/timer/platform/android_foreground_timer.dart';
 import 'package:personal_planner/main.dart';
 
 import '../helpers/runtime_auth_fakes.dart';
@@ -34,7 +33,6 @@ void main() {
 
   tearDown(() async {
     await resetRuntimeAuthBootstrapForTesting();
-    AndroidForegroundTimer.setAccountScope(null);
   });
 
   testWidgets(
@@ -48,7 +46,6 @@ void main() {
       expect(harness.openedAccountIds, [null]);
       final anonymousContainer = harness.activeContainer(tester);
       expect(anonymousContainer.read(openAccountScopeProvider), isNull);
-      expect(AndroidForegroundTimer.accountScope, isNull);
 
       // Cloud setup finished: the app adopts the stored READY profile, whose
       // scoped session restores an authenticated user.
@@ -69,7 +66,6 @@ void main() {
       // The anonymous container is no longer the active account container.
       expect(identical(accountContainer, anonymousContainer), isFalse);
       // Timer/background identity follows the same canonical account scope.
-      expect(AndroidForegroundTimer.accountScope, accountId);
       // Local services were initialized for the account database only, after it
       // became the requested target.
       expect(harness.initializedScopes, [null, accountId]);
@@ -117,7 +113,6 @@ void main() {
         ),
         isFalse,
       );
-      expect(AndroidForegroundTimer.accountScope, accountB);
 
       await harness.finish(tester);
     },
@@ -171,7 +166,6 @@ void main() {
 
     final container = harness.activeContainer(tester);
     expect(container.read(openAccountScopeProvider)?.storageId, accountB);
-    expect(AndroidForegroundTimer.accountScope, accountB);
 
     await harness.finish(tester);
   });
@@ -216,7 +210,6 @@ void main() {
             ?.storageId,
         secondUser,
       );
-      expect(AndroidForegroundTimer.accountScope, secondUser);
 
       // Signing out of the current project returns to the local scope.
       await projectB.client.signOut();
@@ -232,7 +225,6 @@ void main() {
         harness.activeContainer(tester).read(openAccountScopeProvider),
         isNull,
       );
-      expect(AndroidForegroundTimer.accountScope, isNull);
 
       await harness.finish(tester);
     },
@@ -291,7 +283,6 @@ void main() {
         container.read(openAccountScopeProvider)?.storageId,
         supersedingTarget,
       );
-      expect(AndroidForegroundTimer.accountScope, supersedingTarget);
 
       await harness.finish(tester);
     },

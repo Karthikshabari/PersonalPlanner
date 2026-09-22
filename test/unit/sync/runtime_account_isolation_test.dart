@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
@@ -9,7 +7,7 @@ import 'package:personal_planner/features/categories/data/category_repository.da
 import 'package:personal_planner/features/sync/data/sync_repository.dart';
 import 'package:personal_planner/features/sync/domain/runtime_auth_namespaces.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
-import 'package:personal_planner/features/timer/platform/android_foreground_timer.dart';
+import 'package:personal_planner/features/timer/domain/planner_notification.dart';
 
 import '../../helpers/runtime_auth_fakes.dart';
 import '../../helpers/sqlite_setup.dart';
@@ -238,30 +236,18 @@ void main() {
     },
   );
 
-  test('the background timer envelope carries the project-aware scope', () {
-    final envelope = PendingForegroundTimerAction(
-      actionId: 'action-1',
-      action: AndroidForegroundTimer.pauseButtonId,
+  test('the notification action payload carries project-aware scope', () {
+    final envelope = PlannerNotificationPayload(
+      kind: PlannerNotificationKind.timer,
       taskId: 'task-1',
       sessionId: 'session-1',
       accountId: projectAUserX.storageId,
-      occurredAt: DateTime.utc(2026, 9, 16, 12),
     );
 
-    final restored = PendingForegroundTimerAction.fromJsonString(
-      jsonEncode(envelope.toJson()),
-    )!;
+    final restored = PlannerNotificationPayload.tryDecode(envelope.encode())!;
 
     expect(restored.accountId, projectAUserX.storageId);
-    // The same comparison main.dart performs before acting on an envelope.
     expect(restored.accountId == projectBUserX.storageId, isFalse);
-    expect(restored.accountId == AndroidForegroundTimer.accountScope, isFalse);
-
-    AndroidForegroundTimer.setAccountScope(projectAUserX.storageId);
-    expect(restored.accountId == AndroidForegroundTimer.accountScope, isTrue);
-    AndroidForegroundTimer.setAccountScope(projectBUserX.storageId);
-    expect(restored.accountId == AndroidForegroundTimer.accountScope, isFalse);
-    AndroidForegroundTimer.setAccountScope(null);
   });
 }
 

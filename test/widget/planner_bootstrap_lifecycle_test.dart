@@ -20,7 +20,6 @@ import 'package:personal_planner/features/sync/domain/sync_engine.dart';
 import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_providers.dart';
 import 'package:personal_planner/features/sync/providers/sync_settings_provider.dart';
-import 'package:personal_planner/features/timer/platform/android_foreground_timer.dart';
 import 'package:personal_planner/main.dart';
 
 import '../helpers/initial_sync_fakes.dart';
@@ -39,7 +38,6 @@ void main() {
 
   tearDown(() async {
     await resetRuntimeAuthBootstrapForTesting();
-    AndroidForegroundTimer.setAccountScope(null);
   });
 
   testWidgets('sign out returns to local use and keeps the account database', (
@@ -88,7 +86,6 @@ void main() {
       isFalse,
     );
     expect(harness.secureStore.values[foreignKey], 'project-b-session');
-    expect(AndroidForegroundTimer.accountScope, isNull);
 
     await harness.finish(tester);
   });
@@ -213,7 +210,6 @@ void main() {
       expect(harness.openedAccountIds, [accountA, accountB]);
       expect(harness.shutdownAccountIds, contains(accountA));
       expect(harness.activeScopeOrNull(tester), accountB);
-      expect(AndroidForegroundTimer.accountScope, accountB);
 
       // A stale event from the replaced project A client cannot move the
       // active scope, open another database, or reach any remote boundary.
@@ -293,7 +289,6 @@ void main() {
       // Preserved local state and scope bookkeeping.
       expect(harness.databaseFor(accountA), same(databaseA));
       expect(await databaseA.syncDao.pendingCount(), 1);
-      expect(AndroidForegroundTimer.accountScope, isNull);
       expect(harness.openedAccountIds, [accountA, null]);
 
       // The disconnected project cannot be resumed by an ordinary sign-in: the

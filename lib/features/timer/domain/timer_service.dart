@@ -155,6 +155,8 @@ class TimerService {
     String? expectedOwnerDeviceId,
     DateTime? occurredAt,
     DateTime? expectedRunningSince,
+    int? expectedDurationSec,
+    int? expectedRevision,
   }) => _serialize(() async {
     final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
     return _db.transaction(() async {
@@ -168,6 +170,15 @@ class TimerService {
       }
       if (expectedRunningSince != null &&
           row.runningSince != expectedRunningSince) {
+        return TimerTransitionResult(
+          session: TimerRepository.fromRow(row),
+          didChange: false,
+          didFinish: false,
+        );
+      }
+      if ((expectedDurationSec != null &&
+              row.durationSec != expectedDurationSec) ||
+          (expectedRevision != null && row.revision != expectedRevision)) {
         return TimerTransitionResult(
           session: TimerRepository.fromRow(row),
           didChange: false,
@@ -239,23 +250,34 @@ class TimerService {
     });
   });
 
-  Future<TimerTransitionResult> resumeSession(String sessionId) =>
-      _serialize(() async {
-        final owner = await _repository.localDeviceId();
-        return _db.transaction(() async {
-          final row = await _db.timerDao.getSessionById(sessionId);
-          if (row == null ||
-              row.deletedAt != null ||
-              row.ownerDeviceId != owner) {
-            return const TimerTransitionResult(
-              session: null,
-              didChange: false,
-              didFinish: false,
-            );
-          }
-          return _resumeInTransaction(row, owner, _now());
-        });
-      });
+  Future<TimerTransitionResult> resumeSession(
+    String sessionId, {
+    String? expectedOwnerDeviceId,
+    int? expectedDurationSec,
+    int? expectedRevision,
+  }) => _serialize(() async {
+    final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
+    return _db.transaction(() async {
+      final row = await _db.timerDao.getSessionById(sessionId);
+      if (row == null || row.deletedAt != null || row.ownerDeviceId != owner) {
+        return const TimerTransitionResult(
+          session: null,
+          didChange: false,
+          didFinish: false,
+        );
+      }
+      if ((expectedDurationSec != null &&
+              row.durationSec != expectedDurationSec) ||
+          (expectedRevision != null && row.revision != expectedRevision)) {
+        return TimerTransitionResult(
+          session: TimerRepository.fromRow(row),
+          didChange: false,
+          didFinish: false,
+        );
+      }
+      return _resumeInTransaction(row, owner, _now());
+    });
+  });
 
   /// Explicitly adopts an ownerless imported/legacy session without changing
   /// its stable identity or its measured intervals. Foreign-owned sessions
@@ -402,6 +424,8 @@ class TimerService {
     String? expectedOwnerDeviceId,
     DateTime? occurredAt,
     DateTime? expectedRunningSince,
+    int? expectedDurationSec,
+    int? expectedRevision,
   }) => _serialize(() async {
     final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
     return _db.transaction(() async {
@@ -415,6 +439,15 @@ class TimerService {
       }
       if (expectedRunningSince != null &&
           row.runningSince != expectedRunningSince) {
+        return TimerTransitionResult(
+          session: TimerRepository.fromRow(row),
+          didChange: false,
+          didFinish: false,
+        );
+      }
+      if ((expectedDurationSec != null &&
+              row.durationSec != expectedDurationSec) ||
+          (expectedRevision != null && row.revision != expectedRevision)) {
         return TimerTransitionResult(
           session: TimerRepository.fromRow(row),
           didChange: false,

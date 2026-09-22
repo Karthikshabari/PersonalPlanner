@@ -5,7 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
 import '../../../core/models/timer_session.dart';
+import '../../settings/providers/notification_settings_providers.dart';
+import '../../sync/providers/sync_providers.dart';
 import '../data/timer_repository.dart';
+import '../domain/notification_coordinator.dart';
 import '../domain/timer_service.dart';
 
 final timerRepositoryProvider = Provider<TimerRepository>((ref) {
@@ -15,6 +18,15 @@ final timerRepositoryProvider = Provider<TimerRepository>((ref) {
 final timerServiceProvider = Provider<TimerService>((ref) {
   return TimerService(ref.watch(appDatabaseProvider));
 });
+
+final plannerNotificationCoordinatorProvider =
+    Provider<PlannerNotificationCoordinator>((ref) {
+      return PlannerNotificationCoordinator(
+        database: ref.watch(appDatabaseProvider),
+        notifications: ref.watch(notificationServiceProvider),
+        accountId: ref.watch(openAccountScopeProvider)?.storageId,
+      );
+    });
 
 /// UI-only in-flight feedback. The persisted TimerService independently
 /// serializes transitions, so this is not a second timer state source.

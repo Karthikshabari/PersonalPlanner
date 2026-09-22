@@ -13,8 +13,6 @@ import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
 import '../../../recurring/providers/recurring_providers.dart';
-import '../../../timer/providers/timer_providers.dart';
-import '../../../timer/platform/android_foreground_timer.dart';
 import '../../../inbox/domain/inbox_commands.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../data/task_repository.dart';
@@ -118,13 +116,11 @@ abstract final class TimelineActions {
     WidgetRef ref,
     InboxItem item,
     DateTime start,
-    DateTime end,
-    {
+    DateTime end, {
     String? title,
     String? description,
     bool replaceDescription = false,
-  }
-  ) async {
+  }) async {
     final repository = ref.read(inboxRepositoryProvider);
     final current = await repository.database.taskDao.getTaskById(item.task.id);
     if (current != null && !current.isInbox) {
@@ -298,9 +294,6 @@ abstract final class TimelineActions {
     // provider graph.
     final viewedDate = ref.read(selectedDateProvider);
     final repository = ref.read(taskRepositoryProvider);
-    final activeBefore = ref.read(activeTimerProvider).value;
-    final wasTiming = activeBefore?.session.taskId == task.id;
-    final deletedSessionId = wasTiming ? activeBefore?.session.id : null;
 
     final confirmed = await showConfirmDialog(
       context,
@@ -362,14 +355,6 @@ abstract final class TimelineActions {
     } else {
       final command = DeleteTaskCommand(repository: repository, original: task);
       await ref.read(undoStackProvider.notifier).execute(command);
-    }
-
-    // Task deletion finalizes its own active session inside the same database
-    // transaction. Stop the native service only when that service still
-    // represents the deleted session; a timer started for another task while
-    // the confirmation dialog was open must remain untouched.
-    if (wasTiming) {
-      await AndroidForegroundTimer().clearSession(deletedSessionId!);
     }
   }
 
@@ -486,6 +471,7 @@ abstract final class TimelineActions {
       );
       needsPreflight = false;
     }
+
     final conflicts = SchedulingConflictService.conflicts(hypothetical, tasks);
     final history = ref.read(undoStackProvider.notifier);
     ref.read(keepOverlapIdsProvider.notifier).state = const <String>{};

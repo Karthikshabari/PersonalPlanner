@@ -7,7 +7,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../providers/timer_providers.dart';
-import '../../platform/android_foreground_timer.dart';
 import '../timer_actions.dart';
 
 /// Start / Pause / Stop controls embedded in the task editor — used by the
@@ -47,142 +46,116 @@ class TimerControls extends ConsumerWidget {
         ? ref.watch(timerSessionElapsedProvider(session))
         : const AsyncValue<int>.data(0);
 
-    return ValueListenableBuilder<PendingForegroundTimerAction?>(
-      valueListenable: AndroidForegroundTimer.pendingAction,
-      builder: (context, pending, _) {
-        final pendingForSession =
-            session != null && pending?.sessionId == session.id;
-        final displayedElapsed =
-            pendingForSession && session.state == TimerSessionState.running
-            ? elapsedSecondsForSession(session, pending!.occurredAt)
-            : elapsedAsync.value ?? 0;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Timer', style: Theme.of(context).textTheme.titleSmall),
-            if (pendingForSession)
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.xs),
-                child: Text(
-                  'Timer action pending; it will retry with the original time.',
-                  style: Theme.of(context).textTheme.bodySmall,
+    final displayedElapsed = elapsedAsync.value ?? 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Timer', style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: AppSpacing.sm),
+        if (isHere) ...[
+          if (elapsedAsync.hasError)
+            ErrorPanel(
+              message: friendlyErrorMessage(elapsedAsync.error!),
+              onRetry: () =>
+                  ref.invalidate(activeTimerElapsedProvider(task.id)),
+              compact: true,
+            )
+          else if (!elapsedAsync.hasValue)
+            const Center(child: CircularProgressIndicator())
+          else
+            Row(
+              children: [
+                Icon(Icons.timer_outlined, size: 14, color: tokens.pending),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  key: const ValueKey('editor-timer-elapsed'),
+                  formatTimerClock(displayedElapsed),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: tokens.pending,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
-              ),
-            if (!AndroidForegroundTimer.supported)
-              Text(
-                'Foreground timer notifications are unavailable on this platform.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            const SizedBox(height: AppSpacing.sm),
-            if (isHere) ...[
-              if (elapsedAsync.hasError)
-                ErrorPanel(
-                  message: friendlyErrorMessage(elapsedAsync.error!),
-                  onRetry: () =>
-                      ref.invalidate(activeTimerElapsedProvider(task.id)),
-                  compact: true,
-                )
-              else if (!elapsedAsync.hasValue)
-                const Center(child: CircularProgressIndicator())
-              else
-                Row(
-                  children: [
-                    Icon(Icons.timer_outlined, size: 14, color: tokens.pending),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      key: const ValueKey('editor-timer-elapsed'),
-                      formatTimerClock(displayedElapsed),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: tokens.pending,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
+              ],
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          _buildTimerActions(context, ref, session, busy),
+        ] else if (recoverable != null) ...[
+          Text(
+            'This imported timer is paused until you recover it on this device.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton.icon(
+            key: const ValueKey('timer-recover-button'),
+            icon: const Icon(Icons.settings_backup_restore_outlined, size: 16),
+            label: const Text('Recover timer'),
+            onPressed: busy
+                ? null
+                : () => _runTimerAction(
+                    context,
+                    ref,
+                    busyScope,
+                    () => TimerActions.recover(
+                      context,
+                      ref,
+                      task,
+                      recoverable.id,
                     ),
-                  ],
+                  ),
+          ),
+        ] else if (foreign != null) ...[
+          Text(
+            foreign.state == TimerSessionState.running
+                ? 'Timer running on another device.'
+                : 'Timer paused on another device.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ] else ...[
+          if (active != null)
+            Row(
+              children: [
+                Icon(
+                  Icons.timer_off_outlined,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-              const SizedBox(height: AppSpacing.sm),
-              _buildTimerActions(context, ref, session, busy),
-            ] else if (recoverable != null) ...[
-              Text(
-                'This imported timer is paused until you recover it on this device.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              OutlinedButton.icon(
-                key: const ValueKey('timer-recover-button'),
-                icon: const Icon(
-                  Icons.settings_backup_restore_outlined,
-                  size: 16,
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    'Running on "${active.taskTitle}"',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-                label: const Text('Recover timer'),
-                onPressed: busy
-                    ? null
-                    : () => _runTimerAction(
-                        context,
-                        ref,
-                        busyScope,
-                        () => TimerActions.recover(
-                          context,
-                          ref,
-                          task,
-                          recoverable.id,
-                        ),
-                      ),
-              ),
-            ] else if (foreign != null) ...[
-              Text(
-                foreign.state == TimerSessionState.running
-                    ? 'Timer running on another device.'
-                    : 'Timer paused on another device.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ] else ...[
-              if (active != null)
-                Row(
-                  children: [
-                    Icon(
-                      Icons.timer_off_outlined,
-                      size: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    Expanded(
-                      child: Text(
-                        'Running on "${active.taskTitle}"',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                  ],
-                ),
-              FilledButton.icon(
-                key: const ValueKey('timer-start-button'),
-                icon: const Icon(Icons.play_arrow, size: 16),
-                label: Text(active == null ? 'Start timer' : 'Switch timer'),
-                onPressed: busy
-                    ? null
-                    : () => _runTimerAction(
-                        context,
-                        ref,
-                        busyScope,
-                        () => TimerActions.start(context, ref, task),
-                      ),
-              ),
-            ],
-            if (task.actualDurationMin != null && !isHere)
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.xs),
-                child: Text(
-                  'Tracked so far: ${task.actualDurationMin} min',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-          ],
-        );
-      },
+                const SizedBox(width: AppSpacing.sm),
+              ],
+            ),
+          FilledButton.icon(
+            key: const ValueKey('timer-start-button'),
+            icon: const Icon(Icons.play_arrow, size: 16),
+            label: Text(active == null ? 'Start timer' : 'Switch timer'),
+            onPressed: busy
+                ? null
+                : () => _runTimerAction(
+                    context,
+                    ref,
+                    busyScope,
+                    () => TimerActions.start(context, ref, task),
+                  ),
+          ),
+        ],
+        if (task.actualDurationMin != null && !isHere)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Text(
+              'Tracked so far: ${task.actualDurationMin} min',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
     );
   }
 }

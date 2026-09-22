@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,8 +32,7 @@ import 'features/sync/providers/runtime_backend_providers.dart';
 import 'features/sync/providers/deep_link_providers.dart';
 import 'features/sync/providers/sync_providers.dart';
 import 'features/timer/domain/notification_service.dart';
-import 'features/timer/domain/timer_service.dart';
-import 'features/timer/platform/android_foreground_timer.dart';
+import 'features/timer/domain/planner_notification.dart';
 import 'features/timer/providers/timer_providers.dart';
 import 'platform/desktop/window_manager.dart';
 
@@ -245,6 +245,10 @@ class _AccountDatabaseTarget {
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (NotificationService.isReminderWorker(arguments)) {
+    await NotificationService.runReminderWorker(arguments[1]);
+    exit(0);
+  }
   FlutterError.demangleStackTrace = _demangleStackTrace;
   ErrorWidget.builder = (_) => const ErrorPanel(
     message: 'This screen could not be displayed. Please retry.',
@@ -789,7 +793,6 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
         await _closeDatabase(database);
         return true;
       }
-      AndroidForegroundTimer.setAccountScope(target.accountId);
       final openedDatabase = database;
       container = ProviderContainer(
         overrides: [
@@ -1025,6 +1028,13 @@ Future<SyncEngine?> _initializeLocalServices(
       onSelect: (payload) {
         appRouter.go(payload ?? NotificationService.reviewRoute);
       },
+      onPlannerAction: (action, payload, occurredAt) =>
+          PlannerNotificationActionDispatcher(
+            database: container.read(appDatabaseProvider),
+            notifications: notifications,
+            accountId: container.read(openAccountScopeProvider)?.storageId,
+            clock: () => occurredAt,
+          ).dispatch(action, payload),
     );
     final enabled = await container.read(reviewReminderEnabledProvider.future);
     final minutes = await container.read(reviewReminderMinutesProvider.future);
@@ -1041,115 +1051,7 @@ Future<SyncEngine?> _initializeLocalServices(
     } else {
       await notifications.cancelReminder();
     }
-  } catch (err, stack) {
-    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
-  }
-  try {
-    await AndroidForegroundTimer().init();
-    Future<void> handleTimerAction(PendingForegroundTimerAction pending) async {
-      final database = container.read(appDatabaseProvider);
-      final owner = await container
-          .read(timerRepositoryProvider)
-          .localDeviceId();
-      final active = pending.sessionId == null
-          ? null
-          : await database.timerDao.getSessionById(pending.sessionId!);
-      if (pending.accountId != AndroidForegroundTimer.accountScope ||
-          active == null ||
-          active.id != pending.sessionId ||
-          active.taskId != pending.taskId ||
-          active.ownerDeviceId != owner ||
-          active.ownerDeviceId != pending.ownerDeviceId ||
-          active.state != 'running' ||
-          active.runningSince != pending.expectedRunningSince ||
-          active.durationSec != pending.expectedDurationSec ||
-          active.revision != pending.expectedStateRevision) {
-        // The envelope is stale (account switch, resumed segment, or another
-        // notification). Acknowledge it only: clearing by session here could
-        // stop a newer segment that intentionally reuses the logical ID.
-        await AndroidForegroundTimer().acknowledgePendingAction(
-          pending.actionId,
-        );
-        return;
-      }
-      final service = container.read(timerServiceProvider);
-      TimerTransitionResult result;
-      if (pending.action == AndroidForegroundTimer.pauseButtonId) {
-        result = await service.pauseSession(
-          active.id,
-          expectedOwnerDeviceId: owner,
-          occurredAt: pending.occurredAt,
-          expectedRunningSince: pending.expectedRunningSince,
-        );
-      } else if (pending.action == AndroidForegroundTimer.stopButtonId) {
-        result = await service.stopSession(
-          active.id,
-          expectedOwnerDeviceId: owner,
-          occurredAt: pending.occurredAt,
-          expectedRunningSince: pending.expectedRunningSince,
-        );
-      } else {
-        await AndroidForegroundTimer().acknowledgePendingAction(
-          pending.actionId,
-        );
-        return;
-      }
-      await AndroidForegroundTimer().acknowledgePendingAction(pending.actionId);
-      if (result.session != null) {
-        await AndroidForegroundTimer().clearSession(result.session!.id);
-      }
-    }
-
-    AndroidForegroundTimer.onButtonAction = (pending) async {
-      try {
-        await handleTimerAction(pending);
-      } catch (error, stack) {
-        // Leave the durable envelope intact. A later app start retries the
-        // exact action timestamp instead of pretending the transition won.
-        FlutterError.reportError(
-          FlutterErrorDetails(exception: error, stack: stack),
-        );
-      }
-    };
-    final pendingAction = await AndroidForegroundTimer.takePendingAction();
-    if (pendingAction != null) {
-      try {
-        await handleTimerAction(pendingAction);
-      } catch (error, stack) {
-        FlutterError.reportError(
-          FlutterErrorDetails(exception: error, stack: stack),
-        );
-      }
-    }
-    // A stale envelope may have been safely acknowledged above. Read the
-    // durable store again before deciding whether a newer persisted segment
-    // needs its notification restored.
-    final stillPending = await AndroidForegroundTimer.takePendingAction();
-    if (stillPending == null) {
-      final repository = container.read(timerRepositoryProvider);
-      final owner = await repository.localDeviceId();
-      final running = await container
-          .read(appDatabaseProvider)
-          .timerDao
-          .getRunningForOwner(owner);
-      if (running != null && running.runningSince != null) {
-        final task = await container
-            .read(appDatabaseProvider)
-            .taskDao
-            .getTaskById(running.taskId);
-        if (task != null && task.deletedAt == null) {
-          await AndroidForegroundTimer().start(
-            taskTitle: task.title,
-            taskId: running.taskId,
-            sessionId: running.id,
-            ownerDeviceId: owner,
-            runningSince: running.runningSince!,
-            durationSec: running.durationSec,
-            stateRevision: running.revision,
-          );
-        }
-      }
-    }
+    await container.read(plannerNotificationCoordinatorProvider).start();
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
@@ -1186,7 +1088,9 @@ Future<void> _shutdownLocalServices(
   bool persistWindow = true,
 }) async {
   try {
-    await AndroidForegroundTimer.detachButtonHandler();
+    await container
+        .read(plannerNotificationCoordinatorProvider)
+        .dispose(cancelScheduled: persistWindow);
   } catch (err, stack) {
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
@@ -1199,11 +1103,8 @@ Future<void> _shutdownLocalServices(
   // durable running segment intact so reopening can derive elapsed wall time
   // from runningSince. Account switches still pause the old account's timer.
   if (persistWindow) {
-    TimerTransitionResult paused;
     try {
-      paused = await container
-          .read(timerServiceProvider)
-          .pauseAt(DateTime.now());
+      await container.read(timerServiceProvider).pauseAt(DateTime.now());
     } catch (err, stack) {
       // Do not close this account database after a failed persisted transition:
       // doing so would silently lose the user's recorded running segment.
@@ -1212,22 +1113,15 @@ Future<void> _shutdownLocalServices(
       );
       rethrow;
     }
+  }
+  if (persistWindow) {
     try {
-      if (paused.session != null) {
-        await AndroidForegroundTimer().clearSession(paused.session!.id);
-      } else {
-        await AndroidForegroundTimer().stopService();
-      }
+      await container.read(notificationServiceProvider).cancelReminder();
     } catch (err, stack) {
       FlutterError.reportError(
         FlutterErrorDetails(exception: err, stack: stack),
       );
     }
-  }
-  try {
-    await container.read(notificationServiceProvider).cancelReminder();
-  } catch (err, stack) {
-    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
   try {
     if (persistWindow) {

@@ -10,12 +10,14 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  bool reminder_worker;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  if (self->reminder_worker) return;
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
@@ -160,7 +162,7 @@ static void my_application_class_init(MyApplicationClass* klass) {
 
 static void my_application_init(MyApplication* self) {}
 
-MyApplication* my_application_new() {
+MyApplication* my_application_new(bool reminder_worker) {
   // Set the program name to the application ID, which helps various systems
   // like GTK and desktop environments map this running application to its
   // corresponding .desktop file. This ensures better integration by allowing
@@ -172,9 +174,14 @@ MyApplication* my_application_new() {
   // `command-line`/`open` signal is ever emitted, so a URI could never reach
   // the app. NON_UNIQUE would also start a second process instead of
   // activating the running one.
-  return MY_APPLICATION(g_object_new(my_application_get_type(),
-                                     "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_HANDLES_COMMAND_LINE |
-                                         G_APPLICATION_HANDLES_OPEN,
-                                     nullptr));
+  GApplicationFlags flags = reminder_worker
+                                ? G_APPLICATION_NON_UNIQUE
+                                : static_cast<GApplicationFlags>(
+                                      G_APPLICATION_HANDLES_COMMAND_LINE |
+                                      G_APPLICATION_HANDLES_OPEN);
+  MyApplication* application = MY_APPLICATION(
+      g_object_new(my_application_get_type(), "application-id", APPLICATION_ID,
+                   "flags", flags, nullptr));
+  application->reminder_worker = reminder_worker;
+  return application;
 }

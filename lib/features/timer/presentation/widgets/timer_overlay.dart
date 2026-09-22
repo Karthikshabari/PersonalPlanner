@@ -7,7 +7,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/models/timer_session.dart';
-import '../../platform/android_foreground_timer.dart';
 import '../../providers/timer_providers.dart';
 import '../timer_actions.dart';
 
@@ -65,114 +64,104 @@ class TimerOverlay extends ConsumerWidget {
     final elapsedSeconds = elapsedAsync.hasValue
         ? elapsedAsync.requireValue
         : 0;
-    return ValueListenableBuilder<PendingForegroundTimerAction?>(
-      valueListenable: AndroidForegroundTimer.pendingAction,
-      builder: (context, pending, _) {
-        final pendingForSession =
-            displayed.session.state == TimerSessionState.running &&
-            pending?.sessionId == displayed.session.id;
-        final displayedSeconds = pendingForSession
-            ? elapsedSecondsForSession(displayed.session, pending!.occurredAt)
-            : elapsedSeconds;
-        final elapsed = formatTimerClock(displayedSeconds);
-        return _bounded(
-          context,
-          Card(
-            key: const ValueKey('timer-overlay'),
-            elevation: 6,
-            color: tokens.surfaceRaised,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(tokens.radiusMedium),
-              side: BorderSide(color: tokens.outlineStrong),
-            ),
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final textScaler = MediaQuery.textScalerOf(context);
-                  final titlePainter = TextPainter(
-                    text: TextSpan(
-                      text: displayed.taskTitle,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    textDirection: TextDirection.ltr,
-                    textScaler: textScaler,
-                  )..layout();
-                  final oneRowWidth =
-                      16 +
-                      AppSpacing.sm +
-                      math.min(titlePainter.width, 180) +
-                      AppSpacing.sm +
-                      76 +
-                      AppSpacing.sm +
-                      96;
-                  final wrap = constraints.maxWidth < oneRowWidth;
-                  final title = Flexible(
-                    child: Text(
-                      displayed.taskTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  );
-                  final clock = _clock(
-                    context,
-                    ref,
-                    elapsedAsync,
-                    elapsed,
-                    elapsedSeconds,
-                  );
-                  final actions = _actions(context, ref, displayed.session);
-                  final titleRow = Row(
-                    children: [
-                      AnimatedScale(
-                        scale: displayedSeconds.isEven ? 1.05 : 1,
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeInOut,
-                        child: Icon(
-                          Icons.timer_outlined,
-                          size: 16,
-                          color: tokens.pending,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      title,
-                    ],
-                  );
-                  if (wrap) {
-                    return Column(
-                      key: const ValueKey('timer-overlay-wrapped'),
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        titleRow,
-                        const SizedBox(height: AppSpacing.xs),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [clock, actions],
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
-                    key: const ValueKey('timer-overlay-row'),
-                    children: [
-                      Expanded(child: titleRow),
-                      const SizedBox(width: AppSpacing.sm),
-                      clock,
-                      actions,
-                    ],
-                  );
-                },
-              ),
-            ),
+    final displayedSeconds = elapsedSeconds;
+    final elapsed = formatTimerClock(displayedSeconds);
+    return _bounded(
+      context,
+      Card(
+        key: const ValueKey('timer-overlay'),
+        elevation: 6,
+        color: tokens.surfaceRaised,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusMedium),
+          side: BorderSide(color: tokens.outlineStrong),
+        ),
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
           ),
-        );
-      },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final textScaler = MediaQuery.textScalerOf(context);
+              final titlePainter = TextPainter(
+                text: TextSpan(
+                  text: displayed.taskTitle,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                textDirection: TextDirection.ltr,
+                textScaler: textScaler,
+              )..layout();
+              final oneRowWidth =
+                  16 +
+                  AppSpacing.sm +
+                  math.min(titlePainter.width, 180) +
+                  AppSpacing.sm +
+                  76 +
+                  AppSpacing.sm +
+                  96;
+              final wrap = constraints.maxWidth < oneRowWidth;
+              final title = Flexible(
+                child: Text(
+                  displayed.taskTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              );
+              final clock = _clock(
+                context,
+                ref,
+                elapsedAsync,
+                elapsed,
+                elapsedSeconds,
+              );
+              final actions = _actions(context, ref, displayed.session);
+              final titleRow = Row(
+                children: [
+                  AnimatedScale(
+                    scale: displayedSeconds.isEven ? 1.05 : 1,
+                    duration: const Duration(milliseconds: 320),
+                    curve: Curves.easeInOut,
+                    child: Icon(
+                      Icons.timer_outlined,
+                      size: 16,
+                      color: tokens.pending,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  title,
+                ],
+              );
+              if (wrap) {
+                return Column(
+                  key: const ValueKey('timer-overlay-wrapped'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    titleRow,
+                    const SizedBox(height: AppSpacing.xs),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [clock, actions],
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                key: const ValueKey('timer-overlay-row'),
+                children: [
+                  Expanded(child: titleRow),
+                  const SizedBox(width: AppSpacing.sm),
+                  clock,
+                  actions,
+                ],
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 
