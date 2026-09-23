@@ -45,6 +45,12 @@ class PlannerNotificationPayload {
     'session_id': sessionId,
     'owner_device_id': ownerDeviceId,
     'expected_state': expectedState?.dbValue,
+    'expected_running_since_utc_micros': expectedRunningSince
+        ?.toUtc()
+        .microsecondsSinceEpoch,
+    // Retained for payload compatibility. New readers prefer the exact
+    // microsecond field above; old readers can still reject safely if the
+    // running instant had sub-millisecond precision.
     'expected_running_since': expectedRunningSince
         ?.toUtc()
         .millisecondsSinceEpoch,
@@ -77,6 +83,13 @@ class PlannerNotificationPayload {
             : null;
       }
 
+      DateTime? microsecondInstant(String key) {
+        final raw = json[key];
+        return raw is int
+            ? DateTime.fromMicrosecondsSinceEpoch(raw, isUtc: true)
+            : null;
+      }
+
       return PlannerNotificationPayload(
         kind: kind,
         accountId: json['account_id'] as String?,
@@ -84,7 +97,9 @@ class PlannerNotificationPayload {
         sessionId: json['session_id'] as String?,
         ownerDeviceId: json['owner_device_id'] as String?,
         expectedState: state,
-        expectedRunningSince: instant('expected_running_since'),
+        expectedRunningSince:
+            microsecondInstant('expected_running_since_utc_micros') ??
+            instant('expected_running_since'),
         expectedDurationSec: json['expected_duration_sec'] as int?,
         expectedRevision: json['expected_revision'] as int?,
         expectedTaskStart: instant('expected_task_start'),
@@ -244,7 +259,7 @@ class PlannerNotificationActionDispatcher {
         row.taskId != payload.taskId ||
         row.ownerDeviceId != payload.ownerDeviceId ||
         row.state != payload.expectedState?.dbValue ||
-        row.runningSince != payload.expectedRunningSince ||
+        !_sameInstant(row.runningSince, payload.expectedRunningSince) ||
         row.durationSec != payload.expectedDurationSec ||
         row.revision != payload.expectedRevision) {
       return false;
@@ -360,6 +375,11 @@ class PlannerNotificationActionDispatcher {
     );
     return true;
   }
+}
+
+bool _sameInstant(DateTime? left, DateTime? right) {
+  if (left == null || right == null) return left == right;
+  return left.isAtSameMomentAs(right);
 }
 
 Future<bool> reminderStillApplies(

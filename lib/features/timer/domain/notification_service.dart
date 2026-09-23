@@ -39,6 +39,10 @@ class NotificationService
 
   static const int reviewReminderId = 4201;
   static const int activeTimerId = 4202;
+  static const String androidNotificationIcon = 'ic_notification';
+  static const String timerPauseActionId = 'timer_pause';
+  static const String timerResumeActionId = 'timer_resume';
+  static const String timerStopActionId = 'timer_stop';
   static const String reviewBody = 'Time to review your day! 📝';
   static const String reviewRoute = '/review';
   static const String _workerArgument = '--planner-reminder-worker';
@@ -60,22 +64,17 @@ class NotificationService
     try {
       await _plugin.initialize(
         settings: const InitializationSettings(
-          android: AndroidInitializationSettings('@drawable/ic_notification'),
+          android: AndroidInitializationSettings(androidNotificationIcon),
           linux: LinuxInitializationSettings(defaultActionName: 'Open'),
         ),
         onDidReceiveNotificationResponse: (response) {
-          final payload = PlannerNotificationPayload.tryDecode(
-            response.payload,
+          unawaited(
+            _routeAndReportForegroundResponse(
+              response,
+              onSelect: onSelect,
+              onPlannerAction: onPlannerAction,
+            ),
           );
-          if (payload == null ||
-              payload.kind == PlannerNotificationKind.review) {
-            onSelect(response.payload);
-            return;
-          }
-          final action = _actionFrom(response.actionId);
-          if (action != null && onPlannerAction != null) {
-            unawaited(onPlannerAction(action, payload, DateTime.now()));
-          }
         },
         onDidReceiveBackgroundNotificationResponse:
             plannerNotificationTapBackground,
@@ -167,6 +166,7 @@ class NotificationService
           android: AndroidNotificationDetails(
             'review_reminder',
             'Daily review reminder',
+            icon: androidNotificationIcon,
             channelDescription: 'Reminds you to fill in the daily review',
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
@@ -208,6 +208,7 @@ class NotificationService
           android: AndroidNotificationDetails(
             'personal_planner_timer',
             'Active timer',
+            icon: androidNotificationIcon,
             channelDescription: 'Shows and controls the active task timer',
             importance: Importance.low,
             priority: Priority.low,
@@ -221,12 +222,12 @@ class NotificationService
             usesChronometer: running,
             actions: <AndroidNotificationAction>[
               AndroidNotificationAction(
-                running ? 'timer_pause' : 'timer_resume',
+                running ? timerPauseActionId : timerResumeActionId,
                 running ? 'Pause' : 'Resume',
                 cancelNotification: false,
               ),
               const AndroidNotificationAction(
-                'timer_stop',
+                timerStopActionId,
                 'Stop',
                 cancelNotification: false,
               ),
@@ -238,16 +239,27 @@ class NotificationService
             timeout: const LinuxNotificationTimeout.expiresNever(),
             actions: <LinuxNotificationAction>[
               LinuxNotificationAction(
-                key: running ? 'timer_pause' : 'timer_resume',
+                key: running ? timerPauseActionId : timerResumeActionId,
                 label: running ? 'Pause' : 'Resume',
               ),
-              const LinuxNotificationAction(key: 'timer_stop', label: 'Stop'),
+              const LinuxNotificationAction(
+                key: timerStopActionId,
+                label: 'Stop',
+              ),
             ],
           ),
         ),
       );
-    } on Object {
+    } on Object catch (error, stack) {
       // Presentation failure never rolls back the valid timer transition.
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Personal Planner notifications',
+          context: ErrorDescription('while presenting the active timer'),
+        ),
+      );
     }
   }
 
@@ -283,6 +295,7 @@ class NotificationService
           android: AndroidNotificationDetails(
             'planned_task_reminders',
             'Planned task reminders',
+            icon: androidNotificationIcon,
             channelDescription:
                 'Reminds you when a planned task has not started',
             actions: <AndroidNotificationAction>[
@@ -315,6 +328,7 @@ class NotificationService
           android: AndroidNotificationDetails(
             'planned_task_reminders',
             'Planned task reminders',
+            icon: androidNotificationIcon,
             channelDescription:
                 'Reminds you when a planned task has not started',
             actions: <AndroidNotificationAction>[
@@ -395,14 +409,59 @@ class NotificationService
       DateFormat.jm().format(PlannerTimeZone.toPlannerLocal(value));
 
   static PlannerNotificationAction? _actionFrom(String? id) => switch (id) {
-    'timer_pause' => PlannerNotificationAction.pause,
-    'timer_resume' => PlannerNotificationAction.resume,
-    'timer_stop' => PlannerNotificationAction.stop,
+    timerPauseActionId => PlannerNotificationAction.pause,
+    timerResumeActionId => PlannerNotificationAction.resume,
+    timerStopActionId => PlannerNotificationAction.stop,
     'reminder_start_now' => PlannerNotificationAction.startNow,
     'reminder_dismiss' => PlannerNotificationAction.dismiss,
     null || '' => PlannerNotificationAction.open,
     _ => null,
   };
+
+  /// Routes foreground/main-isolate notification responses. Linux action
+  /// signals enter here; Android may also use it while the UI isolate lives.
+  @visibleForTesting
+  static Future<void> routeForegroundResponse(
+    NotificationResponse response, {
+    required void Function(String? payload) onSelect,
+    PlannerNotificationResponseHandler? onPlannerAction,
+    DateTime Function()? clock,
+  }) async {
+    final payload = PlannerNotificationPayload.tryDecode(response.payload);
+    if (payload == null || payload.kind == PlannerNotificationKind.review) {
+      onSelect(response.payload);
+      return;
+    }
+    final action = _actionFrom(response.actionId);
+    if (action != null && onPlannerAction != null) {
+      await onPlannerAction(action, payload, (clock ?? DateTime.now)());
+    }
+  }
+
+  static Future<void> _routeAndReportForegroundResponse(
+    NotificationResponse response, {
+    required void Function(String? payload) onSelect,
+    PlannerNotificationResponseHandler? onPlannerAction,
+  }) async {
+    try {
+      await routeForegroundResponse(
+        response,
+        onSelect: onSelect,
+        onPlannerAction: onPlannerAction,
+      );
+    } on Object catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'Personal Planner notifications',
+          context: ErrorDescription(
+            'while handling a foreground notification response',
+          ),
+        ),
+      );
+    }
+  }
 
   static bool isReminderWorker(List<String> arguments) =>
       arguments.length == 2 && arguments.first == _workerArgument;
