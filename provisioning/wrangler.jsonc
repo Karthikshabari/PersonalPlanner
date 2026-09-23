@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "personal-planner-provisioning-poc",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PROVISIONING_TRANSACTION", "class_name": "ProvisioningTransaction" }
+    ]
+  },
+  "migrations": [
+    { "tag": "provisioning-transaction-v1", "new_sqlite_classes": ["ProvisioningTransaction"] }
+  ],
+  "secrets": {
+    "required": [
+      "OAUTH_SESSION_KEY",
+      "SUPABASE_OAUTH_CLIENT_SECRET"
+    ]
+  },
+  "vars": {
+    "POC_PHASE": "oauth",
+    "POC_ORGANIZATION_SLUG": "example-organization",
+    "POC_PROJECT_NAME": "personal-planner-example-project",
+    "POC_PROJECT_REF": "example-project-ref",
+    "SUPABASE_OAUTH_CLIENT_ID": "your-supabase-oauth-client-id",
+    "SUPABASE_OAUTH_REDIRECT_URI": "https://your-worker.example.workers.dev/oauth/callback"
+  }
+}

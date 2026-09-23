@@ -31,7 +31,7 @@ CANONICAL_MIGRATIONS=(
 SECRET_PATTERN='(sb_secret_[A-Za-z0-9_-]{20,}|service_role_[A-Za-z0-9_-]{20,}|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|eyJ[A-Za-z0-9_-]{20,}\.)'
 
 # Exact placeholder literals used by the redaction and rejection fixtures in
-# test/unit/sync/** and provisioning_poc/test/**. They are deliberately not
+# test/unit/sync/** and provisioning/test/**. They are deliberately not
 # credentials: they are the values the tests assert are rejected or redacted.
 # Only these literals are recognized; a secret-shaped value that is not one of
 # them is still reported, even when it sits on the same line as a fixture.
@@ -115,9 +115,9 @@ migration_order() {
   # The Worker manifest lives beside the entry module, not in it: a Worker entry
   # module in modules format may only export functions, so the migration bundle
   # (and its digests) must be importable from a non-entry module.
-  local manifest_source="${root%/}/provisioning_poc/src/migrations.ts"
+  local manifest_source="${root%/}/provisioning/src/migrations.ts"
   if [[ ! -f "$manifest_source" ]]; then
-    manifest_source="${root%/}/provisioning_poc/src/index.ts"
+    manifest_source="${root%/}/provisioning/src/index.ts"
   fi
   local work manifest expected_count index found_entry
   local -a found=()

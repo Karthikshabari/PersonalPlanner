@@ -1,0 +1,23 @@
+{
+  "name": "personal-planner-provisioning-test",
+  "main": "src/production.ts",
+  "compatibility_date": "2025-06-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+    { "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "PROVISIONING_TRANSACTION", "class_name": "ProvisioningTransaction" }]
+  },
+  "migrations": [{ "tag": "provisioning-transaction-v1", "new_sqlite_classes": ["ProvisioningTransaction"] }],
+  "vars": {
+    "POC_PHASE": "oauth",
+    "POC_ORGANIZATION_SLUG": "test-org",
+    "POC_PROJECT_NAME": "test-project",
+    "POC_PROJECT_REF": "abcdefghijklmnopqrst",
+    "SUPABASE_OAUTH_CLIENT_ID": "test-client",
+    "SUPABASE_OAUTH_REDIRECT_URI": "https://example.test/oauth/callback",
+    "OAUTH_SESSION_KEY": "test-session-key",
+    "SUPABASE_OAUTH_CLIENT_SECRET": "test-secret"
+  }
+}

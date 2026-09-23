@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 
-/// The Worker's `STATES` array in `provisioning_poc/src/production.ts`.
+/// The Worker's `STATES` array in `provisioning/src/production.ts`.
 const _workerStateNames = <String>[
   'authorization_pending',
   'organization_selected',
@@ -18,7 +18,7 @@ const _workerStateNames = <String>[
 ];
 
 /// The Worker's `NEXT` table, transcribed from
-/// `provisioning_poc/src/production.ts`.
+/// `provisioning/src/production.ts`.
 const _workerNext = <ProvisioningState, Set<ProvisioningState>>{
   ProvisioningState.authorizationPending: {
     ProvisioningState.organizationSelected,

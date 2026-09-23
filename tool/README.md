@@ -14,8 +14,8 @@ supports it. If no safe cgroup is available, those capped checks are reported
 as `BLOCKED` rather than started under an address-space `ulimit` or reported as
 passing.
 
-The migration check verifies the five canonical migrations against the digests
-in `provisioning_poc/src/index.ts`, so the gate cannot drift from the migration
+The migration check verifies the six canonical migrations against the digests
+in `provisioning/src/migrations.ts`, so the gate cannot drift from the migration
 bundle the Worker deploys. The secret scan reports every secret-shaped value
 except the placeholder literals the redaction/rejection fixtures already use.
 Both checks live in `tool/release_gate_checks.sh` and are covered by
@@ -75,8 +75,27 @@ The device gate checks the selected package, captures filtered diagnostics, and
 uses package-scoped process recovery as prerequisites. It does not clear data,
 uninstall apps, or force-stop unrelated packages. The command remains
 `BLOCKED` until native notification, timer, reboot, touch, and visual behavior
-are recorded through the physical checklist in
-`release_gate_manual_verification.md`.
+are recorded. For the release candidate, record pass/fail, device and Android
+version, and sanitized evidence for these manual checks:
+
+- Deny notification permission: the reminder setting reports that scheduling
+  is unavailable. Grant it, schedule a reminder, and verify one notification
+  opens Daily Review from both a warm and a cold app.
+- Reboot with a future reminder scheduled. Verify one reminder arrives within
+  Android's inexact delivery window and opens Daily Review.
+- Start a timer, background the app, and check its notification chronometer,
+  icon, Pause/Resume/Stop actions, and persisted state after reopening.
+  Repeat after the app process is killed while backgrounded; do not use
+  Android Settings **Force stop** for this test.
+- Switch accounts while a timer is active. Verify the first account's session
+  finishes and the second account sees no task or timer from it.
+- On the release Android device, inspect launcher/splash/notification icons,
+  light/dark layouts, long titles, touch navigation, long-press menu, drag and
+  resize gestures, and clipping at narrow and landscape widths.
+
+On Linux, launch the release bundle, resize and reopen the window, and check
+theme, keyboard shortcuts, and desktop URI callbacks. These checks require
+real platform interaction; automated builds alone do not complete them.
 
 Use `--all` only when both staging credentials and the intended Android device
 are available:

@@ -1,7 +1,7 @@
 /// Provisioning lifecycle states for a user-owned Supabase backend.
 ///
 /// Every state except [ProvisioningState.localOnly] mirrors the durable Worker
-/// state names in `provisioning_poc/src/production.ts` (`STATES` and `NEXT`).
+/// state names in `provisioning/src/production.ts` (`STATES` and `NEXT`).
 /// Dart identifiers are camelCase to satisfy this repository's lints, so
 /// persisted values must always use [wireName].
 enum ProvisioningState {
@@ -173,7 +173,7 @@ enum ProvisioningState {
 
 /// Transition validator mirroring the Worker's `canTransition` helper.
 ///
-/// The Worker states follow `NEXT` in `provisioning_poc/src/production.ts`.
+/// The Worker states follow `NEXT` in `provisioning/src/production.ts`.
 /// The only Flutter-local edge is `localOnly -> authorizationPending`, which
 /// is how starting a first provisioning attempt is represented.
 bool canTransition(ProvisioningState from, ProvisioningState to) {

@@ -24,6 +24,9 @@ flutter test
 flutter run -d linux
 ```
 
+For Android, connect a device or start an emulator, then run
+`flutter run -d <android-device-id>`.
+
 The Planner runs fully offline with no configuration. Normal Android and Linux
 builds also include the public production provisioning Worker URL, so cloud
 setup is available without a local JSON file. No Planner data is sent until a
@@ -56,6 +59,10 @@ For the explicit static fallback, copy `supabase.example.json` to
 `supabase.local.json` (ignored by Git) and use
 `--dart-define-from-file=supabase.local.json`. `provisioning.local.json` is
 also ignored if a local Worker override is useful.
+
+```bash
+cp supabase.example.json supabase.local.json
+```
 
 Never commit real credentials. Only the project URL and publishable key belong
 in a client build; Management tokens, OAuth client secrets, service-role keys,
@@ -120,6 +127,9 @@ bash tool/release_gate_test.sh        # static checks of the gate itself
 Worker against a real user-owned project and is opt-in; see the header of that
 file for the required `--dart-define` values. `tool/README.md` documents the
 staging and Android device gates, which are never run by default.
+For optional `flutter drive` runs, use the conventional
+`test_driver/integration_test.dart` driver with
+`--driver=test_driver/integration_test.dart --target=<integration-test-file>`.
 
 ## Repository layout
 
@@ -131,7 +141,7 @@ staging and Android device gates, which are never run by default.
 | `android/`, `linux/` | Platform packaging, resources, and signing examples. |
 | `supabase/migrations/` | Canonical, immutable database migration history. |
 | `supabase/tests/` | Database-level regression SQL. |
-| `provisioning_poc/` | Canonical Cloudflare Worker that provisions a user-owned Supabase project plus its tests (the `_poc` name is historical; it is the deployed implementation). |
+| `provisioning/` | Cloudflare Worker that provisions a user-owned Supabase project, with its tests and deployment configuration. |
 | `tool/` | Release-gate automation and its regression test. |
 
 ## Provisioning Worker (optional)
@@ -142,7 +152,7 @@ requires its own Cloudflare secrets (`OAUTH_SESSION_KEY`,
 repository:
 
 ```bash
-cd provisioning_poc
+cd provisioning
 npm ci
 npm run check      # tsc --noEmit
 npm test           # vitest worker tests

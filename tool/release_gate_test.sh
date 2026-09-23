@@ -11,7 +11,7 @@ GATE="${REPO_ROOT}/tool/release_gate.sh"
 CHECKS="${REPO_ROOT}/tool/release_gate_checks.sh"
 # The Worker's migration bundle lives in a non-entry module, because a Worker
 # entry module in modules format may only export functions.
-WORKER_MANIFEST="${REPO_ROOT}/provisioning_poc/src/migrations.ts"
+WORKER_MANIFEST="${REPO_ROOT}/provisioning/src/migrations.ts"
 TAGS_TABLE="${REPO_ROOT}/lib/core/database/tables/tags_table.dart"
 
 WORK_DIR="$(mktemp -d)"
@@ -86,7 +86,7 @@ canonical_migrations=(
   20260917000000_initial_sync_baseline
 )
 
-rg -q 'provisioning_poc/src/index\.ts' "$CHECKS" ||
+rg -q 'provisioning/src/index\.ts' "$CHECKS" ||
   fail 'The migration check must derive its digests from the Worker manifest'
 rg -q 'sha256sum --check' "$CHECKS" ||
   fail 'The migration check must verify migration digests'
@@ -99,9 +99,9 @@ bash "$CHECKS" migration-order "$REPO_ROOT" >/dev/null ||
   fail 'The migration check rejected the canonical migration history'
 
 migration_fixture="${WORK_DIR}/migration-fixture"
-mkdir -p "${migration_fixture}/supabase/migrations" "${migration_fixture}/provisioning_poc/src"
+mkdir -p "${migration_fixture}/supabase/migrations" "${migration_fixture}/provisioning/src"
 cp "${REPO_ROOT}"/supabase/migrations/*.sql "${migration_fixture}/supabase/migrations/"
-cp "$WORKER_MANIFEST" "${migration_fixture}/provisioning_poc/src/migrations.ts"
+cp "$WORKER_MANIFEST" "${migration_fixture}/provisioning/src/migrations.ts"
 
 bash "$CHECKS" migration-order "$migration_fixture" >/dev/null ||
   fail 'The migration check rejected an unmodified copy of the repository history'
@@ -128,7 +128,7 @@ fi
 rm "${migration_fixture}/supabase/migrations/20260917000000_extra.sql"
 
 sed 's/d01e184c1c530e57a3bba20abf2fbf302a106f916be1196ee69736260f938c13/0000000000000000000000000000000000000000000000000000000000000000/' \
-  "$WORKER_MANIFEST" >"${migration_fixture}/provisioning_poc/src/migrations.ts"
+  "$WORKER_MANIFEST" >"${migration_fixture}/provisioning/src/migrations.ts"
 if bash "$CHECKS" migration-order "$migration_fixture" >/dev/null 2>&1; then
   fail 'The migration check accepted a Worker manifest with a drifted digest'
 fi
@@ -207,4 +207,4 @@ rg -q 'Set<Column> get primaryKey => \{taskId, tagId\}' "$TAGS_TABLE" || {
   exit 1
 }
 
-printf 'release_gate regression: PASS (11 tables, composite task_tags projection, owned direct DML, 5 canonical migrations, placeholder-aware secret scan)\n'
+printf 'release_gate regression: PASS (11 tables, composite task_tags projection, owned direct DML, 6 canonical migrations, placeholder-aware secret scan)\n'
