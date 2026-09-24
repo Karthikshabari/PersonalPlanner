@@ -695,6 +695,38 @@ void main() {
   });
 
   group('Supabase authorization returns from the browser', () {
+    test(
+      'failed provisioning callback refreshes to retry immediately',
+      () async {
+        final links = StreamController<String>();
+        addTearDown(links.close);
+        final source = AppLinkSource(platformLinks: links.stream);
+        addTearDown(source.dispose);
+        await source.start();
+        api.attempt = testAttempt(ProvisioningState.authorizationPending);
+        api.refreshResult = ProvisioningResult(
+          outcome: ProvisioningOutcome.retryable,
+          profile: testProfile(ProvisioningState.authorizationPending),
+          snapshot: const ProvisioningSnapshot(
+            transactionId: testTransactionId,
+            state: ProvisioningState.authorizationPending,
+            authorizationFailed: true,
+          ),
+        );
+        buildContainer(withApi: api, linkSource: source);
+        await loadState();
+
+        links.add('${ManagementCallback.redirectUrl}?result=failed');
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(api.calls, contains('refresh'));
+        expect(current().phase, ProvisioningUiPhase.retryableError);
+        expect(current().authorizationRetryAvailable, isTrue);
+        expect(api.startAttemptCount, 0);
+      },
+    );
+
     test('resumes provisioning without the user pressing anything', () async {
       final links = StreamController<String>();
       addTearDown(links.close);

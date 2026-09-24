@@ -469,13 +469,26 @@ export async function productionOAuthCallback(r:Request,env:Env):Promise<Respons
   // Management profile supplies the stable gotrue_id used to key ownership.
   let subject:string;
   let profileStatus:number|null=null;
-  try{const profile=await management(p.access_token,"/v1/profile");profileStatus=profile.status;const identity:unknown=profile.ok?await profile.json():null;if(!record(identity)||typeof identity.gotrue_id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identity.gotrue_id))throw Error("invalid_identity");subject=identity.gotrue_id.toLowerCase();}catch{await d.markOAuthFailure(s);console.error(JSON.stringify({event:"management_identity_unavailable",status:profileStatus}));return pageResponse(managementAuthorizationFailedPage(),502);}
+  let profileFailure:"oauth_unsupported"|"other"|null=null;
+  try{const profile=await management(p.access_token,"/v1/profile");profileStatus=profile.status;if(!profile.ok){profileFailure=await classifyProfileFailure(profile);throw Error("profile_unavailable");}const identity:unknown=await profile.json();if(!record(identity)||typeof identity.gotrue_id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(identity.gotrue_id))throw Error("invalid_identity");subject=identity.gotrue_id.toLowerCase();}catch{await d.markOAuthFailure(s);console.error(JSON.stringify({event:"management_identity_unavailable",status:profileStatus,reason:profileFailure,accessTokenLength:p.access_token.length,tokenType:p.token_type==="Bearer"?"Bearer":p.token_type===undefined?"absent":"other",expiresIn:expires}));return pageResponse(managementAuthorizationFailedPage(),502);}
   // A management re-authorization is the only chance to repair the email
   // confirmation redirect of an already-provisioned project.
   const confirmationUri=claim.management?plannerEmailConfirmationUri(u.origin):null;
   try{await d.saveOAuthFromCallback(s,p.access_token,refreshToken,Date.now()+expires*1000,subject,confirmationUri??undefined);}catch{await d.markOAuthFailure(s);console.error(JSON.stringify({event:"oauth_callback_not_live"}));return pageResponse(managementAuthorizationInvalidPage(),400);}
   console.info(JSON.stringify({event:"oauth_callback_succeeded",management:claim.management}));
   return pageResponse(managementAuthorizationCompletedPage());
+}
+/** Classify one known upstream limitation without logging or retaining its response body. */
+async function classifyProfileFailure(response:Response):Promise<"oauth_unsupported"|"other">{
+  if(response.status!==401||response.body===null)return"other";
+  const reader=response.body.getReader(),chunks:Uint8Array[]=[];
+  let remaining=1024;
+  try{
+    while(remaining>0){const {done,value}=await reader.read();if(done)break;chunks.push(value.slice(0,remaining));remaining-=value.byteLength;}
+    const bytes=new Uint8Array(1024-Math.max(remaining,0));let offset=0;
+    for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    return /does not support oauth access yet/iu.test(new TextDecoder().decode(bytes))?"oauth_unsupported":"other";
+  }catch{return"other";}finally{await reader.cancel().catch(()=>{});}
 }
 async function pkce(v:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v));return btoa(String.fromCharCode(...new Uint8Array(d))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");}
 async function provisioningAuthorizationUrl(env:Env,id:string,state:string,verifier:string){const authorize=new URL(`${API}/v1/oauth/authorize`);authorize.search=new URLSearchParams({client_id:env.SUPABASE_OAUTH_CLIENT_ID,redirect_uri:env.SUPABASE_OAUTH_REDIRECT_URI,response_type:"code",code_challenge_method:"S256",code_challenge:await pkce(verifier),state:`${id}.${state}`}).toString();return authorize.toString();}

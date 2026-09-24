@@ -80,27 +80,76 @@ const snapshotAllowlist = new Set([
 // Every stubbed global (`fetch`, timers) must not leak between cases.
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("Management OAuth callback failures", () => {
   it("uses the verified Management profile gotrue_id as ownership identity", async () => {
     let subject: string | undefined;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    let savedToken: string | undefined;
+    let profileCalled = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/v1/oauth/token")) return Response.json({ access_token: "temporary-token", expires_in: 300 });
-      if (url.endsWith("/v1/profile")) return Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111", email: "mutable@example.test" });
+      if (url.endsWith("/v1/oauth/token")) {
+        expect(init?.method).toBe("POST");
+        expect(new Headers(init?.headers).get("authorization")).toBe(`Basic ${btoa("client-id:client-secret")}`);
+        expect(new Headers(init?.headers).get("content-type")).toBe("application/x-www-form-urlencoded");
+        expect(new URLSearchParams(init?.body as string).get("grant_type")).toBe("authorization_code");
+        expect(new URLSearchParams(init?.body as string).get("code")).toBe("valid-code");
+        expect(new URLSearchParams(init?.body as string).get("code_verifier")).toBe("verifier");
+        expect(new URLSearchParams(init?.body as string).get("redirect_uri")).toBe("https://worker.test/oauth/callback");
+        return Response.json({ access_token: "new-management-token", token_type: "Bearer", expires_in: 300 });
+      }
+      if (url.endsWith("/v1/profile")) {
+        profileCalled = true;
+        expect(url).toBe("https://api.supabase.com/v1/profile");
+        expect(init?.method).toBeUndefined();
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer new-management-token");
+        return Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111", email: "mutable@example.test" });
+      }
       return new Response(null, { status: 404 });
     });
     const worker = {
       oauthCallback: async () => ({ verifier: "verifier", management: false }),
-      saveOAuthFromCallback: async (_state: string, _token: string, _refresh: string | undefined, _expiry: number, identity: string) => { subject = identity; },
+      saveOAuthFromCallback: async (_state: string, token: string, _refresh: string | undefined, _expiry: number, identity: string) => { savedToken = token; subject = identity; },
     };
     const response = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
       { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
     );
     expect(response!.status).toBe(200);
+    expect(profileCalled).toBe(true);
+    expect(savedToken).toBe("new-management-token");
     expect(subject).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("classifies an OAuth-unsupported profile 401 without logging its body or persisting a grant", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let saved = false, failed = false, mapped = false, created = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/oauth/token")) return Response.json({ access_token: "new-management-token", token_type: "Bearer", expires_in: 300 });
+      expect(String(input)).toBe("https://api.supabase.com/v1/profile");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer new-management-token");
+      return new Response('GET /v1/profile does not support oauth access yet; secret-sentinel', { status: 401 });
+    });
+    const worker = {
+      oauthCallback: async () => ({ verifier: "verifier", management: false }),
+      saveOAuthFromCallback: async () => { saved = true; },
+      markOAuthFailure: async () => { failed = true; return true; },
+      create: async () => { created = true; },
+    };
+    const response = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
+      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, MANAGEMENT_ACCOUNT_PROJECT: { idFromName: (name: string) => name, get: () => ({ bind: async () => { mapped = true; } }) }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
+    );
+    expect(response!.status).toBe(502);
+    expect(failed).toBe(true);
+    expect(saved).toBe(false);
+    expect(created).toBe(false);
+    expect(mapped).toBe(false);
+    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: "management_identity_unavailable", status: 401, reason: "oauth_unsupported", accessTokenLength: 20, tokenType: "Bearer", expiresIn: 300 }));
+    expect(JSON.stringify(log.mock.calls)).not.toContain("secret-sentinel");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("new-management-token");
   });
 
   it("does not save an OAuth grant when verified identity is unavailable", async () => {
@@ -201,6 +250,21 @@ describe("create reconciliation guards", () => {
 });
 
 describe("OAuth credential lifetime", () => {
+  it("records cancelled consent without creating a project or storing a grant", async () => {
+    const { tx, read } = durableTransaction();
+    const access = "a".repeat(48), state = "s".repeat(48);
+    await tx.create(access, state, "v".repeat(48));
+    const response = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.${state}&error=access_denied`),
+      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => tx } } as any,
+    );
+    expect(response!.status).toBe(400);
+    expect(await tx.get(access)).toMatchObject({ state: "authorization_pending", authorizationFailed: true, authorizationCompleted: false });
+    expect(read()!.subject).toBeUndefined();
+    expect(read()!.projectRef).toBeUndefined();
+    expect(read()!.createAttempts).toBe(0);
+  });
+
   it("exposes a failed callback to polling and retries OAuth on the same transaction", async () => {
     const { tx, read } = durableTransaction();
     const access = "a".repeat(48);
@@ -214,7 +278,7 @@ describe("OAuth credential lifetime", () => {
     } as any;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
       ? Response.json({ access_token: "temporary-token", expires_in: 300 })
-      : new Response(null, { status: 502 }));
+      : new Response("GET /v1/profile does not support oauth access yet", { status: 401 }));
 
     const failed = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.${oldState}&code=valid-code`),

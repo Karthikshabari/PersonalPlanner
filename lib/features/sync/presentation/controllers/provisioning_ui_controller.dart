@@ -730,6 +730,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           (current) =>
               current.copyWith(message: cloudSetupReauthorizeIncompleteMessage),
         );
+        // The Worker records a claimed callback failure on this transaction.
+        // Read it now so the user sees Retry authorization immediately after
+        // the browser returns, without waiting for the next polling interval.
+        await advance();
       }
       return;
     }

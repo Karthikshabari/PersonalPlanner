@@ -457,8 +457,6 @@ void main() {
       authorizationUrl: testAuthorizationUrl,
     );
     await _pumpCard(tester, api: api, launcher: launcher);
-    await tester.tap(find.text('Refresh status'));
-    await _settle(tester);
 
     expect(find.text('Retry Supabase authorization'), findsOneWidget);
     expect(find.text('Start Again'), findsNothing);
