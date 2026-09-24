@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MIGRATIONS } from "../src/migrations";
 import {
   MANAGEMENT_WINDOW_MS,
   PLANNER_AUTH_CALLBACK_URI,
@@ -19,6 +20,7 @@ import {
   plannerEmailConfirmationPage,
   plannerEmailConfirmationUri,
   productionManagementAuthorization,
+  productionOAuthCallback,
   productionFetch,
   productionProjectCheck,
   reconcileMigrations,
@@ -28,6 +30,7 @@ import {
 } from "../src/production";
 
 const ref = "abcdefghijklmnopqrst";
+const Y = "bcdefghijklmnopqrstu";
 const publishableKey = "sb_publishable_CuLX_Y3xWuD0cuItKbm-Xw_NJMQ84zu";
 const runtimeConfig = {
   projectRef: ref,
@@ -60,7 +63,8 @@ const snapshotAllowlist = new Set([
   "updatedAt",
   "expiresAt",
   "oauthStateUsed",
-  "subject",
+  "authorizationCompleted",
+  "authorizationFailed",
   "organizationSlug",
   "requestedProjectName",
   "idempotencyKey",
@@ -76,6 +80,71 @@ const snapshotAllowlist = new Set([
 // Every stubbed global (`fetch`, timers) must not leak between cases.
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("Management OAuth callback failures", () => {
+  it("uses the verified Management profile gotrue_id as ownership identity", async () => {
+    let subject: string | undefined;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/v1/oauth/token")) return Response.json({ access_token: "temporary-token", expires_in: 300 });
+      if (url.endsWith("/v1/profile")) return Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111", email: "mutable@example.test" });
+      return new Response(null, { status: 404 });
+    });
+    const worker = {
+      oauthCallback: async () => ({ verifier: "verifier", management: false }),
+      saveOAuthFromCallback: async (_state: string, _token: string, _refresh: string | undefined, _expiry: number, identity: string) => { subject = identity; },
+    };
+    const response = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
+      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
+    );
+    expect(response!.status).toBe(200);
+    expect(subject).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("does not save an OAuth grant when verified identity is unavailable", async () => {
+    let saved = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
+      ? Response.json({ access_token: "temporary-token", expires_in: 300 })
+      : new Response(null, { status: 502 }));
+    const worker = {
+      oauthCallback: async () => ({ verifier: "verifier", management: false }),
+      saveOAuthFromCallback: async () => { saved = true; },
+      markOAuthFailure: async () => true,
+    };
+    const response = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
+      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
+    );
+    expect(response!.status).toBe(502);
+    expect(saved).toBe(false);
+  });
+
+  it("returns a safe retryable page when the token exchange is unavailable", async () => {
+    let saved = false;
+    vi.stubGlobal("fetch", async () => { throw new Error("upstream timeout"); });
+    const worker = {
+      oauthCallback: async () => ({ verifier: "verifier", management: false }),
+      saveOAuthFromCallback: async () => { saved = true; },
+      markOAuthFailure: async () => true,
+    };
+    const response = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
+      {
+        PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker },
+        SUPABASE_OAUTH_CLIENT_ID: "client-id",
+        SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+        SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
+      } as any,
+    );
+
+    expect(response!.status).toBe(502);
+    const page = await response!.text();
+    expect(page).toContain("Supabase authorization could not be completed");
+    expect(page).toContain(`${PLANNER_MANAGEMENT_CALLBACK_URI}?result=failed`);
+    expect(saved).toBe(false);
+  });
 });
 
 function durableTransaction() {
@@ -132,6 +201,62 @@ describe("create reconciliation guards", () => {
 });
 
 describe("OAuth credential lifetime", () => {
+  it("exposes a failed callback to polling and retries OAuth on the same transaction", async () => {
+    const { tx, read } = durableTransaction();
+    const access = "a".repeat(48);
+    const oldState = "s".repeat(48);
+    await tx.create(access, oldState, "v".repeat(48));
+    const environment = {
+      PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => tx },
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
+      SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
+    } as any;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
+      ? Response.json({ access_token: "temporary-token", expires_in: 300 })
+      : new Response(null, { status: 502 }));
+
+    const failed = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.${oldState}&code=valid-code`),
+      environment,
+    );
+    expect(failed!.status).toBe(502);
+    expect(await tx.get(access)).toMatchObject({ state: "authorization_pending", authorizationFailed: true, authorizationCompleted: false });
+    expect(read()!.subject).toBeUndefined();
+    expect(read()!.projectRef).toBeUndefined();
+
+    const retry = await productionManagementAuthorization(
+      new Request(`https://worker.test/v1/provisioning/transactions/${transactionId}/authorization/retry`, {
+        method: "POST", headers: { authorization: `Provisioning ${access}` },
+      }), environment,
+    );
+    expect(retry!.status).toBe(200);
+    const retryBody = await retry!.json() as { authorizationUrl: string };
+    const freshState = new URL(retryBody.authorizationUrl).searchParams.get("state")!;
+    expect(new URL(retryBody.authorizationUrl).host).toBe("api.supabase.com");
+    expect(freshState).not.toBe(`${transactionId}.${oldState}`);
+    expect(read()!.state).toBe("authorization_pending");
+    expect(await tx.get(access)).toMatchObject({ authorizationFailed: false, authorizationCompleted: false });
+
+    const stale = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.${oldState}&code=stale-code`),
+      environment,
+    );
+    expect(stale!.status).toBe(400);
+    expect(read()!.subject).toBeUndefined();
+
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
+      ? Response.json({ access_token: "temporary-token", expires_in: 300 })
+      : Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111" }));
+    const completed = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${freshState}&code=fresh-code`),
+      environment,
+    );
+    expect(completed!.status).toBe(200);
+    expect(await tx.get(access)).toMatchObject({ authorizationCompleted: true, authorizationFailed: false });
+    expect(read()!.subject).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
   it("rejects a delayed callback after transaction expiry even if it was previously claimed", () => {
     expect(oauthCredentialSaveAllowed("authorization_pending", true, "c3RhdGU=", "c3RhdGU=", 100, 200, 99)).toBe(true);
     expect(oauthCredentialSaveAllowed("authorization_pending", true, "c3RhdGU=", "c3RhdGU=", 100, 200, 100)).toBe(false);
@@ -290,8 +415,9 @@ describe("browser hand-off pages", () => {
     for (const forbidden of ["access_token", "refresh_token", "sba_", "sb_secret"]) {
       expect(page).not.toContain(forbidden);
     }
-    // The app-return link is the only dynamic value, and it carries no data.
-    expect(page).not.toMatch(/management-callback\?/u);
+    // The result hint carries no transaction identifier or credential.
+    expect(page).toContain(`${PLANNER_MANAGEMENT_CALLBACK_URI}?result=completed`);
+    expect(managementAuthorizationDeniedPage()).toContain(`${PLANNER_MANAGEMENT_CALLBACK_URI}?result=cancelled`);
     expect(managementAuthorizationDeniedPage()).toContain("was cancelled");
   });
 
@@ -403,9 +529,11 @@ describe("management authorization lifecycle", () => {
     });
   }
 
-  function checkEnvironment(worker: Record<string, unknown>) {
+  function checkEnvironment(worker: Record<string, unknown>, mappedRef?: string) {
+    const owner = { current: async () => mappedRef ? { project_ref: mappedRef } : null, bind: async (projectRef: string) => ({ kind: "bound", projectRef }) };
     return {
       PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker },
+      MANAGEMENT_ACCOUNT_PROJECT: { idFromName: (name: string) => name, get: () => owner },
       SUPABASE_OAUTH_CLIENT_ID: "client-id",
       SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
       SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
@@ -416,6 +544,7 @@ describe("management authorization lifecycle", () => {
     let released = 0;
     const worker = {
       managementToken: async () => "management-token",
+      owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => {
         released += 1;
         return { released: true, revoked: true, unconfirmed: false };
@@ -424,7 +553,9 @@ describe("management authorization lifecycle", () => {
     let allowList = PLANNER_AUTH_CALLBACK_URI;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ status: "ACTIVE_HEALTHY" });
+      if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ ref, status: "ACTIVE_HEALTHY" });
+      if (url.endsWith(`/v1/projects/${ref}/database/migrations`)) return Response.json(MIGRATIONS.map(m => ({ name: m.name })));
+      if (url.endsWith(`/v1/projects/${ref}/database/query`)) return Response.json([verificationRow]);
       if (url.endsWith(`/v1/projects/${ref}/config/auth`)) {
         if (init?.method === "PATCH") {
           allowList = (JSON.parse(String(init.body)) as { uri_allow_list: string }).uri_allow_list;
@@ -436,13 +567,13 @@ describe("management authorization lifecycle", () => {
 
     const response = await productionProjectCheck(
       checkRequest({ projectRef: ref }),
-      checkEnvironment(worker) as any,
+      checkEnvironment(worker, ref) as any,
     );
 
     expect(response!.status).toBe(200);
     const body = (await response!.json()) as Record<string, unknown>;
     expect(body.projectExists).toBe(true);
-    expect(body.projectStatus).toBe("ACTIVE_HEALTHY");
+    expect(body.projectStatus).toBe("verified");
     expect(body.emailConfirmationRedirect).toBe(
       `https://worker.test/auth/confirmed`,
     );
@@ -451,11 +582,35 @@ describe("management authorization lifecycle", () => {
     expect(JSON.stringify(body)).not.toContain("management-token");
   });
 
+  it("keeps verification retryable when the project's Auth redirects cannot be confirmed", async () => {
+    let released = 0;
+    const worker = {
+      managementToken: async () => "management-token",
+      owner: async () => "11111111-1111-4111-8111-111111111111",
+      releaseManagementGrant: async () => { released += 1; return { released: true, revoked: true, unconfirmed: false }; },
+    };
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ ref });
+      if (url.endsWith(`/v1/projects/${ref}/database/migrations`)) return Response.json(MIGRATIONS.map(m => ({ name: m.name })));
+      if (url.endsWith(`/v1/projects/${ref}/database/query`)) return Response.json([verificationRow]);
+      if (url.endsWith(`/v1/projects/${ref}/config/auth`)) return new Response(null, { status: 502 });
+      return new Response(null, { status: 404 });
+    });
+    const response = await productionProjectCheck(checkRequest({ projectRef: ref }), checkEnvironment(worker, ref) as any);
+    const body = await response!.json() as Record<string, unknown>;
+    expect(body.projectExists).toBeNull();
+    expect(body.projectStatus).toBe("indeterminate");
+    expect(body.emailConfirmationRedirect).toBeNull();
+    expect(released).toBe(1);
+  });
+
   it("reports a deleted project as missing and still releases the credential", async () => {
     let released = 0;
     const calls: string[] = [];
     const worker = {
       managementToken: async () => "management-token",
+      owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => {
         released += 1;
         return { released: true, revoked: true, unconfirmed: false };
@@ -468,7 +623,7 @@ describe("management authorization lifecycle", () => {
 
     const response = await productionProjectCheck(
       checkRequest({ projectRef: ref }),
-      checkEnvironment(worker) as any,
+      checkEnvironment(worker, ref) as any,
     );
 
     const body = (await response!.json()) as Record<string, unknown>;
@@ -480,13 +635,26 @@ describe("management authorization lifecycle", () => {
     expect(calls).toEqual([`https://api.supabase.com/v1/projects/${ref}`]);
   });
 
+  it("refuses a stale local project before any Management request", async () => {
+    const worker = {
+      managementToken: async () => "temporary-token",
+      owner: async () => "11111111-1111-4111-8111-111111111111",
+    };
+    vi.stubGlobal("fetch", async () => { throw new Error("must not enumerate or verify Y"); });
+    const response = await productionProjectCheck(checkRequest({ projectRef: Y }), checkEnvironment(worker, ref) as any);
+    expect(response!.status).toBe(409);
+    expect(await response!.json()).toEqual({ error: "mapping_conflict", projectRef: ref });
+  });
+
   it("never reports deletion for transport, outage, or authorization failures", async () => {
     const worker = {
       managementToken: async () => "management-token",
+      owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => ({ released: true, revoked: false, unconfirmed: true }),
     };
     const cases: Array<[() => Promise<Response>, string]> = [
       [async () => new Response(null, { status: 500 }), "indeterminate"],
+      [async () => new Response(null, { status: 502 }), "indeterminate"],
       [async () => new Response(null, { status: 429 }), "indeterminate"],
       [async () => new Response(null, { status: 403 }), "not_authorized"],
       [
@@ -504,7 +672,7 @@ describe("management authorization lifecycle", () => {
       );
       const body = (await response!.json()) as Record<string, unknown>;
       expect(body.projectExists).toBeNull();
-      expect(body.projectStatus).toBe(expected);
+      expect(body.projectStatus).toBe("indeterminate");
       expect(body.emailConfirmationRedirect).toBeNull();
     }
   });
@@ -760,10 +928,10 @@ describe("management grant durability", () => {
     expect(updated.oauthStateHash).toBeUndefined();
     expect(updated.projectRef).toBe(ref);
     expect(updated.state).toBe("verifying");
-    // The re-authorization existed only to perform its management work, so the
-    // Worker released the grant again immediately.
-    expect(updated.refreshCipher).toBeUndefined();
-    expect(await tx.takeManagementRefresh(access)).toBeNull();
+    // The project check still needs this short-lived credential. The check
+    // releases it once ownership and redirects have been verified.
+    expect(updated.refreshCipher).toBeDefined();
+    expect(await tx.takeManagementRefresh(access)).toBe("second-refresh-token");
   });
 
   it("refuses a management re-authorization for a record with no project", async () => {
@@ -885,7 +1053,7 @@ describe("management grant durability", () => {
     expect(status.releaseUnconfirmed).toBe(true);
   });
 
-  it("repairs the email confirmation redirect during a re-authorization", async () => {
+  it("defers redirect repair until the exact project check", async () => {
     const { tx, read } = await transactionAtVerifying();
     let allowList = `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI}`;
     const writes: string[] = [];
@@ -914,15 +1082,12 @@ describe("management grant durability", () => {
       confirmation,
     );
 
-    expect(writes).toEqual([
-      `https://planner.test/callback,${PLANNER_AUTH_CALLBACK_URI},${confirmation}`,
-    ]);
-    expect(read()!.emailRedirectConfigured).toBe(confirmation);
+    expect(writes).toEqual([]);
+    expect(read()!.emailRedirectConfigured).toBeUndefined();
     const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
-    expect(status.emailConfirmationRedirect).toBe(confirmation);
-    // No Management credential is retained after the re-authorization.
-    expect(status.authorized).toBe(false);
-    expect(read()!.refreshCipher).toBeUndefined();
+    expect(status.emailConfirmationRedirect).toBeNull();
+    expect(status.authorized).toBe(true);
+    expect(read()!.refreshCipher).toBeDefined();
     expect(JSON.stringify(status)).not.toContain("second-refresh-token");
   });
 
@@ -941,12 +1106,11 @@ describe("management grant durability", () => {
       "https://worker.test/auth/confirmed",
     );
 
-    // The re-authorization itself succeeded, but the optional redirect repair
-    // is unreported — and nothing Management-related is retained either way.
+    // The callback does not touch the local project before ownership is checked.
     expect(read()!.emailRedirectConfigured).toBeUndefined();
-    expect(read()!.refreshCipher).toBeUndefined();
+    expect(read()!.refreshCipher).toBeDefined();
     const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
-    expect(status.authorized).toBe(false);
+    expect(status.authorized).toBe(true);
     expect(status.emailConfirmationRedirect).toBeNull();
   });
 });
@@ -1219,7 +1383,8 @@ describe("provisioning route contract", () => {
     return {
       managementToken: async (capability: string) =>
         capability === "capability-1" ? "management-token" : null,
-      createContext: async () => ({ state: "authorization_pending", projectRef: ref }),
+      createContext: async () => ({ state: "authorization_pending", projectRef: ref, discoveryEmptyAt: Date.now() }),
+      owner: async () => "11111111-1111-4111-8111-111111111111",
       claimOperation: async () => ({ nonce: "op-nonce", projectRef: ref }),
       finishVerification: async (_a: string, _n: string, result: string, config?: unknown) => {
         state = result === "passed" ? "ready" : result === "assertion_failed" ? "terminal_error" : "verifying";
@@ -1232,8 +1397,10 @@ describe("provisioning route contract", () => {
   }
 
   function environment(worker: Record<string, unknown>) {
+    const owner = { current: async () => null };
     return {
       PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker },
+      MANAGEMENT_ACCOUNT_PROJECT: { idFromName: (name: string) => name, get: () => owner },
       SUPABASE_OAUTH_CLIENT_ID: "client-id",
       SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
     };

@@ -28,6 +28,9 @@ enum ProvisioningOutcome {
   /// The Worker reported an unrecoverable failure.
   terminal,
 
+  /// The exact mapped cloud was confirmed missing; replacement needs consent.
+  projectDeleted,
+
   /// The backend is verified and the client-safe profile was persisted.
   ready,
 
@@ -51,6 +54,8 @@ class ProvisioningResult {
     this.profile,
     this.snapshot,
     this.organizations = const <ProvisioningOrganization>[],
+    this.candidates = const <ProvisioningCandidate>[],
+    this.resolutionComplete = false,
     this.message,
     this.authorizationUrl,
   });
@@ -59,6 +64,8 @@ class ProvisioningResult {
   final BackendConnectionProfile? profile;
   final ProvisioningSnapshot? snapshot;
   final List<ProvisioningOrganization> organizations;
+  final List<ProvisioningCandidate> candidates;
+  final bool resolutionComplete;
   final String? message;
   final Uri? authorizationUrl;
 
@@ -133,6 +140,16 @@ enum ManagementCheckOutcome {
   /// The stored READY backend is left exactly as it was.
   indeterminate,
 
+  /// This device remembers a different project than the account's mapping.
+  mappingConflict,
+
+  /// The remembered project cannot be adopted; verified alternatives are available.
+  candidateRecovery,
+
+  /// The browser has not finished the short-lived Management authorization.
+  /// Keep the attempt so its callback can still complete this exact check.
+  authorizationPending,
+
   /// The browser consent never completed on this device.
   needsAuthorization,
 
@@ -152,6 +169,8 @@ class ManagementCheckResult {
     required this.outcome,
     this.status,
     this.emailConfirmationRedirectAdopted = false,
+    this.mappedProjectRef,
+    this.candidates = const <ProvisioningCandidate>[],
     this.message,
   });
 
@@ -164,6 +183,8 @@ class ManagementCheckResult {
   /// redirect into the durable profile, so the runtime Auth client must be
   /// re-resolved before the next sign-up uses it.
   final bool emailConfirmationRedirectAdopted;
+  final String? mappedProjectRef;
+  final List<ProvisioningCandidate> candidates;
 
   final String? message;
 }
@@ -361,7 +382,35 @@ class ProvisioningCoordinator {
         attempt.transactionId,
         capability: capability,
       );
+      if (snapshot.authorizationFailed &&
+          snapshot.state == ProvisioningState.authorizationPending) {
+        return ProvisioningResult(
+          outcome: ProvisioningOutcome.retryable,
+          profile: attempt.profile,
+          snapshot: snapshot,
+          message: 'Supabase authorization could not be completed. Retry authorization for this cloud setup.',
+        );
+      }
       return _applySnapshot(attempt, snapshot);
+    }),
+  );
+
+  /// Restarts only Management OAuth after a failed callback. The transaction,
+  /// local profile, and any authoritative account mapping stay unchanged.
+  Future<ProvisioningResult> retryAuthorization() => _serialized(
+    () => _withAttempt((attempt, capability) async {
+      if (attempt.state != ProvisioningState.authorizationPending) {
+        return _stale(attempt);
+      }
+      final url = await client.retryProvisioningAuthorization(
+        attempt.transactionId,
+        capability: capability,
+      );
+      return ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: attempt.profile,
+        authorizationUrl: url,
+      );
     }),
   );
 
@@ -377,6 +426,85 @@ class ProvisioningCoordinator {
         profile: attempt.profile,
         organizations: organizations,
       );
+    }),
+  );
+
+  /// Mapping lookup precedes any organization or project-create action.
+  Future<ProvisioningResult> resolveProject() => _serialized(
+    () => _withAttempt((attempt, capability) async {
+      final resolution = await client.resolve(
+        attempt.transactionId,
+        capability: capability,
+      );
+      if (resolution.snapshot case final snapshot?) {
+        return await _applySnapshot(attempt, snapshot);
+      }
+      return ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: attempt.profile,
+        candidates: resolution.candidates,
+        resolutionComplete: true,
+      );
+    }),
+  );
+
+  /// User-approved replacement of a confirmed deleted mapping. The Worker
+  /// rechecks the exact stored ref before clearing it, then discovery resumes.
+  Future<ProvisioningResult> replaceDeletedProject() => _serialized(
+    () => _withAttempt((attempt, capability) async {
+      ProvisioningResolution resolution;
+      try {
+        resolution = await client.resolve(
+          attempt.transactionId,
+          capability: capability,
+        );
+      } on ProvisioningApiException catch (error) {
+        if (error.code != 'project_deleted') {
+          return _failure(error, profile: attempt.profile);
+        }
+        await client.replaceDeleted(
+          attempt.transactionId,
+          capability: capability,
+        );
+        resolution = await client.resolve(
+          attempt.transactionId,
+          capability: capability,
+        );
+      }
+      if (resolution.snapshot case final snapshot?) {
+        return _applySnapshot(attempt, snapshot);
+      }
+      return ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: attempt.profile,
+        candidates: resolution.candidates,
+        resolutionComplete: true,
+      );
+    }),
+  );
+
+  Future<ProvisioningResult> adoptProject(String projectRef) => _serialized(
+    () => _withAttempt((attempt, capability) async {
+      try {
+        final snapshot = await client.adopt(
+          attempt.transactionId,
+          capability: capability,
+          projectRef: projectRef,
+        );
+        return await _applySnapshot(attempt, snapshot);
+      } on ProvisioningApiException catch (error) {
+        if (error.code == 'mapping_conflict') {
+          // Another device won the first binding. Resolve the winner exactly.
+          final resolution = await client.resolve(
+            attempt.transactionId,
+            capability: capability,
+          );
+          if (resolution.snapshot case final snapshot?) {
+            return _applySnapshot(attempt, snapshot);
+          }
+        }
+        return _failure(error, profile: attempt.profile);
+      }
     }),
   );
 
@@ -440,27 +568,44 @@ class ProvisioningCoordinator {
   /// only requested from the states the Worker authorizes.
   Future<ProvisioningResult> createOrContinueProject() => _serialized(
     () => _withAttempt((attempt, capability) async {
-      final snapshot = switch (attempt.profile.state) {
-        ProvisioningState.organizationSelected ||
-        ProvisioningState.projectRetryAuthorized ||
-        ProvisioningState.projectCreating => await client.create(
-          attempt.transactionId,
-          capability: capability,
-        ),
-        ProvisioningState.projectReconciliationRequired =>
-          await client.reconcile(attempt.transactionId, capability: capability),
-        _ => null,
-      };
-      if (snapshot == null) {
-        return _result(
-          ProvisioningOutcome.inProgress,
-          profile: attempt.profile,
-          message:
-              'Project creation is not the next step for '
-              '${attempt.profile.state.wireName}.',
-        );
+      try {
+        final snapshot = switch (attempt.profile.state) {
+          ProvisioningState.organizationSelected ||
+          ProvisioningState.projectRetryAuthorized ||
+          ProvisioningState.projectCreating => await client.create(
+            attempt.transactionId,
+            capability: capability,
+          ),
+          ProvisioningState.projectReconciliationRequired =>
+            await client.reconcile(
+              attempt.transactionId,
+              capability: capability,
+            ),
+          _ => null,
+        };
+        if (snapshot == null) {
+          return _result(
+            ProvisioningOutcome.inProgress,
+            profile: attempt.profile,
+            message:
+                'Project creation is not the next step for '
+                '${attempt.profile.state.wireName}.',
+          );
+        }
+        return await _applySnapshot(attempt, snapshot);
+      } on ProvisioningApiException catch (error) {
+        if (error.code == 'mapping_conflict' &&
+            attempt.profile.state == ProvisioningState.organizationSelected) {
+          final resolution = await client.resolve(
+            attempt.transactionId,
+            capability: capability,
+          );
+          if (resolution.snapshot case final snapshot?) {
+            return _applySnapshot(attempt, snapshot);
+          }
+        }
+        return _failure(error, profile: attempt.profile);
       }
-      return _applySnapshot(attempt, snapshot);
     }),
   );
 
@@ -581,6 +726,14 @@ class ProvisioningCoordinator {
           outcome: ManagementCheckOutcome.notApplicable,
         );
       }
+      final currentProfile = await _profileOrNull();
+      if (currentProfile?.state != ProvisioningState.ready ||
+          currentProfile?.projectRef != attempt.projectRef) {
+        await _discardManagementAttempt();
+        return const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.notApplicable,
+        );
+      }
       final ProjectCheckResult check;
       try {
         check = await client.checkProject(
@@ -589,6 +742,39 @@ class ProvisioningCoordinator {
           capability: attempt.capability,
         );
       } on ProvisioningApiException catch (error) {
+        // The app can resume before the external browser finishes its OAuth
+        // callback. A 401 alone cannot distinguish that race from an expired
+        // completed grant. Re-read this exact transaction before clearing it.
+        if (error.code == 'oauth_expired') {
+          try {
+            final snapshot = await client.snapshot(
+              attempt.transactionId,
+              capability: attempt.capability,
+            );
+            if (snapshot.authorizationCompleted) {
+              await _discardManagementAttempt();
+              return const ManagementCheckResult(
+                outcome: ManagementCheckOutcome.needsAuthorization,
+              );
+            }
+          } on ProvisioningApiException catch (snapshotError) {
+            if (snapshotError.failureClass ==
+                ProvisioningFailureClass.restartRequired) {
+              await _discardManagementAttempt();
+              return const ManagementCheckResult(
+                outcome: ManagementCheckOutcome.needsAuthorization,
+              );
+            }
+            return ManagementCheckResult(
+              outcome: ManagementCheckOutcome.retryable,
+              message: snapshotError.message,
+            );
+          }
+          return const ManagementCheckResult(
+            outcome: ManagementCheckOutcome.authorizationPending,
+            message: 'Waiting for Supabase authorization to finish.',
+          );
+        }
         // A capability that expired before the user finished the browser flow
         // means the consent simply did not complete; anything transient keeps
         // the attempt so the user can retry.
@@ -602,7 +788,11 @@ class ProvisioningCoordinator {
         }
         return ManagementCheckResult(outcome: outcome, message: error.message);
       }
-      await _discardManagementAttempt();
+      if (check.existence != ProjectExistence.mappingConflict &&
+          !(check.existence == ProjectExistence.candidateRecovery &&
+              check.candidates.isNotEmpty)) {
+        await _discardManagementAttempt();
+      }
       switch (check.existence) {
         case ProjectExistence.exists:
           final adopted = await _recordVerifiedProject(check);
@@ -622,9 +812,119 @@ class ProvisioningCoordinator {
             outcome: ManagementCheckOutcome.indeterminate,
             status: check.status,
           );
+        case ProjectExistence.mappingConflict:
+          return ManagementCheckResult(
+            outcome: ManagementCheckOutcome.mappingConflict,
+            status: check.status,
+            mappedProjectRef: check.mappedProjectRef,
+          );
+        case ProjectExistence.candidateRecovery:
+          return ManagementCheckResult(
+            outcome: ManagementCheckOutcome.candidateRecovery,
+            status: check.status,
+            candidates: check.candidates,
+          );
       }
     },
   );
+
+  /// Installs the exact account mapping after the user accepts a conflict.
+  /// The previous project's local databases and remote project are untouched.
+  Future<ProvisioningResult> recoverMappedProject() =>
+      _recoverManagementProject(null);
+
+  Future<ProvisioningResult> recoverCandidateProject(String projectRef) =>
+      _recoverManagementProject(projectRef);
+
+  Future<ProvisioningResult> _recoverManagementProject(String? selectedRef) =>
+      _serialized(() async {
+        final ManagementAttempt? attempt;
+        try {
+          attempt = await managementAttemptStore.read();
+        } on SecureManagementAttemptStoreException {
+          return const ProvisioningResult(
+            outcome: ProvisioningOutcome.retryable,
+          );
+        }
+        final current = await _profileOrNull();
+        if (attempt == null ||
+            current?.state != ProvisioningState.ready ||
+            current?.projectRef != attempt.projectRef) {
+          return const ProvisioningResult(outcome: ProvisioningOutcome.stale);
+        }
+        ProvisioningSnapshot? snapshot;
+        try {
+          snapshot = selectedRef == null
+              ? (await client.resolve(
+                  attempt.transactionId,
+                  capability: attempt.capability,
+                )).snapshot
+              : await client.adopt(
+                  attempt.transactionId,
+                  capability: attempt.capability,
+                  projectRef: selectedRef,
+                );
+        } on ProvisioningApiException catch (error) {
+          if (error.code != 'mapping_conflict') {
+            return _failure(error, profile: current);
+          }
+          try {
+            snapshot = (await client.resolve(
+              attempt.transactionId,
+              capability: attempt.capability,
+            )).snapshot;
+          } on ProvisioningApiException catch (resolutionError) {
+            return _failure(resolutionError, profile: current);
+          }
+        }
+        final config = snapshot?.runtimeConfig;
+        if (config == null ||
+            (selectedRef == null && config.projectRef == current!.projectRef)) {
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.protocolError,
+            profile: current,
+          );
+        }
+        final now = _clock().toUtc();
+        try {
+          final replacement = BackendConnectionProfile(
+            profileId: _newProfileId(),
+            generation: current!.generation + 1,
+            state: ProvisioningState.ready,
+            createdAt: now,
+            updatedAt: now,
+            projectRef: config.projectRef,
+            projectUrl: config.projectUrl,
+            publishableKey: config.publishableKey,
+            provisioningTransactionId: attempt.transactionId,
+            authEmailConfirmationRedirect: config.emailConfirmationRedirect,
+          );
+          await profileStore.save(
+            replacement,
+            expectedGeneration: current.generation,
+          );
+          await _discardManagementAttempt();
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.ready,
+            profile: replacement,
+          );
+        } on StaleConnectionProfileException {
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.stale,
+            profile: current,
+          );
+        } on ConnectionProfileStoreException {
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.retryable,
+            profile: current,
+          );
+        } on BackendProfileValidationException {
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.protocolError,
+            profile: current,
+          );
+        }
+      });
 
   /// Asks the Worker to revoke the Management authorization this device holds.
   ///
@@ -700,6 +1000,11 @@ class ProvisioningCoordinator {
       return false;
     }
   }
+
+  /// The browser explicitly reported that consent did not complete. Drop only
+  /// this device's pending check; the READY project and Planner data remain.
+  Future<void> abandonManagementCheck() =>
+      _serialized(_discardManagementAttempt);
 
   Future<void> _discardManagementAttempt() async {
     try {
@@ -931,7 +1236,13 @@ class ProvisioningCoordinator {
     final now = _clock().toUtc();
     // Poll gaps can hide intermediate states, so completion walks the Worker's
     // own transition graph; every persisted step stays a legal transition.
-    final path = _pathTo(attempt.profile.state, ProvisioningState.verifying);
+    final path =
+        const {
+          ProvisioningState.authorizationPending,
+          ProvisioningState.organizationSelected,
+        }.contains(attempt.profile.state)
+        ? <ProvisioningState>[]
+        : _pathTo(attempt.profile.state, ProvisioningState.verifying);
     if (path == null) {
       return _unreachableState(attempt, snapshot, ProvisioningState.ready);
     }
@@ -1198,33 +1509,39 @@ class ProvisioningCoordinator {
   ProvisioningResult _failure(
     ProvisioningApiException error, {
     BackendConnectionProfile? profile,
-  }) => switch (error.failureClass) {
-    ProvisioningFailureClass.retryable => _result(
-      ProvisioningOutcome.retryable,
-      profile: profile,
-      message: error.message,
-    ),
-    ProvisioningFailureClass.actionRequired => _result(
-      ProvisioningOutcome.needsUserAction,
-      profile: profile,
-      message: error.message,
-    ),
-    ProvisioningFailureClass.terminal => _result(
-      ProvisioningOutcome.terminal,
-      profile: profile,
-      message: error.message,
-    ),
-    ProvisioningFailureClass.restartRequired => _result(
-      ProvisioningOutcome.restartRequired,
-      profile: profile,
-      message: error.message,
-    ),
-    ProvisioningFailureClass.protocol => _result(
-      ProvisioningOutcome.protocolError,
-      profile: profile,
-      message: error.message,
-    ),
-  };
+  }) => error.code == 'project_deleted'
+      ? _result(
+          ProvisioningOutcome.projectDeleted,
+          profile: profile,
+          message: error.message,
+        )
+      : switch (error.failureClass) {
+          ProvisioningFailureClass.retryable => _result(
+            ProvisioningOutcome.retryable,
+            profile: profile,
+            message: error.message,
+          ),
+          ProvisioningFailureClass.actionRequired => _result(
+            ProvisioningOutcome.needsUserAction,
+            profile: profile,
+            message: error.message,
+          ),
+          ProvisioningFailureClass.terminal => _result(
+            ProvisioningOutcome.terminal,
+            profile: profile,
+            message: error.message,
+          ),
+          ProvisioningFailureClass.restartRequired => _result(
+            ProvisioningOutcome.restartRequired,
+            profile: profile,
+            message: error.message,
+          ),
+          ProvisioningFailureClass.protocol => _result(
+            ProvisioningOutcome.protocolError,
+            profile: profile,
+            message: error.message,
+          ),
+        };
 
   ProvisioningResult _stale(
     ProvisioningAttempt attempt, [

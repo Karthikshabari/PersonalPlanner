@@ -178,6 +178,248 @@ void main() {
   });
 
   test(
+    'one verified legacy cloud requires explicit Use this project',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+        candidates: <ProvisioningCandidate>[
+          ProvisioningCandidate(
+            projectRef: 'abcdefghijklmnopqrst',
+            name: 'Renamed cloud',
+          ),
+        ],
+      );
+      api.adoptionResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().checkAuthorization();
+      expect(current().phase, ProvisioningUiPhase.candidateSelection);
+      expect(current().selectedCandidate?.name, 'Renamed cloud');
+      expect(api.calls, contains('resolveProject'));
+      expect(api.calls, isNot(contains('listOrganizations')));
+      expect(
+        api.calls.where((call) => call.startsWith('adoptProject')),
+        isEmpty,
+      );
+
+      await controller().useSelectedCandidate();
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(api.calls, contains('adoptProject:abcdefghijklmnopqrst'));
+    },
+  );
+
+  test('multiple verified clouds are not chosen by list order', () async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      resolutionComplete: true,
+      candidates: <ProvisioningCandidate>[
+        ProvisioningCandidate(
+          projectRef: 'abcdefghijklmnopqrst',
+          name: 'Planner X',
+        ),
+        ProvisioningCandidate(
+          projectRef: 'bcdefghijklmnopqrstu',
+          name: 'Planner Y',
+        ),
+      ],
+    );
+    buildContainer(withApi: api);
+    await loadState();
+
+    await controller().checkAuthorization();
+    expect(current().phase, ProvisioningUiPhase.candidateSelection);
+    expect(current().selectedCandidate, isNull);
+    expect(api.calls.where((call) => call.startsWith('adoptProject')), isEmpty);
+    controller().selectCandidate(current().candidates.last);
+    expect(current().selectedCandidate?.projectRef, 'bcdefghijklmnopqrstu');
+  });
+
+  test(
+    'mapped project becomes ready without organization enumeration',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().checkAuthorization();
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(api.calls, isNot(contains('listOrganizations')));
+    },
+  );
+
+  test(
+    'manual refresh exposes callback failure and retries the same attempt',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(ProvisioningState.authorizationPending),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.authorizationPending,
+          authorizationFailed: true,
+        ),
+        message: 'Supabase authorization could not be completed.',
+      );
+      final newUrl = Uri.parse(
+        'https://api.supabase.com/v1/oauth/authorize?state=new',
+      );
+      api.retryAuthorizationResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.authorizationPending),
+        authorizationUrl: newUrl,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().checkAuthorization();
+      expect(current().phase, ProvisioningUiPhase.retryableError);
+      expect(current().authorizationRetryAvailable, isTrue);
+      expect(current().authorizationUrlAvailable, isFalse);
+      expect(api.calls, isNot(contains('resolveProject')));
+      await controller().retry();
+      expect(api.calls, contains('retryAuthorization'));
+      expect(api.startAttemptCount, 0);
+      expect(launcher.opened, <Uri>[newUrl]);
+      expect(current().transactionId, testTransactionId);
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+    },
+  );
+
+  test('mapping conflict keeps READY until linked cloud is chosen', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.completeManagementResult = const ManagementCheckResult(
+      outcome: ManagementCheckOutcome.mappingConflict,
+      mappedProjectRef: 'bcdefghijklmnopqrstu',
+    );
+    api.recoverMappedResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.ready,
+      profile: testProfile(
+        ProvisioningState.ready,
+        projectRef: 'bcdefghijklmnopqrstu',
+      ),
+    );
+    buildContainer(withApi: api);
+    await loadState();
+
+    await controller().completeManagementCheck();
+    expect(current().phase, ProvisioningUiPhase.ready);
+    expect(current().mappingConflict, isTrue);
+    expect(current().readyProfile?.projectRef, testProjectRef);
+    expect(api.calls, isNot(contains('recoverMappedProject')));
+
+    await controller().useMappedProject();
+    expect(current().readyProfile?.projectRef, 'bcdefghijklmnopqrstu');
+    expect(api.calls, contains('recoverMappedProject'));
+  });
+
+  test('invalid local project offers verified legacy recovery', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    api.completeManagementResult = const ManagementCheckResult(
+      outcome: ManagementCheckOutcome.candidateRecovery,
+      candidates: <ProvisioningCandidate>[
+        ProvisioningCandidate(
+          projectRef: 'bcdefghijklmnopqrstu',
+          name: 'Recovered cloud',
+        ),
+      ],
+    );
+    api.recoverMappedResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.ready,
+      profile: testProfile(
+        ProvisioningState.ready,
+        projectRef: 'bcdefghijklmnopqrstu',
+      ),
+    );
+    buildContainer(withApi: api);
+    await loadState();
+    await controller().completeManagementCheck();
+
+    expect(current().phase, ProvisioningUiPhase.candidateSelection);
+    expect(current().legacyRecovery, isTrue);
+    expect(current().selectedCandidate?.projectRef, 'bcdefghijklmnopqrstu');
+    await controller().useSelectedCandidate();
+    expect(current().phase, ProvisioningUiPhase.ready);
+    expect(api.calls, contains('recoverCandidateProject:bcdefghijklmnopqrstu'));
+  });
+
+  test(
+    'deleted mapping waits for explicit replacement before new setup',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.projectDeleted,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().checkAuthorization();
+      expect(current().phase, ProvisioningUiPhase.mappedProjectDeleted);
+      expect(api.calls, isNot(contains('replaceDeletedProject')));
+
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+      );
+      await controller().replaceDeletedProject();
+      expect(api.calls, contains('replaceDeletedProject'));
+      expect(current().phase, ProvisioningUiPhase.organizationSelection);
+    },
+  );
+
+  test(
+    'retryable discovery failure never offers new project creation',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        message: 'candidate_discovery_failed',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().checkAuthorization();
+      expect(current().phase, ProvisioningUiPhase.retryableError);
+      expect(api.calls, isNot(contains('listOrganizations')));
+    },
+  );
+
+  test(
     'preselects a single organization but still requires Continue',
     () async {
       api.attempt = testAttempt(ProvisioningState.authorizationPending);
@@ -520,6 +762,37 @@ void main() {
         expect(current().phase, ProvisioningUiPhase.ready);
       },
     );
+
+    test('a failed browser callback drops only the pending check', () async {
+      final links = StreamController<String>();
+      addTearDown(links.close);
+      final source = AppLinkSource(platformLinks: links.stream);
+      addTearDown(source.dispose);
+      await source.start();
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      api.startManagementResult = ManagementStartResult(
+        outcome: ManagementStartOutcome.authorizationReady,
+        authorizationUrl: Uri.parse(
+          'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+        ),
+      );
+      buildContainer(withApi: api, linkSource: source);
+      await loadState();
+      await controller().reauthorizeSupabaseAccess();
+
+      links.add('${ManagementCallback.redirectUrl}?result=failed');
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(api.calls, contains('abandonManagementCheck'));
+      expect(api.calls, isNot(contains('completeManagementCheck')));
+      expect(current().managementCheckInFlight, isFalse);
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().readyProfile?.projectRef, testProjectRef);
+    });
   });
 
   group('automatic progress refresh', () {
@@ -781,6 +1054,25 @@ void main() {
 
         expect(current().phase, ProvisioningUiPhase.ready);
         expect(current().message, cloudSetupCheckIndeterminateMessage);
+      },
+    );
+
+    test(
+      'a browser callback still in flight keeps the check pending',
+      () async {
+        readyAttempt();
+        api.completeManagementResult = const ManagementCheckResult(
+          outcome: ManagementCheckOutcome.authorizationPending,
+          message: 'Waiting for Supabase authorization to finish.',
+        );
+        buildContainer(withApi: api);
+        await loadState();
+
+        await controller().completeManagementCheck();
+
+        expect(current().phase, ProvisioningUiPhase.ready);
+        expect(current().managementCheckInFlight, isTrue);
+        expect(current().readyProfile?.projectRef, testProjectRef);
       },
     );
 

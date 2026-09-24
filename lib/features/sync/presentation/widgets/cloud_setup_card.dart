@@ -346,6 +346,77 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           ],
         );
 
+      case ProvisioningUiPhase.candidateSelection:
+        final candidates = state.candidates;
+        return _CloudCard(
+          icon: Icons.cloud_done_outlined,
+          title: candidates.length == 1
+              ? 'Existing Personal Planner cloud found'
+              : 'Choose your Personal Planner cloud',
+          body:
+              'Supabase confirmed these projects have the Planner database. '
+              'Choose the cloud storage you already use. Other projects remain untouched.',
+          busy: busy,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (final candidate in candidates)
+                ListTile(
+                  key: ValueKey<String>(
+                    'cloud-candidate-${candidate.projectRef}',
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  selected:
+                      state.selectedCandidate?.projectRef ==
+                      candidate.projectRef,
+                  leading: Icon(
+                    state.selectedCandidate?.projectRef == candidate.projectRef
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(candidate.name),
+                  subtitle: Text(
+                    '${candidate.projectRef.substring(0, 6)}…'
+                    '${candidate.projectRef.substring(16)}'
+                    '${candidate.region == null ? '' : ' · ${candidate.region}'}',
+                  ),
+                  onTap: busy
+                      ? null
+                      : () => controller.selectCandidate(candidate),
+                ),
+            ],
+          ),
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-use-candidate'),
+              onPressed: busy || state.selectedCandidate == null
+                  ? null
+                  : controller.useSelectedCandidate,
+              child: Text(
+                candidates.length == 1 ? 'Use this project' : 'Continue',
+              ),
+            ),
+          ],
+        );
+
+      case ProvisioningUiPhase.mappedProjectDeleted:
+        return _CloudCard(
+          icon: Icons.cloud_off_outlined,
+          title: cloudStorageTitle,
+          status: cloudRemoteMissingTitle,
+          statusTone: _StatusTone.error,
+          body: state.message ?? cloudSetupMappedProjectDeletedMessage,
+          busy: busy,
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-replace-deleted-project'),
+              onPressed: busy ? null : controller.replaceDeletedProject,
+              child: const Text('Set up replacement cloud'),
+            ),
+          ],
+        );
+
       case ProvisioningUiPhase.provisioning:
         return _CloudCard(
           icon: Icons.cloud_sync_outlined,
@@ -377,18 +448,23 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             FilledButton(
               key: const ValueKey('cloud-retry-action'),
               onPressed: busy ? null : controller.retry,
-              child: const Text('Retry'),
+              child: Text(
+                state.authorizationRetryAvailable
+                    ? 'Retry Supabase authorization'
+                    : 'Retry',
+              ),
             ),
             // Explicit escape hatch: some retryable failures can never succeed
             // on this transaction (for example a missing OAuth scope that was
             // granted after this attempt was authorized). Start Again abandons
             // this local attempt and asks the coordinator for a brand-new
             // transaction; it never deletes a Supabase project.
-            TextButton(
-              key: const ValueKey('cloud-start-again'),
-              onPressed: busy ? null : controller.startAgain,
-              child: const Text('Start Again'),
-            ),
+            if (!state.authorizationRetryAvailable)
+              TextButton(
+                key: const ValueKey('cloud-start-again'),
+                onPressed: busy ? null : controller.startAgain,
+                child: const Text('Start Again'),
+              ),
             if (state.authorizationUrlAvailable)
               TextButton(
                 key: const ValueKey('cloud-open-authorization'),
@@ -446,6 +522,20 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           body: state.message ?? cloudSetupReadyBody,
           busy: busy,
           actions: <Widget>[
+            if (state.mappingConflict)
+              FilledButton(
+                key: const ValueKey('cloud-use-linked-project'),
+                onPressed: busy ? null : controller.useMappedProject,
+                child: const Text('Use linked cloud project'),
+              ),
+            if (state.legacyRecoveryEmpty)
+              FilledButton(
+                key: const ValueKey('cloud-setup-replacement'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_startSetupWithPreflight(controller)),
+                child: const Text('Set up new cloud storage'),
+              ),
             if (unreachable)
               FilledButton(
                 key: const ValueKey('cloud-retry-probe-action'),

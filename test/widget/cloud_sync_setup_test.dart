@@ -156,10 +156,7 @@ void main() {
 
     expect(api.startAttemptCount, 0);
     // Only the durable-state read happens; no provisioning call is made.
-    expect(
-      api.calls.where((call) => call != 'loadAttempt'),
-      isEmpty,
-    );
+    expect(api.calls.where((call) => call != 'loadAttempt'), isEmpty);
     expect(launcher.opened, isEmpty);
     // The screen is unchanged and still offers the same first action.
     expect(find.byKey(const ValueKey('cloud-enable-action')), findsOneWidget);
@@ -278,6 +275,49 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets(
+    'shows one verified legacy cloud and binds it only on Use this project',
+    (tester) async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+        candidates: <ProvisioningCandidate>[
+          ProvisioningCandidate(
+            projectRef: 'abcdefghijklmnopqrst',
+            name: 'Renamed cloud',
+          ),
+        ],
+      );
+      api.adoptionResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: 'abcdefghijklmnopqrst',
+        ),
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      expect(
+        find.text('Existing Personal Planner cloud found'),
+        findsOneWidget,
+      );
+      expect(find.text('Renamed cloud'), findsOneWidget);
+      expect(
+        api.calls.where((call) => call.startsWith('adoptProject')),
+        isEmpty,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('cloud-use-candidate')));
+      await _settle(tester);
+      expect(api.calls, contains('adoptProject:abcdefghijklmnopqrst'));
+      await _unmount(tester);
+    },
+  );
+
   testWidgets('lets the user choose between several organizations', (
     tester,
   ) async {
@@ -357,11 +397,7 @@ void main() {
       // all; the only way forward is the automatic status refresh.
       api.organizationsResult = testOrganizations(
         const <ProvisioningOrganization>[
-          ProvisioningOrganization(
-            id: 'org-1',
-            name: 'Ks_Planner',
-            slug: 'ks',
-          ),
+          ProvisioningOrganization(id: 'org-1', name: 'Ks_Planner', slug: 'ks'),
         ],
       );
       await _pollTicks(tester);
@@ -398,6 +434,39 @@ void main() {
     expect(api.calls.where((call) => call == 'migrate').length, greaterThan(1));
     expect(api.startAttemptCount, 0);
 
+    await _unmount(tester);
+  });
+
+  testWidgets('failed OAuth callback offers retry on the same setup', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.retryable,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      snapshot: const ProvisioningSnapshot(
+        transactionId: testTransactionId,
+        state: ProvisioningState.authorizationPending,
+        authorizationFailed: true,
+      ),
+      message: 'Supabase authorization could not be completed.',
+    );
+    api.retryAuthorizationResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      authorizationUrl: testAuthorizationUrl,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+    await tester.tap(find.text('Refresh status'));
+    await _settle(tester);
+
+    expect(find.text('Retry Supabase authorization'), findsOneWidget);
+    expect(find.text('Start Again'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('cloud-retry-action')));
+    await _settle(tester);
+    expect(api.calls, contains('retryAuthorization'));
+    expect(api.startAttemptCount, 0);
+    expect(launcher.opened, <Uri>[testAuthorizationUrl]);
     await _unmount(tester);
   });
 
@@ -664,10 +733,7 @@ void main() {
         find.byKey(const ValueKey('cloud-stop-using-cloud-action')),
         findsOneWidget,
       );
-      expect(
-        find.text(cloudSetupStopUsingCloudLabel),
-        findsOneWidget,
-      );
+      expect(find.text(cloudSetupStopUsingCloudLabel), findsOneWidget);
 
       await _unmount(tester);
     },
@@ -689,10 +755,16 @@ void main() {
     // Temporary connectivity trouble never offers the deleted-project path.
     expect(find.text(cloudRemoteMissingTitle), findsNothing);
     expect(find.text('Set up cloud storage again'), findsNothing);
-    expect(find.byKey(const ValueKey('cloud-setup-again-action')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('cloud-setup-again-action')),
+      findsNothing,
+    );
     expect(find.text('Open Supabase'), findsNothing);
     // Both non-destructive options stay available.
-    expect(find.byKey(const ValueKey('cloud-retry-probe-action')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-retry-probe-action')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('cloud-reauthorize-action')),
       findsOneWidget,
@@ -709,7 +781,9 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('a recovered probe returns the card to Connected', (tester) async {
+  testWidgets('a recovered probe returns the card to Connected', (
+    tester,
+  ) async {
     _probe.result = BackendProjectProbeResult.indeterminate;
     api.attempt = testAttempt(
       ProvisioningState.ready,
@@ -728,40 +802,38 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('Check cloud connection opens the consent page and shows progress', (
-    tester,
-  ) async {
-    api.attempt = testAttempt(
-      ProvisioningState.ready,
-      projectRef: testProjectRef,
-    );
-    final consent = Uri.parse(
-      'https://api.supabase.com/v1/oauth/authorize?client_id=client',
-    );
-    api.startManagementResult = ManagementStartResult(
-      outcome: ManagementStartOutcome.authorizationReady,
-      authorizationUrl: consent,
-    );
-    await _pumpCard(tester, api: api, launcher: launcher);
+  testWidgets(
+    'Check cloud connection opens the consent page and shows progress',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+      );
+      final consent = Uri.parse(
+        'https://api.supabase.com/v1/oauth/authorize?client_id=client',
+      );
+      api.startManagementResult = ManagementStartResult(
+        outcome: ManagementStartOutcome.authorizationReady,
+        authorizationUrl: consent,
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
 
-    await _openAdvancedAccess(tester);
-    await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
-    await _settle(tester);
+      await _openAdvancedAccess(tester);
+      await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
+      await _settle(tester);
 
-    expect(api.calls, contains('startManagementCheck'));
-    expect(launcher.opened, contains(consent));
-    expect(find.text(cloudSetupReauthorizeStartedMessage), findsOneWidget);
-    // While the browser consent is outstanding the temporary access is shown as
-    // active and offers a real cancel action.
-    expect(find.text(cloudSetupSupabaseAccessPending), findsOneWidget);
-    expect(find.byKey(const ValueKey('cloud-revoke-action')), findsOneWidget);
-    expect(
-      find.text(cloudSetupCancelAccessLabel),
-      findsOneWidget,
-    );
+      expect(api.calls, contains('startManagementCheck'));
+      expect(launcher.opened, contains(consent));
+      expect(find.text(cloudSetupReauthorizeStartedMessage), findsOneWidget);
+      // While the browser consent is outstanding the temporary access is shown as
+      // active and offers a real cancel action.
+      expect(find.text(cloudSetupSupabaseAccessPending), findsOneWidget);
+      expect(find.byKey(const ValueKey('cloud-revoke-action')), findsOneWidget);
+      expect(find.text(cloudSetupCancelAccessLabel), findsOneWidget);
 
-    await _unmount(tester);
-  });
+      await _unmount(tester);
+    },
+  );
 
   testWidgets('Check cloud connection explains an unavailable Worker', (
     tester,
@@ -905,10 +977,7 @@ void main() {
     expect(find.text(cloudSetupNothingToRevokeMessage), findsOneWidget);
     // Nothing is held afterwards, so the prominent cancel action disappears.
     expect(find.byKey(const ValueKey('cloud-revoke-action')), findsNothing);
-    expect(
-      find.byKey(const ValueKey('cloud-management-status')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('cloud-management-status')), findsNothing);
 
     await _unmount(tester);
   });

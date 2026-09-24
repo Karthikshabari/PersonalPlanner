@@ -78,8 +78,22 @@ class FakeProvisioningApi implements ProvisioningApi {
   ProvisioningResult refreshResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
   );
+  ProvisioningResult retryAuthorizationResult = const ProvisioningResult(
+    outcome: ProvisioningOutcome.inProgress,
+  );
   ProvisioningResult organizationsResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
+  );
+  ProvisioningResult resolutionResult = const ProvisioningResult(
+    outcome: ProvisioningOutcome.inProgress,
+    resolutionComplete: true,
+  );
+  ProvisioningResult replacementResult = const ProvisioningResult(
+    outcome: ProvisioningOutcome.inProgress,
+    resolutionComplete: true,
+  );
+  ProvisioningResult adoptionResult = const ProvisioningResult(
+    outcome: ProvisioningOutcome.ready,
   );
   ProvisioningResult selectResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
@@ -103,6 +117,10 @@ class FakeProvisioningApi implements ProvisioningApi {
   /// Scripted result of completing the Management project check.
   ManagementCheckResult completeManagementResult = const ManagementCheckResult(
     outcome: ManagementCheckOutcome.exists,
+  );
+
+  ProvisioningResult recoverMappedResult = const ProvisioningResult(
+    outcome: ProvisioningOutcome.retryable,
   );
 
   /// Scripted result of revoking Management access.
@@ -143,9 +161,33 @@ class FakeProvisioningApi implements ProvisioningApi {
   }
 
   @override
+  Future<ProvisioningResult> retryAuthorization() async {
+    calls.add('retryAuthorization');
+    return retryAuthorizationResult;
+  }
+
+  @override
   Future<ProvisioningResult> listOrganizations() async {
     calls.add('listOrganizations');
     return organizationsResult;
+  }
+
+  @override
+  Future<ProvisioningResult> resolveProject() async {
+    calls.add('resolveProject');
+    return resolutionResult;
+  }
+
+  @override
+  Future<ProvisioningResult> replaceDeletedProject() async {
+    calls.add('replaceDeletedProject');
+    return replacementResult;
+  }
+
+  @override
+  Future<ProvisioningResult> adoptProject(String projectRef) async {
+    calls.add('adoptProject:$projectRef');
+    return adoptionResult;
   }
 
   @override
@@ -190,6 +232,23 @@ class FakeProvisioningApi implements ProvisioningApi {
   Future<ManagementCheckResult> completeManagementCheck() async {
     calls.add('completeManagementCheck');
     return completeManagementResult;
+  }
+
+  @override
+  Future<ProvisioningResult> recoverMappedProject() async {
+    calls.add('recoverMappedProject');
+    return recoverMappedResult;
+  }
+
+  @override
+  Future<ProvisioningResult> recoverCandidateProject(String projectRef) async {
+    calls.add('recoverCandidateProject:$projectRef');
+    return recoverMappedResult;
+  }
+
+  @override
+  Future<void> abandonManagementCheck() async {
+    calls.add('abandonManagementCheck');
   }
 
   @override

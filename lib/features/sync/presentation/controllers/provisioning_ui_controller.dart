@@ -110,6 +110,19 @@ const cloudSetupSupabaseAccessBody =
 const cloudSetupSupabaseAccessTitle = 'Supabase connection';
 const cloudSetupSupabaseAccessPending =
     'Waiting for Supabase to confirm the new authorization.';
+const cloudSetupMappingConflictMessage =
+    'This device remembers a different cloud project. Your Supabase account '
+    'is linked to another verified Personal Planner cloud. You can use that '
+    'project; data stored for this device’s previous project will remain on '
+    'this device.';
+const cloudSetupLegacyRecoveryEmptyMessage =
+    'The project remembered on this device could not be verified, and no '
+    'other Personal Planner cloud was found for this Supabase account. '
+    'Your local data is unchanged. You can set up a new cloud project.';
+const cloudSetupMappedProjectDeletedMessage =
+    'Supabase reported that the cloud project linked to this account is gone. '
+    'Your local Planner data remains. If you choose to replace it, Personal '
+    'Planner will check again before allowing a new cloud setup.';
 
 /// Label of the *authoritative* project check: it asks Supabase directly
 /// (through a short Management authorization in the browser) whether this
@@ -171,6 +184,12 @@ enum ProvisioningUiPhase {
   /// Organizations were discovered and the user must choose one.
   organizationSelection,
 
+  /// Verified legacy Planner projects need an explicit first binding.
+  candidateSelection,
+
+  /// The account mapping points to a project Supabase confirmed missing.
+  mappedProjectDeleted,
+
   /// The cloud backend is being created, migrated or verified.
   provisioning,
 
@@ -219,11 +238,17 @@ class ProvisioningUiState {
     this.transactionId,
     this.errorCode,
     this.organizations = const <ProvisioningOrganization>[],
+    this.candidates = const <ProvisioningCandidate>[],
+    this.selectedCandidate,
     this.selectedOrganization,
     this.readyProfile,
     this.managementCheckInFlight = false,
+    this.mappingConflict = false,
+    this.legacyRecovery = false,
+    this.legacyRecoveryEmpty = false,
     this.busy = false,
     this.authorizationUrlAvailable = false,
+    this.authorizationRetryAvailable = false,
     this.reachability = CloudReachability.unknown,
     this.authorizationConfirmed = false,
     this.message,
@@ -237,17 +262,25 @@ class ProvisioningUiState {
   final String? errorCode;
 
   final List<ProvisioningOrganization> organizations;
+  final List<ProvisioningCandidate> candidates;
+  final ProvisioningCandidate? selectedCandidate;
   final ProvisioningOrganization? selectedOrganization;
   final BackendConnectionProfile? readyProfile;
 
   /// True while a Supabase Management authorization this device started has not
   /// been completed yet (the browser consent is still outstanding).
   final bool managementCheckInFlight;
+  final bool mappingConflict;
+  final bool legacyRecovery;
+  final bool legacyRecoveryEmpty;
 
   final bool busy;
 
   /// True when this session still holds the authorization URL to re-open.
   final bool authorizationUrlAvailable;
+
+  /// The previous one-time OAuth callback was consumed without a grant.
+  final bool authorizationRetryAvailable;
 
   /// Result of the last bounded project-host probe of a READY backend.
   final CloudReachability reachability;
@@ -276,9 +309,15 @@ class ProvisioningUiState {
     bool clearMessage = false,
     ProvisioningOrganization? selectedOrganization,
     List<ProvisioningOrganization>? organizations,
+    List<ProvisioningCandidate>? candidates,
+    ProvisioningCandidate? selectedCandidate,
     bool? managementCheckInFlight,
+    bool? mappingConflict,
+    bool? legacyRecovery,
+    bool? legacyRecoveryEmpty,
     bool? busy,
     bool? authorizationUrlAvailable,
+    bool? authorizationRetryAvailable,
     CloudReachability? reachability,
     bool? authorizationConfirmed,
   }) => ProvisioningUiState(
@@ -287,13 +326,20 @@ class ProvisioningUiState {
     transactionId: transactionId,
     errorCode: errorCode,
     organizations: organizations ?? this.organizations,
+    candidates: candidates ?? this.candidates,
+    selectedCandidate: selectedCandidate ?? this.selectedCandidate,
     selectedOrganization: selectedOrganization ?? this.selectedOrganization,
     readyProfile: readyProfile,
     managementCheckInFlight:
         managementCheckInFlight ?? this.managementCheckInFlight,
+    mappingConflict: mappingConflict ?? this.mappingConflict,
+    legacyRecovery: legacyRecovery ?? this.legacyRecovery,
+    legacyRecoveryEmpty: legacyRecoveryEmpty ?? this.legacyRecoveryEmpty,
     busy: busy ?? this.busy,
     authorizationUrlAvailable:
         authorizationUrlAvailable ?? this.authorizationUrlAvailable,
+    authorizationRetryAvailable:
+        authorizationRetryAvailable ?? this.authorizationRetryAvailable,
     reachability: reachability ?? this.reachability,
     authorizationConfirmed:
         authorizationConfirmed ?? this.authorizationConfirmed,
@@ -320,7 +366,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     // to switch back and press anything.
     _linkSubscription = ref.read(appLinkSourceProvider).links.listen((link) {
       if (ManagementCallback.matches(link)) {
-        unawaited(_onManagementAuthorizationReturned());
+        unawaited(_onManagementAuthorizationReturned(link));
       }
     });
     final api = ref.read(provisioningApiProvider);
@@ -572,6 +618,45 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           ),
         );
         return;
+      case ManagementCheckOutcome.mappingConflict:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            mappingConflict: true,
+            message: cloudSetupMappingConflictMessage,
+          ),
+        );
+        return;
+      case ManagementCheckOutcome.candidateRecovery:
+        if (result.candidates.isEmpty) {
+          _update(
+            (current) => current.copyWith(
+              managementCheckInFlight: false,
+              legacyRecoveryEmpty: true,
+              message: cloudSetupLegacyRecoveryEmptyMessage,
+            ),
+          );
+        } else {
+          _applyState(
+            ProvisioningUiState(
+              phase: ProvisioningUiPhase.candidateSelection,
+              candidates: result.candidates,
+              selectedCandidate: result.candidates.length == 1
+                  ? result.candidates.single
+                  : null,
+              legacyRecovery: true,
+            ),
+          );
+        }
+        return;
+      case ManagementCheckOutcome.authorizationPending:
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: true,
+            message: result.message ?? cloudSetupReauthorizeStartedMessage,
+          ),
+        );
+        return;
       case ManagementCheckOutcome.retryable:
       case ManagementCheckOutcome.protocolError:
         _update(
@@ -592,14 +677,62 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     }
   });
 
+  Future<void> useMappedProject() => _run(() async {
+    final api = _api;
+    if (api == null || !(state.value?.mappingConflict ?? false)) return;
+    final result = await api.recoverMappedProject();
+    if (result.outcome == ProvisioningOutcome.ready) {
+      _applyResult(result);
+      await ref.read(runtimeBackendReloaderProvider)?.reload();
+    } else {
+      _update(
+        (current) => current.copyWith(
+          message: result.message ?? cloudSetupRetryableMessage,
+        ),
+      );
+    }
+  });
+
+  Future<void> replaceDeletedProject() => _run(() async {
+    final api = _api;
+    if (api == null) return;
+    final result = await api.replaceDeletedProject();
+    if (result.outcome == ProvisioningOutcome.inProgress &&
+        result.resolutionComplete) {
+      await _continueAfterAuthorization(api);
+    } else {
+      _applyResult(result);
+    }
+  });
+
   /// Handles the browser handing a Supabase authorization back to the app.
   ///
   /// A Management authorization completes the project check the user started;
   /// a provisioning authorization keeps its original meaning and resumes
   /// provisioning.
-  Future<void> _onManagementAuthorizationReturned() async {
+  Future<void> _onManagementAuthorizationReturned(String link) async {
     final phase = state.value?.phase;
     if (phase == null) return;
+    final callbackResult = ManagementCallback.resultOf(link);
+    if (callbackResult == ManagementCallbackResult.cancelled ||
+        callbackResult == ManagementCallbackResult.failed ||
+        callbackResult == ManagementCallbackResult.invalid) {
+      if (state.value?.managementCheckInFlight ?? false) {
+        await _api?.abandonManagementCheck();
+        _update(
+          (current) => current.copyWith(
+            managementCheckInFlight: false,
+            message: cloudSetupReauthorizeIncompleteMessage,
+          ),
+        );
+      } else if (phase == ProvisioningUiPhase.waitingForAuthorization) {
+        _update(
+          (current) =>
+              current.copyWith(message: cloudSetupReauthorizeIncompleteMessage),
+        );
+      }
+      return;
+    }
     final inFlight = state.value?.managementCheckInFlight ?? false;
     if (inFlight || phase == ProvisioningUiPhase.ready) {
       await completeManagementCheck();
@@ -681,6 +814,32 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _update((current) => current.copyWith(selectedOrganization: organization));
   }
 
+  void selectCandidate(ProvisioningCandidate candidate) {
+    _update((current) => current.copyWith(selectedCandidate: candidate));
+  }
+
+  Future<void> useSelectedCandidate() => _run(() async {
+    final api = _api;
+    final candidate = state.value?.selectedCandidate;
+    if (api == null || candidate == null) return;
+    final legacyRecovery = state.value?.legacyRecovery ?? false;
+    final result = legacyRecovery
+        ? await api.recoverCandidateProject(candidate.projectRef)
+        : await api.adoptProject(candidate.projectRef);
+    if (legacyRecovery && result.outcome != ProvisioningOutcome.ready) {
+      _update(
+        (current) => current.copyWith(
+          message: result.message ?? cloudSetupRetryableMessage,
+        ),
+      );
+      return;
+    }
+    _applyResult(result);
+    if (legacyRecovery && result.outcome == ProvisioningOutcome.ready) {
+      await ref.read(runtimeBackendReloaderProvider)?.reload();
+    }
+  });
+
   /// Confirms the chosen organization for the current attempt.
   Future<void> continueSetup() => _run(() async {
     final api = _api;
@@ -695,8 +854,33 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _applyResult(result);
   });
 
-  /// Retries the next authoritative step.
-  Future<void> retry() => advance();
+  /// Retries the next step, issuing fresh PKCE state on the same transaction
+  /// when the previous OAuth callback failed after consuming its state.
+  Future<void> retry() {
+    if (!(state.value?.authorizationRetryAvailable ?? false)) return advance();
+    return _run(() async {
+      final api = _api;
+      if (api == null) return;
+      final result = await api.retryAuthorization();
+      final url = result.authorizationUrl;
+      if (result.outcome != ProvisioningOutcome.inProgress || url == null) {
+        _applyResult(result);
+        return;
+      }
+      _authorizationUrl = url;
+      final opened = await ref.read(browserLauncherProvider).open(url);
+      _applyState(
+        ProvisioningUiState(
+          phase: ProvisioningUiPhase.waitingForAuthorization,
+          transactionId: result.profile?.provisioningTransactionId,
+          authorizationUrlAvailable: true,
+          message: opened
+              ? cloudSetupWaitingMessage
+              : cloudSetupBrowserLaunchFailedMessage,
+        ),
+      );
+    });
+  }
 
   /// "Start again": the C2 coordinator supersedes the previous attempt.
   Future<void> startAgain() => startSetup();
@@ -791,6 +975,42 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     final refreshed = await api.refresh();
     if (refreshed.outcome != ProvisioningOutcome.inProgress) {
       _applyResult(refreshed);
+      return;
+    }
+    final resolution = await api.resolveProject();
+    if (resolution.outcome == ProvisioningOutcome.ready) {
+      _applyResult(resolution);
+      return;
+    }
+    if (resolution.outcome == ProvisioningOutcome.restartRequired) {
+      _update(
+        (current) => current.copyWith(
+          phase: ProvisioningUiPhase.waitingForAuthorization,
+          authorizationUrlAvailable: _authorizationUrl != null,
+          message: cloudSetupStillWaitingMessage,
+        ),
+      );
+      return;
+    }
+    if (resolution.outcome != ProvisioningOutcome.inProgress ||
+        !resolution.resolutionComplete) {
+      _applyResult(resolution);
+      return;
+    }
+    if (resolution.candidates.isNotEmpty) {
+      _applyState(
+        ProvisioningUiState(
+          phase: ProvisioningUiPhase.candidateSelection,
+          transactionId:
+              refreshed.profile?.provisioningTransactionId ??
+              state.value?.transactionId,
+          candidates: resolution.candidates,
+          selectedCandidate: resolution.candidates.length == 1
+              ? resolution.candidates.single
+              : null,
+          authorizationConfirmed: true,
+        ),
+      );
       return;
     }
     final organizations = await api.listOrganizations();
@@ -1000,6 +1220,16 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           ),
         );
         return;
+      case ProvisioningOutcome.projectDeleted:
+        _cancelTimer();
+        _applyState(
+          ProvisioningUiState(
+            phase: ProvisioningUiPhase.mappedProjectDeleted,
+            transactionId: id,
+            message: cloudSetupMappedProjectDeletedMessage,
+          ),
+        );
+        return;
       case ProvisioningOutcome.needsUserAction:
         _applyState(
           ProvisioningUiState(
@@ -1019,11 +1249,13 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
       case ProvisioningOutcome.retryable:
+        final authorizationRetry = result.snapshot?.authorizationFailed == true;
         _applyState(
           ProvisioningUiState(
             phase: ProvisioningUiPhase.retryableError,
             transactionId: id,
-            authorizationUrlAvailable: canReopen,
+            authorizationUrlAvailable: authorizationRetry ? false : canReopen,
+            authorizationRetryAvailable: authorizationRetry,
             message: result.message ?? cloudSetupRetryableMessage,
           ),
         );

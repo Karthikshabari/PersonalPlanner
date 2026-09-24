@@ -1,5 +1,7 @@
 import 'planner_uri_scheme.dart';
 
+enum ManagementCallbackResult { completed, cancelled, failed, invalid, unknown }
+
 /// Supabase **Management** authorization callback of the provisioning Worker.
 ///
 /// This is deliberately a different destination from the Planner user Auth
@@ -11,11 +13,9 @@ import 'planner_uri_scheme.dart';
 ///   asking Supabase for permission to create/manage the user's project.
 ///
 /// The link carries no transaction id, provisioning capability, Management
-/// access token, refresh token, or authorization code: the app already knows
-/// its own durable attempt, so the only safe information the Worker needs to
-/// convey is "authorization returned, resume provisioning". A link matching
-/// this destination therefore can never satisfy, mutate, or complete the
-/// Planner user Auth flow.
+/// access token, refresh token, or authorization code. Its optional `result`
+/// describes the browser outcome for UI recovery; the Worker still decides
+/// whether a grant exists. It cannot complete the Planner user Auth flow.
 abstract final class ManagementCallback {
   /// The shared Planner custom scheme.
   static const String scheme = PlannerUriScheme.value;
@@ -28,13 +28,26 @@ abstract final class ManagementCallback {
 
   /// Matches the exact destination, optionally followed by a query/fragment.
   ///
-  /// The exact prefix keeps `...://management-callback-evil` out. Any query or
-  /// fragment is ignored rather than read, so nothing in an incoming link can
-  /// influence what the app does beyond resuming its own durable attempt.
+  /// The exact prefix keeps `...://management-callback-evil` out. Only the
+  /// bounded `result` query value is interpreted by [resultOf].
   static final RegExp _linkPattern = RegExp(
     '^${RegExp.escape(redirectUrl)}(?:\\?[^#]*)?(?:#.*)?\$',
   );
 
   /// True when [link] is exactly the Management authorization callback.
   static bool matches(String link) => _linkPattern.hasMatch(link);
+
+  /// A browser outcome is only a UI hint. The Worker remains authoritative
+  /// about whether it holds a Management grant for the pending transaction.
+  static ManagementCallbackResult resultOf(String link) {
+    if (!matches(link)) return ManagementCallbackResult.invalid;
+    final result = Uri.tryParse(link)?.queryParameters['result'];
+    return switch (result) {
+      'completed' => ManagementCallbackResult.completed,
+      'cancelled' => ManagementCallbackResult.cancelled,
+      'failed' => ManagementCallbackResult.failed,
+      'invalid' => ManagementCallbackResult.invalid,
+      _ => ManagementCallbackResult.unknown,
+    };
+  }
 }

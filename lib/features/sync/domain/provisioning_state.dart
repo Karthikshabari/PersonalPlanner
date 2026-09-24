@@ -115,11 +115,15 @@ enum ProvisioningState {
     },
     ProvisioningState.authorizationPending => const {
       ProvisioningState.organizationSelected,
+      // Exact mapped or explicitly adopted projects are already verified.
+      ProvisioningState.ready,
       ProvisioningState.terminalError,
       ProvisioningState.expired,
     },
     ProvisioningState.organizationSelected => const {
       ProvisioningState.projectCreating,
+      // Another device may have bound the account while this one selected an organization.
+      ProvisioningState.ready,
       ProvisioningState.terminalError,
       ProvisioningState.expired,
     },

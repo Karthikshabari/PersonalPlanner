@@ -85,7 +85,15 @@ abstract interface class ProvisioningApi {
 
   Future<ProvisioningResult> refresh();
 
+  Future<ProvisioningResult> retryAuthorization();
+
   Future<ProvisioningResult> listOrganizations();
+
+  Future<ProvisioningResult> resolveProject();
+
+  Future<ProvisioningResult> replaceDeletedProject();
+
+  Future<ProvisioningResult> adoptProject(String projectRef);
 
   Future<ProvisioningResult> selectOrganization({
     required String organizationSlug,
@@ -103,6 +111,12 @@ abstract interface class ProvisioningApi {
 
   /// Completes the in-flight Supabase Management authorization.
   Future<ManagementCheckResult> completeManagementCheck();
+
+  Future<ProvisioningResult> recoverMappedProject();
+
+  Future<ProvisioningResult> recoverCandidateProject(String projectRef);
+
+  Future<void> abandonManagementCheck();
 
   /// Revokes Personal Planner's Supabase Management authorization.
   Future<ManagementRevokeResult> revokeManagementAccess();
@@ -129,8 +143,23 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
   Future<ProvisioningResult> refresh() => _coordinator.refresh();
 
   @override
+  Future<ProvisioningResult> retryAuthorization() =>
+      _coordinator.retryAuthorization();
+
+  @override
   Future<ProvisioningResult> listOrganizations() =>
       _coordinator.listOrganizations();
+
+  @override
+  Future<ProvisioningResult> resolveProject() => _coordinator.resolveProject();
+
+  @override
+  Future<ProvisioningResult> replaceDeletedProject() =>
+      _coordinator.replaceDeletedProject();
+
+  @override
+  Future<ProvisioningResult> adoptProject(String projectRef) =>
+      _coordinator.adoptProject(projectRef);
 
   @override
   Future<ProvisioningResult> selectOrganization({
@@ -158,6 +187,18 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
   @override
   Future<ManagementCheckResult> completeManagementCheck() =>
       _coordinator.completeManagementCheck();
+
+  @override
+  Future<ProvisioningResult> recoverMappedProject() =>
+      _coordinator.recoverMappedProject();
+
+  @override
+  Future<ProvisioningResult> recoverCandidateProject(String projectRef) =>
+      _coordinator.recoverCandidateProject(projectRef);
+
+  @override
+  Future<void> abandonManagementCheck() =>
+      _coordinator.abandonManagementCheck();
 
   @override
   Future<ManagementRevokeResult> revokeManagementAccess() =>

@@ -66,6 +66,116 @@ Matcher _protocolError() => throwsA(
 );
 
 void main() {
+  group('Management account project resolution', () {
+    test(
+      'local READY recovery parses verified alternative candidates',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            'projectExists': null,
+            'projectStatus': 'legacy_candidates',
+            'candidates': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'projectRef': _projectRef,
+                'name': 'Recovered cloud',
+              },
+            ],
+          }),
+        );
+        final result = await _client(transport).checkProject(
+          _projectRef,
+          transactionId: _transactionId,
+          capability: _capability,
+        );
+        expect(result.existence, ProjectExistence.candidateRecovery);
+        expect(result.candidates.single.projectRef, _projectRef);
+      },
+    );
+
+    test(
+      'parses verified legacy candidates without guessing from a name',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            'kind': 'candidates',
+            'candidates': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'projectRef': _projectRef,
+                'name': 'Renamed cloud',
+                'region': 'ap-south-1',
+              },
+            ],
+          }),
+        );
+        final result = await _client(transport)
+            .resolve(_transactionId, capability: _capability);
+        expect(result.snapshot, isNull);
+        expect(result.candidates.single.projectRef, _projectRef);
+        expect(result.candidates.single.name, 'Renamed cloud');
+        expect(
+          transport.requests.single.uri.path,
+          '/v1/provisioning/transactions/$_transactionId/resolve',
+        );
+      },
+    );
+
+    test('parses an exact mapped READY project on a second device', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(
+          _snapshot(
+            'ready',
+            projectRef: _projectRef,
+            runtimeConfig: _runtimeConfig(),
+          ),
+        ),
+      );
+      final result = await _client(transport)
+          .resolve(_transactionId, capability: _capability);
+      expect(result.snapshot?.runtimeConfig?.projectRef, _projectRef);
+      expect(result.candidates, isEmpty);
+    });
+
+    test('adoption sends only the exact chosen ref', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(
+          _snapshot(
+            'ready',
+            projectRef: _projectRef,
+            runtimeConfig: _runtimeConfig(),
+          ),
+        ),
+      );
+      final result = await _client(
+        transport,
+      ).adopt(_transactionId, capability: _capability, projectRef: _projectRef);
+      expect(result.projectRef, _projectRef);
+      expect(jsonDecode(transport.requests.single.body!), <String, dynamic>{
+        'projectRef': _projectRef,
+      });
+    });
+
+    test(
+      'discovery 502 is retryable and cannot become an empty list',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            'error': 'candidate_discovery_failed',
+          }, status: 502),
+        );
+        await expectLater(
+          _client(transport).resolve(_transactionId, capability: _capability),
+          throwsA(
+            isA<ProvisioningApiException>().having(
+              (error) => error.failureClass,
+              'failureClass',
+              ProvisioningFailureClass.retryable,
+            ),
+          ),
+        );
+      },
+    );
+  });
+
   group('transaction creation', () {
     test('posts an empty body and returns the provisioning grant', () async {
       final transport = _FakeTransport(
@@ -194,10 +304,10 @@ void main() {
       }
     });
 
-    test('reports an unusable error body as a protocol problem', () async {
+    test('treats an HTML 502 as retryable without showing its body', () async {
       final transport = _FakeTransport(
         (_) async => const ProvisioningHttpResponse(
-          statusCode: 500,
+          statusCode: 502,
           body: '<html>gateway error</html>',
         ),
       );
@@ -209,9 +319,38 @@ void main() {
               .having(
                 (error) => error.kind,
                 'kind',
-                ProvisioningErrorKind.protocol,
+                ProvisioningErrorKind.worker,
               )
-              .having((error) => error.statusCode, 'statusCode', 500),
+              .having((error) => error.statusCode, 'statusCode', 502)
+              .having(
+                (error) => error.failureClass,
+                'failureClass',
+                ProvisioningFailureClass.retryable,
+              )
+              .having(
+                (error) => error.message.contains('<html>'),
+                'body hidden',
+                isFalse,
+              ),
+        ),
+      );
+    });
+
+    test('still rejects a malformed client-error response', () async {
+      final transport = _FakeTransport(
+        (_) async => const ProvisioningHttpResponse(
+          statusCode: 400,
+          body: '<html>unexpected</html>',
+        ),
+      );
+      await expectLater(
+        _client(transport).createTransaction(),
+        throwsA(
+          isA<ProvisioningApiException>().having(
+            (error) => error.failureClass,
+            'failureClass',
+            ProvisioningFailureClass.protocol,
+          ),
         ),
       );
     });
@@ -278,6 +417,7 @@ void main() {
         'runtime_config_unavailable': ProvisioningFailureClass.retryable,
         'operation_in_progress': ProvisioningFailureClass.retryable,
         'rate_limited': ProvisioningFailureClass.retryable,
+        'temporarily_unavailable': ProvisioningFailureClass.retryable,
         'project_identity_ambiguous': ProvisioningFailureClass.terminal,
         'migration_history_mismatch': ProvisioningFailureClass.terminal,
         'verification_failed': ProvisioningFailureClass.terminal,
@@ -417,6 +557,45 @@ void main() {
   });
 
   group('snapshot parsing', () {
+    test(
+      'reports a claimed failed callback without leaking OAuth state',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            ..._snapshot('authorization_pending'),
+            'authorizationCompleted': false,
+            'authorizationFailed': true,
+          }),
+        );
+        final snapshot = await _client(transport)
+            .snapshot(_transactionId, capability: _capability);
+        expect(snapshot.authorizationFailed, isTrue);
+        expect(snapshot.authorizationCompleted, isFalse);
+      },
+    );
+
+    test('retries authorization on the exact existing transaction', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(<String, dynamic>{
+          'authorizationUrl':
+              'https://api.supabase.com/v1/oauth/authorize?state=fresh',
+        }),
+      );
+      final url = await _client(
+        transport,
+      ).retryProvisioningAuthorization(_transactionId, capability: _capability);
+      expect(url.queryParameters['state'], 'fresh');
+      expect(transport.requests.single.method, 'POST');
+      expect(
+        transport.requests.single.uri.path,
+        '/v1/provisioning/transactions/$_transactionId/authorization/retry',
+      );
+      expect(
+        transport.requests.single.headers['authorization'],
+        'Provisioning $_capability',
+      );
+    });
+
     test(
       'accepts only a ready snapshot with a valid runtime configuration',
       () async {

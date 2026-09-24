@@ -21,11 +21,13 @@
   },
   "durable_objects": {
     "bindings": [
-      { "name": "PROVISIONING_TRANSACTION", "class_name": "ProvisioningTransaction" }
+      { "name": "PROVISIONING_TRANSACTION", "class_name": "ProvisioningTransaction" },
+      { "name": "MANAGEMENT_ACCOUNT_PROJECT", "class_name": "ManagementAccountProject" }
     ]
   },
   "migrations": [
-    { "tag": "provisioning-transaction-v1", "new_sqlite_classes": ["ProvisioningTransaction"] }
+    { "tag": "provisioning-transaction-v1", "new_sqlite_classes": ["ProvisioningTransaction"] },
+    { "tag": "management-account-project-v1", "new_sqlite_classes": ["ManagementAccountProject"] }
   ],
   "secrets": {
     "required": [

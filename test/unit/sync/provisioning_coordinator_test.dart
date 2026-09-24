@@ -15,6 +15,7 @@ import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 import '../../helpers/runtime_auth_fakes.dart';
 
 const _projectRef = 'abcdefghijklmnopqrst';
+const _otherProjectRef = 'bcdefghijklmnopqrstu';
 const _publishableKey = 'sb_publishable_CuLX_Y3xWuD0cuItKbm-Xw_NJMQ84zu';
 const _capability = 'abcdefghijklmnopqrstuvwxyz0123456789ABCD';
 const _projectName = 'personal-planner-safe-project';
@@ -144,6 +145,7 @@ Map<String, dynamic> _snapshotBody(
   String state, {
   String? projectRef,
   String? error,
+  String? subject,
   Map<String, dynamic>? runtimeConfig,
 }) => <String, dynamic>{
   'schema': 2,
@@ -155,6 +157,7 @@ Map<String, dynamic> _snapshotBody(
   'expensiveAttempts': 0,
   'projectRef': ?projectRef,
   'error': ?error,
+  'subject': ?subject,
   'runtimeConfig': ?runtimeConfig,
 };
 
@@ -250,6 +253,126 @@ void main() {
       File(p.join(directory.path, plannerBackendProfileFileName))
           .readAsStringSync();
 
+  group('cross-device project resolution', () {
+    test(
+      'confirmed deleted mapping needs explicit replacement before discovery',
+      () async {
+        await seedProfile(state: ProvisioningState.authorizationPending);
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/resolve',
+          <String, dynamic>{'error': 'project_deleted'},
+          status: 410,
+        );
+        final blocked = await buildCoordinator().resolveProject();
+        expect(blocked.outcome, ProvisioningOutcome.projectDeleted);
+        expect(transport.keys, <String>[
+          'POST ${_snapshotPath(_transactionA)}/resolve',
+        ]);
+
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/replace-deleted',
+          <String, dynamic>{'kind': 'mapping_cleared'},
+        );
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/resolve',
+          <String, dynamic>{'kind': 'candidates', 'candidates': <dynamic>[]},
+        );
+        final replacement = await buildCoordinator().replaceDeletedProject();
+        expect(replacement.outcome, ProvisioningOutcome.inProgress);
+        expect(replacement.resolutionComplete, isTrue);
+        expect(replacement.candidates, isEmpty);
+        expect(transport.keys, <String>[
+          'POST ${_snapshotPath(_transactionA)}/resolve',
+          'POST ${_snapshotPath(_transactionA)}/resolve',
+          'POST ${_snapshotPath(_transactionA)}/replace-deleted',
+          'POST ${_snapshotPath(_transactionA)}/resolve',
+        ]);
+      },
+    );
+
+    test('installs mapped X directly from Management authorization', () async {
+      await seedProfile(state: ProvisioningState.authorizationPending);
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/resolve',
+        _snapshotBody(
+          'ready',
+          projectRef: _projectRef,
+          runtimeConfig: _runtimeConfigBody(),
+        ),
+      );
+
+      final result = await buildCoordinator().resolveProject();
+
+      expect(result.outcome, ProvisioningOutcome.ready);
+      expect((await profileStore.read())?.projectRef, _projectRef);
+      expect(capabilityStore.values, isEmpty);
+      expect(transport.keys, <String>[
+        'POST ${_snapshotPath(_transactionA)}/resolve',
+      ]);
+    });
+
+    test('keeps an empty search distinct from a retryable 502', () async {
+      await seedProfile(state: ProvisioningState.authorizationPending);
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/resolve',
+        <String, dynamic>{'error': 'candidate_discovery_failed'},
+        status: 502,
+      );
+
+      final result = await buildCoordinator().resolveProject();
+
+      expect(result.outcome, ProvisioningOutcome.retryable);
+      expect(result.resolutionComplete, isFalse);
+      expect(result.candidates, isEmpty);
+      expect(
+        (await profileStore.read())?.state,
+        ProvisioningState.authorizationPending,
+      );
+      expect(capabilityStore.values[_transactionA], _capability);
+    });
+
+    test(
+      'a lost candidate race resolves the first authoritative mapping',
+      () async {
+        await seedProfile(state: ProvisioningState.authorizationPending);
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/adopt',
+          <String, dynamic>{
+            'error': 'mapping_conflict',
+            'projectRef': _projectRef,
+          },
+          status: 409,
+        );
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/resolve',
+          _snapshotBody(
+            'ready',
+            projectRef: _projectRef,
+            runtimeConfig: _runtimeConfigBody(),
+          ),
+        );
+
+        final result = await buildCoordinator().adoptProject(
+          'bcdefghijklmnopqrstu',
+        );
+
+        expect(result.outcome, ProvisioningOutcome.ready);
+        expect(result.profile?.projectRef, _projectRef);
+        expect(transport.keys, <String>[
+          'POST ${_snapshotPath(_transactionA)}/adopt',
+          'POST ${_snapshotPath(_transactionA)}/resolve',
+        ]);
+      },
+    );
+  });
+
   group('start', () {
     test(
       'creates a durable attempt and keeps the capability out of it',
@@ -335,6 +458,38 @@ void main() {
   });
 
   group('state advancement', () {
+    test(
+      'failed callback leaves the local attempt intact and offers retry',
+      () async {
+        final original = await seedProfile(
+          state: ProvisioningState.authorizationPending,
+        );
+        transport.reply('GET', _snapshotPath(_transactionA), <String, dynamic>{
+          ..._snapshotBody('authorization_pending'),
+          'authorizationFailed': true,
+        });
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/authorization/retry',
+          <String, dynamic>{
+            'authorizationUrl':
+                'https://api.supabase.com/v1/oauth/authorize?state=fresh',
+          },
+        );
+        final coordinator = buildCoordinator();
+        final failed = await coordinator.refresh();
+        expect(failed.outcome, ProvisioningOutcome.retryable);
+        expect(failed.snapshot?.authorizationFailed, isTrue);
+        expect((await profileStore.read())?.profileId, original.profileId);
+        expect(capabilityStore.values[_transactionA], _capability);
+        final retried = await coordinator.retryAuthorization();
+        expect(retried.outcome, ProvisioningOutcome.inProgress);
+        expect(retried.authorizationUrl?.queryParameters['state'], 'fresh');
+        expect((await profileStore.read())?.profileId, original.profileId);
+        expect(transport.keys, isNot(contains('POST $_transactionsPath')));
+      },
+    );
+
     test('stays local-only when no attempt exists', () async {
       final result = await buildCoordinator().refresh();
 
@@ -995,6 +1150,182 @@ void main() {
       final profile = (await profileStore.read())!;
       expect(profile.state, ProvisioningState.ready);
       expect(profile.projectRef, _projectRef);
+    });
+
+    test(
+      'a stale local ref requires explicit recovery of the mapped project',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'error': 'mapping_conflict',
+          'projectRef': _otherProjectRef,
+        }, status: 409);
+
+        final checked = await buildCoordinator().completeManagementCheck();
+        expect(checked.outcome, ManagementCheckOutcome.mappingConflict);
+        expect(checked.mappedProjectRef, _otherProjectRef);
+        expect((await profileStore.read())?.projectRef, _projectRef);
+        expect(await attemptStore.read(), isNotNull);
+
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/resolve',
+          _snapshotBody(
+            'ready',
+            projectRef: _otherProjectRef,
+            runtimeConfig: <String, dynamic>{
+              'projectRef': _otherProjectRef,
+              'projectUrl': 'https://$_otherProjectRef.supabase.co',
+              'publishableKey': _publishableKey,
+            },
+          ),
+        );
+        final recovered = await buildCoordinator().recoverMappedProject();
+        expect(recovered.outcome, ProvisioningOutcome.ready);
+        expect((await profileStore.read())?.projectRef, _otherProjectRef);
+        expect(await attemptStore.read(), isNull);
+      },
+    );
+
+    test(
+      'unverified local READY ref offers verified legacy alternatives',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': null,
+          'projectStatus': 'legacy_candidates',
+          'candidates': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'projectRef': _otherProjectRef,
+              'name': 'Recovered cloud',
+            },
+          ],
+        });
+        final checked = await buildCoordinator().completeManagementCheck();
+        expect(checked.outcome, ManagementCheckOutcome.candidateRecovery);
+        expect(checked.candidates.single.projectRef, _otherProjectRef);
+        expect(await attemptStore.read(), isNotNull);
+
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/adopt',
+          _snapshotBody(
+            'ready',
+            projectRef: _otherProjectRef,
+            runtimeConfig: <String, dynamic>{
+              'projectRef': _otherProjectRef,
+              'projectUrl': 'https://$_otherProjectRef.supabase.co',
+              'publishableKey': _publishableKey,
+            },
+          ),
+        );
+        final recovered = await buildCoordinator().recoverCandidateProject(
+          _otherProjectRef,
+        );
+        expect(recovered.outcome, ProvisioningOutcome.ready);
+        expect((await profileStore.read())?.projectRef, _otherProjectRef);
+        expect(await attemptStore.read(), isNull);
+      },
+    );
+
+    test(
+      'an early app resume keeps the browser authorization attempt',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'error': 'oauth_expired',
+        }, status: 401);
+        transport.reply(
+          'GET',
+          _snapshotPath(_transactionA),
+          _snapshotBody('authorization_pending'),
+        );
+
+        final pending = await buildCoordinator().completeManagementCheck();
+
+        expect(pending.outcome, ManagementCheckOutcome.authorizationPending);
+        expect((await attemptStore.read())?.projectRef, _projectRef);
+        expect((await profileStore.read())?.projectRef, _projectRef);
+        expect(
+          transport.keys,
+          isNot(contains('POST ${_snapshotPath(_transactionA)}/create')),
+        );
+      },
+    );
+
+    test('an HTML 502 during verification preserves Project X', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+      await buildCoordinator().startManagementCheck();
+      transport.reply(
+        'POST',
+        checkPath(),
+        '<html>bad gateway</html>',
+        status: 502,
+      );
+
+      final result = await buildCoordinator().completeManagementCheck();
+
+      expect(result.outcome, ManagementCheckOutcome.retryable);
+      expect((await profileStore.read())?.projectRef, _projectRef);
+      expect((await profileStore.read())?.remoteMissing, isFalse);
+      expect((await attemptStore.read())?.projectRef, _projectRef);
+      expect(
+        transport.keys,
+        isNot(contains('POST ${_snapshotPath(_transactionA)}/create')),
+      );
+    });
+
+    test('an expired completed authorization asks for a new grant', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+      await buildCoordinator().startManagementCheck();
+      transport.reply('POST', checkPath(), <String, dynamic>{
+        'error': 'oauth_expired',
+      }, status: 401);
+      transport.reply(
+        'GET',
+        _snapshotPath(_transactionA),
+        _snapshotBody('authorization_pending', subject: 'subject-1'),
+      );
+
+      final result = await buildCoordinator().completeManagementCheck();
+
+      expect(result.outcome, ManagementCheckOutcome.needsAuthorization);
+      expect(await attemptStore.read(), isNull);
+      expect((await profileStore.read())?.projectRef, _projectRef);
+    });
+
+    test('cancelled browser consent clears only the local check', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+      final coordinator = buildCoordinator();
+      await coordinator.startManagementCheck();
+
+      await coordinator.abandonManagementCheck();
+
+      expect(await attemptStore.read(), isNull);
+      expect((await profileStore.read())?.projectRef, _projectRef);
+      expect(transport.keys, ['POST $_transactionsPath']);
+    });
+
+    test('a stale check cannot verify a replaced local project', () async {
+      await seedProfile(state: ProvisioningState.ready, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+      await buildCoordinator().startManagementCheck();
+      await seedProfile(state: ProvisioningState.authorizationPending);
+
+      final result = await buildCoordinator().completeManagementCheck();
+
+      expect(result.outcome, ManagementCheckOutcome.notApplicable);
+      expect(await attemptStore.read(), isNull);
+      expect(transport.keys, ['POST $_transactionsPath']);
     });
 
     test(

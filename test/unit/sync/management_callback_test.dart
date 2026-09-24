@@ -20,7 +20,7 @@ void main() {
     expect(
       ManagementCallback.matches('${ManagementCallback.redirectUrl}?state=x'),
       isTrue,
-      reason: 'a query is ignored rather than read: the link carries no data',
+      reason: 'only a bounded result hint is read; no credential is accepted',
     );
     expect(
       ManagementCallback.matches(
@@ -35,6 +35,25 @@ void main() {
     expect(
       ManagementCallback.matches('https://worker.test/oauth/callback'),
       isFalse,
+    );
+  });
+
+  test('parses only bounded browser outcome hints', () {
+    expect(
+      ManagementCallback.resultOf(
+        '${ManagementCallback.redirectUrl}?result=completed',
+      ),
+      ManagementCallbackResult.completed,
+    );
+    expect(
+      ManagementCallback.resultOf(
+        '${ManagementCallback.redirectUrl}?result=failed',
+      ),
+      ManagementCallbackResult.failed,
+    );
+    expect(
+      ManagementCallback.resultOf(ManagementCallback.redirectUrl),
+      ManagementCallbackResult.unknown,
     );
   });
 

@@ -80,6 +80,12 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
   'runtime_config_unavailable' ||
   'operation_in_progress' ||
   'rate_limited' => ProvisioningFailureClass.retryable,
+  'temporarily_unavailable' => ProvisioningFailureClass.retryable,
+  'candidate_discovery_failed' ||
+  'project_not_ready' => ProvisioningFailureClass.retryable,
+  'mapping_conflict' => ProvisioningFailureClass.actionRequired,
+  'project_not_deleted' => ProvisioningFailureClass.actionRequired,
+  'project_deleted' => ProvisioningFailureClass.terminal,
   'project_identity_ambiguous' ||
   'migration_history_mismatch' ||
   'verification_failed' => ProvisioningFailureClass.terminal,
@@ -246,6 +252,30 @@ class ProvisioningOrganization {
   String toString() => 'ProvisioningOrganization($slug)';
 }
 
+/// A project independently verified against the canonical Planner backend.
+class ProvisioningCandidate {
+  const ProvisioningCandidate({
+    required this.projectRef,
+    required this.name,
+    this.region,
+    this.createdAt,
+  });
+  final String projectRef;
+  final String name;
+  final String? region;
+  final String? createdAt;
+}
+
+/// Account mapping lookup, or the one-time legacy selection result.
+class ProvisioningResolution {
+  const ProvisioningResolution({
+    this.snapshot,
+    this.candidates = const <ProvisioningCandidate>[],
+  });
+  final ProvisioningSnapshot? snapshot;
+  final List<ProvisioningCandidate> candidates;
+}
+
 /// The client-safe runtime configuration returned once provisioning is ready.
 class ProvisioningRuntimeConfig {
   const ProvisioningRuntimeConfig({
@@ -282,7 +312,13 @@ class ProvisioningRuntimeConfig {
 /// answering 404 for the exact project ref. Transport failures, timeouts,
 /// outages, rate limits, and authorization failures are [indeterminate] and
 /// must leave the stored backend untouched.
-enum ProjectExistence { exists, missing, indeterminate }
+enum ProjectExistence {
+  exists,
+  missing,
+  indeterminate,
+  mappingConflict,
+  candidateRecovery,
+}
 
 /// Result of the authoritative project check performed by the Worker.
 class ProjectCheckResult {
@@ -290,6 +326,8 @@ class ProjectCheckResult {
     required this.existence,
     required this.status,
     required this.emailConfirmationRedirect,
+    this.mappedProjectRef,
+    this.candidates = const <ProvisioningCandidate>[],
   });
 
   final ProjectExistence existence;
@@ -301,6 +339,8 @@ class ProjectCheckResult {
   /// The exact confirmation-email redirect the Worker verified for the project,
   /// or null when it could not confirm one.
   final String? emailConfirmationRedirect;
+  final String? mappedProjectRef;
+  final List<ProvisioningCandidate> candidates;
 
   bool get emailRedirectConfigured => emailConfirmationRedirect != null;
 }
@@ -386,6 +426,8 @@ class ProvisioningSnapshot {
     this.errorCode,
     this.expiresAt,
     this.runtimeConfig,
+    this.authorizationCompleted = false,
+    this.authorizationFailed = false,
   });
 
   final String transactionId;
@@ -396,6 +438,15 @@ class ProvisioningSnapshot {
   final String? errorCode;
   final DateTime? expiresAt;
   final ProvisioningRuntimeConfig? runtimeConfig;
+
+  /// The Worker has completed this attempt's Management OAuth callback.
+  /// This carries no credential and is used only to distinguish a browser
+  /// callback still in flight from an authorization that has already expired.
+  final bool authorizationCompleted;
+
+  /// The Worker claimed this OAuth callback but could not complete it.
+  /// The same transaction can issue a fresh authorization URL safely.
+  final bool authorizationFailed;
 
   bool get isReady => state == ProvisioningState.ready;
 
@@ -530,6 +581,103 @@ class ProvisioningClient {
     return List<ProvisioningOrganization>.unmodifiable(organizations);
   }
 
+  /// Resolves the verified Management account before any project creation.
+  Future<ProvisioningResolution> resolve(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final response = await _send(
+      method: 'POST',
+      path: '${_transactionPath(transactionId)}/resolve',
+      capability: capability,
+      body: const <String, dynamic>{},
+    );
+    final json = _decodeObject(response);
+    if (json['state'] == 'ready') {
+      return ProvisioningResolution(
+        snapshot: _parseSnapshot(transactionId, response),
+      );
+    }
+    if (json['kind'] != 'candidates') {
+      throw _protocol(
+        'The provisioning service returned an unusable resolution.',
+      );
+    }
+    return ProvisioningResolution(candidates: _parseCandidates(json));
+  }
+
+  List<ProvisioningCandidate> _parseCandidates(Map<String, dynamic> json) {
+    final raw = json['candidates'];
+    if (raw is! List || raw.length >= 100) {
+      throw _protocol(
+        'The provisioning service returned an unusable candidate list.',
+      );
+    }
+    final candidates = <ProvisioningCandidate>[];
+    for (final item in raw) {
+      if (item is! Map<String, dynamic>) {
+        throw _protocol(
+          'The provisioning service returned an unusable candidate.',
+        );
+      }
+      final ref = _requireString(item, 'projectRef');
+      if (!_projectRefPattern.hasMatch(ref)) {
+        throw _protocol(
+          'The provisioning service returned an invalid candidate ref.',
+        );
+      }
+      candidates.add(
+        ProvisioningCandidate(
+          projectRef: ref,
+          name: _requireString(item, 'name'),
+          region: _optionalString(item, 'region'),
+          createdAt: _optionalString(item, 'createdAt'),
+        ),
+      );
+    }
+    return List<ProvisioningCandidate>.unmodifiable(candidates);
+  }
+
+  Future<ProvisioningSnapshot> adopt(
+    String transactionId, {
+    required String capability,
+    required String projectRef,
+  }) async {
+    _requireTransactionId(transactionId);
+    if (!_projectRefPattern.hasMatch(projectRef)) {
+      throw _protocol('A project ref must be 20 lowercase letters.');
+    }
+    return _parseSnapshot(
+      transactionId,
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/adopt',
+        capability: capability,
+        body: <String, dynamic>{'projectRef': projectRef},
+      ),
+    );
+  }
+
+  /// Explicitly clears a mapping only after Management confirms its exact ref is gone.
+  Future<void> replaceDeleted(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final body = _decodeObject(
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/replace-deleted',
+        capability: capability,
+        body: const <String, dynamic>{},
+      ),
+    );
+    if (body['kind'] != 'mapping_cleared') {
+      throw _protocol('The provisioning service did not confirm replacement.');
+    }
+  }
+
   Future<ProvisioningSnapshot> selectOrganization(
     String transactionId, {
     required String capability,
@@ -587,14 +735,33 @@ class ProvisioningClient {
     if (!_projectRefPattern.hasMatch(projectRef)) {
       throw _protocol('A project ref must be 20 lowercase letters.');
     }
-    final json = _decodeObject(
-      await _send(
-        method: 'POST',
-        path: '${_transactionPath(transactionId)}/project-check',
-        capability: capability,
-        body: <String, dynamic>{'projectRef': projectRef},
-      ),
+    final response = await _send(
+      method: 'POST',
+      path: '${_transactionPath(transactionId)}/project-check',
+      capability: capability,
+      body: <String, dynamic>{'projectRef': projectRef},
     );
+    if (response.statusCode == 409) {
+      Object? conflict;
+      try {
+        conflict = jsonDecode(response.body);
+      } on FormatException {
+        conflict = null;
+      }
+      if (conflict is Map<String, dynamic> &&
+          conflict['error'] == 'mapping_conflict') {
+        final mapped = conflict['projectRef'];
+        if (mapped is String && _projectRefPattern.hasMatch(mapped)) {
+          return ProjectCheckResult(
+            existence: ProjectExistence.mappingConflict,
+            status: 'mapping_conflict',
+            emailConfirmationRedirect: null,
+            mappedProjectRef: mapped,
+          );
+        }
+      }
+    }
+    final json = _decodeObject(response);
     final exists = json['projectExists'];
     if (exists != null && exists is! bool) {
       throw _protocol(
@@ -605,6 +772,14 @@ class ProvisioningClient {
     if (status.length > 64) {
       throw _protocol(
         'The provisioning service returned an unusable project status.',
+      );
+    }
+    if (status == 'legacy_candidates' || status == 'legacy_empty') {
+      return ProjectCheckResult(
+        existence: ProjectExistence.candidateRecovery,
+        status: status,
+        emailConfirmationRedirect: null,
+        candidates: _parseCandidates(json),
       );
     }
     return ProjectCheckResult(
@@ -684,6 +859,32 @@ class ProvisioningClient {
       authorizationUrl: authorizationUrl,
       expiresIn: Duration(seconds: expiresIn.toInt()),
     );
+  }
+
+  /// Issues fresh PKCE consent for a failed callback on the same transaction.
+  Future<Uri> retryProvisioningAuthorization(
+    String transactionId, {
+    required String capability,
+  }) async {
+    _requireTransactionId(transactionId);
+    final json = _decodeObject(
+      await _send(
+        method: 'POST',
+        path: '${_transactionPath(transactionId)}/authorization/retry',
+        capability: capability,
+        body: const <String, dynamic>{},
+      ),
+    );
+    final url = Uri.tryParse(_requireString(json, 'authorizationUrl'));
+    if (url == null ||
+        url.scheme != 'https' ||
+        url.host != 'api.supabase.com' ||
+        url.path != '/v1/oauth/authorize') {
+      throw _protocol(
+        'The provisioning service returned an invalid authorization URL.',
+      );
+    }
+    return url;
   }
 
   /// Asks the Worker to revoke Personal Planner's Supabase authorization.
@@ -829,6 +1030,10 @@ class ProvisioningClient {
           ? null
           : DateTime.fromMillisecondsSinceEpoch(expiresAt, isUtc: true),
       runtimeConfig: runtimeConfig,
+      authorizationCompleted:
+          json['authorizationCompleted'] == true ||
+          _optionalString(json, 'subject') != null,
+      authorizationFailed: json['authorizationFailed'] == true,
     );
   }
 
@@ -844,6 +1049,18 @@ class ProvisioningClient {
       code = null;
     }
     if (code == null) {
+      if (response.statusCode == 429 || response.statusCode >= 500) {
+        // An edge proxy may return HTML or an empty body for a transient 502.
+        // Its untrusted body is never surfaced, and no missing-project state
+        // can be inferred from the lack of a JSON error code.
+        return ProvisioningApiException(
+          ProvisioningErrorKind.worker,
+          'Provisioning service is temporarily unavailable '
+          '(HTTP ${response.statusCode}).',
+          code: 'temporarily_unavailable',
+          statusCode: response.statusCode,
+        );
+      }
       return _protocol(
         'The provisioning service returned an unusable error response '
         '(HTTP ${response.statusCode}).',
