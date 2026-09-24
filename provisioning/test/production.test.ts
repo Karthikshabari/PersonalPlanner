@@ -84,12 +84,12 @@ afterEach(() => {
 });
 
 describe("Management OAuth callback failures", () => {
-  it("uses the verified Management profile gotrue_id as ownership identity", async () => {
-    let subject: string | undefined;
+  it("completes authorization from the exchanged grant without a profile lookup", async () => {
     let savedToken: string | undefined;
-    let profileCalled = false;
+    const requests: string[] = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      requests.push(url);
       if (url.endsWith("/v1/oauth/token")) {
         expect(init?.method).toBe("POST");
         expect(new Headers(init?.headers).get("authorization")).toBe(`Basic ${btoa("client-id:client-secret")}`);
@@ -100,37 +100,27 @@ describe("Management OAuth callback failures", () => {
         expect(new URLSearchParams(init?.body as string).get("redirect_uri")).toBe("https://worker.test/oauth/callback");
         return Response.json({ access_token: "new-management-token", token_type: "Bearer", expires_in: 300 });
       }
-      if (url.endsWith("/v1/profile")) {
-        profileCalled = true;
-        expect(url).toBe("https://api.supabase.com/v1/profile");
-        expect(init?.method).toBeUndefined();
-        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer new-management-token");
-        return Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111", email: "mutable@example.test" });
-      }
-      return new Response(null, { status: 404 });
+      throw Error("callback attempted an unrelated Management request");
     });
     const worker = {
       oauthCallback: async () => ({ verifier: "verifier", management: false }),
-      saveOAuthFromCallback: async (_state: string, token: string, _refresh: string | undefined, _expiry: number, identity: string) => { savedToken = token; subject = identity; },
+      saveOAuthFromCallback: async (_state: string, token: string) => { savedToken = token; },
     };
     const response = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
       { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
     );
     expect(response!.status).toBe(200);
-    expect(profileCalled).toBe(true);
+    expect(requests).toEqual(["https://api.supabase.com/v1/oauth/token"]);
     expect(savedToken).toBe("new-management-token");
-    expect(subject).toBe("11111111-1111-4111-8111-111111111111");
   });
 
-  it("classifies an OAuth-unsupported profile 401 without logging its body or persisting a grant", async () => {
+  it("never reaches an OAuth-unsupported profile endpoint or logs grant material", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    let saved = false, failed = false, mapped = false, created = false;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    let saved = false, failed = false, created = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       if (String(input).endsWith("/v1/oauth/token")) return Response.json({ access_token: "new-management-token", token_type: "Bearer", expires_in: 300 });
-      expect(String(input)).toBe("https://api.supabase.com/v1/profile");
-      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer new-management-token");
-      return new Response('GET /v1/profile does not support oauth access yet; secret-sentinel', { status: 401 });
+      throw Error("unexpected Management request");
     });
     const worker = {
       oauthCallback: async () => ({ verifier: "verifier", management: false }),
@@ -140,19 +130,16 @@ describe("Management OAuth callback failures", () => {
     };
     const response = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
-      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, MANAGEMENT_ACCOUNT_PROJECT: { idFromName: (name: string) => name, get: () => ({ bind: async () => { mapped = true; } }) }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
+      { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
     );
-    expect(response!.status).toBe(502);
-    expect(failed).toBe(true);
-    expect(saved).toBe(false);
+    expect(response!.status).toBe(200);
+    expect(failed).toBe(false);
+    expect(saved).toBe(true);
     expect(created).toBe(false);
-    expect(mapped).toBe(false);
-    expect(log).toHaveBeenCalledWith(JSON.stringify({ event: "management_identity_unavailable", status: 401, reason: "oauth_unsupported", accessTokenLength: 20, tokenType: "Bearer", expiresIn: 300 }));
-    expect(JSON.stringify(log.mock.calls)).not.toContain("secret-sentinel");
     expect(JSON.stringify(log.mock.calls)).not.toContain("new-management-token");
   });
 
-  it("does not save an OAuth grant when verified identity is unavailable", async () => {
+  it("accepts a valid exchanged grant even when the profile API is unavailable", async () => {
     let saved = false;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
       ? Response.json({ access_token: "temporary-token", expires_in: 300 })
@@ -166,8 +153,8 @@ describe("Management OAuth callback failures", () => {
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`),
       { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => worker }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any,
     );
-    expect(response!.status).toBe(502);
-    expect(saved).toBe(false);
+    expect(response!.status).toBe(200);
+    expect(saved).toBe(true);
   });
 
   it("returns a safe retryable page when the token exchange is unavailable", async () => {
@@ -215,6 +202,13 @@ function durableTransaction() {
   };
 }
 
+async function authorizeForCreation(tx: ProvisioningTransaction, access: string) {
+  const state = "s".repeat(48);
+  await tx.oauthCallback(state);
+  await tx.saveOAuthFromCallback(state, "management-token", undefined, Date.now() + 600_000);
+  await tx.recordDiscovery(access, []);
+}
+
 describe("create reconciliation guards", () => {
   it("allows create only initially or after a durable reconciled-absent authorization", () => {
     expect(createReservationAllowed("organization_selected", 0)).toBe(true);
@@ -239,6 +233,7 @@ describe("create reconciliation guards", () => {
   it("does not permit an uncertain external create to reserve another POST before reconciliation", async () => {
     const { tx } = durableTransaction();
     await tx.create("a".repeat(48), "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(tx, "a".repeat(48));
     await tx.selectOrganization("a".repeat(48), "owner-org", "personal-planner-safe-project", "k".repeat(32));
     const first = await tx.reserveCreate("a".repeat(48));
     await tx.createUncertain("a".repeat(48), first.nonce);
@@ -276,9 +271,7 @@ describe("OAuth credential lifetime", () => {
       SUPABASE_OAUTH_CLIENT_SECRET: "client-secret",
       SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
     } as any;
-    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
-      ? Response.json({ access_token: "temporary-token", expires_in: 300 })
-      : new Response("GET /v1/profile does not support oauth access yet", { status: 401 }));
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 502 }));
 
     const failed = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${transactionId}.${oldState}&code=valid-code`),
@@ -311,14 +304,15 @@ describe("OAuth credential lifetime", () => {
 
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => String(input).endsWith("/v1/oauth/token")
       ? Response.json({ access_token: "temporary-token", expires_in: 300 })
-      : Response.json({ gotrue_id: "11111111-1111-4111-8111-111111111111" }));
+      : new Response(null, { status: 502 }));
     const completed = await productionOAuthCallback(
       new Request(`https://worker.test/oauth/callback?state=${freshState}&code=fresh-code`),
       environment,
     );
     expect(completed!.status).toBe(200);
     expect(await tx.get(access)).toMatchObject({ authorizationCompleted: true, authorizationFailed: false });
-    expect(read()!.subject).toBe("11111111-1111-4111-8111-111111111111");
+    expect(read()!.subject).toBeUndefined();
+    expect(await tx.managementToken(access)).toBe("temporary-token");
   });
 
   it("rejects a delayed callback after transaction expiry even if it was previously claimed", () => {
@@ -341,7 +335,7 @@ describe("OAuth credential lifetime", () => {
     const expired = read()!;
     expired.expiresAt = Date.now() - 1;
     (tx as any).save(expired);
-    await expect(tx.saveOAuthFromCallback(oauthState, "management-token", undefined, Date.now() + 60_000, "subject")).rejects.toThrow("oauth_expired");
+    await expect(tx.saveOAuthFromCallback(oauthState, "management-token", undefined, Date.now() + 60_000)).rejects.toThrow("oauth_expired");
     expect(read()).toMatchObject({ state: "expired" });
     expect(read()?.tokenCiphertext).toBeUndefined();
   });
@@ -358,6 +352,8 @@ describe("migration and verification recovery", () => {
     const { tx } = durableTransaction();
     const access = "a".repeat(48);
     await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(tx, access);
+    await tx.recordDiscovery(access, []);
     await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
     const create = await tx.reserveCreate(access);
     await tx.recordProject(access, create.nonce, ref);
@@ -699,15 +695,17 @@ describe("management authorization lifecycle", () => {
     expect(calls).toEqual([`https://api.supabase.com/v1/projects/${ref}`]);
   });
 
-  it("refuses a stale local project before any Management request", async () => {
+  it("checks the exact local project without consulting a stored account mapping", async () => {
     const worker = {
       managementToken: async () => "temporary-token",
-      owner: async () => "11111111-1111-4111-8111-111111111111",
+      releaseManagementGrant: async () => ({ released: true, revoked: false, unconfirmed: false }),
     };
-    vi.stubGlobal("fetch", async () => { throw new Error("must not enumerate or verify Y"); });
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => { calls.push(String(input)); return new Response(null, { status: 404 }); });
     const response = await productionProjectCheck(checkRequest({ projectRef: Y }), checkEnvironment(worker, ref) as any);
-    expect(response!.status).toBe(409);
-    expect(await response!.json()).toEqual({ error: "mapping_conflict", projectRef: ref });
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toMatchObject({ projectExists: false, projectStatus: "missing" });
+    expect(calls).toEqual([`https://api.supabase.com/v1/projects/${Y}`]);
   });
 
   it("never reports deletion for transport, outage, or authorization failures", async () => {
@@ -934,7 +932,6 @@ describe("management grant durability", () => {
       "management-token",
       "oauth_refresh_token_value",
       Date.now() + 600_000,
-      "subject-1",
     );
     const granted = read()!;
     expect(granted.refreshCipher).toBeTypeOf("string");
@@ -960,7 +957,6 @@ describe("management grant durability", () => {
       "management-token",
       "oauth_refresh_token_value",
       Date.now() + 600_000,
-      "subject-1",
     );
     const granted = read()!;
     (tx as any).save({ ...granted, grantExpiresAt: Date.now() - 1 });
@@ -985,7 +981,6 @@ describe("management grant durability", () => {
       "second-access-token",
       "second-refresh-token",
       Date.now() + 600_000,
-      "subject-2",
     );
     const updated = read()!;
     expect(updated.oauthPurpose).toBeUndefined();
@@ -1036,8 +1031,8 @@ describe("management grant durability", () => {
       "management-token",
       "oauth_refresh_token_value",
       Date.now() + 600_000,
-      "subject-1",
     );
+    await tx.recordDiscovery(access, []);
     await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
     const create = await tx.reserveCreate(access);
     await tx.recordProject(access, create.nonce, ref);
@@ -1096,8 +1091,8 @@ describe("management grant durability", () => {
       "management-token",
       "oauth_refresh_token_value",
       Date.now() + 600_000,
-      "subject-1",
     );
+    await tx.recordDiscovery(access, []);
     await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
     const create = await tx.reserveCreate(access);
     await tx.recordProject(access, create.nonce, ref);
@@ -1142,7 +1137,6 @@ describe("management grant durability", () => {
       "second-access-token",
       "second-refresh-token",
       Date.now() + 600_000,
-      "subject-2",
       confirmation,
     );
 
@@ -1166,7 +1160,6 @@ describe("management grant durability", () => {
       "second-access-token",
       "second-refresh-token",
       Date.now() + 600_000,
-      "subject-2",
       "https://worker.test/auth/confirmed",
     );
 
@@ -1196,7 +1189,8 @@ async function transactionAtVerifying() {
   const oauthState = "s".repeat(48);
   await tx.create(access, oauthState, "v".repeat(48));
   await tx.oauthCallback(oauthState);
-  await tx.saveOAuthFromCallback(oauthState, "management-token", "refresh-token-value", Date.now() + 600_000, "subject-1");
+  await tx.saveOAuthFromCallback(oauthState, "management-token", "refresh-token-value", Date.now() + 600_000);
+  await tx.recordDiscovery(access, []);
   await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
   const create = await tx.reserveCreate(access);
   await tx.recordProject(access, create.nonce, ref);

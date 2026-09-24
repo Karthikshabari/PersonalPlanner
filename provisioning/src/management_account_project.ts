@@ -1,11 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 
-/** One SQLite-backed object per verified Supabase Management gotrue_id. */
+/** Legacy account mappings remain isolated; new creation guards use creation:slug object IDs. */
 export class ManagementAccountProject extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS ownership (id INTEGER PRIMARY KEY CHECK(id=1), project_ref TEXT, transaction_id TEXT, organization_slug TEXT, project_name TEXT)");
+      this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS creation_guard (id INTEGER PRIMARY KEY CHECK(id=1), transaction_id TEXT NOT NULL)");
     });
   }
 
@@ -14,6 +15,19 @@ export class ManagementAccountProject extends DurableObject<Env> {
   }
 
   async current() { return this.row(); }
+
+  /** Guard one in-flight creation in a verified organization. This stores no project ownership. */
+  async reserveCreation(transactionId: string) {
+    const row = this.ctx.storage.sql.exec<{ transaction_id: string }>("SELECT transaction_id FROM creation_guard WHERE id=1").toArray()[0];
+    if (row) return row.transaction_id === transactionId ? "self" : "other";
+    this.ctx.storage.sql.exec("INSERT INTO creation_guard (id, transaction_id) VALUES (1, ?)", transactionId);
+    return "self";
+  }
+
+  /** Release only after a proven pre-create abort or a fully verified READY project. */
+  async releaseCreation(transactionId: string) {
+    this.ctx.storage.sql.exec("DELETE FROM creation_guard WHERE id=1 AND transaction_id=?", transactionId);
+  }
 
   /** The first exact binding wins. A stale local profile can never overwrite it. */
   async bind(projectRef: string, transactionId: string) {

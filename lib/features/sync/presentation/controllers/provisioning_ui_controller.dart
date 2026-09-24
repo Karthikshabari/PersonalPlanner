@@ -1180,6 +1180,20 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
       case ProvisioningOutcome.inProgress:
+        if (result.resolutionComplete && result.candidates.isNotEmpty) {
+          _applyState(
+            ProvisioningUiState(
+              phase: ProvisioningUiPhase.candidateSelection,
+              transactionId: id,
+              candidates: result.candidates,
+              selectedCandidate: result.candidates.length == 1
+                  ? result.candidates.single
+                  : null,
+              authorizationConfirmed: true,
+            ),
+          );
+          return;
+        }
         final next = _provisioningState(
           transactionId: id,
           workerState: profile?.state,

@@ -395,8 +395,8 @@ class ProvisioningCoordinator {
     }),
   );
 
-  /// Restarts only Management OAuth after a failed callback. The transaction,
-  /// local profile, and any authoritative account mapping stay unchanged.
+  /// Restarts only Management OAuth after a failed callback. The transaction
+  /// and local project profile stay unchanged.
   Future<ProvisioningResult> retryAuthorization() => _serialized(
     () => _withAttempt((attempt, capability) async {
       if (attempt.state != ProvisioningState.authorizationPending) {
@@ -429,7 +429,7 @@ class ProvisioningCoordinator {
     }),
   );
 
-  /// Mapping lookup precedes any organization or project-create action.
+  /// Discover fully verified Planner backends before offering first creation.
   Future<ProvisioningResult> resolveProject() => _serialized(
     () => _withAttempt((attempt, capability) async {
       final resolution = await client.resolve(
@@ -448,29 +448,13 @@ class ProvisioningCoordinator {
     }),
   );
 
-  /// User-approved replacement of a confirmed deleted mapping. The Worker
-  /// rechecks the exact stored ref before clearing it, then discovery resumes.
+  /// Explicitly restart discovery after a selected project was deleted.
   Future<ProvisioningResult> replaceDeletedProject() => _serialized(
     () => _withAttempt((attempt, capability) async {
-      ProvisioningResolution resolution;
-      try {
-        resolution = await client.resolve(
-          attempt.transactionId,
-          capability: capability,
-        );
-      } on ProvisioningApiException catch (error) {
-        if (error.code != 'project_deleted') {
-          return _failure(error, profile: attempt.profile);
-        }
-        await client.replaceDeleted(
-          attempt.transactionId,
-          capability: capability,
-        );
-        resolution = await client.resolve(
-          attempt.transactionId,
-          capability: capability,
-        );
-      }
+      final resolution = await client.resolve(
+        attempt.transactionId,
+        capability: capability,
+      );
       if (resolution.snapshot case final snapshot?) {
         return _applySnapshot(attempt, snapshot);
       }
@@ -493,16 +477,6 @@ class ProvisioningCoordinator {
         );
         return await _applySnapshot(attempt, snapshot);
       } on ProvisioningApiException catch (error) {
-        if (error.code == 'mapping_conflict') {
-          // Another device won the first binding. Resolve the winner exactly.
-          final resolution = await client.resolve(
-            attempt.transactionId,
-            capability: capability,
-          );
-          if (resolution.snapshot case final snapshot?) {
-            return _applySnapshot(attempt, snapshot);
-          }
-        }
         return _failure(error, profile: attempt.profile);
       }
     }),
@@ -594,7 +568,7 @@ class ProvisioningCoordinator {
         }
         return await _applySnapshot(attempt, snapshot);
       } on ProvisioningApiException catch (error) {
-        if (error.code == 'mapping_conflict' &&
+        if (error.code == 'candidate_discovery_changed' &&
             attempt.profile.state == ProvisioningState.organizationSelected) {
           final resolution = await client.resolve(
             attempt.transactionId,
@@ -603,6 +577,12 @@ class ProvisioningCoordinator {
           if (resolution.snapshot case final snapshot?) {
             return _applySnapshot(attempt, snapshot);
           }
+          return ProvisioningResult(
+            outcome: ProvisioningOutcome.inProgress,
+            profile: attempt.profile,
+            candidates: resolution.candidates,
+            resolutionComplete: true,
+          );
         }
         return _failure(error, profile: attempt.profile);
       }

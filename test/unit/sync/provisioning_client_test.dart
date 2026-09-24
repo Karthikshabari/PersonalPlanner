@@ -66,7 +66,7 @@ Matcher _protocolError() => throwsA(
 );
 
 void main() {
-  group('Management account project resolution', () {
+  group('project-centric resolution', () {
     test(
       'local READY recovery parses verified alternative candidates',
       () async {
@@ -93,7 +93,7 @@ void main() {
     );
 
     test(
-      'parses verified legacy candidates without guessing from a name',
+      'parses verified candidates without guessing from a name',
       () async {
         final transport = _FakeTransport(
           (_) async => _json(<String, dynamic>{
@@ -119,7 +119,7 @@ void main() {
       },
     );
 
-    test('parses an exact mapped READY project on a second device', () async {
+    test('parses an exact adopted READY project', () async {
       final transport = _FakeTransport(
         (_) async => _json(
           _snapshot(
@@ -411,6 +411,7 @@ void main() {
         'provisioning_expired': ProvisioningFailureClass.restartRequired,
         'organization_not_found': ProvisioningFailureClass.actionRequired,
         'organization_discovery_failed': ProvisioningFailureClass.retryable,
+        'candidate_discovery_changed': ProvisioningFailureClass.actionRequired,
         'project_creation_failed': ProvisioningFailureClass.retryable,
         'migration_failed': ProvisioningFailureClass.retryable,
         'verification_indeterminate': ProvisioningFailureClass.retryable,

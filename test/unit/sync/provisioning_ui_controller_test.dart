@@ -504,6 +504,35 @@ void main() {
     expect(current().stage, CloudSetupStage.verifyingCloudStorage);
   });
 
+  test(
+    'a candidate found during creation returns to explicit selection',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.createResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+        candidates: <ProvisioningCandidate>[
+          ProvisioningCandidate(
+            projectRef: 'abcdefghijklmnopqrst',
+            name: 'Renamed cloud',
+          ),
+        ],
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().advance();
+
+      expect(current().phase, ProvisioningUiPhase.candidateSelection);
+      expect(current().selectedCandidate?.projectRef, testProjectRef);
+      expect(api.calls, contains('createOrContinueProject'));
+      expect(
+        api.calls.where((call) => call.startsWith('adoptProject')),
+        isEmpty,
+      );
+    },
+  );
+
   test('surfaces a ready backend with the persisted profile', () async {
     api.attempt = testAttempt(
       ProvisioningState.verifying,

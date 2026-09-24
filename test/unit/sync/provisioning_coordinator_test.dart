@@ -253,28 +253,11 @@ void main() {
       File(p.join(directory.path, plannerBackendProfileFileName))
           .readAsStringSync();
 
-  group('cross-device project resolution', () {
+  group('project-centric resolution', () {
     test(
-      'confirmed deleted mapping needs explicit replacement before discovery',
+      'explicit recovery after a deleted selected candidate restarts discovery',
       () async {
         await seedProfile(state: ProvisioningState.authorizationPending);
-        transport.reply(
-          'POST',
-          '${_snapshotPath(_transactionA)}/resolve',
-          <String, dynamic>{'error': 'project_deleted'},
-          status: 410,
-        );
-        final blocked = await buildCoordinator().resolveProject();
-        expect(blocked.outcome, ProvisioningOutcome.projectDeleted);
-        expect(transport.keys, <String>[
-          'POST ${_snapshotPath(_transactionA)}/resolve',
-        ]);
-
-        transport.reply(
-          'POST',
-          '${_snapshotPath(_transactionA)}/replace-deleted',
-          <String, dynamic>{'kind': 'mapping_cleared'},
-        );
         transport.reply(
           'POST',
           '${_snapshotPath(_transactionA)}/resolve',
@@ -286,14 +269,11 @@ void main() {
         expect(replacement.candidates, isEmpty);
         expect(transport.keys, <String>[
           'POST ${_snapshotPath(_transactionA)}/resolve',
-          'POST ${_snapshotPath(_transactionA)}/resolve',
-          'POST ${_snapshotPath(_transactionA)}/replace-deleted',
-          'POST ${_snapshotPath(_transactionA)}/resolve',
         ]);
       },
     );
 
-    test('installs mapped X directly from Management authorization', () async {
+    test('installs an already READY transaction snapshot', () async {
       await seedProfile(state: ProvisioningState.authorizationPending);
       transport.reply(
         'POST',
@@ -336,41 +316,23 @@ void main() {
       expect(capabilityStore.values[_transactionA], _capability);
     });
 
-    test(
-      'a lost candidate race resolves the first authoritative mapping',
-      () async {
-        await seedProfile(state: ProvisioningState.authorizationPending);
-        transport.reply(
-          'POST',
-          '${_snapshotPath(_transactionA)}/adopt',
-          <String, dynamic>{
-            'error': 'mapping_conflict',
-            'projectRef': _projectRef,
-          },
-          status: 409,
-        );
-        transport.reply(
-          'POST',
-          '${_snapshotPath(_transactionA)}/resolve',
-          _snapshotBody(
-            'ready',
-            projectRef: _projectRef,
-            runtimeConfig: _runtimeConfigBody(),
-          ),
-        );
+    test('a candidate deleted during adoption cannot become READY', () async {
+      await seedProfile(state: ProvisioningState.authorizationPending);
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/adopt',
+        <String, dynamic>{'error': 'project_deleted'},
+        status: 410,
+      );
 
-        final result = await buildCoordinator().adoptProject(
-          'bcdefghijklmnopqrstu',
-        );
+      final result = await buildCoordinator().adoptProject(_projectRef);
 
-        expect(result.outcome, ProvisioningOutcome.ready);
-        expect(result.profile?.projectRef, _projectRef);
-        expect(transport.keys, <String>[
-          'POST ${_snapshotPath(_transactionA)}/adopt',
-          'POST ${_snapshotPath(_transactionA)}/resolve',
-        ]);
-      },
-    );
+      expect(result.outcome, ProvisioningOutcome.projectDeleted);
+      expect((await profileStore.read())!.state, ProvisioningState.authorizationPending);
+      expect(transport.keys, <String>[
+        'POST ${_snapshotPath(_transactionA)}/adopt',
+      ]);
+    });
   });
 
   group('start', () {
@@ -774,6 +736,43 @@ void main() {
         (await profileStore.read())!.state,
         ProvisioningState.projectCreating,
       );
+    });
+
+    test('a project appearing after creation reservation returns to explicit candidate selection', () async {
+      await seedProfile(state: ProvisioningState.organizationSelected);
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/create',
+        <String, dynamic>{'error': 'candidate_discovery_changed'},
+        status: 409,
+      );
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/resolve',
+        <String, dynamic>{
+          'kind': 'candidates',
+          'candidates': <dynamic>[
+            <String, dynamic>{
+              'projectRef': _projectRef,
+              'name': 'Renamed cloud',
+            },
+          ],
+        },
+      );
+
+      final result = await buildCoordinator().createOrContinueProject();
+
+      expect(result.outcome, ProvisioningOutcome.inProgress);
+      expect(result.resolutionComplete, isTrue);
+      expect(result.candidates.single.projectRef, _projectRef);
+      expect(
+        (await profileStore.read())!.state,
+        ProvisioningState.organizationSelected,
+      );
+      expect(transport.keys, <String>[
+        'POST ${_snapshotPath(_transactionA)}/create',
+        'POST ${_snapshotPath(_transactionA)}/resolve',
+      ]);
     });
 
     test('migrates and verifies only where the Worker allows it', () async {

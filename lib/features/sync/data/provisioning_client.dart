@@ -83,7 +83,8 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
   'temporarily_unavailable' => ProvisioningFailureClass.retryable,
   'candidate_discovery_failed' ||
   'project_not_ready' => ProvisioningFailureClass.retryable,
-  'mapping_conflict' => ProvisioningFailureClass.actionRequired,
+  'mapping_conflict' ||
+  'candidate_discovery_changed' => ProvisioningFailureClass.actionRequired,
   'project_not_deleted' => ProvisioningFailureClass.actionRequired,
   'project_deleted' => ProvisioningFailureClass.terminal,
   'project_identity_ambiguous' ||
@@ -266,7 +267,7 @@ class ProvisioningCandidate {
   final String? createdAt;
 }
 
-/// Account mapping lookup, or the one-time legacy selection result.
+/// Verified project discovery or an adopted project snapshot.
 class ProvisioningResolution {
   const ProvisioningResolution({
     this.snapshot,
