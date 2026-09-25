@@ -147,13 +147,46 @@ For optional `flutter drive` runs, use the conventional
 ## Provisioning Worker (optional)
 
 The Worker is only needed to create/repair a user-owned Supabase project. It
-requires its own Cloudflare secrets (`OAUTH_SESSION_KEY`,
-`SUPABASE_OAUTH_CLIENT_SECRET`) configured in Cloudflare — never in this
-repository:
+requires Cloudflare bindings configured on the deployed Worker — never real
+values in this repository. Copy the example only for local Worker development:
+
+```bash
+cp provisioning/.dev.vars.example provisioning/.dev.vars
+```
+
+The production `/v1/provisioning/*` flow requires:
+
+| Binding | Purpose |
+|---|---|
+| `OAUTH_SESSION_KEY` | Long random key used to encrypt short-lived Management OAuth material. |
+| `SUPABASE_OAUTH_CLIENT_ID` | Public identifier for your Supabase Management OAuth application. |
+| `SUPABASE_OAUTH_CLIENT_SECRET` | Secret for the Supabase Management OAuth application. |
+| `SUPABASE_OAUTH_REDIRECT_URI` | Registered callback URL, ending in `/oauth/callback`. |
+
+The retained legacy `/poc/*` browser routes additionally require
+`POC_PHASE`, `POC_ORGANIZATION_SLUG`, `POC_PROJECT_NAME`, and
+`POC_PROJECT_REF`. They target an isolated disposable project and are not used
+by the Flutter client's production provisioning flow.
+
+All eight names are declared under `secrets.required` so Wrangler can generate
+types and refuse a deployment with missing bindings without committing any
+account-specific value. Configure them as Cloudflare secrets in the Worker
+dashboard (Settings > Variables and Secrets) before the next deployment. The
+OAuth client ID and redirect URI are public identifiers, but they use the same
+external binding mechanism to keep this repository environment-neutral.
+
+The Worker name and the provisioning URL built into the Flutter client are
+intentionally unchanged: the URL is public and existing app builds depend on
+it. A branded custom domain is the appropriate future privacy/branding change;
+changing or hiding the current `workers.dev` URL would not provide
+authentication.
+
+Then validate locally without deploying:
 
 ```bash
 cd provisioning
 npm ci
+npm run cf:types   # regenerate generic Worker binding types
 npm run check      # tsc --noEmit
 npm test           # vitest worker tests
 npm run deploy:dry # bundles without deploying

@@ -7,7 +7,7 @@ void main() {
     expect(
       ProvisioningConfig.baseUri,
       Uri.parse(
-        'https://your-worker.example.workers.dev',
+        'https://personal-planner-provisioning-poc.karthikshabariper.workers.dev',
       ),
     );
   });

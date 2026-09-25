@@ -12,7 +12,7 @@ abstract final class ProvisioningConfig {
   /// A `--dart-define=PROVISIONING_BASE_URL=…` value still overrides it for a
   /// staging Worker or an isolated integration test.
   static const defaultBaseUrl =
-      'https://your-worker.example.workers.dev';
+      'https://personal-planner-provisioning-poc.karthikshabariper.workers.dev';
 
   static const baseUrl = String.fromEnvironment(
     'PROVISIONING_BASE_URL',

@@ -1,0 +1,13 @@
+# Copy this file to .dev.vars for local Worker development. Never commit the
+# populated .dev.vars file.
+OAUTH_SESSION_KEY=generate-a-long-random-secret
+SUPABASE_OAUTH_CLIENT_ID=your-supabase-oauth-client-id
+SUPABASE_OAUTH_CLIENT_SECRET=your-supabase-oauth-client-secret
+SUPABASE_OAUTH_REDIRECT_URI=https://your-worker.example.workers.dev/oauth/callback
+
+# The retained legacy /poc/* routes require an isolated disposable project.
+# They are not used by the production /v1/provisioning/* client flow.
+POC_PHASE=oauth
+POC_ORGANIZATION_SLUG=example-organization
+POC_PROJECT_NAME=personal-planner-example-project
+POC_PROJECT_REF=example-project-ref

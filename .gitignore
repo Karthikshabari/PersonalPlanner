@@ -64,6 +64,7 @@ app.*.map.json
 # Wrangler local development variables (never commit real values).
 .dev.vars
 .dev.vars.*
+!.dev.vars.example
 /supabase.local.json
 /provisioning.local.json
 

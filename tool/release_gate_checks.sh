@@ -39,6 +39,7 @@ SAFE_FIXTURES=(
   'sb_secret_abcdefghijklmnopqrstuvwxyz'
   'sb_secret_abcdefghijklmnopqrstuvwxyz0123456789'
   'sb_secret_abcdefghijklmnopqrst'
+  'sb_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
   'service_role_abcdefghijklmnopqrstuvwxyz'
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
 )

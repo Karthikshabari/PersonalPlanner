@@ -831,7 +831,7 @@ void main() {
         expect(
           transport.requests.single.uri,
           Uri.parse(
-            'https://your-worker.example.workers.dev/v1/provisioning/transactions',
+            'https://personal-planner-provisioning-poc.karthikshabariper.workers.dev/v1/provisioning/transactions',
           ),
         );
       },

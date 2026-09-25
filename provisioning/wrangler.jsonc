@@ -31,16 +31,14 @@
   ],
   "secrets": {
     "required": [
+      "POC_PHASE",
+      "POC_ORGANIZATION_SLUG",
+      "POC_PROJECT_NAME",
+      "POC_PROJECT_REF",
       "OAUTH_SESSION_KEY",
-      "SUPABASE_OAUTH_CLIENT_SECRET"
+      "SUPABASE_OAUTH_CLIENT_ID",
+      "SUPABASE_OAUTH_CLIENT_SECRET",
+      "SUPABASE_OAUTH_REDIRECT_URI"
     ]
-  },
-  "vars": {
-    "POC_PHASE": "oauth",
-    "POC_ORGANIZATION_SLUG": "example-organization",
-    "POC_PROJECT_NAME": "personal-planner-example-project",
-    "POC_PROJECT_REF": "example-project-ref",
-    "SUPABASE_OAUTH_CLIENT_ID": "your-supabase-oauth-client-id",
-    "SUPABASE_OAUTH_REDIRECT_URI": "https://your-worker.example.workers.dev/oauth/callback"
   }
 }
