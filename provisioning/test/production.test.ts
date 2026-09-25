@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MIGRATIONS } from "../src/migrations";
+import { MIGRATIONS, SCHEMA_VERIFICATION_SQL } from "../src/migrations";
 import {
   MANAGEMENT_WINDOW_MS,
   PLANNER_AUTH_CALLBACK_URI,
@@ -27,6 +27,7 @@ import {
   redact,
   runCanonicalMigrations,
   runFixedVerification,
+  runReadOnlyCompatibilityVerification,
 } from "../src/production";
 
 const ref = "abcdefghijklmnopqrst";
@@ -48,6 +49,7 @@ const verificationRow = Object.fromEntries(
     "f03_helper_private",
     "f03_validates_branch_before_union",
     "f03_wrappers_active",
+    "initial_sync_fencing_present",
     "recurrence_provenance_present",
     "relationships_owner_scoped",
     "direct_authenticated_writes_revoked",
@@ -65,6 +67,8 @@ const snapshotAllowlist = new Set([
   "oauthStateUsed",
   "authorizationCompleted",
   "authorizationFailed",
+  "creationAuthorizationPending",
+  "creationAuthorizationRequired",
   "organizationSlug",
   "requestedProjectName",
   "idempotencyKey",
@@ -199,6 +203,8 @@ function durableTransaction() {
   return {
     tx: new ProvisioningTransaction(ctx as any, { OAUTH_SESSION_KEY: "test-session-key" } as any),
     read: () => body ? JSON.parse(body) as Record<string, unknown> : undefined,
+    write: (next: Record<string, unknown>) => { body = JSON.stringify(next); },
+    restart: () => new ProvisioningTransaction(ctx as any, { OAUTH_SESSION_KEY: "test-session-key" } as any),
   };
 }
 
@@ -209,8 +215,29 @@ async function authorizeForCreation(tx: ProvisioningTransaction, access: string)
   await tx.recordDiscovery(access, []);
 }
 
+const oldTransactionId = "abcdef0123456789abcdef0123456789";
+function oldCreationOwner(overrides: Record<string, unknown> = {}) {
+  const durable = durableTransaction();
+  const now = Date.now();
+  durable.write({
+    schema: 2,
+    state: "expired",
+    createdAt: now - 7_200_000,
+    updatedAt: now - 3_600_000,
+    expiresAt: now - 1,
+    accessHash: "durable-internal-only",
+    organizationSlug: "owner-org",
+    requestedProjectName: `personal-planner-${oldTransactionId}`,
+    createAttempts: 1,
+    createStartedAt: now - 3_700_000,
+    expensiveAttempts: 0,
+    ...overrides,
+  });
+  return durable;
+}
+
 describe("create reconciliation guards", () => {
-  it("allows create only initially or after a durable reconciled-absent authorization", () => {
+  it("allows create only initially or after a definitive rejected request", () => {
     expect(createReservationAllowed("organization_selected", 0)).toBe(true);
     expect(createReservationAllowed("project_reconciliation_required", 1)).toBe(false);
     expect(createReservationAllowed("project_creating", 1)).toBe(false);
@@ -230,7 +257,7 @@ describe("create reconciliation guards", () => {
     expect(canTransition("terminal_error", "project_creating")).toBe(false);
   });
 
-  it("does not permit an uncertain external create to reserve another POST before reconciliation", async () => {
+  it("never authorizes another POST after an uncertain external create", async () => {
     const { tx } = durableTransaction();
     await tx.create("a".repeat(48), "s".repeat(48), "v".repeat(48));
     await authorizeForCreation(tx, "a".repeat(48));
@@ -238,9 +265,518 @@ describe("create reconciliation guards", () => {
     const first = await tx.reserveCreate("a".repeat(48));
     await tx.createUncertain("a".repeat(48), first.nonce);
     await expect(tx.reserveCreate("a".repeat(48))).rejects.toThrow("illegal_transition");
-    await tx.reconciliationAbsent("a".repeat(48));
-    const second = await tx.reserveCreate("a".repeat(48));
-    expect(second.nonce).not.toBe(first.nonce);
+    await expect(tx.reserveCreate("a".repeat(48))).rejects.toThrow("illegal_transition");
+    await expect(tx.beginManagementAuthorization("a".repeat(48))).rejects.toThrow("invalid_request");
+  });
+
+  it("retains recordProject recovery evidence through alarm expiry", async () => {
+    const access = "a".repeat(48);
+    const durable = durableTransaction();
+    await durable.tx.create(access, "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(durable.tx, access);
+    await durable.tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+    const attempt = await durable.tx.reserveCreate(access);
+    await durable.tx.recordProject(access, attempt.nonce, ref);
+    durable.write({ ...durable.read()!, expiresAt: Date.now() - 1 });
+
+    await durable.tx.alarm();
+
+    expect(await durable.tx.creationRecoveryContext()).toMatchObject({
+      state: "expired",
+      projectRef: ref,
+      organizationSlug: "owner-org",
+      projectDurablyRecorded: true,
+      expired: true,
+      terminal: true,
+    });
+    expect(durable.read()!.projectRef).toBe(ref);
+  });
+});
+
+describe("first project creation state machine", () => {
+  const access = "a".repeat(48);
+  const name = `personal-planner-${transactionId}`;
+  const request = (op: string, method = "POST") => new Request(`https://worker.test/v1/provisioning/transactions/${transactionId}${op ? `/${op}` : ""}`, {
+    method, headers: { authorization: `Provisioning ${access}`, "content-type": "application/json" },
+    ...(method === "POST" ? { body: "{}" } : {}),
+  });
+
+  async function harness(create: () => Promise<Response> | Response) {
+    const durable = durableTransaction();
+    await durable.tx.create(access, "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(durable.tx, access);
+    await durable.tx.selectOrganization(access, "owner-org", name, "k".repeat(32));
+    let holder: string | null = null;
+    let projectStatus = "COMING_UP";
+    let healthStatus = 200;
+    let created: { ref: string; name: string; inserted_at: string } | null = null;
+    let exactProjectResponse: ((projectRef: string) => Promise<Response> | Response) | null = null;
+    let beforeConfirmedRelease: (() => void) | null = null;
+    const upstream: string[] = [];
+    const createBodies: Record<string, unknown>[] = [];
+    const transactions = new Map<string, ProvisioningTransaction>([[`tx:${transactionId}`, durable.tx]]);
+    const env = {
+      PROVISIONING_TRANSACTION: { idFromName: (value: string) => value, get: (value: string) => transactions.get(value) ?? durable.tx },
+      MANAGEMENT_ACCOUNT_PROJECT: { idFromName: (value: string) => value, get: () => ({
+        reserveCreation: async (id: string) => { if (holder && holder !== id) return "other"; holder = id; return "self"; },
+        currentCreationOwner: async () => holder,
+        releaseConfirmedMissingCreation: async (id: string, projectRef: string) => {
+          beforeConfirmedRelease?.();
+          if (holder !== id || !/^[a-z]{20}$/u.test(projectRef)) return { kind: "conflict" };
+          holder = null;
+          return { kind: "released" };
+        },
+        releaseCreation: async (id: string) => { if (holder === id) holder = null; },
+      }) },
+    } as any;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input), method = init?.method ?? "GET";
+      upstream.push(`${method} ${url}`);
+      if (url.endsWith("/v1/oauth/token")) return Response.json({ access_token: "renewed-token", expires_in: 600 });
+      if (url.endsWith("/v1/organizations")) return Response.json([{ id: "org", name: "Owner", slug: "owner-org" }]);
+      if (url.includes("/v1/organizations/owner-org/projects?")) return Response.json({
+        projects: created ? [created] : [], pagination: { count: created ? 1 : 0, limit: 100, offset: 0 },
+      });
+      if (url.endsWith("/v1/projects") && method === "POST") {
+        createBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return create();
+      }
+      const exactMatch = /\/v1\/projects\/([a-z]{20})$/u.exec(url);
+      if (exactMatch) {
+        if (exactProjectResponse) return exactProjectResponse(exactMatch[1]!);
+        if (exactMatch[1] === ref) return Response.json({ ref, status: projectStatus });
+        return new Response(null, { status: 404 });
+      }
+      if (url.endsWith(`/v1/projects/${ref}/health?services=auth`)) return healthStatus === 429
+        ? new Response(null, { status: 429, headers: { "retry-after": "90" } })
+        : Response.json([{ name: "auth", status: "ACTIVE_HEALTHY", healthy: true }]);
+      if (url.endsWith(`/v1/projects/${ref}/database/migrations`)) return Response.json(MIGRATIONS.map(m => ({ name: m.name })));
+      if (url.endsWith(`/v1/projects/${ref}/database/query/read-only`)) return Response.json([verificationRow], { status: 201 });
+      if (url.endsWith(`/v1/projects/${ref}/config/auth`)) return Response.json({ uri_allow_list: `${PLANNER_AUTH_CALLBACK_URI},https://worker.test${PLANNER_EMAIL_CONFIRMATION_PATH}` });
+      if (url.endsWith(`/v1/projects/${ref}/api-keys`)) return Response.json([{ id: "publishable", type: "publishable" }]);
+      if (url.endsWith(`/v1/projects/${ref}/api-keys/publishable?reveal=true`)) return Response.json({ type: "publishable", api_key: publishableKey });
+      return new Response(null, { status: 404 });
+    });
+    return {
+      ...durable, env, upstream, createBodies,
+      setCreated: () => { created = { ref, name, inserted_at: new Date().toISOString() }; },
+      setHealthy: () => { projectStatus = "ACTIVE_HEALTHY"; },
+      rateLimitHealth: () => { healthStatus = 429; },
+      holder: () => holder,
+      setHolder: (id: string | null) => { holder = id; },
+      addTransaction: (id: string, value: ProvisioningTransaction) => { transactions.set(`tx:${id}`, value); },
+      setExactProjectResponse: (value: (projectRef: string) => Promise<Response> | Response) => { exactProjectResponse = value; },
+      setListedProject: (value: { ref: string; name: string; inserted_at: string } | null) => { created = value; },
+      changeOwnerBeforeConfirmedRelease: (value: () => void) => { beforeConfirmedRelease = value; },
+      countCreates: () => upstream.filter(x => x === "POST https://api.supabase.com/v1/projects").length,
+    };
+  }
+
+  it("expires the transaction before Create without sending an upstream request", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    expect(h.read()!.expiresAt).toBeGreaterThan(Date.now() + 3_600_000);
+    h.write({ ...h.read()!, expiresAt: Date.now() - 1 });
+    const response = await productionFetch(request("create"), h.env);
+    expect(response!.status).toBe(410);
+    expect(await response!.json()).toEqual({ error: "provisioning_expired" });
+    expect(h.read()!.state).toBe("expired");
+    expect(h.read()!.organizationSlug).toBe("owner-org");
+    expect(h.read()!.createAttempts).toBe(0);
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("renews an expired pre-create transaction and still requires explicit Create", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const originalAccessHash = h.read()!.accessHash;
+    h.write({ ...h.read()!, expiresAt: Date.now() - 1 });
+    await productionFetch(request("create"), h.env);
+    h.env.PROVISIONING_TRANSACTION.get = () => h.restart();
+    h.env.SUPABASE_OAUTH_CLIENT_ID = "client-id";
+    h.env.SUPABASE_OAUTH_REDIRECT_URI = "https://worker.test/oauth/callback";
+    const renewed = await productionManagementAuthorization(request("authorization/start"), h.env);
+    expect(renewed!.status).toBe(200);
+    expect(h.read()!.state).toBe("organization_selected");
+    expect(h.read()!.organizationSlug).toBe("owner-org");
+    expect(h.read()!.requestedProjectName).toBe(name);
+    expect(h.read()!.accessHash).toBe(originalAccessHash);
+    expect(h.read()!.expiresAt).toBeGreaterThan(Date.now() + 3_600_000);
+    expect(h.countCreates()).toBe(0);
+    const pending = await productionFetch(request("", "GET"), h.env);
+    expect((await pending!.json() as { creationAuthorizationPending: boolean }).creationAuthorizationPending).toBe(true);
+    const url = new URL((await renewed!.json() as { authorizationUrl: string }).authorizationUrl);
+    const state = url.searchParams.get("state")!.split(".")[1]!;
+    await h.restart().oauthCallback(state);
+    await h.restart().saveOAuthFromCallback(state, "renewed-token", undefined, Date.now() + 600_000);
+    expect(h.countCreates()).toBe(0);
+    const authorized = await productionFetch(request("", "GET"), h.env);
+    expect((await authorized!.json() as { creationAuthorizationPending: boolean; creationAuthorizationRequired: boolean }).creationAuthorizationPending).toBe(false);
+    const first = await productionFetch(request("create"), h.env);
+    expect(first!.status).toBe(200);
+    expect(h.countCreates()).toBe(1);
+    await productionFetch(request("create"), h.env);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("separates expired Management token from transaction expiry and keeps the guard", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    h.write({ ...h.read()!, tokenExpiresAt: Date.now() - 1 });
+    const denied = await productionFetch(request("create"), h.env);
+    expect(denied!.status).toBe(401);
+    expect(await denied!.json()).toEqual({ error: "oauth_expired" });
+    expect(h.read()!.state).toBe("organization_selected");
+    expect(h.countCreates()).toBe(0);
+    const required = await productionFetch(request("", "GET"), h.env);
+    expect((await required!.json() as { creationAuthorizationRequired: boolean }).creationAuthorizationRequired).toBe(true);
+    const grant = await h.tx.beginManagementAuthorization(access);
+    await h.tx.oauthCallback(grant.state);
+    await h.tx.saveOAuthFromCallback(grant.state, "renewed-token", undefined, Date.now() + 600_000);
+    h.setHolder("another-transaction");
+    const blocked = await productionFetch(request("create"), h.env);
+    expect(blocked!.status).toBe(409);
+    expect(h.countCreates()).toBe(0);
+    h.setHolder(null);
+    const [first, second] = await Promise.all([
+      productionFetch(request("create"), h.env),
+      productionFetch(request("create"), h.env),
+    ]);
+    expect([first!.status, second!.status].every(status => status === 200 || status === 202)).toBe(true);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("keeps one OAuth state while authorization is pending and never creates", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    h.write({ ...h.read()!, tokenExpiresAt: Date.now() - 1 });
+    h.env.SUPABASE_OAUTH_CLIENT_ID = "client-id";
+    h.env.SUPABASE_OAUTH_CLIENT_SECRET = "client-secret";
+    h.env.SUPABASE_OAUTH_REDIRECT_URI = "https://worker.test/oauth/callback";
+    const first = await productionManagementAuthorization(request("authorization/start"), h.env);
+    const firstBody = await first!.json() as { authorizationUrl: string; expiresIn: number };
+    expect(firstBody.expiresIn).toBe(900);
+    const stateA = new URL(firstBody.authorizationUrl).searchParams.get("state")!.split(".")[1]!;
+    const second = await productionManagementAuthorization(request("authorization/start"), h.env);
+    const secondBody = await second!.json() as { authorizationUrl: string; expiresIn: number };
+    expect(secondBody.expiresIn).toBeGreaterThan(0);
+    expect(secondBody.expiresIn).toBeLessThanOrEqual(900);
+    const stateB = new URL(secondBody.authorizationUrl).searchParams.get("state")!.split(".")[1]!;
+    expect(stateB).toBe(stateA);
+    const tokenCall = vi.spyOn(h.tx, "managementToken");
+    const pendingCreate = await productionFetch(request("create"), h.env);
+    expect(pendingCreate!.status).toBe(202);
+    expect(await pendingCreate!.json()).toMatchObject({ state: "organization_selected", creationAuthorizationPending: true });
+    expect(tokenCall).not.toHaveBeenCalled();
+    expect(h.countCreates()).toBe(0);
+    const callback = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.${stateA}&code=valid-code`),
+      h.env,
+    );
+    expect(callback!.status).toBe(200);
+    expect(h.countCreates()).toBe(0);
+    const ready = await productionFetch(request("", "GET"), h.env);
+    expect(await ready!.json()).toMatchObject({ state: "organization_selected", creationAuthorizationPending: false, creationAuthorizationRequired: false });
+    const created = await productionFetch(request("create"), h.env);
+    expect(created!.status).toBe(200);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("serializes simultaneous authorization starts without replacing the callback state", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const [first, second] = await Promise.all([
+      h.tx.beginManagementAuthorization(access),
+      h.tx.beginManagementAuthorization(access),
+    ]);
+    expect(second.state).toBe(first.state);
+    expect(second.verifier).toBe(first.verifier);
+    expect(await h.tx.oauthCallback(first.state)).not.toBeNull();
+    await expect(h.tx.beginManagementAuthorization(access)).rejects.toThrow("operation_in_progress");
+    const exchanging = await productionFetch(request("create"), h.env);
+    expect(exchanging!.status).toBe(202);
+    expect(await exchanging!.json()).toMatchObject({ creationAuthorizationPending: true });
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("rejects an old callback only after an explicit expired-window restart", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const first = await h.tx.beginManagementAuthorization(access);
+    h.write({ ...h.read()!, grantExpiresAt: Date.now() - 1 });
+    const restarted = await h.tx.beginManagementAuthorization(access);
+    expect(restarted.state).not.toBe(first.state);
+    expect(await h.tx.oauthCallback(first.state)).toBeNull();
+    expect(await h.tx.oauthCallback(restarted.state)).not.toBeNull();
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("persists HTTP 201 immediately and duplicate create requests or restart reuse the ref", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const first = await productionFetch(request("create"), h.env);
+    expect(first!.status).toBe(200);
+    expect(h.read()!.projectRef).toBe(ref);
+    expect(h.read()!.state).toBe("project_waiting");
+    expect(h.read()!.dbPasswordCipher).toBeUndefined();
+    for (let i = 0; i < 5; i++) await productionFetch(request("", "GET"), h.env);
+    await productionFetch(request("create"), h.env);
+    h.env.PROVISIONING_TRANSACTION.get = () => h.restart();
+    await productionFetch(request("create"), h.env);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("two overlapping Create calls on one transaction issue one upstream POST", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const results = await Promise.all([
+      productionFetch(request("create"), h.env),
+      productionFetch(request("create"), h.env),
+    ]);
+    expect(results.every(r => r!.status === 200 || r!.status === 202)).toBe(true);
+    expect(h.countCreates()).toBe(1);
+    expect(h.read()!.projectRef).toBe(ref);
+    expect(h.holder()).toBe(transactionId);
+  });
+
+  it("reconciles a lost response by exact transaction evidence without a second create", async () => {
+    let afterSend: (() => void) | null = null;
+    const h = await harness(() => { afterSend?.(); throw Error("connection_lost"); });
+    afterSend = h.setCreated;
+    const first = await productionFetch(request("create"), h.env);
+    expect(first!.status).toBe(202);
+    expect(h.read()!.state).toBe("project_reconciliation_required");
+    expect(h.holder()).toBe(transactionId);
+    const reconciled = await productionFetch(request("reconcile"), h.env);
+    expect(reconciled!.status).toBe(200);
+    expect(h.read()!.projectRef).toBe(ref);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("can recover a pre-upgrade uncertain transaction using its durable completion time", async () => {
+    let afterSend: (() => void) | null = null;
+    const h = await harness(() => { afterSend?.(); throw Error("connection_lost"); });
+    afterSend = h.setCreated;
+    await productionFetch(request("create"), h.env);
+    h.write({ ...h.read()!, createStartedAt: undefined });
+
+    const result = await productionFetch(request("reconcile"), h.env);
+
+    expect(result!.status).toBe(200);
+    expect(h.read()!.projectRef).toBe(ref);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("keeps uncertain 409 and 5xx responses guarded without a second create", async () => {
+    for (const status of [409, 503]) {
+      const h = await harness(() => new Response(null, { status }));
+      await productionFetch(request("create"), h.env);
+      await productionFetch(request("reconcile"), h.env);
+      await productionFetch(request("create"), h.env);
+      expect(h.read()!.state).toBe("project_reconciliation_required");
+      expect(h.holder()).toBe(transactionId);
+      expect(h.countCreates()).toBe(1);
+    }
+  });
+
+  it("classifies proven project quota as terminal user action and does not retry", async () => {
+    const h = await harness(() => Response.json({ code: "project_limit", message: "Active project limit reached" }, { status: 403 }));
+    const result = await productionFetch(request("create"), h.env);
+    expect((await result!.json() as { error: string }).error).toBe("project_quota_reached");
+    expect(h.read()!.state).toBe("terminal_error");
+    expect(h.holder()).toBeNull();
+    await productionFetch(request("create"), h.env);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("backs off a definitive 429 and keeps one password for the bounded retry", async () => {
+    let calls = 0;
+    const h = await harness(() => ++calls === 1
+      ? new Response(null, { status: 429, headers: { "retry-after": "60" } })
+      : Response.json({ ref }, { status: 201 }));
+    const first = await productionFetch(request("create"), h.env);
+    expect((await first!.json() as { state: string }).state).toBe("project_retry_authorized");
+    const cipher = h.read()!.dbPasswordCipher;
+    await productionFetch(request("create"), h.env);
+    expect(h.countCreates()).toBe(1);
+    h.write({ ...h.read()!, createRetryAfter: Date.now() - 1 });
+    const second = await productionFetch(request("create"), h.env);
+    expect(second!.status).toBe(200);
+    expect(h.countCreates()).toBe(2);
+    expect(cipher).toBeTruthy();
+    expect(h.createBodies[0]!.db_pass).toBe(h.createBodies[1]!.db_pass);
+    expect(h.createBodies[0]).toMatchObject({ name, organization_slug: "owner-org", region_selection: { type: "smartGroup", code: "apac" } });
+  });
+
+  it("waits for project health without consuming migration attempts or recreating", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    await productionFetch(request("create"), h.env);
+    const waiting = await productionFetch(request("migrate"), h.env);
+    expect(waiting!.status).toBe(202);
+    expect(h.read()!.state).toBe("project_waiting");
+    expect(h.read()!.expensiveAttempts).toBe(0);
+    h.write({ ...h.read()!, healthRetryAfter: Date.now() - 1 });
+    h.setHealthy();
+    const migrated = await productionFetch(request("migrate"), h.env);
+    expect(migrated!.status).toBe(200);
+    expect(h.read()!.state).toBe("verifying");
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("honors bounded health 429 backoff without claiming migration", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    await productionFetch(request("create"), h.env);
+    h.setHealthy();
+    h.rateLimitHealth();
+    await productionFetch(request("migrate"), h.env);
+    const firstCount = h.upstream.length;
+    expect(Number(h.read()!.healthRetryAfter) - Date.now()).toBeGreaterThan(80_000);
+    await productionFetch(request("migrate"), h.env);
+    expect(h.upstream.length).toBe(firstCount);
+    expect(h.read()!.expensiveAttempts).toBe(0);
+    expect(h.countCreates()).toBe(1);
+  });
+
+  it("keeps a guard owned by another active transaction and sends no create", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ state: "project_creating", expiresAt: Date.now() + 60_000, projectRef: undefined });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+
+    const response = await productionFetch(request("create"), h.env);
+
+    expect(response!.status).toBe(409);
+    expect(await response!.json()).toEqual({ error: "operation_in_progress" });
+    expect(h.holder()).toBe(oldTransactionId);
+    expect(h.countCreates()).toBe(0);
+    expect(h.upstream).toHaveLength(0);
+  });
+
+  it("recovers an inactive guard owner's exact recorded project without a new create", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: ref, state: "expired" });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+
+    const response = await productionFetch(request("create"), h.env);
+
+    expect(response!.status).toBe(200);
+    const body = await response!.json() as Record<string, unknown>;
+    expect(body).toMatchObject({ state: "project_waiting", projectRef: ref });
+    expect(body.creationGuardOwnerTransactionId).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain(oldTransactionId);
+    expect(h.read()).toMatchObject({ state: "project_waiting", projectRef: ref, creationGuardOwnerTransactionId: oldTransactionId });
+    expect(h.upstream).toContain(`GET https://api.supabase.com/v1/projects/${ref}`);
+    expect(h.holder()).toBe(oldTransactionId);
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("compare-releases a confirmed-missing recorded project and requires a later explicit Create", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: ref });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+    h.setExactProjectResponse(() => new Response(null, { status: 404 }));
+
+    const reconciled = await productionFetch(request("create"), h.env);
+
+    expect(reconciled!.status).toBe(202);
+    expect(await reconciled!.json()).toMatchObject({ state: "organization_selected" });
+    expect(h.holder()).toBeNull();
+    expect(h.countCreates()).toBe(0);
+
+    const explicitCreate = await productionFetch(request("create"), h.env);
+    expect(explicitCreate!.status).toBe(200);
+    expect(h.countCreates()).toBe(1);
+    expect(h.holder()).toBe(transactionId);
+  });
+
+  it("retains the old guard for every ambiguous exact-project lookup", async () => {
+    const cases: Array<{ name: string; response: () => Promise<Response> | Response; status: number; error: string }> = [
+      { name: "401", response: () => new Response(null, { status: 401 }), status: 401, error: "oauth_expired" },
+      { name: "403", response: () => new Response(null, { status: 403 }), status: 502, error: "temporarily_unavailable" },
+      { name: "429", response: () => new Response(null, { status: 429 }), status: 429, error: "rate_limited" },
+      { name: "5xx", response: () => new Response(null, { status: 503 }), status: 502, error: "temporarily_unavailable" },
+      { name: "network", response: async () => { throw Error("network unavailable"); }, status: 502, error: "temporarily_unavailable" },
+      { name: "malformed", response: () => new Response("{", { status: 200, headers: { "content-type": "application/json" } }), status: 502, error: "temporarily_unavailable" },
+    ];
+    for (const testCase of cases) {
+      const h = await harness(() => Response.json({ ref }, { status: 201 }));
+      const old = oldCreationOwner({ projectRef: ref });
+      h.addTransaction(oldTransactionId, old.tx);
+      h.setHolder(oldTransactionId);
+      h.setExactProjectResponse(testCase.response);
+
+      const response = await productionFetch(request("create"), h.env);
+
+      expect(response!.status, testCase.name).toBe(testCase.status);
+      expect(await response!.json(), testCase.name).toEqual({ error: testCase.error });
+      expect(h.holder(), testCase.name).toBe(oldTransactionId);
+      expect(h.countCreates(), testCase.name).toBe(0);
+    }
+  });
+
+  it("does not disturb a new guard owner that wins before compare-and-release", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: ref });
+    const newOwner = "11111111111111111111111111111111";
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+    h.setExactProjectResponse(() => new Response(null, { status: 404 }));
+    h.changeOwnerBeforeConfirmedRelease(() => h.setHolder(newOwner));
+
+    const response = await productionFetch(request("create"), h.env);
+
+    expect(response!.status).toBe(409);
+    expect(h.holder()).toBe(newOwner);
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("uses transaction-scoped reconciliation for an uncertain old owner and keeps the guard when no ref is proven", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: undefined, state: "expired" });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+
+    const response = await productionFetch(request("create"), h.env);
+
+    expect(response!.status).toBe(409);
+    expect(h.upstream.some(value => value.includes(`/v1/organizations/owner-org/projects?`))).toBe(true);
+    expect(h.holder()).toBe(oldTransactionId);
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("recovers a uniquely reconciled uncertain old-owner project without a new create", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: undefined, state: "expired" });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+    h.setListedProject({ ref, name: `personal-planner-${oldTransactionId}`, inserted_at: new Date().toISOString() });
+
+    const response = await productionFetch(request("create"), h.env);
+
+    expect(response!.status).toBe(200);
+    expect(h.read()).toMatchObject({ state: "project_waiting", projectRef: ref });
+    expect(h.holder()).toBe(oldTransactionId);
+    expect(h.countCreates()).toBe(0);
+  });
+
+  it("resumes an existing incomplete project and releases its old guard only at verified READY", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    const old = oldCreationOwner({ projectRef: ref });
+    h.addTransaction(oldTransactionId, old.tx);
+    h.setHolder(oldTransactionId);
+
+    const recovered = await productionFetch(request("create"), h.env);
+    expect(recovered!.status).toBe(200);
+    expect(h.holder()).toBe(oldTransactionId);
+    expect(h.countCreates()).toBe(0);
+
+    const waiting = await productionFetch(request("migrate"), h.env);
+    expect(waiting!.status).toBe(202);
+    expect(h.holder()).toBe(oldTransactionId);
+    h.write({ ...h.read()!, healthRetryAfter: Date.now() - 1 });
+    h.setHealthy();
+    const migrated = await productionFetch(request("migrate"), h.env);
+    expect(migrated!.status).toBe(200);
+    const verified = await productionFetch(request("verify"), h.env);
+
+    expect(verified!.status).toBe(200);
+    expect(h.read()!.state).toBe("ready");
+    expect(h.holder()).toBeNull();
+    expect(h.countCreates()).toBe(0);
   });
 });
 
@@ -458,10 +994,51 @@ describe("migration and verification recovery", () => {
   });
 
   it("distinguishes fixed verification assertion failure from a passed result", async () => {
-    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","recurrence_provenance_present","relationships_owner_scoped","direct_authenticated_writes_revoked","capability_payload_current"];
+    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","relationships_owner_scoped","direct_authenticated_writes_revoked","capability_payload_current"];
     const passed = Object.fromEntries(keys.map(key => [key, true]));
     expect(await runFixedVerification(ref, async () => Response.json([passed]))).toBe("passed");
     expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, rls_enabled: false }]))).toBe("assertion_failed");
+    expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, initial_sync_fencing_present: false }]))).toBe("assertion_failed");
+  });
+
+  it("submits the fixed SQL to the dedicated read-only endpoint with the documented 201 contract", async () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    const calls: Array<{ path: string; init: RequestInit }> = [];
+    const result = await runReadOnlyCompatibilityVerification(ref, async (path, init = {}) => {
+      calls.push({ path, init });
+      return Response.json([verificationRow], { status: 201 });
+    });
+    expect(result).toBe("passed");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe(`/v1/projects/${ref}/database/query/read-only`);
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(new Headers(calls[0]!.init.headers).get("content-type")).toBe("application/json");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ query: SCHEMA_VERIFICATION_SQL });
+    expect(String(calls[0]!.init.body)).not.toContain("read_only");
+    expect(logged).toHaveBeenCalledWith(JSON.stringify({ event: "schema_verification_read_only_completed", project_ref: ref, status: 201, result: "passed" }));
+  });
+
+  it("requires every fixed assertion from a dedicated read-only query response", async () => {
+    for (const check of Object.keys(verificationRow)) {
+      const failed = { ...verificationRow, [check]: false };
+      expect(await runReadOnlyCompatibilityVerification(ref, async () => Response.json([failed], { status: 201 }))).toBe("assertion_failed");
+      const missing = { ...verificationRow };
+      delete missing[check];
+      expect(await runReadOnlyCompatibilityVerification(ref, async () => Response.json([missing], { status: 201 }))).toBe("indeterminate");
+    }
+  });
+
+  it("keeps catalog and Planner entity references schema-qualified for the read-only endpoint", () => {
+    expect(SCHEMA_VERIFICATION_SQL).toContain("pg_catalog.pg_proc");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("pg_catalog.pg_type");
+    expect(SCHEMA_VERIFICATION_SQL).not.toMatch(/public\.planner_sync_capabilities\s*\(/u);
+    expect(SCHEMA_VERIFICATION_SQL).not.toMatch(/pg_catalog\.(?:bigint|integer|smallint|boolean|varchar|character varying|double precision)\b/iu);
+    expect(SCHEMA_VERIFICATION_SQL).not.toContain("regprocedure");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("'int8'");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("'int4'");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("prosrc = ");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("pg_catalog.pg_get_functiondef(");
+    expect(SCHEMA_VERIFICATION_SQL).not.toMatch(/(?<![\w.])(?:pg_class|pg_namespace|pg_constraint|pg_get_functiondef|has_function_privilege|has_table_privilege|array_length|strpo?s|count|bool_and|regclass|regprocedure)\b/u);
   });
 });
 
@@ -615,6 +1192,7 @@ describe("management authorization lifecycle", () => {
       const url = String(input);
       if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ ref, status: "ACTIVE_HEALTHY" });
       if (url.endsWith(`/v1/projects/${ref}/database/migrations`)) return Response.json(MIGRATIONS.map(m => ({ name: m.name })));
+      if (url.endsWith(`/v1/projects/${ref}/database/query/read-only`)) return Response.json([verificationRow], { status: 201 });
       if (url.endsWith(`/v1/projects/${ref}/database/query`)) return Response.json([verificationRow]);
       if (url.endsWith(`/v1/projects/${ref}/config/auth`)) {
         if (init?.method === "PATCH") {
@@ -653,6 +1231,7 @@ describe("management authorization lifecycle", () => {
       const url = String(input);
       if (url.endsWith(`/v1/projects/${ref}`)) return Response.json({ ref });
       if (url.endsWith(`/v1/projects/${ref}/database/migrations`)) return Response.json(MIGRATIONS.map(m => ({ name: m.name })));
+      if (url.endsWith(`/v1/projects/${ref}/database/query/read-only`)) return Response.json([verificationRow], { status: 201 });
       if (url.endsWith(`/v1/projects/${ref}/database/query`)) return Response.json([verificationRow]);
       if (url.endsWith(`/v1/projects/${ref}/config/auth`)) return new Response(null, { status: 502 });
       return new Response(null, { status: 404 });
@@ -1593,7 +2172,7 @@ describe("provisioning route contract", () => {
         }
         return Response.json({ uri_allow_list: allowList });
       }
-      if (url.endsWith("/database/query")) return Response.json([verificationRow]);
+      if (url.endsWith("/database/query/read-only")) return Response.json([verificationRow], { status: 201 });
       if (url.endsWith("/api-keys")) return Response.json([{ id: "pub-1", type: "publishable" }]);
       if (url.includes("?reveal=true")) {
         return Response.json({ id: "pub-1", type: "publishable", api_key: publishableKey });
@@ -1622,6 +2201,8 @@ describe("provisioning route contract", () => {
       },
     ]);
     expect(requested).toContain(`https://api.supabase.com/v1/projects/${ref}/api-keys/pub-1?reveal=true`);
+    expect(requested).toContain(`https://api.supabase.com/v1/projects/${ref}/database/query/read-only`);
+    expect(requested).not.toContain(`https://api.supabase.com/v1/projects/${ref}/database/query`);
   });
 
   it("stays retryable, and never reports ready, when the publishable key cannot be read", async () => {
@@ -1630,7 +2211,7 @@ describe("provisioning route contract", () => {
       if (url.endsWith("/config/auth")) {
         return Response.json({ uri_allow_list: PLANNER_AUTH_CALLBACK_URI });
       }
-      if (url.endsWith("/database/query")) return Response.json([verificationRow]);
+      if (url.endsWith("/database/query/read-only")) return Response.json([verificationRow], { status: 201 });
       if (url.endsWith("/api-keys")) return new Response(null, { status: 500 });
       return new Response(null, { status: 404 });
     });
@@ -1652,7 +2233,7 @@ describe("provisioning route contract", () => {
         if (init?.method === "PATCH") return new Response(null, { status: 403 });
         return Response.json({ uri_allow_list: "" });
       }
-      if (url.endsWith("/database/query")) return Response.json([verificationRow]);
+      if (url.endsWith("/database/query/read-only")) return Response.json([verificationRow], { status: 201 });
       return new Response(null, { status: 404 });
     });
 

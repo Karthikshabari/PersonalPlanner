@@ -107,7 +107,9 @@ void main() {
     await settle(tester);
     expect(find.text('Sync is off'), findsOneWidget);
     expect(
-      find.text('Changes will stay on this device until you turn sync back on.'),
+      find.text(
+        'Changes will stay on this device until you turn sync back on.',
+      ),
       findsOneWidget,
     );
     expect(
@@ -256,6 +258,12 @@ void main() {
         containerRef: containerRef,
       );
       final container = containerRef.container!;
+      // Keep the bootstrap-owned stack alive after this screen is unmounted.
+      final stackSubscription = container.listen(
+        runtimeAuthStackProvider,
+        (_, _) {},
+      );
+      addTearDown(stackSubscription.close);
       final sessionKey = RuntimeAuthNamespaces.forProject(testProjectRef)
           .sessionKey;
       harness.store.values[sessionKey] = 'project-session';
@@ -282,7 +290,12 @@ void main() {
 
       // Let the disconnect finish with the initiating widget already gone.
       profileStore.release();
-      await _flushLifecycle(tester, () => reloader.calls >= 1);
+      await _flushLifecycle(
+        tester,
+        () =>
+            reloader.calls >= 1 &&
+            container.read(runtimeBackendProvider) is LocalOnlyRuntimeBackend,
+      );
 
       // The durable lifecycle transition completed *and* the provisioned
       // runtime was torn down although the screen disappeared.

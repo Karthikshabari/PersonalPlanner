@@ -7,7 +7,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../domain/sync_models.dart';
-import '../../providers/runtime_backend_providers.dart';
 import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
@@ -53,6 +52,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       if (!mounted) return;
       final controller = ref.read(provisioningUiProvider.notifier);
       _controller = controller;
+      final lifecycleState = WidgetsBinding.instance.lifecycleState;
+      controller.setReachabilityChecksActive(
+        lifecycleState == null || lifecycleState == AppLifecycleState.resumed,
+      );
       unawaited(controller.startWatching());
     });
   }
@@ -86,9 +89,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
   /// the user never has to press "Check authorization" themselves.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
     final controller = _controller;
     if (controller == null) return;
+    controller.setReachabilityChecksActive(state == AppLifecycleState.resumed);
+    if (state != AppLifecycleState.resumed) return;
     if (controller.current?.phase ==
         ProvisioningUiPhase.waitingForAuthorization) {
       unawaited(controller.checkAuthorization());
@@ -100,11 +104,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       unawaited(controller.completeManagementCheck());
       return;
     }
-    // READY is durable provisioning state. If only the lightweight runtime
-    // reachability probe failed, resume is a useful bounded recovery event and
-    // does not require Supabase Management authorization.
-    if (controller.current?.phase == ProvisioningUiPhase.ready &&
-        controller.current?.reachability == CloudReachability.unavailable) {
+    // Recheck the known project host once on resume. This both detects a
+    // connection lost while backgrounded and recovers a stale unavailable
+    // verdict without Management authorization.
+    if (controller.current?.phase == ProvisioningUiPhase.ready) {
       unawaited(controller.verifyProjectHost());
     }
   }
@@ -160,18 +163,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
 
   @override
   Widget build(BuildContext context) {
-    // A backend that finishes provisioning while the Planner is running needs
-    // its runtime Auth client, and the app bootstrap owns client lifecycle.
-    // Ask it to adopt the newly stored profile; this is a no-op when the active
-    // backend already matches or when compile-time configuration wins.
     ref.listen(provisioningUiProvider, (previous, next) {
-      final becameReady =
-          (next.value?.isReady ?? false) &&
-          !(previous?.value?.isReady ?? false);
-      if (becameReady) {
-        final pending = ref.read(runtimeBackendReloaderProvider)?.reload();
-        if (pending != null) unawaited(pending);
-      }
       _bridgeReachability(previous, next);
     });
     ref.listen(syncStatusProvider.select((status) => status.value?.state), (
@@ -211,7 +203,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
   ///
   /// A connectivity check is never a synchronization: an unreachable verdict
   /// is published immediately (and never touches the last-successful-sync
-  /// instant), while a recovered host is only *confirmed* by a real cycle.
+  /// instant), while a recovered host clears only that reachability verdict.
   /// The provider is never created here, so a card shown without a sync
   /// runtime cannot start an engine as a side effect of rendering.
   void _bridgeReachability(
@@ -224,16 +216,19 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     if (!container.exists(syncEngineProvider)) return;
     final engine = container.read(syncEngineProvider);
     if (engine == null) return;
-    if (reachability == CloudReachability.unavailable) {
+    if (reachability == CloudReachability.unavailable &&
+        previous?.value?.reachability != CloudReachability.unavailable) {
       engine.noteBackendUnreachable();
       // Reconcile the lightweight host failure against the authenticated data
       // path once. Connectivity restoration and the engine's existing
       // five-minute safety cycle provide later retries without aggressive
       // polling.
       unawaited(engine.syncNow());
-    } else if (reachability == CloudReachability.reachable &&
-        previous?.value?.reachability == CloudReachability.unavailable) {
-      unawaited(engine.syncNow());
+    } else if (reachability == CloudReachability.reachable) {
+      engine.noteBackendReachable();
+      if (previous?.value?.reachability == CloudReachability.unavailable) {
+        unawaited(engine.syncNow());
+      }
     }
   }
 
@@ -346,6 +341,41 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           ],
         );
 
+      case ProvisioningUiPhase.creationConfirmation:
+        return _CloudCard(
+          icon: Icons.add_circle_outline,
+          title: 'Create Personal Planner cloud',
+          body:
+              'Create one Supabase project in the organization you selected. '
+              'You can leave this screen after pressing Create; setup resumes '
+              'from the same project.',
+          busy: busy,
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-create-project'),
+              onPressed: busy ? null : controller.createProject,
+              child: const Text('Create project'),
+            ),
+          ],
+        );
+
+      case ProvisioningUiPhase.creationAuthorizationRequired:
+        return _CloudCard(
+          icon: Icons.lock_clock_outlined,
+          title: 'Supabase authorization expired',
+          body:
+              state.message ??
+              'Reauthorize this cloud setup, then press Create project again.',
+          busy: busy,
+          actions: <Widget>[
+            FilledButton(
+              key: const ValueKey('cloud-renew-creation-authorization'),
+              onPressed: busy ? null : controller.retry,
+              child: const Text('Reauthorize Supabase'),
+            ),
+          ],
+        );
+
       case ProvisioningUiPhase.candidateSelection:
         final candidates = state.candidates;
         return _CloudCard(
@@ -449,7 +479,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               key: const ValueKey('cloud-retry-action'),
               onPressed: busy ? null : controller.retry,
               child: Text(
-                state.authorizationRetryAvailable
+                state.message == cloudSetupIndeterminateMessage
+                    ? 'Check for created project'
+                    : state.authorizationRetryAvailable
                     ? 'Retry Supabase authorization'
                     : 'Retry',
               ),
@@ -459,7 +491,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             // granted after this attempt was authorized). Start Again abandons
             // this local attempt and asks the coordinator for a brand-new
             // transaction; it never deletes a Supabase project.
-            if (!state.authorizationRetryAvailable)
+            if (!state.authorizationRetryAvailable &&
+                state.message != cloudSetupIndeterminateMessage &&
+                state.message != cloudSetupRateLimitedMessage)
               TextButton(
                 key: const ValueKey('cloud-start-again'),
                 onPressed: busy ? null : controller.startAgain,
@@ -551,7 +585,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 child: Text(
                   state.managementCheckInFlight
                       ? 'Waiting for Supabase…'
-                      : cloudSetupVerifyWithSupabaseLabel,
+                      : 'Check cloud project',
                 ),
               ),
             if (!unreachable && projectRef != null)

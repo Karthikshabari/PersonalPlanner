@@ -211,6 +211,18 @@ class SyncEngine with WidgetsBindingObserver {
     _scheduleStatus();
   }
 
+  /// A successful host probe clears only its own out-of-band failure. It does
+  /// not claim that Planner data synchronized or move last-successful-sync.
+  void noteBackendReachable() {
+    if (_stopping || _disposed || !_backendReportedUnreachable) return;
+    _backendReportedUnreachable = false;
+    if (_failureState == SyncEngineState.backendUnavailable) {
+      _failureState = null;
+      _lastError = null;
+      _scheduleStatus();
+    }
+  }
+
   void _onConnectivityChanged(List<ConnectivityResult> results) {
     if (_stopping || _disposed) return;
     final wasAvailable = _transportAvailable;

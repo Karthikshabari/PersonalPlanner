@@ -11,6 +11,7 @@ import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 import 'package:personal_planner/features/sync/presentation/controllers/provisioning_ui_controller.dart';
 import 'package:personal_planner/features/sync/providers/deep_link_providers.dart';
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
+import 'package:personal_planner/features/sync/providers/runtime_backend_providers.dart';
 
 import '../../helpers/provisioning_fakes.dart';
 
@@ -20,7 +21,11 @@ void main() {
   late FakeProjectProbe probe;
   late ProviderContainer container;
 
-  void buildContainer({ProvisioningApi? withApi, AppLinkSource? linkSource}) {
+  void buildContainer({
+    ProvisioningApi? withApi,
+    AppLinkSource? linkSource,
+    RuntimeBackendReloader? reloader,
+  }) {
     container = ProviderContainer(
       overrides: [
         provisioningApiProvider.overrideWithValue(withApi),
@@ -28,8 +33,14 @@ void main() {
         if (linkSource != null)
           appLinkSourceProvider.overrideWithValue(linkSource),
         backendProjectProbeProvider.overrideWithValue(probe),
+        if (reloader != null)
+          runtimeBackendReloaderProvider.overrideWithValue(reloader),
         provisioningPollIntervalProvider.overrideWith(
           (ref) => const Duration(hours: 1),
+        ),
+        cloudReachabilityRetryDelayProvider.overrideWith(
+          (ref) =>
+              (_) => const Duration(hours: 1),
         ),
       ],
     );
@@ -41,6 +52,8 @@ void main() {
   void buildPollingContainer({
     required ProvisioningApi api,
     Duration interval = const Duration(milliseconds: 20),
+    Duration reachabilityRetryDelay = const Duration(hours: 1),
+    Duration Function(int)? reachabilityRetryDelayForAttempt,
   }) {
     container = ProviderContainer(
       overrides: [
@@ -48,6 +61,10 @@ void main() {
         browserLauncherProvider.overrideWithValue(launcher),
         backendProjectProbeProvider.overrideWithValue(probe),
         provisioningPollIntervalProvider.overrideWith((ref) => interval),
+        cloudReachabilityRetryDelayProvider.overrideWith(
+          (ref) =>
+              reachabilityRetryDelayForAttempt ?? (_) => reachabilityRetryDelay,
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -219,6 +236,153 @@ void main() {
       expect(api.calls, contains('adoptProject:abcdefghijklmnopqrst'));
     },
   );
+
+  test(
+    'adoption installs runtime before probing and needs no second check',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+        candidates: <ProvisioningCandidate>[
+          ProvisioningCandidate(projectRef: testProjectRef, name: 'Existing X'),
+        ],
+      );
+      api.adoptionResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        ),
+      );
+      probe.result = BackendProjectProbeResult.exists;
+      final events = <String>[];
+      probe.onProbe = () => events.add('probe');
+      buildContainer(
+        withApi: api,
+        reloader: _RecordingReloader(() async => events.add('runtime')),
+      );
+      await loadState();
+
+      await controller().checkAuthorization();
+      await controller().useSelectedCandidate();
+
+      expect(events, <String>['runtime', 'probe']);
+      expect(probe.apiKeys, <String>[testPublishableKey]);
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().reachability, CloudReachability.reachable);
+      expect(current().readyProfile?.projectRef, testProjectRef);
+      expect(api.calls, isNot(contains('startManagementCheck')));
+      expect(api.calls, isNot(contains('completeManagementCheck')));
+    },
+  );
+
+  test('saved READY project reconnects on open without Management', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    probe.result = BackendProjectProbeResult.exists;
+    buildContainer(withApi: api);
+    await loadState();
+
+    await controller().startWatching();
+    expect(current().phase, ProvisioningUiPhase.ready);
+    expect(current().reachability, CloudReachability.reachable);
+    controller().stopWatching();
+    await controller().startWatching();
+    expect(current().reachability, CloudReachability.reachable);
+    expect(probe.probed, hasLength(2));
+    expect(api.calls, isNot(contains('startManagementCheck')));
+  });
+
+  test('persisted exact-project deletion survives screen reopening', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+      remoteMissing: true,
+    );
+    buildContainer(withApi: api);
+    await loadState();
+
+    expect(current().phase, ProvisioningUiPhase.remoteMissing);
+    expect(current().readyProfile?.projectRef, testProjectRef);
+    await controller().startWatching();
+    expect(current().phase, ProvisioningUiPhase.remoteMissing);
+    expect(probe.probed, isEmpty);
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+  });
+
+  test(
+    'setup after deletion offers creation only after empty discovery',
+    () async {
+      api.attempt = testAttempt(
+        ProvisioningState.ready,
+        projectRef: testProjectRef,
+        remoteMissing: true,
+      );
+      api.startResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.authorizationPending),
+        authorizationUrl: testAuthorizationUrl,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        resolutionComplete: true,
+        candidates: <ProvisioningCandidate>[],
+      );
+      api.organizationsResult = testOrganizations(const [
+        ProvisioningOrganization(id: 'org-1', name: 'Planner', slug: 'planner'),
+      ]);
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().startSetup();
+      await controller().checkAuthorization();
+
+      expect(current().phase, ProvisioningUiPhase.organizationSelection);
+      expect(api.calls, contains('resolveProject'));
+      expect(api.calls, contains('listOrganizations'));
+      expect(api.calls, isNot(contains('createOrContinueProject')));
+      expect(
+        api.calls.where((call) => call.startsWith('adoptProject')),
+        isEmpty,
+      );
+    },
+  );
+
+  test('indeterminate discovery after deletion never becomes empty', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+      remoteMissing: true,
+    );
+    api.startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      authorizationUrl: testAuthorizationUrl,
+    );
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.protocolError,
+      message: 'Discovery response was unusable.',
+    );
+    buildContainer(withApi: api);
+    await loadState();
+
+    await controller().startSetup();
+    await controller().checkAuthorization();
+
+    expect(current().phase, ProvisioningUiPhase.retryableError);
+    expect(api.calls, isNot(contains('listOrganizations')));
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+  });
 
   test('multiple verified clouds are not chosen by list order', () async {
     api.attempt = testAttempt(ProvisioningState.authorizationPending);
@@ -472,11 +636,11 @@ void main() {
   );
 
   test('drives the authoritative create, migrate and verify steps', () async {
-    api.attempt = testAttempt(ProvisioningState.projectCreating);
+    api.attempt = testAttempt(ProvisioningState.organizationSelected);
     api.createResult = testInProgress(ProvisioningState.projectWaiting);
     buildContainer(withApi: api);
     await loadState();
-    await controller().advance();
+    await controller().createProject();
     expect(api.calls, contains('createOrContinueProject'));
 
     api.attempt = testAttempt(
@@ -504,6 +668,300 @@ void main() {
     expect(current().stage, CloudSetupStage.verifyingCloudStorage);
   });
 
+  test('five progress polls never repeat the explicit Create action', () async {
+    api.attempt = testAttempt(ProvisioningState.organizationSelected);
+    api.createResult = testInProgress(ProvisioningState.projectCreating);
+    api.refreshResult = testInProgress(ProvisioningState.organizationSelected);
+    buildPollingContainer(api: api);
+    await loadState();
+    await controller().startWatching();
+    expect(current().phase, ProvisioningUiPhase.creationConfirmation);
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+
+    await controller().createProject();
+    api.attempt = testAttempt(ProvisioningState.projectCreating);
+    api.refreshResult = testInProgress(ProvisioningState.projectCreating);
+    await waitFor(() => api.calls.where((c) => c == 'refresh').length >= 5);
+
+    expect(
+      api.calls.where((c) => c == 'createOrContinueProject'),
+      hasLength(1),
+    );
+  });
+
+  test('rapid double Create press sends one action', () async {
+    api.attempt = testAttempt(ProvisioningState.organizationSelected);
+    api.createResult = testInProgress(ProvisioningState.projectCreating);
+    api.holdCreate = Completer<void>();
+    buildContainer(withApi: api);
+    await loadState();
+
+    final first = controller().createProject();
+    final second = controller().createProject();
+    api.holdCreate!.complete();
+    await Future.wait([first, second]);
+
+    expect(
+      api.calls.where((c) => c == 'createOrContinueProject'),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'expired pre-create setup reauthorizes and waits for a new Create press',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.createResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        message: 'Supabase authorization expired before project creation.',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().createProject();
+      expect(
+        current().phase,
+        ProvisioningUiPhase.creationAuthorizationRequired,
+      );
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(1),
+      );
+
+      api.retryAuthorizationResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        authorizationUrl: Uri.parse(
+          'https://api.supabase.com/v1/oauth/authorize?client_id=x',
+        ),
+      );
+      await controller().retry();
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+      expect(api.calls, contains('retryAuthorization'));
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(1),
+      );
+
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.organizationSelected,
+          creationAuthorizationPending: true,
+        ),
+      );
+      await controller().retry();
+      expect(api.calls.where((c) => c == 'retryAuthorization'), hasLength(1));
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+
+      api.refreshResult = testInProgress(
+        ProvisioningState.organizationSelected,
+      );
+      await controller().advance();
+      expect(current().phase, ProvisioningUiPhase.creationConfirmation);
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(1),
+      );
+
+      api.createResult = testInProgress(ProvisioningState.projectCreating);
+      api.holdCreate = Completer<void>();
+      final first = controller().createProject();
+      final second = controller().createProject();
+      api.holdCreate!.complete();
+      await Future.wait([first, second]);
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(2),
+      );
+    },
+  );
+
+  test('reopen after pre-create expiry retains the attempt and requires reauthorization', () async {
+    api.attempt = testAttempt(ProvisioningState.organizationSelected);
+    api.refreshResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.needsUserAction,
+      profile: testProfile(ProvisioningState.organizationSelected),
+      message: 'Supabase authorization expired before project creation.',
+    );
+    buildContainer(withApi: api);
+    await loadState();
+    await controller().startWatching();
+
+    expect(current().phase, ProvisioningUiPhase.creationAuthorizationRequired);
+    expect(current().transactionId, testTransactionId);
+    expect(api.calls, contains('refresh'));
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+    expect(api.startAttemptCount, 0);
+  });
+
+  test(
+    'reopen during pre-create OAuth waits for the same transaction',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.organizationSelected,
+          creationAuthorizationPending: true,
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().startWatching();
+
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+      expect(current().transactionId, testTransactionId);
+      expect(api.calls, isNot(contains('createOrContinueProject')));
+      expect(api.startAttemptCount, 0);
+    },
+  );
+
+  test(
+    'five pending authorization polls use GET status without Create or restart',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.organizationSelected,
+          creationAuthorizationPending: true,
+        ),
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+      await controller().startWatching();
+      await waitFor(() => api.calls.where((c) => c == 'refresh').length >= 5);
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+      expect(api.calls.where((c) => c == 'createOrContinueProject'), isEmpty);
+      expect(api.calls.where((c) => c == 'retryAuthorization'), isEmpty);
+      expect(api.calls.where((c) => c == 'resolveProject'), isEmpty);
+      expect(api.startAttemptCount, 0);
+    },
+  );
+
+  test(
+    'callback completion returns to explicit Create without calling it',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.organizationSelected,
+          creationAuthorizationPending: true,
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+      await controller().startWatching();
+      expect(current().phase, ProvisioningUiPhase.waitingForAuthorization);
+      await controller().createProject();
+      expect(api.calls.where((c) => c == 'createOrContinueProject'), isEmpty);
+
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.organizationSelected,
+        ),
+      );
+      await controller().advance();
+      expect(current().phase, ProvisioningUiPhase.creationConfirmation);
+      expect(api.calls.where((c) => c == 'createOrContinueProject'), isEmpty);
+      api.createResult = testInProgress(ProvisioningState.projectCreating);
+      await controller().createProject();
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('a local authorization lag never re-enters project discovery', () async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.organizationSelected);
+    buildContainer(withApi: api);
+    await loadState();
+    await controller().advance();
+    expect(current().phase, ProvisioningUiPhase.creationConfirmation);
+    expect(api.calls, isNot(contains('resolveProject')));
+  });
+
+  test(
+    'reopening during creation reads status without sending Create',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.projectCreating);
+      api.refreshResult = testInProgress(ProvisioningState.projectCreating);
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().startWatching();
+
+      expect(api.calls, contains('refresh'));
+      expect(api.calls, isNot(contains('createOrContinueProject')));
+    },
+  );
+
+  test(
+    'reopen after a lost Create response discovers the running Worker attempt',
+    () async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.refreshResult = testInProgress(ProvisioningState.projectCreating);
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().startWatching();
+
+      expect(current().phase, ProvisioningUiPhase.provisioning);
+      expect(api.calls, contains('refresh'));
+      expect(api.calls, isNot(contains('createOrContinueProject')));
+    },
+  );
+
+  test('reopening an indeterminate create reconciles once', () async {
+    api.attempt = testAttempt(ProvisioningState.projectReconciliationRequired);
+    api.refreshResult = testInProgress(
+      ProvisioningState.projectReconciliationRequired,
+    );
+    api.createResult = testInProgress(
+      ProvisioningState.projectReconciliationRequired,
+    );
+    buildPollingContainer(api: api);
+    await loadState();
+
+    await controller().startWatching();
+    await waitFor(() => api.calls.where((c) => c == 'refresh').length >= 5);
+
+    expect(
+      api.calls.where((c) => c == 'createOrContinueProject'),
+      hasLength(1),
+    );
+    expect(current().message, cloudSetupIndeterminateMessage);
+  });
+
+  test('proven quota shows user action instead of a retry loop', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.terminalError,
+      errorCode: 'project_quota_reached',
+    );
+    buildContainer(withApi: api);
+    await loadState();
+    await controller().startWatching();
+
+    expect(current().message, cloudSetupQuotaMessage);
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+  });
+
   test(
     'a candidate found during creation returns to explicit selection',
     () async {
@@ -521,7 +979,7 @@ void main() {
       buildContainer(withApi: api);
       await loadState();
 
-      await controller().advance();
+      await controller().createProject();
 
       expect(current().phase, ProvisioningUiPhase.candidateSelection);
       expect(current().selectedCandidate?.projectRef, testProjectRef);
@@ -1191,17 +1649,32 @@ void main() {
       expect(current().message, 'offline');
     });
 
-    test('a 404 from the project host switches to recovery', () async {
+    test('a health-route 404 requires an exact-project check', () async {
       readyAttempt();
       probe.result = BackendProjectProbeResult.missing;
-      api.remoteMissingRecorded = true;
       buildContainer(withApi: api);
       await loadState();
 
       await controller().verifyProjectHost();
 
-      expect(api.calls, contains('markRemoteMissing'));
-      expect(current().phase, ProvisioningUiPhase.remoteMissing);
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().reachability, CloudReachability.unavailable);
+      expect(api.calls, isNot(contains('startManagementCheck')));
+    });
+
+    test('health 401/403 reports access trouble, never deletion', () async {
+      readyAttempt();
+      probe.result = BackendProjectProbeResult.accessDenied;
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().verifyProjectHost();
+
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().reachability, CloudReachability.unavailable);
+      expect(current().message, cloudSetupProjectAccessHintMessage);
+      expect(current().readyProfile?.projectRef, testProjectRef);
+      expect(api.calls, isNot(contains('startAttempt')));
     });
 
     test('a network failure at the project host changes nothing', () async {
@@ -1236,7 +1709,148 @@ void main() {
       expect(api.calls, isNot(contains('startManagementCheck')));
       expect(api.calls, isNot(contains('markRemoteMissing')));
     });
+
+    test(
+      'READY automatically recovers after a temporary host failure',
+      () async {
+        readyAttempt();
+        probe.result = BackendProjectProbeResult.indeterminate;
+        buildPollingContainer(
+          api: api,
+          interval: const Duration(hours: 1),
+          reachabilityRetryDelay: const Duration(milliseconds: 30),
+        );
+        await loadState();
+        await controller().startWatching();
+
+        expect(current().phase, ProvisioningUiPhase.ready);
+        expect(current().reachability, CloudReachability.unavailable);
+        expect(current().readyProfile?.projectRef, testProjectRef);
+        expect(probe.probed, hasLength(1));
+
+        probe.result = BackendProjectProbeResult.exists;
+        await waitFor(
+          () => current().reachability == CloudReachability.reachable,
+          reason: 'the failed READY host probe was not retried',
+        );
+
+        expect(current().phase, ProvisioningUiPhase.ready);
+        expect(current().message, isNull);
+        expect(probe.probed, hasLength(2));
+        expect(api.calls, isNot(contains('startManagementCheck')));
+        expect(api.calls, isNot(contains('resolveProject')));
+        expect(api.calls, isNot(contains('createOrContinueProject')));
+        expect(api.calls, isNot(contains('markRemoteMissing')));
+      },
+    );
+
+    test('READY retries stop when the card is no longer watched', () async {
+      readyAttempt();
+      probe.result = BackendProjectProbeResult.indeterminate;
+      buildPollingContainer(
+        api: api,
+        interval: const Duration(hours: 1),
+        reachabilityRetryDelay: const Duration(milliseconds: 80),
+      );
+      await loadState();
+      await controller().startWatching();
+      expect(probe.probed, hasLength(1));
+
+      controller().stopWatching();
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(probe.probed, hasLength(1));
+    });
+
+    test('repeated failures advance bounded retry attempts', () async {
+      readyAttempt();
+      probe.result = BackendProjectProbeResult.indeterminate;
+      final retryFailures = <int>[];
+      buildPollingContainer(
+        api: api,
+        interval: const Duration(hours: 1),
+        reachabilityRetryDelayForAttempt: (failures) {
+          retryFailures.add(failures);
+          return const Duration(milliseconds: 25);
+        },
+      );
+      await loadState();
+      await controller().startWatching();
+      await waitFor(() => retryFailures.length >= 3);
+      controller().stopWatching();
+
+      expect(retryFailures.take(3), [1, 2, 3]);
+      expect(current().phase, ProvisioningUiPhase.ready);
+      expect(current().readyProfile?.projectRef, testProjectRef);
+      expect(api.calls, isNot(contains('createOrContinueProject')));
+    });
+
+    test(
+      'backgrounding pauses host retries and foregrounding resumes recovery',
+      () async {
+        readyAttempt();
+        probe.result = BackendProjectProbeResult.indeterminate;
+        buildPollingContainer(
+          api: api,
+          interval: const Duration(hours: 1),
+          reachabilityRetryDelay: const Duration(milliseconds: 80),
+        );
+        await loadState();
+        await controller().startWatching();
+        controller().setReachabilityChecksActive(false);
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+        expect(probe.probed, hasLength(1));
+
+        probe.result = BackendProjectProbeResult.exists;
+        controller().setReachabilityChecksActive(true);
+        await waitFor(
+          () => current().reachability == CloudReachability.reachable,
+        );
+        expect(probe.probed, hasLength(2));
+        expect(api.calls, isNot(contains('startManagementCheck')));
+      },
+    );
+
+    test(
+      'an automatic health 404 stays unavailable without creating a project',
+      () async {
+        readyAttempt();
+        probe.result = BackendProjectProbeResult.indeterminate;
+        buildPollingContainer(
+          api: api,
+          interval: const Duration(hours: 1),
+          reachabilityRetryDelay: const Duration(milliseconds: 30),
+        );
+        await loadState();
+        await controller().startWatching();
+        probe.result = BackendProjectProbeResult.missing;
+
+        await waitFor(() => probe.probed.length >= 2);
+        expect(current().phase, ProvisioningUiPhase.ready);
+        expect(current().reachability, CloudReachability.unavailable);
+        expect(current().readyProfile?.projectRef, testProjectRef);
+        expect(api.calls, isNot(contains('createOrContinueProject')));
+        expect(api.calls, isNot(contains('startManagementCheck')));
+      },
+    );
   });
+
+  test('failed host-probe retries back off to five minutes', () {
+    expect(cloudReachabilityRetryDelay(1), const Duration(seconds: 15));
+    expect(cloudReachabilityRetryDelay(2), const Duration(seconds: 30));
+    expect(cloudReachabilityRetryDelay(3), const Duration(minutes: 1));
+    expect(cloudReachabilityRetryDelay(4), const Duration(minutes: 2));
+    expect(cloudReachabilityRetryDelay(5), const Duration(minutes: 5));
+    expect(cloudReachabilityRetryDelay(50), const Duration(minutes: 5));
+  });
+}
+
+class _RecordingReloader implements RuntimeBackendReloader {
+  _RecordingReloader(this.onReload);
+
+  final Future<void> Function() onReload;
+
+  @override
+  Future<void> reload() => onReload();
 }
 
 /// Records how many status requests are open at once, and can hold one open.

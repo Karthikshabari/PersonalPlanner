@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { MIGRATIONS as CANONICAL_MIGRATIONS, SCHEMA_VERIFICATION_SQL } from "./migrations";
 
-const API="https://api.supabase.com", TX_TTL_MS=3_600_000, CREATE_LEASE_MS=90_000, OP_LEASE_MS=120_000, MAX_CREATE=2, MAX_OPS=8, MAX_BODY=4096, MAX_ORGANIZATIONS=100;
+const API="https://api.supabase.com", TX_TTL_MS=3_600_000, CREATION_WINDOW_MS=2*3_600_000, CREATE_LEASE_MS=90_000, OP_LEASE_MS=120_000, MAX_CREATE=2, MAX_OPS=8, MAX_BODY=4096, MAX_ORGANIZATIONS=100;
 /**
  * How long a *pending* Management authorization may stay uncompleted.
  *
@@ -12,9 +12,9 @@ const API="https://api.supabase.com", TX_TTL_MS=3_600_000, CREATE_LEASE_MS=90_00
  */
 export const MANAGEMENT_WINDOW_MS=15*60*1000;
 const STATES=["authorization_pending","organization_selected","project_creating","project_reconciliation_required","project_retry_authorized","project_waiting","migrating","migration_reconciliation_required","verifying","ready","terminal_error","expired"] as const;
-type State=typeof STATES[number]; type Code="oauth_expired"|"oauth_state_invalid"|"organization_not_found"|"organization_discovery_failed"|"project_creation_failed"|"project_identity_ambiguous"|"migration_failed"|"migration_history_mismatch"|"migration_bundle_invalid"|"verification_failed"|"verification_indeterminate"|"runtime_config_unavailable"|"provisioning_expired"|"rate_limited"|"operation_in_progress"|"invalid_request"|"revocation_failed"|"project_deleted"|"candidate_discovery_failed"|"candidate_discovery_changed"|"temporarily_unavailable";
+type State=typeof STATES[number]; type Code="oauth_expired"|"oauth_state_invalid"|"organization_not_found"|"organization_discovery_failed"|"project_creation_failed"|"project_creation_rejected"|"project_quota_reached"|"project_identity_ambiguous"|"project_health_failed"|"migration_failed"|"migration_history_mismatch"|"migration_bundle_invalid"|"verification_failed"|"verification_indeterminate"|"runtime_config_unavailable"|"provisioning_expired"|"rate_limited"|"operation_in_progress"|"invalid_request"|"revocation_failed"|"project_deleted"|"project_access_denied"|"candidate_discovery_failed"|"candidate_discovery_changed"|"temporarily_unavailable";
 type Op={kind:"create"|"migration"|"verification";nonce:string;startedAt:number;leaseExpiresAt:number};
-type Tx={schema:2;state:State;createdAt:number;updatedAt:number;expiresAt:number;accessHash:string;oauthState?:string;oauthStateHash?:string;oauthVerifier?:string;oauthStateUsed?:boolean;oauthPurpose?:"provisioning"|"management";subject?:string;organizationSlug?:string;requestedProjectName?:string;idempotencyKey?:string;projectRef?:string;candidateRefs?:string[];createAttempts:number;expensiveAttempts:number;operation?:Op;tokenCiphertext?:string;tokenExpiresAt?:number;verification?:boolean;runtimeConfig?:RuntimeConfig;error?:Code;
+type Tx={schema:2;state:State;createdAt:number;updatedAt:number;expiresAt:number;accessHash:string;oauthState?:string;oauthStateHash?:string;oauthVerifier?:string;oauthStateUsed?:boolean;oauthPurpose?:"provisioning"|"management";subject?:string;organizationSlug?:string;requestedProjectName?:string;idempotencyKey?:string;projectRef?:string;creationGuardOwnerTransactionId?:string;candidateRefs?:string[];createAttempts:number;createStartedAt?:number;dbPasswordCipher?:string;createRetryAfter?:number;healthRetryAfter?:number;healthChecks?:number;expensiveAttempts:number;operation?:Op;tokenCiphertext?:string;tokenExpiresAt?:number;verification?:boolean;runtimeConfig?:RuntimeConfig;error?:Code;
 refreshCipher?:string;grantExpiresAt?:number;oauthAuthorizedAt?:number;oauthRevokedAt?:number;oauthReleaseUnconfirmed?:boolean;emailRedirectConfigured?:string;discoveryEmptyAt?:number;oauthFailure?:boolean};
 export type Migration={name:string;query:string;sha256:string}; export type MigrationHistory={version?:string;name?:string}[]; type Management=(path:string,init?:RequestInit)=>Promise<Response>; export type VerificationResult="passed"|"assertion_failed"|"indeterminate"; export type MigrationResult={kind:"complete"}|{kind:"indeterminate"}|{kind:"failed";code:"migration_history_mismatch"|"migration_bundle_invalid"};
 /**
@@ -38,11 +38,20 @@ export type Organization={id:string;name:string;slug:string};
  * configuration. It is deliberately not part of RuntimeConfig.
  */
 export type ProvisioningGrant={transactionId:string;accessToken:string;authorizationUrl:string;expiresIn:number};
-const NEXT:Record<State,readonly State[]>={authorization_pending:["organization_selected","ready","terminal_error","expired"],organization_selected:["project_creating","ready","terminal_error","expired"],project_creating:["project_reconciliation_required","project_waiting","expired"],project_reconciliation_required:["project_retry_authorized","project_waiting","terminal_error","expired"],project_retry_authorized:["project_creating","terminal_error","expired"],project_waiting:["migrating","expired"],migrating:["migration_reconciliation_required","verifying","terminal_error","expired"],migration_reconciliation_required:["migrating","terminal_error","expired"],verifying:["ready","terminal_error","expired"],ready:["expired"],terminal_error:["expired"],expired:[]};
+const NEXT:Record<State,readonly State[]>={authorization_pending:["organization_selected","ready","terminal_error","expired"],organization_selected:["project_creating","project_waiting","ready","terminal_error","expired"],project_creating:["project_reconciliation_required","project_retry_authorized","project_waiting","terminal_error","expired"],project_reconciliation_required:["project_waiting","terminal_error","expired"],project_retry_authorized:["project_creating","terminal_error","expired"],project_waiting:["migrating","terminal_error","expired"],migrating:["migration_reconciliation_required","verifying","terminal_error","expired"],migration_reconciliation_required:["migrating","terminal_error","expired"],verifying:["ready","terminal_error","expired"],ready:["expired"],terminal_error:["expired"],expired:[]};
 export function canTransition(a:State,b:State){return NEXT[a].includes(b);} function record(v:unknown):v is Record<string,unknown>{return !!v&&typeof v==="object"&&!Array.isArray(v);} function nonce(){return crypto.randomUUID().replaceAll("-","");} function secret(){return btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");}
 export function createReservationAllowed(state:State,createAttempts:number){return(state==="organization_selected"||state==="project_retry_authorized")&&createAttempts<MAX_CREATE;} export function oauthCredentialSaveAllowed(state:State,oauthStateUsed:boolean,storedStateHash:string|undefined,providedStateHash:string,transactionExpiresAt:number,tokenExpiresAt:number,now:number){return state==="authorization_pending"&&oauthStateUsed&&!!storedStateHash&&same(providedStateHash,storedStateHash)&&now<transactionExpiresAt&&tokenExpiresAt>now;} export function operationLeaseActive(operation:Op|undefined,now:number){return !!operation&&operation.leaseExpiresAt>now;}
 async function hash(v:string){const d=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(v));return btoa(String.fromCharCode(...new Uint8Array(d)));} function same(a:string,b:string){const x=Uint8Array.from(atob(a),c=>c.charCodeAt(0)),y=Uint8Array.from(atob(b),c=>c.charCodeAt(0));let d=x.length^y.length;for(let i=0;i<x.length;i++)d|=x[i]!^(y[i]??0);return d===0;} function move(t:Tx,s:State,code?:Code):Tx{if(!NEXT[t.state].includes(s))throw Error("illegal_transition");return {...t,state:s,updatedAt:Date.now(),error:code};}
-function headers(){return new Headers({"cache-control":"no-store","content-type":"application/json","x-content-type-options":"nosniff","referrer-policy":"no-referrer","content-security-policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'"});} function fail(code:Code,status=400){return Response.json({error:code},{status,headers:headers()});} function publicTx(t:Tx){const{accessHash,oauthState,oauthStateHash,oauthVerifier,oauthStateUsed,tokenCiphertext,tokenExpiresAt,operation,runtimeConfig,refreshCipher,grantExpiresAt,oauthAuthorizedAt,oauthRevokedAt,oauthPurpose,oauthReleaseUnconfirmed,emailRedirectConfigured,discoveryEmptyAt,oauthFailure,subject,candidateRefs,...rest}=t;const authorized=oauthAuthorizedAt!==undefined;return{...rest,authorizationCompleted:authorized,authorizationFailed:t.state==="authorization_pending"&&!authorized&&(oauthFailure===true||(oauthStateUsed===true&&Date.now()-t.updatedAt>45_000)),operation:operation&&{kind:operation.kind,leaseExpiresAt:operation.leaseExpiresAt},runtimeConfig:t.state==="ready"&&validRuntimeConfig(runtimeConfig)?{projectRef:runtimeConfig.projectRef,projectUrl:runtimeConfig.projectUrl,publishableKey:runtimeConfig.publishableKey,...(runtimeConfig.emailConfirmationRedirect===undefined?{}:{emailConfirmationRedirect:runtimeConfig.emailConfirmationRedirect})}:null};}
+function headers(){return new Headers({"cache-control":"no-store","content-type":"application/json","x-content-type-options":"nosniff","referrer-policy":"no-referrer","content-security-policy":"default-src 'none'; frame-ancestors 'none'; base-uri 'none'"});}
+function fail(code:Code,status=400){return Response.json({error:code},{status,headers:headers()});}
+function publicTx(t:Tx){
+ const{accessHash,oauthState,oauthStateHash,oauthVerifier,oauthStateUsed,tokenCiphertext,tokenExpiresAt,operation,runtimeConfig,refreshCipher,grantExpiresAt,oauthAuthorizedAt,oauthRevokedAt,oauthPurpose,oauthReleaseUnconfirmed,emailRedirectConfigured,discoveryEmptyAt,oauthFailure,subject,candidateRefs,dbPasswordCipher,createStartedAt,createRetryAfter,healthRetryAfter,healthChecks,creationGuardOwnerTransactionId,...rest}=t;
+ const now=Date.now(),authorized=oauthAuthorizedAt!==undefined;
+ const preCreate=t.state==="organization_selected"&&!t.projectRef&&t.createAttempts===0;
+ const creationAuthorizationPending=preCreate&&oauthPurpose==="management"&&!!oauthStateHash&&oauthFailure!==true&&grantExpiresAt!==undefined&&now<grantExpiresAt;
+ const creationAuthorizationRequired=preCreate&&!creationAuthorizationPending&&(!tokenCiphertext||!tokenExpiresAt||tokenExpiresAt<=now);
+ return{...rest,authorizationCompleted:authorized,authorizationFailed:t.state==="authorization_pending"&&!authorized&&(oauthFailure===true||(oauthStateUsed===true&&now-t.updatedAt>45_000)),creationAuthorizationPending,creationAuthorizationRequired,operation:operation&&{kind:operation.kind,leaseExpiresAt:operation.leaseExpiresAt},runtimeConfig:t.state==="ready"&&validRuntimeConfig(runtimeConfig)?{projectRef:runtimeConfig.projectRef,projectUrl:runtimeConfig.projectUrl,publishableKey:runtimeConfig.publishableKey,...(runtimeConfig.emailConfirmationRedirect===undefined?{}:{emailConfirmationRedirect:runtimeConfig.emailConfirmationRedirect})}:null};
+}
 async function cryptoKey(s:string){return crypto.subtle.importKey("raw",await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s)),"AES-GCM",false,["encrypt","decrypt"]);} async function seal(v:string,s:string){const iv=crypto.getRandomValues(new Uint8Array(12));const e=await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:new TextEncoder().encode("pp-provisioning-v2")},await cryptoKey(s),new TextEncoder().encode(v));return btoa(String.fromCharCode(...iv,...new Uint8Array(e)));} async function unseal(v:string,s:string){try{const x=Uint8Array.from(atob(v),c=>c.charCodeAt(0));const p=await crypto.subtle.decrypt({name:"AES-GCM",iv:x.slice(0,12),additionalData:new TextEncoder().encode("pp-provisioning-v2")},await cryptoKey(s),x.slice(12));return new TextDecoder().decode(p);}catch{return null;}}
 
 /** Canonical Planner Auth callback URI. Mirrors AuthCallback.redirectUrl in lib/core/config/auth_callback.dart. */
@@ -142,18 +151,41 @@ export class ProvisioningTransaction extends DurableObject<Env>{
  /**
   * Starts a fresh Supabase Management authorization for this installation.
   *
-  * Allowed once the transaction is durable, including after READY and after the
-  * provisioning transaction itself expired: nothing in the provisioning state
-  * machine is modified, so re-authorizing can never create, migrate, or verify
-  * anything. It exists only for the management operation it is requested for
-  * (currently the email-confirmation redirect check) and the grant is released
-  * again as soon as that operation has run.
+  * An existing project uses this for an explicit Management check. Before the
+  * first project-create reservation, the same route can reauthorize an expired
+  * creation transaction in place. It restores only organization_selected and
+  * cannot create, migrate, or verify anything by itself.
   */
- async beginManagementAuthorization(a:string){const t=await this.authDurable(a),now=Date.now();if(!t.projectRef||!validProjectRef(t.projectRef))throw Error("invalid_request");const state=secret(),verifier=secret(),oauthStateHash=await hash(state),grantExpiresAt=now+MANAGEMENT_WINDOW_MS;this.save({...t,oauthState:state,oauthStateHash,oauthVerifier:verifier,oauthStateUsed:false,oauthPurpose:"management",oauthRevokedAt:undefined,grantExpiresAt,updatedAt:now});await this.ctx.storage.setAlarm(now<t.expiresAt?t.expiresAt:grantExpiresAt);return{state,verifier,expiresIn:Math.floor(grantExpiresAt/1000)};}
+ async beginManagementAuthorization(a:string){
+  await this.authDurable(a);
+  // Prepare PKCE before the final synchronous read and write. Concurrent DO
+  // requests can interleave at each await, so checking pending state before
+  // hashing would allow two starts to replace each other's callback state.
+  const state=secret(),verifier=secret(),oauthStateHash=await hash(state);
+  const t=this.load(),now=Date.now();
+  if(!t)throw Error("forbidden");
+  const existingProject=validProjectRef(t.projectRef);
+  // A transaction whose create request was never reserved can renew its
+  // authorization in place, even after its original one-hour expiry. Keep the
+  // organization and name, and never make this route capable of sending create.
+  const preCreate=!t.projectRef&&t.createAttempts===0&&!t.operation&&!!t.organizationSlug&&!!t.requestedProjectName&&t.discoveryEmptyAt!==undefined&&(t.state==="organization_selected"||t.state==="expired");
+  if(!existingProject&&!preCreate)throw Error("invalid_request");
+  // A second press or a resumed client must keep the browser's first PKCE
+  // state valid. A callback already being exchanged is also not restartable.
+  if(t.oauthPurpose==="management"&&t.grantExpiresAt!==undefined&&now<t.grantExpiresAt){
+   if(t.oauthStateUsed)throw Error("operation_in_progress");
+   if(t.oauthState&&t.oauthStateHash&&t.oauthVerifier)return{state:t.oauthState,verifier:t.oauthVerifier,expiresIn:Math.ceil((t.grantExpiresAt-now)/1000)};
+  }
+  const grantExpiresAt=now+MANAGEMENT_WINDOW_MS;
+  const next:Tx={...t,...(preCreate?{state:"organization_selected" as const,expiresAt:now+CREATION_WINDOW_MS,tokenCiphertext:undefined,tokenExpiresAt:undefined}:{}),oauthState:state,oauthStateHash,oauthVerifier:verifier,oauthStateUsed:false,oauthPurpose:"management",oauthRevokedAt:undefined,grantExpiresAt,updatedAt:now};
+  this.save(next);
+  await this.ctx.storage.setAlarm(preCreate?next.expiresAt:now<t.expiresAt?t.expiresAt:grantExpiresAt);
+  return{state,verifier,expiresIn:Math.ceil((grantExpiresAt-now)/1000)};
+ }
  /** Records a successful revocation and drops every retained credential. */
  async markManagementRevoked(a:string){const t=await this.authDurable(a);this.save({...t,refreshCipher:undefined,oauthRevokedAt:Date.now(),oauthState:undefined,oauthStateHash:undefined,oauthVerifier:undefined,oauthStateUsed:undefined,oauthPurpose:undefined,tokenCiphertext:undefined,tokenExpiresAt:undefined,updatedAt:Date.now()});}
  private async prepare(access:string){return hash(access);} private authPrepared(h:string):Tx{const t=this.load();if(!t||!same(h,t.accessHash))throw Error("forbidden");if(Date.now()>=t.expiresAt||t.state==="expired"){this.expire(t);throw Error("expired");}return t;} private async auth(a:string){return this.authPrepared(await this.prepare(a));}
- async create(a:string,state:string,verifier:string){const[h,sh]=await Promise.all([this.prepare(a),hash(state)]);if(this.load())return publicTx(this.load()!);const now=Date.now();this.save({schema:2,state:"authorization_pending",createdAt:now,updatedAt:now,expiresAt:now+TX_TTL_MS,accessHash:h,oauthState:state,oauthStateHash:sh,oauthVerifier:verifier,createAttempts:0,expensiveAttempts:0});await this.ctx.storage.setAlarm(now+TX_TTL_MS);return publicTx(this.load()!);} async get(a:string){return publicTx(await this.auth(a));}
+ async create(a:string,state:string,verifier:string){const[h,sh]=await Promise.all([this.prepare(a),hash(state)]);if(this.load())return publicTx(this.load()!);const now=Date.now();this.save({schema:2,state:"authorization_pending",createdAt:now,updatedAt:now,expiresAt:now+TX_TTL_MS,accessHash:h,oauthState:state,oauthStateHash:sh,oauthVerifier:verifier,createAttempts:0,expensiveAttempts:0});await this.ctx.storage.setAlarm(now+TX_TTL_MS);return publicTx(this.load()!);} async get(a:string){const t=await this.auth(a);if(t.state==="project_creating"&&t.operation?.kind==="create"&&!operationLeaseActive(t.operation,Date.now())){this.save(move({...t,createStartedAt:t.createStartedAt??t.operation.startedAt,operation:undefined},"project_reconciliation_required","project_creation_failed"));return publicTx(this.load()!);}return publicTx(t);}
  /**
   * Claims one pending OAuth response.
   *
@@ -181,12 +213,37 @@ export class ProvisioningTransaction extends DurableObject<Env>{
  async recordDiscovery(a:string,refs:string[]){const t=await this.auth(a);if(t.oauthAuthorizedAt===undefined||!refs.every(validProjectRef))throw Error("illegal_transition");this.save({...t,candidateRefs:refs,discoveryEmptyAt:refs.length===0?Date.now():undefined,updatedAt:Date.now()});}
  async discoveredCandidate(a:string,ref:string){const t=await this.auth(a);return t.oauthAuthorizedAt!==undefined&&t.candidateRefs?.includes(ref)===true;}
  async adoptReady(a:string,config:RuntimeConfig){const t=await this.auth(a);if((t.state!=="authorization_pending"&&t.state!=="organization_selected"&&t.state!=="ready")||!validRuntimeConfig(config))throw Error("illegal_transition");const updated={...t,projectRef:config.projectRef,runtimeConfig:config,verification:true,tokenCiphertext:undefined,tokenExpiresAt:undefined};this.save(t.state==="ready"?{...updated,updatedAt:Date.now()}:move(updated,"ready"));await this.releaseManagementGrant();return publicTx(this.load()!);}
- async selectOrganization(a:string,org:string,name:string,key:string){const t=await this.auth(a);if(t.state!=="authorization_pending"||!t.discoveryEmptyAt||!/^[a-z0-9-]{3,80}$/u.test(org)||!/^personal-planner-[a-z0-9-]{3,55}$/u.test(name)||key.length<32)throw Error("invalid_request");this.save(move({...t,organizationSlug:org,requestedProjectName:name,idempotencyKey:key},"organization_selected"));return publicTx(this.load()!);}
- async createContext(a:string){const t=await this.auth(a);return{state:t.state,projectRef:t.projectRef,organizationSlug:t.organizationSlug,requestedProjectName:t.requestedProjectName,operation:t.operation,discoveryEmptyAt:t.discoveryEmptyAt};}
- async reserveCreate(a:string){const t=await this.auth(a);if(!createReservationAllowed(t.state,t.createAttempts)||!t.organizationSlug||!t.requestedProjectName)throw Error("illegal_transition");const now=Date.now(),op:Op={kind:"create",nonce:nonce(),startedAt:now,leaseExpiresAt:now+CREATE_LEASE_MS};this.save(move({...t,createAttempts:t.createAttempts+1,operation:op},"project_creating"));return{nonce:op.nonce,organizationSlug:t.organizationSlug,requestedProjectName:t.requestedProjectName};}
- async claimCreateReconciliation(a:string){const t=await this.auth(a);if(t.state==="project_creating"){if(t.operation?.kind!=="create"||operationLeaseActive(t.operation,Date.now()))throw Error("operation_in_progress");this.save(move({...t,operation:undefined},"project_reconciliation_required","project_creation_failed"));}else if(t.state!=="project_reconciliation_required")throw Error("illegal_transition");return publicTx(this.load()!);}
+ async selectOrganization(a:string,org:string,name:string,key:string){const t=await this.auth(a);if(t.state!=="authorization_pending"||!t.discoveryEmptyAt||!/^[a-z0-9-]{3,80}$/u.test(org)||!/^personal-planner-[a-z0-9-]{3,55}$/u.test(name)||key.length<32)throw Error("invalid_request");const expiry=Date.now()+CREATION_WINDOW_MS;this.save(move({...t,organizationSlug:org,requestedProjectName:name,idempotencyKey:key,expiresAt:expiry},"organization_selected"));await this.ctx.storage.setAlarm(expiry);return publicTx(this.load()!);}
+ async createContext(a:string){const t=await this.auth(a);return{state:t.state,projectRef:t.projectRef,organizationSlug:t.organizationSlug,requestedProjectName:t.requestedProjectName,operation:t.operation,updatedAt:t.updatedAt,discoveryEmptyAt:t.discoveryEmptyAt,createStartedAt:t.createStartedAt,createRetryAfter:t.createRetryAfter,healthRetryAfter:t.healthRetryAfter,healthChecks:t.healthChecks,creationGuardOwnerTransactionId:t.creationGuardOwnerTransactionId,creationAuthorizationPending:t.state==="organization_selected"&&t.createAttempts===0&&t.oauthPurpose==="management"&&!!t.oauthStateHash&&t.oauthFailure!==true&&t.grantExpiresAt!==undefined&&Date.now()<t.grantExpiresAt};}
+ /**
+  * Worker-internal, capability-free recovery evidence for a creation guard's
+  * owner. This is deliberately not routed to clients and excludes every OAuth,
+  * database, capability, PKCE, and operation secret.
+  */
+ async creationRecoveryContext(){const t=this.load();if(!t)return null;const now=Date.now(),expired=t.state==="expired"||now>=t.expiresAt,projectRef=validProjectRef(t.projectRef)?t.projectRef:null,externalCreateReserved=t.createAttempts>0||t.createStartedAt!==undefined||projectRef!==null;return{state:t.state,projectRef,organizationSlug:typeof t.organizationSlug==="string"?t.organizationSlug:null,requestedProjectName:typeof t.requestedProjectName==="string"?t.requestedProjectName:null,createStartedAt:t.createStartedAt??null,updatedAt:t.updatedAt,expiresAt:t.expiresAt,expired,terminal:expired||t.state==="terminal_error"||t.state==="ready",externalCreateReserved,createOutcomeUncertain:externalCreateReserved&&projectRef===null,projectDurablyRecorded:projectRef!==null};}
+ async reserveCreate(a:string){
+  const before=await this.auth(a);
+  // Prepare secrets before the final state read. No await is allowed between
+  // that read and the durable reservation: concurrent RPCs can interleave at
+  // every await, even when they target the same Durable Object.
+  const password=before.dbPasswordCipher?await unseal(before.dbPasswordCipher,this.env.OAUTH_SESSION_KEY):`Pp1!${secret()}`;
+  if(!password)throw Error("invalid_request");
+  const cipher=before.dbPasswordCipher??await seal(password,this.env.OAUTH_SESSION_KEY);
+  const t=this.load(),now=Date.now();
+  if(!t||now>=t.expiresAt||t.dbPasswordCipher!==before.dbPasswordCipher||!createReservationAllowed(t.state,t.createAttempts)||!t.organizationSlug||!t.requestedProjectName||t.createRetryAfter&&now<t.createRetryAfter)throw Error("illegal_transition");
+  const op:Op={kind:"create",nonce:nonce(),startedAt:now,leaseExpiresAt:now+CREATE_LEASE_MS};
+  this.save(move({...t,createAttempts:t.createAttempts+1,createStartedAt:t.createStartedAt??now,dbPasswordCipher:cipher,createRetryAfter:undefined,operation:op},"project_creating"));
+  return{nonce:op.nonce,organizationSlug:t.organizationSlug,requestedProjectName:t.requestedProjectName,dbPassword:password};
+ }
+ async claimCreateReconciliation(a:string){const t=await this.auth(a);if(t.state==="project_creating"){if(t.operation?.kind!=="create"||operationLeaseActive(t.operation,Date.now()))throw Error("operation_in_progress");this.save(move({...t,createStartedAt:t.createStartedAt??t.operation.startedAt,operation:undefined},"project_reconciliation_required","project_creation_failed"));}else if(t.state!=="project_reconciliation_required")throw Error("illegal_transition");return publicTx(this.load()!);}
  async createUncertain(a:string,n:string){const t=await this.auth(a);if(t.state!=="project_creating"||t.operation?.kind!=="create"||t.operation.nonce!==n)throw Error("stale_operation");this.save(move({...t,operation:undefined},"project_reconciliation_required","project_creation_failed"));}
- async recordProject(a:string,n:string,ref:string,recovered=false){const t=await this.auth(a),ok=recovered?t.state==="project_reconciliation_required":t.state==="project_creating"&&t.operation?.kind==="create"&&t.operation.nonce===n;if(!ok||!/^[a-z]{20}$/u.test(ref))throw Error("stale_operation");this.save(move({...t,projectRef:ref,operation:undefined},"project_waiting"));return publicTx(this.load()!);} async reconciliationAbsent(a:string){const t=await this.auth(a);if(t.state!=="project_reconciliation_required")throw Error("illegal_transition");this.save(move(t,"project_retry_authorized"));return publicTx(this.load()!);} async reconciliationAmbiguous(a:string){const t=await this.auth(a);if(t.state!=="project_reconciliation_required")throw Error("illegal_transition");this.save(move(t,"terminal_error","project_identity_ambiguous"));}
+ async recordProject(a:string,n:string,ref:string,recovered=false){const t=await this.auth(a),ok=recovered?t.state==="project_reconciliation_required":t.state==="project_creating"&&t.operation?.kind==="create"&&t.operation.nonce===n;if(!ok||!/^[a-z]{20}$/u.test(ref))throw Error("stale_operation");this.save(move({...t,projectRef:ref,operation:undefined,dbPasswordCipher:undefined,healthChecks:0},"project_waiting"));return publicTx(this.load()!);}
+ /** Records an exact project recovered from an inactive creation-guard owner. */
+ async recoverGuardProject(a:string,ref:string,guardOwnerTransactionId:string){const t=await this.auth(a);if(t.state!=="organization_selected"||t.projectRef||t.createAttempts!==0||!t.discoveryEmptyAt||!t.organizationSlug||!validProjectRef(ref)||!/^[a-f0-9]{32}$/u.test(guardOwnerTransactionId))throw Error("illegal_transition");this.save(move({...t,projectRef:ref,creationGuardOwnerTransactionId:guardOwnerTransactionId,healthChecks:0,error:undefined},"project_waiting"));return publicTx(this.load()!);}
+ /** A rejected request did not create a project. Only 429 may retry, after a durable delay. */
+ async createRejected(a:string,n:string,code:"rate_limited"|"project_quota_reached"|"project_creation_rejected",retryAfter=0){const t=await this.auth(a);if(t.state!=="project_creating"||t.operation?.nonce!==n)throw Error("stale_operation");if(code==="rate_limited"&&t.createAttempts<MAX_CREATE){this.save(move({...t,operation:undefined,createRetryAfter:Date.now()+retryAfter},"project_retry_authorized",code));}else{this.save(move({...t,operation:undefined,dbPasswordCipher:undefined},"terminal_error",code));await this.releaseManagementGrant();}return publicTx(this.load()!);}
+ async healthWait(a:string,delay:number,code?:Code){const t=await this.auth(a);if(t.state!=="project_waiting"||!t.projectRef)throw Error("illegal_transition");this.save({...t,healthChecks:(t.healthChecks??0)+1,healthRetryAfter:Date.now()+delay,updatedAt:Date.now(),error:code});return publicTx(this.load()!);}
+ async healthFailed(a:string){const t=await this.auth(a);if(t.state!=="project_waiting")throw Error("illegal_transition");this.save(move(t,"terminal_error","project_health_failed"));await this.releaseManagementGrant();return publicTx(this.load()!);}
  async managementToken(a:string){const h=await this.prepare(a),t=this.authPrepared(h),cipher=t.tokenCiphertext,tokenExpiry=t.tokenExpiresAt;if(!cipher||!tokenExpiry||tokenExpiry<=Date.now())return null;const value=await unseal(cipher,this.env.OAUTH_SESSION_KEY),current=this.authPrepared(h);return current.tokenCiphertext===cipher&&current.tokenExpiresAt===tokenExpiry?value:null;}
  async claimOperation(a:string,kind:"migration"|"verification"){const t=await this.auth(a),now=Date.now();if(kind==="migration"&&t.state==="migrating"){if(t.operation?.kind!=="migration"||t.operation.leaseExpiresAt>now)throw Error("operation_in_progress");this.save(move({...t,operation:undefined},"migration_reconciliation_required","migration_failed"));throw Error("reconciliation_required");}const allowed=kind==="migration"?(t.state==="project_waiting"||t.state==="migration_reconciliation_required"):t.state==="verifying";if(!allowed||!t.projectRef||t.expensiveAttempts>=MAX_OPS)throw Error("illegal_transition");if(t.operation&&t.operation.leaseExpiresAt>now)throw Error("operation_in_progress");const op:Op={kind,nonce:nonce(),startedAt:now,leaseExpiresAt:now+OP_LEASE_MS},owned={...t,operation:op,expensiveAttempts:t.expensiveAttempts+1,updatedAt:now};this.save(kind==="verification"?owned:move(owned,"migrating"));return{nonce:op.nonce,projectRef:t.projectRef};}
  async finishMigration(a:string,n:string,result:MigrationResult){const t=await this.auth(a);if(t.state!=="migrating"||t.operation?.kind!=="migration"||t.operation.nonce!==n)throw Error("stale_operation");if(result.kind==="complete")this.save(move({...t,operation:undefined},"verifying"));else if(result.kind==="failed")this.save(move({...t,operation:undefined},"terminal_error",result.code));else this.save(move({...t,operation:undefined},"migration_reconciliation_required","migration_failed"));return publicTx(this.load()!);}
@@ -243,14 +300,61 @@ function historyMismatch(h:MigrationHistory):MigrationResult{console.info(JSON.s
 function historyUnusable(h:MigrationHistory):MigrationResult{console.info(JSON.stringify({event:"migration_history_unusable",entries:h.length,shape:historyShape(h)}));return{kind:"indeterminate"};}
 export async function runCanonicalMigrations(ref:string,call:Management,options:{bundlesValid?:()=>Promise<boolean>}={}):Promise<MigrationResult>{if(!/^[a-z]{20}$/u.test(ref))return{kind:"failed",code:"migration_history_mismatch"};
 if(!(await (options.bundlesValid??validBundle)()))return{kind:"failed",code:"migration_bundle_invalid"};const history=async()=>{try{const r=await call(`/v1/projects/${encodeURIComponent(ref)}/database/migrations`),p:unknown=r.ok?await r.json():null;return Array.isArray(p)&&p.every(record)?p as MigrationHistory:null;}catch{return null;}};let h=await history();if(!h)return{kind:"indeterminate"};let plan=reconcileMigrations(CANONICAL_MIGRATIONS,h);if(plan.unusable)return historyUnusable(h);if(plan.error)return historyMismatch(h);for(let i=plan.next;i<CANONICAL_MIGRATIONS.length;i++){const m=CANONICAL_MIGRATIONS[i]!;try{await call(`/v1/projects/${encodeURIComponent(ref)}/database/migrations`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:m.name,query:m.query})});}catch{return{kind:"indeterminate"};}h=await history();if(!h)return{kind:"indeterminate"};plan=reconcileMigrations(CANONICAL_MIGRATIONS,h);if(plan.unusable)return historyUnusable(h);if(plan.error)return historyMismatch(h);if(plan.next<=i)return{kind:"indeterminate"};}return{kind:"complete"};}
-const CHECKS=["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","recurrence_provenance_present","relationships_owner_scoped","direct_authenticated_writes_revoked","capability_payload_current"] as const; export async function runFixedVerification(ref:string,call:Management,readOnly=false):Promise<VerificationResult>{if(!/^[a-z]{20}$/u.test(ref))return"indeterminate";try{const r=await call(`/v1/projects/${encodeURIComponent(ref)}/database/query`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({query:SCHEMA_VERIFICATION_SQL,read_only:readOnly})});if(!r.ok)return"indeterminate";const p:unknown=await r.json(),row=Array.isArray(p)&&record(p[0])?p[0]:record(p)&&Array.isArray(p.result)&&record(p.result[0])?p.result[0]:record(p)&&Array.isArray(p.data)&&record(p.data[0])?p.data[0]:null;return row&&CHECKS.every(k=>typeof row[k]==="boolean")?CHECKS.every(k=>row[k]===true)?"passed":"assertion_failed":"indeterminate";}catch{return"indeterminate";}}
-type Compatibility="valid"|"invalid"|"missing"|"retryable";
+const CHECKS=["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","relationships_owner_scoped","direct_authenticated_writes_revoked","capability_payload_current"] as const;
+function safeVerificationError(value:unknown):string|undefined{
+ if(typeof value!=="string")return undefined;
+ return value.replace(/https?:\/\/\S+/gu,"[redacted-url]").replace(/\S+@\S+/gu,"[redacted-email]").replace(/\b(?:Bearer\s+)?(?:eyJ[A-Za-z0-9._-]+|sb_(?:secret|publishable)_[A-Za-z0-9_-]+|sba_[A-Za-z0-9_-]+)\b/gu,"[redacted-credential]").replace(/\b(password|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|api[_-]?key)\s*[:=]\s*[^\s,;]+/giu,"$1=[redacted]").replace(/[A-Za-z0-9_-]{32,}/gu,"[redacted-value]").replace(/[^\x20-\x7e]/gu," ").slice(0,240);
+}
+async function schemaVerificationFailure(r:Response,ref:string,path:string,requestShape:string):Promise<void>{
+ const diagnostic:Record<string,unknown>={event:"schema_verification_request_failed",substage:"fixed_schema_sql_query",project_ref:ref,endpoint_path:path,method:"POST",request_shape:requestShape,status:r.status,content_type:r.headers.get("content-type")?.split(";")[0]??null};
+ let body="";
+ try{
+  const reader=r.body?.getReader(),decoder=new TextDecoder();let bytes=0;
+  if(reader){try{while(bytes<4096){const chunk=await reader.read();if(chunk.done)break;const part=chunk.value.subarray(0,4096-bytes);body+=decoder.decode(part,{stream:true});bytes+=part.byteLength;if(part.byteLength<chunk.value.byteLength)break;}body+=decoder.decode();}finally{await reader.cancel().catch(()=>{});}}
+ }catch{diagnostic.response_shape="unreadable";console.info(JSON.stringify(diagnostic));return;}
+ try{
+  const payload:unknown=JSON.parse(body);
+  if(record(payload)){
+   const error=record(payload.error)?payload.error:payload;
+   const code=error.code??error.error_code;
+   if(typeof code==="string"&&/^[A-Za-z0-9_-]{1,50}$/u.test(code))diagnostic.error_code=code;
+   for(const [field,value] of [["error_message",error.message??error.error??payload.error_description],["error_detail",error.detail],["error_hint",error.hint]] as const){const safe=safeVerificationError(value);if(safe)diagnostic[field]=safe;}
+  }else diagnostic.response_shape="unexpected_json";
+ }catch{diagnostic.response_shape="non_json";const safe=safeVerificationError(body);if(safe)diagnostic.error_message=safe;}
+ console.info(JSON.stringify(diagnostic));
+}
+async function verificationResult(r:Response):Promise<VerificationResult>{
+ const p:unknown=await r.json(),row=Array.isArray(p)&&record(p[0])?p[0]:record(p)&&Array.isArray(p.result)&&record(p.result[0])?p.result[0]:record(p)&&Array.isArray(p.data)&&record(p.data[0])?p.data[0]:null;
+ return row&&CHECKS.every(k=>typeof row[k]==="boolean")?CHECKS.every(k=>row[k]===true)?"passed":"assertion_failed":"indeterminate";
+}
+export async function runFixedVerification(ref:string,call:Management):Promise<VerificationResult>{
+ const result=await runReadOnlyCompatibilityVerification(ref,call);
+ return result==="access_denied"?"indeterminate":result;
+}
+type CompatibilityVerification=VerificationResult|"access_denied";
+/** The dedicated Management endpoint is authoritative for candidate compatibility. */
+export async function runReadOnlyCompatibilityVerification(ref:string,call:Management):Promise<CompatibilityVerification>{
+ if(!/^[a-z]{20}$/u.test(ref))return"indeterminate";
+ const path=`/v1/projects/${encodeURIComponent(ref)}/database/query/read-only`;
+ try{
+  const r=await call(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({query:SCHEMA_VERIFICATION_SQL})});
+  if(!r.ok){await schemaVerificationFailure(r,ref,path,"query_only_dedicated_read_only");return r.status===401||r.status===403?"access_denied":"indeterminate";}
+  const result=await verificationResult(r);
+  console.info(JSON.stringify({event:"schema_verification_read_only_completed",project_ref:ref,status:r.status,result}));
+  return result;
+ }catch{
+  console.info(JSON.stringify({event:"schema_verification_call_unusable",project_ref:ref,endpoint_path:path,method:"POST",request_shape:"query_only_dedicated_read_only"}));
+  return"indeterminate";
+ }
+}
+type Compatibility="valid"|"invalid"|"missing"|"inaccessible"|"retryable";
 /** Discovery reads six canonical migration identities and the fixed schema/RLS/capability checks. */
 export async function plannerCompatibility(ref:string,call:Management):Promise<Compatibility>{
  if(!validProjectRef(ref))return"invalid";
  try{
   const exact=await call(`/v1/projects/${encodeURIComponent(ref)}`);
   if(exact.status===404)return"missing";
+  if(exact.status===401||exact.status===403)return"inaccessible";
   if(!exact.ok)return"retryable";
   const detail:unknown=await exact.json();if(!record(detail)||projectRef(detail)!==ref)return"retryable";
   const historyResponse=await call(`/v1/projects/${encodeURIComponent(ref)}/database/migrations`);
@@ -260,64 +364,83 @@ export async function plannerCompatibility(ref:string,call:Management):Promise<C
   const plan=reconcileMigrations(CANONICAL_MIGRATIONS,history as MigrationHistory);
   if(plan.unusable)return"retryable";
   if(plan.error)return"retryable";
-  // A canonical prefix means provisioning may still be underway. Treat it as
-  // uncertain so discovery cannot report zero and offer another project.
-  if(plan.next>0&&plan.next<CANONICAL_MIGRATIONS.length)return"retryable";
-  if(plan.next===0)return"invalid";
-  const schema=await runFixedVerification(ref,call,true);
-  // A fully migrated project with a failing assertion may still be finishing
-  // provisioning. Discovery must not call this a safe zero-candidate result.
-  return schema==="passed"?"valid":"retryable";
+  if(plan.next<CANONICAL_MIGRATIONS.length)return"invalid";
+  const schema=await runReadOnlyCompatibilityVerification(ref,call);
+  if(schema==="access_denied")return"inaccessible";
+  return schema==="passed"?"valid":schema==="assertion_failed"?"invalid":"retryable";
  }catch{return"retryable";}
 }
 export type PlannerCandidate={projectRef:string;name:string;region?:string;createdAt?:string};
 /** Complete organization project listings; an incomplete page never means zero. */
 export async function discoverPlannerCandidates(call:Management):Promise<PlannerCandidate[]|null>{
+ let stage="organizations",status:number|undefined;
+ const traced:Management=async(path,init={})=>{
+  stage=path==="/v1/organizations"?"organizations":path.includes("/organizations/")?"organization_projects":path.endsWith("/database/migrations")?"migration_history":path.includes("/database/query")?"schema_verification":"project_lookup";
+  status=undefined;
+  const response=await call(path,init);
+  status=response.status;
+  return response;
+ };
+ const failed=(reason:string):null=>{console.info(JSON.stringify({event:"candidate_discovery_stage_failed",stage,reason,...(status===undefined?{}:{status})}));return null;};
  try{
-  const organizations=await listOrganizations(call);if(organizations===null)return null;
+  const organizations=await listOrganizations(traced);if(organizations===null)return failed(status!==undefined&&status>=400?"upstream_http":"invalid_response");
   const projects:unknown[]=[];
   const seen=new Set<string>();
   for(const organization of organizations){
    let offset=0;
    let expectedCount:number|null=null;
    while(true){
-    const response=await call(`/v1/organizations/${encodeURIComponent(organization.slug)}/projects?limit=100&offset=${offset}`);
-    if(!response.ok)return null;
+    const response=await traced(`/v1/organizations/${encodeURIComponent(organization.slug)}/projects?limit=100&offset=${offset}`);
+    if(!response.ok)return failed("upstream_http");
     const payload:unknown=await response.json();
-    if(!record(payload)||!Array.isArray(payload.projects)||!record(payload.pagination))return null;
+    if(!record(payload)||!Array.isArray(payload.projects)||!record(payload.pagination))return failed("invalid_response");
     const page=payload.projects,count=payload.pagination.count,limit=payload.pagination.limit,reportedOffset=payload.pagination.offset;
-    if(typeof count!=="number"||!Number.isSafeInteger(count)||count<0||typeof limit!=="number"||limit!==100||reportedOffset!==offset||page.length>100||offset+page.length>count||count>=100||page.length===0&&offset<count)return null;
-    if(expectedCount!==null&&count!==expectedCount)return null;
+    if(typeof count!=="number"||!Number.isSafeInteger(count)||count<0||typeof limit!=="number"||limit!==100||reportedOffset!==offset||page.length>100||offset+page.length>count||count>=100||page.length===0&&offset<count)return failed("incomplete_or_invalid_page");
+    if(expectedCount!==null&&count!==expectedCount)return failed("changing_page_count");
     expectedCount=count;
-    for(const item of page){const ref=projectRef(item);if(!validProjectRef(ref)||seen.has(ref))return null;seen.add(ref);projects.push(item);}
-    if(projects.length>=100)return null;
+    for(const item of page){const ref=projectRef(item);if(!validProjectRef(ref)||seen.has(ref))return failed("invalid_or_duplicate_project");seen.add(ref);projects.push(item);}
+    if(projects.length>=100)return failed("project_bound_exceeded");
     offset+=page.length;
     if(offset===count)break;
    }
   }
   const candidates:PlannerCandidate[]=[];
   for(const item of projects){
-   const ref=projectRef(item);if(!validProjectRef(ref)||!record(item))return null;
-   const compatible=await plannerCompatibility(ref,call);
-   if(compatible==="retryable"||compatible==="missing")return null;
+   const ref=projectRef(item);if(!validProjectRef(ref)||!record(item))return failed("invalid_project");
+   const compatible=await plannerCompatibility(ref,traced);
+   if(compatible==="retryable"||compatible==="missing"||compatible==="inaccessible")return failed(compatible==="missing"?"listed_project_missing":compatible==="inaccessible"?"project_inaccessible":"compatibility_indeterminate");
    if(compatible!=="valid")continue;
    candidates.push({projectRef:ref,name:typeof item.name==="string"&&item.name.length<=200?item.name:ref,...(typeof item.region==="string"&&item.region.length<=80?{region:item.region}:{}),...(typeof item.created_at==="string"&&item.created_at.length<=80?{createdAt:item.created_at}:{})});
   }
   return candidates;
- }catch{return null;}
+ }catch{return failed("network_or_invalid_json");}
 }
-async function readyExistingProject(d:DurableObjectStub<ProvisioningTransaction>,access:string,ref:string,token:string,origin:string):Promise<Response>{
- const call=(path:string,init:RequestInit={})=>management(token,path,init);
+async function readyExistingProject(d:DurableObjectStub<ProvisioningTransaction>,env:Env,id:string,access:string,ref:string,token:string,origin:string):Promise<Response>{
+ let stage="project_lookup",status:number|undefined;
+ const call=async(path:string,init:RequestInit={})=>{
+  stage=path.endsWith("/database/migrations")?"migration_history":path.includes("/database/query")?"schema_verification":path.endsWith("/config/auth")?"auth_config":path.includes("/api-keys")?"runtime_keys":"project_lookup";
+  status=undefined;
+  const response=await management(token,path,init);
+  status=response.status;
+  return response;
+ };
  const compatible=await plannerCompatibility(ref,call);
  if(compatible==="missing"){console.info(JSON.stringify({event:"project_confirmed_deleted"}));return fail("project_deleted",410);}
+ if(compatible==="inaccessible"){console.info(JSON.stringify({event:"local_project_access_denied",stage,status}));return fail("project_access_denied",403);}
  if(compatible==="invalid")return fail("verification_failed",409);
- if(compatible!=="valid")return fail("temporarily_unavailable",502);
+ if(compatible!=="valid"){
+  console.info(JSON.stringify({event:"local_project_retryable_failure",stage,...(status===undefined?{}:{status})}));
+  return status===401||status===403?fail("project_access_denied",403):fail("temporarily_unavailable",502);
+ }
  const confirmationUri=plannerEmailConfirmationUri(origin);
- if(!(await ensureAuthRedirectConfigured(ref,call,confirmationUri===null?[]:[confirmationUri])))return fail("temporarily_unavailable",502);
+ if(!(await ensureAuthRedirectConfigured(ref,call,confirmationUri===null?[]:[confirmationUri]))){console.info(JSON.stringify({event:"local_project_retryable_failure",stage,...(status===undefined?{}:{status})}));return fail("temporarily_unavailable",502);}
  const config=await fetchRuntimeConfig(ref,call,confirmationUri===null?{}:{emailConfirmationRedirect:confirmationUri});
- if(!config)return fail("runtime_config_unavailable",502);
+ if(!config){console.info(JSON.stringify({event:"local_project_retryable_failure",stage,...(status===undefined?{}:{status})}));return fail("runtime_config_unavailable",502);}
  console.info(JSON.stringify({event:"project_verify_ok"}));
- return Response.json(await d.adoptReady(access,config),{headers:headers()});
+ const result=await d.adoptReady(access,config);
+ const context=await d.createContext(access);
+ if(context.organizationSlug)await creationGuard(env,context.organizationSlug).releaseCreation(context.creationGuardOwnerTransactionId??id);
+ return Response.json(result,{headers:headers()});
 }
 /** Fresh-device discovery and explicit adoption of a previously verified candidate. */
 export async function productionProjectResolution(r:Request,env:Env):Promise<Response|null>{
@@ -334,47 +457,182 @@ export async function productionProjectResolution(r:Request,env:Env):Promise<Res
  if(match[2]==="adopt"){
   if(!validProjectRef(proposed))return fail("invalid_request");
   if(!(await d.discoveredCandidate(access,proposed)))return fail("invalid_request",403);
-  return readyExistingProject(d,access,proposed,token,u.origin);
+  return readyExistingProject(d,env,match[1]!,access,proposed,token,u.origin);
  }
- if(proposed!==null)return fail("invalid_request");
+ if(proposed!==null){
+  if(!validProjectRef(proposed))return fail("invalid_request");
+  return readyExistingProject(d,env,match[1]!,access,proposed,token,u.origin);
+ }
  const candidates=await discoverPlannerCandidates((p,i={})=>management(token,p,i));
  if(candidates===null){console.info(JSON.stringify({event:"candidate_discovery_retryable_failure"}));return fail("candidate_discovery_failed",502);}
  await d.recordDiscovery(access,candidates.map(c=>c.projectRef));
  if(candidates.length===0&&snapshot.state==="organization_selected")return Response.json(snapshot,{headers:headers()});
  return Response.json({kind:"candidates",candidates},{headers:headers()});
 }
+/** A project name is only reconciliation evidence together with the exact organization,
+ * transaction-specific random name, creation window, and a unique matching ref. */
+async function reconcileCreatedProject(token:string,slug:string,name:string,startedAt:number):Promise<string|null>{
+ let offset=0,count:number|null=null,matches:string[]=[];
+ do{
+  const response=await management(token,`/v1/organizations/${encodeURIComponent(slug)}/projects?limit=100&offset=${offset}`);
+  if(!response.ok)return null;
+  const payload:unknown=await response.json();
+  if(!record(payload)||!Array.isArray(payload.projects)||!record(payload.pagination))return null;
+  const page=payload.projects,reported=payload.pagination.count;
+  if(typeof reported!=="number"||!Number.isSafeInteger(reported)||reported<0||reported>100||payload.pagination.limit!==100||payload.pagination.offset!==offset||page.length>100||page.length===0&&offset<reported||count!==null&&count!==reported)return null;
+  count=reported;
+  for(const item of page){
+   if(!record(item)||item.name!==name)continue;
+   const ref=projectRef(item),created=item.inserted_at??item.created_at;
+   const when=typeof created==="string"?Date.parse(created):NaN;
+   if(!validProjectRef(ref)||!Number.isFinite(when)||when<startedAt-120_000||when>Date.now()+120_000)return null;
+   matches.push(ref);
+  }
+  offset+=page.length;
+ }while(count!==null&&offset<count);
+ return matches.length===1?matches[0]!:null;
+}
+type ExactProjectLookup={kind:"exists";projectRef:string}|{kind:"missing"}|{kind:"ambiguous";status?:number};
+async function exactProjectLookup(ref:string,call:Management):Promise<ExactProjectLookup>{
+ try{
+  const response=await call(`/v1/projects/${encodeURIComponent(ref)}`);
+  if(response.status===404)return{kind:"missing"};
+  if(response.status!==200)return{kind:"ambiguous",status:response.status};
+  const payload:unknown=await response.json();
+  return record(payload)&&projectRef(payload)===ref?{kind:"exists",projectRef:ref}:{kind:"ambiguous",status:200};
+ }catch{return{kind:"ambiguous"};}
+}
+function exactLookupFailure(lookup:Extract<ExactProjectLookup,{kind:"ambiguous"}>):Response{
+ if(lookup.status===401)return fail("oauth_expired",401);
+ if(lookup.status===429)return fail("rate_limited",429);
+ return fail("temporarily_unavailable",502);
+}
+/** Reconciles an inactive organization guard without ever authorizing a create. */
+async function recoverOtherCreationOwner(d:DurableObjectStub<ProvisioningTransaction>,env:Env,id:string,access:string,token:string,c:Awaited<ReturnType<ProvisioningTransaction["createContext"]>>,guard:ReturnType<typeof creationGuard>):Promise<Response>{
+ const owner=await guard.currentCreationOwner();
+ if(owner===null||owner===id||!/^[a-f0-9]{32}$/u.test(owner))return fail("operation_in_progress",409);
+ let recovery:Awaited<ReturnType<ProvisioningTransaction["creationRecoveryContext"]>>;
+ try{recovery=await tx(env,owner).creationRecoveryContext();}catch{return fail("operation_in_progress",409);}
+ console.info(JSON.stringify({event:"creation_guard_owner_inspected",transaction_id:id,guard_owner_transaction_id:owner,owner_state:recovery?.state??null,project_ref_known:recovery?.projectDurablyRecorded===true,owner_expired:recovery?.expired===true,owner_terminal:recovery?.terminal===true}));
+ if(!recovery||!recovery.terminal||!c.organizationSlug||recovery.organizationSlug!==c.organizationSlug)return fail("operation_in_progress",409);
+ let ref=recovery.projectRef,source:"recorded"|"uncertain_reconciliation"="recorded";
+ if(ref===null){
+  if(!recovery.externalCreateReserved||!recovery.createOutcomeUncertain||!recovery.requestedProjectName)return fail("operation_in_progress",409);
+  const expectedName=`personal-planner-${owner}`,legacyName=`personal-planner-${owner.slice(0,12)}`;
+  if(recovery.requestedProjectName!==expectedName&&recovery.requestedProjectName!==legacyName)return fail("operation_in_progress",409);
+  const startedAt=recovery.createStartedAt??recovery.updatedAt-30_000;
+  try{ref=await reconcileCreatedProject(token,recovery.organizationSlug,recovery.requestedProjectName,startedAt);}catch{ref=null;}
+  if(ref===null){console.info(JSON.stringify({event:"creation_guard_uncertain_owner_retained",transaction_id:id,guard_owner_transaction_id:owner}));return fail("operation_in_progress",409);}
+  source="uncertain_reconciliation";
+ }
+ const lookup=await exactProjectLookup(ref,(path,init={})=>management(token,path,init));
+ if(lookup.kind==="exists"){
+  let result;
+  try{result=await d.recoverGuardProject(access,lookup.projectRef,owner);}catch{return fail("operation_in_progress",409);}
+  console.info(JSON.stringify({event:"creation_guard_project_recovered",transaction_id:id,guard_owner_transaction_id:owner,project_ref:lookup.projectRef,recovery_source:source}));
+  return Response.json(result,{headers:headers()});
+ }
+ if(lookup.kind==="missing"&&recovery.projectRef!==null){
+  const released=await guard.releaseConfirmedMissingCreation(owner,recovery.projectRef);
+  if(released.kind!=="released"){console.info(JSON.stringify({event:"creation_guard_release_conflict",transaction_id:id,guard_owner_transaction_id:owner,project_ref:recovery.projectRef}));return fail("operation_in_progress",409);}
+  console.info(JSON.stringify({event:"creation_guard_project_confirmed_missing",transaction_id:id,guard_owner_transaction_id:owner,project_ref:recovery.projectRef,guard_released:true}));
+  return Response.json(await d.get(access),{status:202,headers:headers()});
+ }
+ if(lookup.kind==="missing"){
+  console.info(JSON.stringify({event:"creation_guard_uncertain_owner_retained",transaction_id:id,guard_owner_transaction_id:owner}));
+  return fail("operation_in_progress",409);
+ }
+ console.info(JSON.stringify({event:"creation_guard_project_lookup_ambiguous",transaction_id:id,guard_owner_transaction_id:owner,project_ref:ref,...(lookup.status===undefined?{}:{status:lookup.status})}));
+ return exactLookupFailure(lookup);
+}
+async function createFailureEvidence(response:Response):Promise<{quota:boolean;code:string|null}>{
+ if(![400,402,403,422].includes(response.status))return{quota:false,code:null};
+ const length=Number(response.headers.get("content-length")??"0");
+ if(length>4096)return{quota:false,code:null};
+ try{
+  const body=await response.text();if(body.length>4096)return{quota:false,code:null};
+  const parsed:unknown=JSON.parse(body);if(!record(parsed))return{quota:false,code:null};
+  const details=record(parsed.error)?parsed.error:parsed;
+  const rawCode=details.code??details.error_code;
+  const code=typeof rawCode==="string"&&/^[A-Za-z0-9_-]{1,64}$/u.test(rawCode)?rawCode:null;
+  const message=typeof details.message==="string"?details.message:typeof details.error==="string"?details.error:"";
+  const quota=(code!==null&&/^(?:project_limit|project_limit_reached|project_quota_exceeded|free_project_limit_reached)$/iu.test(code))||/\bprojects?\b.{0,60}\b(?:limit|quota)\b.{0,30}\b(?:reached|exceeded)\b|\b(?:reached|exceeded)\b.{0,60}\b(?:maximum|limit|quota)\b.{0,60}\bprojects?\b/iu.test(message);
+  return{quota,code};
+ }catch{return{quota:false,code:null};}
+}
+function createRetryDelay(response:Response):number{const raw=response.headers.get("retry-after");const seconds=raw===null?NaN:Number(raw);return Number.isFinite(seconds)?Math.max(30_000,Math.min(120_000,seconds*1000)):60_000;}
 async function creationScopedCreate(d:DurableObjectStub<ProvisioningTransaction>,env:Env,id:string,access:string,op:string):Promise<Response>{
  let c=await d.createContext(access);
  if(c.projectRef)return Response.json(await d.get(access),{headers:headers()});
+ if(c.creationAuthorizationPending)return Response.json(await d.get(access),{status:202,headers:headers()});
  const token=await d.managementToken(access);
  if(!token)return fail("oauth_expired",401);
  if(!c.discoveryEmptyAt)return fail("invalid_request",409);
- if(c.state==="project_creating"){try{await d.claimCreateReconciliation(access);}catch{return fail("operation_in_progress",409);}}
+ if(c.state==="project_creating"){
+  try{await d.claimCreateReconciliation(access);}catch{return Response.json(await d.get(access),{status:202,headers:headers()});}
+ }
  c=await d.createContext(access);
  if(c.state==="project_reconciliation_required"){
-  // An uncertain POST has no trustworthy project_ref. A Management project
-  // list (even a single exact name match) cannot prove which project it made.
-  // Keep the creation guard so another device cannot issue a second POST.
-  return fail("project_identity_ambiguous",409);
+  if(op==="create")return Response.json(await d.get(access),{status:202,headers:headers()});
+  console.info(JSON.stringify({event:"project_creation_reconciliation_started",transaction_id:id,organization_slug:c.organizationSlug}));
+  const expectedName=`personal-planner-${id}`,legacyName=`personal-planner-${id.slice(0,12)}`;
+  const specificName=c.requestedProjectName===expectedName||c.requestedProjectName===legacyName;
+  const startedAt=c.createStartedAt??(c.state==="project_reconciliation_required"?c.updatedAt-30_000:undefined);
+  const ref=c.organizationSlug&&specificName&&c.requestedProjectName&&startedAt?await reconcileCreatedProject(token,c.organizationSlug,c.requestedProjectName,startedAt):null;
+  if(!ref)return Response.json(await d.get(access),{status:202,headers:headers()});
+  const result=await d.recordProject(access,"",ref,true);
+  console.info(JSON.stringify({event:"project_creation_reconciled",transaction_id:id,project_ref:ref}));
+  return Response.json(result,{headers:headers()});
  }
  if(op==="reconcile")return fail("invalid_request",409);
  if((c.state!=="organization_selected"&&c.state!=="project_retry_authorized")||!c.organizationSlug||!c.requestedProjectName)return fail("invalid_request",409);
+ if(c.createRetryAfter&&Date.now()<c.createRetryAfter)return Response.json(await d.get(access),{status:202,headers:headers()});
  const guard=creationGuard(env,c.organizationSlug);
- if(await guard.reserveCreation(id)==="other")return fail("operation_in_progress",409);
+ if(await guard.reserveCreation(id)==="other")return recoverOtherCreationOwner(d,env,id,access,token,c,guard);
  const candidates=await discoverPlannerCandidates((p,i={})=>management(token,p,i));
- if(candidates===null){await guard.releaseCreation(id);return fail("candidate_discovery_failed",502);}
- if(candidates.length>0){await d.recordDiscovery(access,candidates.map(x=>x.projectRef));await guard.releaseCreation(id);return fail("candidate_discovery_changed",409);}
- let attempt:{nonce:string;organizationSlug:string;requestedProjectName:string};
- try{attempt=await d.reserveCreate(access);}catch{await guard.releaseCreation(id);return fail("invalid_request",409);}
- console.info(JSON.stringify({event:"project_creation_started"}));
+ // Do not release on a pre-create abort: another request from this same
+ // transaction may already have passed this point and be sending the POST.
+ if(candidates===null)return fail("candidate_discovery_failed",502);
+ if(candidates.length>0){await d.recordDiscovery(access,candidates.map(x=>x.projectRef));return fail("candidate_discovery_changed",409);}
+ let attempt:{nonce:string;organizationSlug:string;requestedProjectName:string;dbPassword:string};
+ try{attempt=await d.reserveCreate(access);}catch{return Response.json(await d.get(access),{status:202,headers:headers()});}
+ console.info(JSON.stringify({event:"project_creation_started",transaction_id:id,organization_slug:attempt.organizationSlug,project_ref_known:false}));
  try{
-  const response=await management(token,"/v1/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:attempt.requestedProjectName,organization_slug:attempt.organizationSlug,db_pass:secret(),region_selection:{type:"smartGroup",code:"apac"}})});
-  const ref=response.ok?projectRef(await response.json()):null;
-  if(!validProjectRef(ref)){await d.createUncertain(access,attempt.nonce);return fail("project_creation_failed",502);}
-  return Response.json(await d.recordProject(access,attempt.nonce,ref),{headers:headers()});
- }catch{try{await d.createUncertain(access,attempt.nonce);}catch{}return fail("project_creation_failed",502);}
+  const response=await management(token,"/v1/projects",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({name:attempt.requestedProjectName,organization_slug:attempt.organizationSlug,db_pass:attempt.dbPassword,region_selection:{type:"smartGroup",code:"apac"}})});
+  if(response.status===201){
+   const ref=projectRef(await response.json());
+   if(!validProjectRef(ref))throw Error("invalid_create_response");
+   // First durable action after HTTP 201: no health check or configuration precedes it.
+   const result=await d.recordProject(access,attempt.nonce,ref);
+   console.info(JSON.stringify({event:"project_creation_succeeded",transaction_id:id,organization_slug:attempt.organizationSlug,project_ref:ref}));
+   return Response.json(result,{headers:headers()});
+  }
+  if(response.status===429){const delay=createRetryDelay(response),result=await d.createRejected(access,attempt.nonce,"rate_limited",delay);console.info(JSON.stringify({event:"project_creation_failed",transaction_id:id,status:429,error_code:"rate_limited",retryable:result.state==="project_retry_authorized"}));if(result.state==="terminal_error")await guard.releaseCreation(id);return Response.json(result,{status:202,headers:headers()});}
+  if([400,401,402,403,422].includes(response.status)){
+   const evidence=await createFailureEvidence(response),code=response.status===401?"project_creation_rejected":evidence.quota?"project_quota_reached":"project_creation_rejected";
+   const result=await d.createRejected(access,attempt.nonce,code);
+   await guard.releaseCreation(id);
+   console.info(JSON.stringify({event:"project_creation_failed",transaction_id:id,status:response.status,error_code:code,upstream_code:evidence.code,retryable:false}));
+   return Response.json(result,{headers:headers()});
+  }
+  throw Error("uncertain_create_response");
+ }catch{try{await d.createUncertain(access,attempt.nonce);}catch{}console.info(JSON.stringify({event:"project_creation_indeterminate",transaction_id:id,organization_slug:attempt.organizationSlug,project_ref_known:false}));return Response.json(await d.get(access),{status:202,headers:headers()});}
 }
-async function ready(ref:string,token:string){try{const r=await management(token,`/v1/projects/${encodeURIComponent(ref)}`),p:unknown=r.ok?await r.json():null;return record(p)&&p.status==="ACTIVE_HEALTHY";}catch{return false;}}
+type HealthResult={state:"ready"|"waiting"|"failed";retryAfterMs?:number};
+async function projectHealth(ref:string,token:string):Promise<HealthResult>{
+ try{
+  const project=await management(token,`/v1/projects/${encodeURIComponent(ref)}`);
+  if(!project.ok)return{state:"waiting",...(project.status===429?{retryAfterMs:createRetryDelay(project)}:{})};
+  const info:unknown=await project.json();
+  if(!record(info))return{state:"waiting"};
+  if(info.status==="FAILED"||info.status==="CREATE_FAILED")return{state:"failed"};
+  if(info.status!=="ACTIVE_HEALTHY")return{state:"waiting"};
+  const health=await management(token,`/v1/projects/${encodeURIComponent(ref)}/health?services=auth`);
+  if(!health.ok)return{state:"waiting",...(health.status===429?{retryAfterMs:createRetryDelay(health)}:{})};
+  const services:unknown=await health.json();
+  return{state:Array.isArray(services)&&services.some(s=>record(s)&&s.name==="auth"&&s.status==="ACTIVE_HEALTHY"&&s.healthy===true)?"ready":"waiting"};
+ }catch{return{state:"waiting"};}
+}
 function validProjectRef(v:unknown):v is string{return typeof v==="string"&&/^[a-z]{20}$/u.test(v);}
 function validRuntimeConfig(c:unknown):c is RuntimeConfig{return record(c)&&validProjectRef(c.projectRef)&&typeof c.projectUrl==="string"&&typeof c.publishableKey==="string"&&c.projectUrl===`https://${c.projectRef}.supabase.co`&&/^sb_publishable_[A-Za-z0-9_-]{16,256}$/u.test(c.publishableKey)&&(c.emailConfirmationRedirect===undefined||validAuthRedirectUri(c.emailConfirmationRedirect));}
 function runtimeConfigFor(ref:string,publishableKey:string,emailConfirmationRedirect?:string):RuntimeConfig{return{projectRef:ref,projectUrl:`https://${ref}.supabase.co`,publishableKey,...(emailConfirmationRedirect===undefined?{}:{emailConfirmationRedirect})};}
@@ -382,8 +640,30 @@ function runtimeConfigFor(ref:string,publishableKey:string,emailConfirmationRedi
 export async function fetchRuntimeConfig(ref:string,call:Management,options:{emailConfirmationRedirect?:string}={}):Promise<RuntimeConfig|null>{if(!validProjectRef(ref))return null;try{const list=await call(`/v1/projects/${encodeURIComponent(ref)}/api-keys`);if(!list.ok)return null;const payload:unknown=await list.json();if(!Array.isArray(payload))return null;const publishable=payload.filter(e=>record(e)&&e.type==="publishable"&&typeof e.id==="string"&&/^[A-Za-z0-9_-]{1,128}$/u.test(e.id));if(publishable.length!==1)return null;const id=(publishable[0] as {id:string}).id,revealed=await call(`/v1/projects/${encodeURIComponent(ref)}/api-keys/${encodeURIComponent(id)}?reveal=true`);if(!revealed.ok)return null;const key:unknown=await revealed.json();if(!record(key)||key.type!=="publishable"||typeof key.api_key!=="string")return null;return /^sb_publishable_[A-Za-z0-9_-]{16,256}$/u.test(key.api_key)?runtimeConfigFor(ref,key.api_key,options.emailConfirmationRedirect):null;}catch{return null;}}
 /** Maps the Management organization list into a bounded, production-owned shape. The upstream payload is never forwarded, and an unusable or oversized response returns null so discovery stays retryable. */
 export async function listOrganizations(call:Management):Promise<Organization[]|null>{try{const r=await call("/v1/organizations"),p:unknown=r.ok?await r.json():null;if(!Array.isArray(p)||p.length>MAX_ORGANIZATIONS)return null;const out:Organization[]=[];for(const e of p){if(!record(e)||typeof e.id!=="string"||e.id.length===0||e.id.length>64||typeof e.name!=="string"||e.name.length>200||typeof e.slug!=="string"||e.slug.length===0||e.slug.length>120)return null;out.push({id:e.id,name:e.name,slug:e.slug});}return out;}catch{return null;}}
-export async function productionFetch(r:Request,env:Env):Promise<Response|null>{const u=new URL(r.url);if(!u.pathname.startsWith("/v1/provisioning"))return null;if(r.method!=="GET"&&r.method!=="POST")return new Response(null,{status:405,headers:new Headers({allow:"GET, POST","cache-control":"no-store"})});try{if(u.pathname==="/v1/provisioning/transactions"&&r.method==="POST"){if(!(await json(r)))return fail("invalid_request");const id=nonce(),a=secret(),s=secret(),v=secret();await tx(env,id).create(a,s,v);const z=new URL(`${API}/v1/oauth/authorize`);z.search=new URLSearchParams({client_id:env.SUPABASE_OAUTH_CLIENT_ID,redirect_uri:env.SUPABASE_OAUTH_REDIRECT_URI,response_type:"code",code_challenge_method:"S256",code_challenge:await pkce(v),state:`${id}.${s}`}).toString();return Response.json({transactionId:id,accessToken:a,authorizationUrl:z.toString(),expiresIn:TX_TTL_MS/1000},{headers:headers()});}const m=/^\/v1\/provisioning\/transactions\/([a-f0-9]{32})(?:\/(organizations|organization|create|reconcile|migrate|verify))?$/u.exec(u.pathname),a=cap(r);if(!m)return fail("invalid_request",404);if(!a)return fail("invalid_request",401);const d=tx(env,m[1]!),op=m[2];if(r.method==="GET"&&!op)return Response.json(await d.get(a),{headers:headers()});if(op==="organizations"){if(r.method!=="GET")return fail("invalid_request");const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const c=await d.createContext(a);if(c.state!=="authorization_pending"||!c.discoveryEmptyAt)return fail("invalid_request",409);const organizations=await listOrganizations((p,i={})=>management(t,p,i));if(organizations===null)return fail("organization_discovery_failed",502);return Response.json({organizations},{headers:headers()});}if(r.method!=="POST")return fail("invalid_request");const input=await json(r);if(!input)return fail("invalid_request");if(op==="organization"){const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const slug=String(input.slug??""),organizations=await listOrganizations((path,init={})=>management(t,path,init));if(organizations===null)return fail("organization_discovery_failed",502);if(!organizations.some(x=>x.slug===slug))return fail("organization_not_found",403);return Response.json(await d.selectOrganization(a,slug,String(input.projectName??""),String(input.idempotencyKey??"")),{headers:headers()});}if(op==="create"||op==="reconcile")return creationScopedCreate(d,env,m[1]!,a,op);
-if(op==="migrate"){const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const c=await d.claimOperation(a,"migration");if(!(await ready(c.projectRef,t)))return Response.json(await d.finishMigration(a,c.nonce,{kind:"indeterminate"}),{status:202,headers:headers()});const x=await runCanonicalMigrations(c.projectRef,(p,i={})=>management(t,p,i));return Response.json(await d.finishMigration(a,c.nonce,x),{status:x.kind==="complete"?200:202,headers:headers()});}if(op==="verify"){if((await d.get(a)).state==="ready")return Response.json(await d.get(a),{headers:headers()});const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const c=await d.claimOperation(a,"verification"),x=await runFixedVerification(c.projectRef,(p,i={})=>management(t,p,i));if(x!=="passed")return Response.json(await d.finishVerification(a,c.nonce,x),{status:x==="indeterminate"?202:200,headers:headers()});const confirmationUri=plannerEmailConfirmationUri(u.origin),redirectReady=await ensureAuthRedirectConfigured(c.projectRef,(p,i={})=>management(t,p,i),confirmationUri===null?[]:[confirmationUri]);if(!redirectReady)return Response.json(await d.finishVerification(a,c.nonce,"indeterminate"),{status:202,headers:headers()});const runtimeConfig=await fetchRuntimeConfig(c.projectRef,(p,i={})=>management(t,p,i),confirmationUri===null?{}:{emailConfirmationRedirect:confirmationUri});if(!runtimeConfig)return Response.json(await d.finishVerification(a,c.nonce,"indeterminate"),{status:202,headers:headers()});const complete=await d.finishVerification(a,c.nonce,"passed",runtimeConfig);const context=await d.createContext(a);if(context.organizationSlug)await creationGuard(env,context.organizationSlug).releaseCreation(m[1]!);return Response.json(complete,{status:200,headers:headers()});}return fail("invalid_request");}catch(e){const x=e instanceof Error?e.message:"",code:Code=x==="expired"?"provisioning_expired":x==="operation_in_progress"?"operation_in_progress":x==="oauth_expired"?"oauth_expired":x==="runtime_config_unavailable"?"runtime_config_unavailable":"invalid_request";return fail(code,code==="provisioning_expired"?410:code==="operation_in_progress"?409:code==="runtime_config_unavailable"?502:400);}}
+export async function productionFetch(r:Request,env:Env):Promise<Response|null>{const u=new URL(r.url);if(!u.pathname.startsWith("/v1/provisioning"))return null;if(r.method!=="GET"&&r.method!=="POST")return new Response(null,{status:405,headers:new Headers({allow:"GET, POST","cache-control":"no-store"})});try{if(u.pathname==="/v1/provisioning/transactions"&&r.method==="POST"){if(!(await json(r)))return fail("invalid_request");const id=nonce(),a=secret(),s=secret(),v=secret();await tx(env,id).create(a,s,v);const z=new URL(`${API}/v1/oauth/authorize`);z.search=new URLSearchParams({client_id:env.SUPABASE_OAUTH_CLIENT_ID,redirect_uri:env.SUPABASE_OAUTH_REDIRECT_URI,response_type:"code",code_challenge_method:"S256",code_challenge:await pkce(v),state:`${id}.${s}`}).toString();return Response.json({transactionId:id,accessToken:a,authorizationUrl:z.toString(),expiresIn:TX_TTL_MS/1000},{headers:headers()});}const m=/^\/v1\/provisioning\/transactions\/([a-f0-9]{32})(?:\/(organizations|organization|create|reconcile|migrate|verify))?$/u.exec(u.pathname),a=cap(r);if(!m)return fail("invalid_request",404);if(!a)return fail("invalid_request",401);const d=tx(env,m[1]!),op=m[2];if(r.method==="GET"&&!op)return Response.json(await d.get(a),{headers:headers()});if(op==="organizations"){if(r.method!=="GET")return fail("invalid_request");const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const c=await d.createContext(a);if(c.state!=="authorization_pending"||!c.discoveryEmptyAt)return fail("invalid_request",409);const organizations=await listOrganizations((p,i={})=>management(t,p,i));if(organizations===null)return fail("organization_discovery_failed",502);return Response.json({organizations},{headers:headers()});}if(r.method!=="POST")return fail("invalid_request");const input=await json(r);if(!input)return fail("invalid_request");if(op==="organization"){const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const slug=String(input.slug??""),organizations=await listOrganizations((path,init={})=>management(t,path,init));if(organizations===null)return fail("organization_discovery_failed",502);if(!organizations.some(x=>x.slug===slug))return fail("organization_not_found",403);return Response.json(await d.selectOrganization(a,slug,String(input.projectName??""),String(input.idempotencyKey??"")),{headers:headers()});}if(op==="create"||op==="reconcile")return await creationScopedCreate(d,env,m[1]!,a,op);
+if(op==="migrate"){
+ const context=await d.createContext(a);
+ const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);
+ if(context.state==="project_waiting"){
+  if(!context.projectRef)return fail("invalid_request",409);
+  if(context.healthRetryAfter&&Date.now()<context.healthRetryAfter)return Response.json(await d.get(a),{status:202,headers:headers()});
+  const health=await projectHealth(context.projectRef,t);
+  if(health.state==="failed"){console.info(JSON.stringify({event:"project_health_failed",transaction_id:m[1],project_ref:context.projectRef}));return Response.json(await d.healthFailed(a),{headers:headers()});}
+  if(health.state!=="ready"){
+   const checks=context.healthChecks??0;
+   const delay=Math.max(health.retryAfterMs??0,Math.min(60_000,5_000*2**Math.min(checks,4)));
+   console.info(JSON.stringify({event:"project_health_waiting",transaction_id:m[1],project_ref:context.projectRef,retry_after_ms:delay}));
+   return Response.json(await d.healthWait(a,delay),{status:202,headers:headers()});
+  }
+  console.info(JSON.stringify({event:"project_health_ready",transaction_id:m[1],project_ref:context.projectRef}));
+ }
+ const c=await d.claimOperation(a,"migration");
+ const x=await runCanonicalMigrations(c.projectRef,(p,i={})=>management(t,p,i));
+ const result=await d.finishMigration(a,c.nonce,x);
+ if(x.kind==="complete")console.info(JSON.stringify({event:"project_migrations_complete",transaction_id:m[1],project_ref:c.projectRef}));
+ return Response.json(result,{status:x.kind==="complete"?200:202,headers:headers()});
+}
+if(op==="verify"){if((await d.get(a)).state==="ready")return Response.json(await d.get(a),{headers:headers()});const t=await d.managementToken(a);if(!t)return fail("oauth_expired",401);const c=await d.claimOperation(a,"verification"),x=await runFixedVerification(c.projectRef,(p,i={})=>management(t,p,i));if(x!=="passed")return Response.json(await d.finishVerification(a,c.nonce,x),{status:x==="indeterminate"?202:200,headers:headers()});const confirmationUri=plannerEmailConfirmationUri(u.origin),redirectReady=await ensureAuthRedirectConfigured(c.projectRef,(p,i={})=>management(t,p,i),confirmationUri===null?[]:[confirmationUri]);if(!redirectReady)return Response.json(await d.finishVerification(a,c.nonce,"indeterminate"),{status:202,headers:headers()});const runtimeConfig=await fetchRuntimeConfig(c.projectRef,(p,i={})=>management(t,p,i),confirmationUri===null?{}:{emailConfirmationRedirect:confirmationUri});if(!runtimeConfig)return Response.json(await d.finishVerification(a,c.nonce,"indeterminate"),{status:202,headers:headers()});const complete=await d.finishVerification(a,c.nonce,"passed",runtimeConfig);const context=await d.createContext(a);if(context.organizationSlug)await creationGuard(env,context.organizationSlug).releaseCreation(context.creationGuardOwnerTransactionId??m[1]!);console.info(JSON.stringify({event:"project_provisioning_ready",transaction_id:m[1],project_ref:c.projectRef}));return Response.json(complete,{status:200,headers:headers()});}return fail("invalid_request");}catch(e){const x=e instanceof Error?e.message:"",code:Code=x==="expired"?"provisioning_expired":x==="operation_in_progress"?"operation_in_progress":x==="oauth_expired"?"oauth_expired":x==="runtime_config_unavailable"?"runtime_config_unavailable":"invalid_request";return fail(code,code==="provisioning_expired"?410:code==="operation_in_progress"?409:code==="runtime_config_unavailable"?502:400);}}
 /** HTML-escapes every dynamic value that reaches a hand-off page. */
 function escapeHtml(value:string):string{return value.replace(/[&<>"']/gu,(character)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]??character);}
 const PAGE_STYLE=":root{color-scheme:dark}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#121212;color:#f5f3ff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}main{max-width:34rem;padding:2rem}img{height:3rem;margin-bottom:1.5rem}h1{font-size:1.5rem;margin:0 0 .75rem}p{line-height:1.55;margin:0 0 1rem;color:#ded9f5}.muted{font-size:.9rem;color:#a9a2c9}a.button{display:inline-block;background:#7c5cfc;color:#fff;text-decoration:none;padding:.7rem 1.25rem;border-radius:.6rem;font-weight:600}";
@@ -576,6 +856,7 @@ export async function productionManagementAuthorization(r:Request,env:Env):Promi
   }catch(error){
     const message=error instanceof Error?error.message:"";
     if(message==="forbidden")return fail("invalid_request",401);
+    if(message==="operation_in_progress")return fail("operation_in_progress",409);
     return fail("invalid_request",400);
   }
 }

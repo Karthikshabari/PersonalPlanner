@@ -158,7 +158,8 @@ final class ProvisionedRuntimeBackend extends RuntimeBackend {
   ) {
     if (profile == null ||
         profile.state != ProvisioningState.ready ||
-        profile.connectionDisabled) {
+        profile.connectionDisabled ||
+        profile.remoteMissing) {
       return null;
     }
     final projectRef = profile.projectRef;

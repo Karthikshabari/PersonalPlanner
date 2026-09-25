@@ -965,15 +965,11 @@ async function verifySchema(request: Request, env: Env): Promise<Response> {
   }
 
   const response = await managementFetch(
-    `/v1/projects/${encodeURIComponent(env.POC_PROJECT_REF)}/database/query`,
+    `/v1/projects/${encodeURIComponent(env.POC_PROJECT_REF)}/database/query/read-only`,
     session.accessToken,
     {
       method: "POST",
-      // The Management API's read_only role correctly cannot execute RPCs that
-      // are restricted to authenticated Planner users. The SQL itself remains
-      // a fixed SELECT; use the normal Management query role to inspect the
-      // capability result without changing production grants.
-      body: JSON.stringify({ query: SCHEMA_VERIFICATION_SQL, read_only: false }),
+      body: JSON.stringify({ query: SCHEMA_VERIFICATION_SQL }),
     },
   );
   if (!response.ok) {
@@ -1000,6 +996,7 @@ async function verifySchema(request: Request, env: Env): Promise<Response> {
     "f03_helper_private",
     "f03_validates_branch_before_union",
     "f03_wrappers_active",
+    "initial_sync_fencing_present",
     "recurrence_provenance_present",
     "relationships_owner_scoped",
     "direct_authenticated_writes_revoked",
@@ -1012,14 +1009,11 @@ async function verifySchema(request: Request, env: Env): Promise<Response> {
         `<li>${escapeHtml(check)}: <strong>${row[check] === true ? "PASS" : "FAIL"}</strong></li>`,
     )
     .join("");
-  const capabilities = isRecord(row.capabilities)
-    ? escapeHtml(JSON.stringify(row.capabilities))
-    : "unexpected";
   console.info(
     JSON.stringify({ event: "schema_verification_completed", passed: failed.length === 0 }),
   );
   return html(
-    `<p>Fixed SELECT-only schema verification: <strong>${failed.length === 0 ? "PASS" : "FAIL"}</strong>.</p><ul>${list}</ul><p>Capabilities: <code>${capabilities}</code></p>`,
+    `<p>Fixed SELECT-only schema verification: <strong>${failed.length === 0 ? "PASS" : "FAIL"}</strong>.</p><ul>${list}</ul>`,
     failed.length === 0 ? 200 : 409,
   );
 }

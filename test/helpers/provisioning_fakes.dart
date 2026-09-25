@@ -20,6 +20,7 @@ BackendConnectionProfile testProfile(
   String? projectRef,
   String? errorCode,
   String transactionId = testTransactionId,
+  bool remoteMissing = false,
 }) => BackendConnectionProfile(
   profileId: 'profile-1',
   generation: 1,
@@ -31,6 +32,7 @@ BackendConnectionProfile testProfile(
   projectUrl: projectRef == null ? null : 'https://$projectRef.supabase.co',
   publishableKey: state == ProvisioningState.ready ? testPublishableKey : null,
   errorCode: errorCode,
+  remoteMissing: remoteMissing,
 );
 
 ProvisioningAttempt testAttempt(
@@ -38,8 +40,14 @@ ProvisioningAttempt testAttempt(
   bool hasCapability = true,
   String? projectRef,
   String? errorCode,
+  bool remoteMissing = false,
 }) => ProvisioningAttempt(
-  profile: testProfile(state, projectRef: projectRef, errorCode: errorCode),
+  profile: testProfile(
+    state,
+    projectRef: projectRef,
+    errorCode: errorCode,
+    remoteMissing: remoteMissing,
+  ),
   transactionId: testTransactionId,
   hasCapability: hasCapability,
 );
@@ -131,11 +139,9 @@ class FakeProvisioningApi implements ProvisioningApi {
   /// Scripted answer for "is a Management authorization in flight?".
   bool pendingManagementAuthorization = false;
 
-  /// Scripted answer for the authoritative host probe.
-  bool remoteMissingRecorded = false;
-
   /// When set, [selectOrganization] waits until it completes.
   Completer<void>? holdSelect;
+  Completer<void>? holdCreate;
 
   /// When set, [migrate] fails with this error instead of answering.
   Object? migrateError;
@@ -205,6 +211,8 @@ class FakeProvisioningApi implements ProvisioningApi {
   @override
   Future<ProvisioningResult> createOrContinueProject() async {
     calls.add('createOrContinueProject');
+    final hold = holdCreate;
+    if (hold != null) await hold.future;
     return createResult;
   }
 
@@ -262,12 +270,6 @@ class FakeProvisioningApi implements ProvisioningApi {
     calls.add('hasPendingManagementAuthorization');
     return pendingManagementAuthorization;
   }
-
-  @override
-  Future<bool> markRemoteMissing() async {
-    calls.add('markRemoteMissing');
-    return remoteMissingRecorded;
-  }
 }
 
 class FakeBrowserLauncher implements BrowserLauncher {
@@ -285,13 +287,20 @@ class FakeBrowserLauncher implements BrowserLauncher {
 class FakeProjectProbe implements BackendProjectProbe {
   BackendProjectProbeResult result = BackendProjectProbeResult.indeterminate;
   final List<Uri> probed = <Uri>[];
+  final List<String> apiKeys = <String>[];
+  void Function()? onProbe;
 
   @override
   Duration get timeout => const Duration(seconds: 1);
 
   @override
-  Future<BackendProjectProbeResult> probe(Uri projectUrl) async {
+  Future<BackendProjectProbeResult> probe(
+    Uri projectUrl, {
+    required String publishableKey,
+  }) async {
     probed.add(projectUrl);
+    apiKeys.add(publishableKey);
+    onProbe?.call();
     return result;
   }
 

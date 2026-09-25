@@ -20,6 +20,7 @@ Future<void> _pumpCard(
   Future<void> Function()? onUseOfflineOnly,
   Future<void> Function()? onStopUsingCloud,
   Duration pollInterval = const Duration(hours: 1),
+  Duration? reachabilityRetryDelay,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -32,6 +33,11 @@ Future<void> _pumpCard(
         // No periodic work during widget tests; the card still performs its
         // initial load/resume exactly once.
         provisioningPollIntervalProvider.overrideWith((ref) => pollInterval),
+        if (reachabilityRetryDelay != null)
+          cloudReachabilityRetryDelayProvider.overrideWith(
+            (ref) =>
+                (_) => reachabilityRetryDelay,
+          ),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -274,6 +280,69 @@ void main() {
 
     await _unmount(tester);
   });
+
+  testWidgets('selected organization waits for an explicit Create press', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.organizationSelected);
+    api.refreshResult = testInProgress(ProvisioningState.organizationSelected);
+    api.createResult = testInProgress(ProvisioningState.projectCreating);
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    expect(find.byKey(const ValueKey('cloud-create-project')), findsOneWidget);
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+    await tester.tap(find.byKey(const ValueKey('cloud-create-project')));
+    await _settle(tester);
+    expect(
+      api.calls.where((c) => c == 'createOrContinueProject'),
+      hasLength(1),
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets(
+    'expired pre-create attempt offers reauthorization without creating',
+    (tester) async {
+      api.attempt = testAttempt(ProvisioningState.organizationSelected);
+      api.refreshResult = testInProgress(ProvisioningState.organizationSelected);
+      api.createResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        message: 'Supabase authorization expired before project creation.',
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+      await tester.tap(find.byKey(const ValueKey('cloud-create-project')));
+      await _settle(tester);
+
+      expect(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('cloud-create-project')), findsNothing);
+      api.retryAuthorizationResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(ProvisioningState.organizationSelected),
+        authorizationUrl: Uri.parse(
+          'https://api.supabase.com/v1/oauth/authorize?client_id=x',
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+      );
+      await _settle(tester);
+      expect(api.calls, contains('retryAuthorization'));
+      expect(
+        api.calls.where((c) => c == 'createOrContinueProject'),
+        hasLength(1),
+      );
+      expect(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('cloud-create-project')), findsNothing);
+      await _unmount(tester);
+    },
+  );
 
   testWidgets(
     'shows one verified legacy cloud and binds it only on Use this project',
@@ -800,6 +869,59 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('an unavailable READY card recovers without a Verify tap', (
+    tester,
+  ) async {
+    _probe.result = BackendProjectProbeResult.indeterminate;
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    await _pumpCard(
+      tester,
+      api: api,
+      launcher: launcher,
+      reachabilityRetryDelay: const Duration(milliseconds: 500),
+    );
+    expect(find.text(cloudStorageUnreachableStatus), findsOneWidget);
+
+    _probe.result = BackendProjectProbeResult.exists;
+    await tester.pump(const Duration(milliseconds: 500));
+    await _settle(tester);
+
+    expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
+    expect(_probe.probed.length, 2);
+    expect(api.calls, isNot(contains('startManagementCheck')));
+    expect(api.calls, isNot(contains('createOrContinueProject')));
+    await _unmount(tester);
+  });
+
+  testWidgets('resume rechecks the known project after background changes', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+    expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
+
+    _probe.result = BackendProjectProbeResult.indeterminate;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(find.text(cloudStorageUnreachableStatus), findsOneWidget);
+
+    _probe.result = BackendProjectProbeResult.exists;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await _settle(tester);
+    expect(find.text(cloudStorageConnectedStatus), findsOneWidget);
+    expect(api.calls, isNot(contains('startManagementCheck')));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await _unmount(tester);
+  });
+
   testWidgets(
     'Check cloud connection opens the consent page and shows progress',
     (tester) async {
@@ -920,6 +1042,29 @@ void main() {
     );
     await _settle(tester);
     expect(usedOffline, isTrue);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('saved missing project opens recovery and setup needs a choice', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.ready,
+      projectRef: testProjectRef,
+      remoteMissing: true,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    expect(find.text(cloudRemoteMissingTitle), findsOneWidget);
+    expect(find.text(cloudRemoteMissingBody), findsOneWidget);
+    expect(_probe.probed, isEmpty);
+    expect(api.startAttemptCount, 0);
+    await tester.tap(find.byKey(const ValueKey('cloud-setup-again-action')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('cloud-setup-preflight')), findsOneWidget);
+    expect(api.startAttemptCount, 0);
+    expect(api.calls, isNot(contains('createOrContinueProject')));
 
     await _unmount(tester);
   });

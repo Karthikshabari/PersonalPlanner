@@ -1,21 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MIGRATIONS } from "../src/migrations";
+import { MIGRATIONS, SCHEMA_VERIFICATION_SQL } from "../src/migrations";
 import { ManagementAccountProject } from "../src/management_account_project";
 import { discoverPlannerCandidates, productionFetch, productionProjectCheck, productionProjectResolution } from "../src/production";
 
 const X = "abcdefghijklmnopqrst";
 const Y = "bcdefghijklmnopqrstu";
 const OTHER = "cdefghijklmnopqrstuv";
+const LIVE_SCENARIO_X = "vrkisiihmzmipyzpvdcs";
+const LIVE_SCENARIO_UNRELATED = "gbwmivaufkntpkdfhivw";
 const TX = "0123456789abcdef0123456789abcdef";
 const KEY = "sb_publishable_CuLX_Y3xWuD0cuItKbm-Xw_NJMQ84zu";
 const CHECKS = Object.fromEntries([
   "required_tables_exist", "rls_enabled", "required_rpcs_exist",
   "protocol_v2_authenticated_execute", "capability_grants_correct",
   "f03_helper_private", "f03_validates_branch_before_union", "f03_wrappers_active",
+  "initial_sync_fencing_present",
   "recurrence_provenance_present", "relationships_owner_scoped",
   "direct_authenticated_writes_revoked", "capability_payload_current",
 ].map(key => [key, true]));
-type Project = { ref: string; name: string; compatible: boolean; organization?: string; partial?: boolean };
+type Project = { ref: string; name: string; compatible: boolean; organization?: string; partial?: boolean; schemaCompatible?: boolean };
 
 function guardObject() {
   let holder: string | null = null;
@@ -46,7 +49,7 @@ function transaction() {
     select: () => { state = "organization_selected"; },
     discovered: () => discovered,
     adoptReady: async (_capability: string, config: Record<string, unknown>) => { state = "ready"; return { state, projectRef: config.projectRef, runtimeConfig: config }; },
-    reserveCreate: async () => { state = "project_creating"; return { nonce: "nonce", organizationSlug: "personal", requestedProjectName: "personal-planner-new" }; },
+    reserveCreate: async () => { state = "project_creating"; return { nonce: "nonce", organizationSlug: "personal", requestedProjectName: "personal-planner-new", dbPassword: "stable-test-password" }; },
     createUncertain: async () => { state = "project_reconciliation_required"; uncertain = true; },
     recordProject: async (_capability: string, _nonce: string, projectRef: string) => { state = "project_waiting"; return { state, projectRef }; },
     claimCreateReconciliation: async () => { if (!uncertain) throw Error("operation_in_progress"); state = "project_reconciliation_required"; },
@@ -85,24 +88,24 @@ function checkRequest(projectRef: string) {
     method: "POST", headers: { authorization: "Provisioning capability", "content-type": "application/json" }, body: JSON.stringify({ projectRef }),
   });
 }
-function managementResponses(projects: Project[], options: { fail?: string; status?: number; createStatus?: number } = {}) {
-  const calls: Array<{ url: string; method: string; body?: string }> = [];
+function managementResponses(projects: Project[], options: { fail?: string; failExact?: boolean; status?: number; failBody?: string; failContentType?: string; dedicatedRow?: Record<string, unknown>; createStatus?: number } = {}) {
+  const calls: Array<{ url: string; method: string; body?: string; headers: Headers }> = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input), method = init?.method ?? "GET";
-    calls.push({ url, method, body: typeof init?.body === "string" ? init.body : undefined });
-    if (options.fail && url.includes(options.fail)) return new Response(null, { status: options.status ?? 502 });
+    calls.push({ url, method, body: typeof init?.body === "string" ? init.body : undefined, headers: new Headers(init?.headers) });
+    if (options.fail && (options.failExact ? url.endsWith(options.fail) : url.includes(options.fail))) return new Response(options.failBody ?? null, { status: options.status ?? 502, headers: options.failBody ? { "content-type": options.failContentType ?? "application/json" } : undefined });
     if (url.endsWith("/v1/organizations")) return Response.json([{ id: "org-id", slug: "personal", name: "Renamed organization" }, { id: "org-two", slug: "other", name: "Other" }]);
     if (url.includes("/v1/organizations/") && url.includes("/projects?")) {
       const slug = url.includes("/organizations/personal/") ? "personal" : "other";
       const listed = projects.filter(p => (p.organization ?? "personal") === slug);
       return Response.json({ projects: listed.map(p => ({ ref: p.ref, name: p.name, region: "ap-south-1" })), pagination: { count: listed.length, limit: 100, offset: 0 } });
     }
-    if (url.endsWith("/v1/projects") && method === "POST") return options.createStatus ? new Response(null, { status: options.createStatus }) : Response.json({ ref: X });
+    if (url.endsWith("/v1/projects") && method === "POST") return options.createStatus ? new Response(null, { status: options.createStatus }) : Response.json({ ref: X }, { status: 201 });
     const project = projects.find(p => url.includes("/v1/projects/" + p.ref));
     if (!project) return new Response(null, { status: 404 });
     if (url.endsWith("/v1/projects/" + project.ref)) return Response.json({ ref: project.ref, status: "ACTIVE_HEALTHY" });
     if (url.endsWith("/database/migrations")) return Response.json(project.partial ? [{ name: MIGRATIONS[0]!.name }] : project.compatible ? MIGRATIONS.map(m => ({ name: m.name })) : []);
-    if (url.endsWith("/database/query")) return Response.json([CHECKS]);
+    if (url.endsWith("/database/query/read-only")) return Response.json([options.dedicatedRow ?? (project.schemaCompatible === false ? { ...CHECKS, required_tables_exist: false } : CHECKS)], { status: 201 });
     if (url.endsWith("/config/auth")) return Response.json({ uri_allow_list: "com.personalplanner.personalplanner://login-callback,https://worker.test/auth/confirmed" });
     if (url.endsWith("/api-keys")) return Response.json([{ type: "publishable", id: "safe-key" }]);
     if (url.endsWith("/api-keys/safe-key?reveal=true")) return Response.json({ type: "publishable", api_key: KEY });
@@ -113,6 +116,32 @@ function managementResponses(projects: Project[], options: { fail?: string; stat
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("project-centric resolution", () => {
+  it("verifies a remembered project before any organization discovery", async () => {
+    const calls = managementResponses([{ ref: X, name: "renamed", compatible: true }]);
+    const response = await productionProjectResolution(request("resolve", X), environment());
+    expect(response!.status).toBe(200);
+    expect((await response!.json() as { projectRef: string }).projectRef).toBe(X);
+    expect(calls[0]!.url).toMatch(new RegExp(`/v1/projects/${X}$`));
+    expect(calls.some(c => c.url.includes("/v1/organizations"))).toBe(false);
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("keeps exact project errors out of discovery and creation", async () => {
+    for (const status of [401, 403, 404, 429, 503]) {
+      const calls = managementResponses([{ ref: X, name: "cloud", compatible: true }], { fail: `/v1/projects/${X}`, status });
+      const response = await productionProjectResolution(request("resolve", X), environment());
+      expect(response!.status).toBe(status === 404 ? 410 : status === 401 || status === 403 ? 403 : 502);
+      expect(calls.map(c => c.url)).toEqual([expect.stringMatching(new RegExp(`/v1/projects/${X}$`))]);
+    }
+  });
+
+  it("does not adopt a client-supplied incompatible project", async () => {
+    const calls = managementResponses([{ ref: X, name: "personal-planner", compatible: false }]);
+    const response = await productionProjectResolution(request("resolve", X), environment());
+    expect(response!.status).toBe(409);
+    expect(calls.some(c => c.url.includes("/v1/organizations"))).toBe(false);
+  });
+
   it("discovers zero compatible projects through complete read-only organization listings", async () => {
     const tx = transaction(), calls = managementResponses([{ ref: OTHER, name: "personal-planner-fake", compatible: false }]);
     const result = await productionProjectResolution(request("resolve"), environment(tx));
@@ -126,8 +155,112 @@ describe("project-centric resolution", () => {
     const result = await productionProjectResolution(request("resolve"), environment(tx));
     expect((await result!.json() as { candidates: Array<{ projectRef: string }> }).candidates.map(c => c.projectRef)).toEqual([X]);
     expect(tx.discovered()).toEqual([X]);
-    expect(calls.some(c => c.url.endsWith("/database/query") && c.body?.includes('"read_only":true'))).toBe(true);
+    const dedicated = calls.find(c => c.url.endsWith(`/v1/projects/${X}/database/query/read-only`));
+    expect(dedicated).toMatchObject({ method: "POST" });
+    expect(dedicated!.url).toBe(`https://api.supabase.com/v1/projects/${X}/database/query/read-only`);
+    expect(dedicated!.headers.get("authorization")).toBe("Bearer temporary-management-token");
+    expect(dedicated!.headers.get("content-type")).toBe("application/json");
+    expect(JSON.parse(dedicated!.body!)).toEqual({ query: SCHEMA_VERIFICATION_SQL });
+    expect(calls.filter(c => c.url.includes("/database/query"))).toHaveLength(1);
     expect(calls.some(c => c.method === "PATCH" || c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("keeps a dedicated-endpoint JSON 400 indeterminate", async () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+      fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status: 400,
+      failBody: JSON.stringify({ code: "42704", message: 'type "pg_catalog.bigint" does not exist' }),
+    });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(502);
+    expect(await response!.json()).toEqual({ error: "candidate_discovery_failed" });
+    expect(logged).toHaveBeenCalledWith(JSON.stringify({
+      event: "schema_verification_request_failed", substage: "fixed_schema_sql_query",
+      project_ref: X, endpoint_path: `/v1/projects/${X}/database/query/read-only`, method: "POST",
+      request_shape: "query_only_dedicated_read_only", status: 400, content_type: "application/json",
+      error_code: "42704", error_message: 'type "pg_catalog.bigint" does not exist',
+    }));
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("bounds and redacts a plain-text dedicated-endpoint 400", async () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    const secret = "sb_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456";
+    const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+      fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status: 400,
+      failBody: `invalid query ${secret} ${"z".repeat(5000)}`, failContentType: "text/plain",
+    });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(502);
+    const event = logged.mock.calls.map(call => String(call[0])).find(value => value.includes('"endpoint_path":"/v1/projects/' + X + '/database/query/read-only"'));
+    expect(JSON.parse(event!)).toMatchObject({ status: 400, content_type: "text/plain", response_shape: "non_json" });
+    expect(event).not.toContain(secret);
+    expect(event!.length).toBeLessThan(900);
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("redacts credential-shaped fields from a dedicated-endpoint JSON error", async () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    const credential = "sb_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456";
+    managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+      fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status: 400,
+      failBody: JSON.stringify({ code: "42704", message: `bad type ${credential} password=short` }),
+    });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(502);
+    const messages = logged.mock.calls.map(call => String(call[0])).join("\n");
+    expect(messages).not.toContain(credential);
+    expect(messages).not.toContain("password=short");
+    expect(messages).toContain("[redacted-credential]");
+  });
+
+  it("classifies dedicated-endpoint 401 and 403 as access denial, never deletion", async () => {
+    for (const status of [401, 403]) {
+      const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+        fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status,
+      });
+      const response = await productionProjectResolution(request("resolve", X), environment());
+      expect(response!.status).toBe(403);
+      expect(await response!.json()).toEqual({ error: "project_access_denied" });
+      expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+    }
+  });
+
+  it("keeps dedicated-endpoint 429 and 5xx retryable", async () => {
+    for (const status of [429, 500, 503]) {
+      const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+        fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status,
+      });
+      const response = await productionProjectResolution(request("resolve"), environment());
+      expect(response!.status).toBe(502);
+      expect(await response!.json()).toEqual({ error: "candidate_discovery_failed" });
+      expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+    }
+  });
+
+  it("keeps a schema-query timeout indeterminate and prevents creation", async () => {
+    const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }]);
+    const upstreamFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith(`/v1/projects/${X}/database/query/read-only`)) {
+        throw new Error("simulated timeout");
+      }
+      return upstreamFetch(input, init);
+    });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(502);
+    expect(await response!.json()).toEqual({ error: "candidate_discovery_failed" });
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("rejects a false dedicated-endpoint compatibility assertion", async () => {
+    const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
+      dedicatedRow: { ...CHECKS, initial_sync_fencing_present: false },
+    });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toMatchObject({ kind: "candidates", candidates: [] });
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
   });
 
   it("returns multiple candidates without order-based choice or name authority", async () => {
@@ -136,6 +269,26 @@ describe("project-centric resolution", () => {
     const result = await productionProjectResolution(request("resolve"), environment(tx));
     expect((await result!.json() as { candidates: Array<{ projectRef: string }> }).candidates.map(c => c.projectRef)).toEqual([Y, X]);
     expect(tx.discovered()).toEqual([Y, X]);
+  });
+
+  it("continues past unrelated projects and finds a compatible X-shaped project", async () => {
+    const tx = transaction();
+    const calls = managementResponses([
+      { ref: LIVE_SCENARIO_UNRELATED, name: "Unrelated", compatible: false },
+      { ref: OTHER, name: "Incomplete schema", compatible: true, schemaCompatible: false },
+      { ref: LIVE_SCENARIO_X, name: "Renamed Planner", compatible: true },
+    ]);
+    const response = await productionProjectResolution(request("resolve"), environment(tx));
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toMatchObject({
+      kind: "candidates", candidates: [{ projectRef: LIVE_SCENARIO_X }],
+    });
+    expect(tx.discovered()).toEqual([LIVE_SCENARIO_X]);
+    expect(calls.filter(c => c.url.includes("/database/query/read-only")).map(c => c.url)).toEqual([
+      `https://api.supabase.com/v1/projects/${OTHER}/database/query/read-only`,
+      `https://api.supabase.com/v1/projects/${LIVE_SCENARIO_X}/database/query/read-only`,
+    ]);
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
   });
 
   it("checks compatible projects across every accessible organization", async () => {
@@ -194,10 +347,9 @@ describe("project-centric resolution", () => {
     expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
   });
 
-  it("fails closed on listing errors, incomplete pages, and partial migrations", async () => {
+  it("fails closed on listing errors and incomplete pages", async () => {
     for (const setup of [
       { projects: [] as Project[], fail: "/organizations/personal/projects?", status: 502 },
-      { projects: [{ ref: X, name: "partial", compatible: true, partial: true }], fail: undefined, status: undefined },
     ]) {
       const calls = managementResponses(setup.projects, { fail: setup.fail, status: setup.status });
       const result = await productionProjectResolution(request("resolve"), environment());
@@ -208,6 +360,24 @@ describe("project-centric resolution", () => {
       ? Response.json([{ id: "a", name: "A", slug: "personal" }])
       : Response.json({ projects: [], pagination: { count: 1, limit: 100, offset: 0 } }));
     expect(incomplete).toBeNull();
+  });
+
+  it("classifies an incomplete canonical migration prefix as incompatible", async () => {
+    const calls = managementResponses([{ ref: X, name: "partial", compatible: true, partial: true }]);
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toMatchObject({ kind: "candidates", candidates: [] });
+    expect(calls.some(c => c.url.includes("/database/query"))).toBe(false);
+    expect(calls.some(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toBe(false);
+  });
+
+  it("logs only the failing discovery stage and status for an upstream 502", async () => {
+    const logged = vi.spyOn(console, "info").mockImplementation(() => {});
+    const calls = managementResponses([], { fail: "/organizations/personal/projects?", status: 502 });
+    const response = await productionProjectResolution(request("resolve"), environment());
+    expect(response!.status).toBe(502);
+    expect(logged).toHaveBeenCalledWith(JSON.stringify({ event: "candidate_discovery_stage_failed", stage: "organization_projects", reason: "upstream_http", status: 502 }));
+    expect(calls.some(c => c.method === "POST" && c.url.endsWith("/v1/projects"))).toBe(false);
   });
 
   it("checks exact local X before any broad discovery and preserves it on 401, 429, and 502", async () => {
@@ -256,7 +426,7 @@ describe("creation-only coordination", () => {
     expect(response!.status).toBe(409);
     expect(await response!.json()).toEqual({ error: "candidate_discovery_changed" });
     expect(tx.discovered()).toEqual([X]);
-    expect(env.objects.get("creation:personal")?.holder()).toBeNull();
+    expect(env.objects.get("creation:personal")?.holder()).toBe(TX);
     expect(calls.filter(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toHaveLength(0);
   });
 
@@ -274,7 +444,7 @@ describe("creation-only coordination", () => {
     await productionProjectResolution(request("resolve"), env);
     tx.select();
     const response = await productionFetch(createRequest(), env);
-    expect(response!.status).toBe(502);
+    expect(response!.status).toBe(202);
     expect(env.objects.get("creation:personal")?.holder()).toBe(TX);
     expect(await env.objects.get("creation:personal")!.object.reserveCreation("android")).toBe("other");
     expect(calls.filter(c => c.url.endsWith("/v1/projects") && c.method === "POST")).toHaveLength(1);
@@ -332,5 +502,26 @@ describe("creation-only coordination", () => {
     expect(await env.MANAGEMENT_ACCOUNT_PROJECT.get("creation:personal").reserveCreation("linux")).toBe("self");
     expect(await env.MANAGEMENT_ACCOUNT_PROJECT.get("creation:other").reserveCreation("android")).toBe("self");
     expect(await env.MANAGEMENT_ACCOUNT_PROJECT.get("creation:personal").reserveCreation("android")).toBe("other");
+  });
+
+  it("exposes the creation owner only through the internal guard RPC", async () => {
+    const env = environment();
+    const guard = env.MANAGEMENT_ACCOUNT_PROJECT.get("creation:personal");
+    expect(await guard.currentCreationOwner()).toBeNull();
+    await guard.reserveCreation(TX);
+    expect(await guard.currentCreationOwner()).toBe(TX);
+  });
+
+  it("compare-releases only the expected guard owner with an exact recorded ref", async () => {
+    const env = environment();
+    const guard = env.MANAGEMENT_ACCOUNT_PROJECT.get("creation:personal");
+    await guard.reserveCreation(TX);
+
+    expect(await guard.releaseConfirmedMissingCreation("abcdef0123456789abcdef0123456789", X)).toEqual({ kind: "conflict" });
+    expect(await guard.currentCreationOwner()).toBe(TX);
+    expect(await guard.releaseConfirmedMissingCreation(TX, "not-a-project-ref")).toEqual({ kind: "conflict" });
+    expect(await guard.currentCreationOwner()).toBe(TX);
+    expect(await guard.releaseConfirmedMissingCreation(TX, X)).toEqual({ kind: "released" });
+    expect(await guard.currentCreationOwner()).toBeNull();
   });
 });

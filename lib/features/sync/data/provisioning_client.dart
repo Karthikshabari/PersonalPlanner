@@ -87,6 +87,7 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
   'candidate_discovery_changed' => ProvisioningFailureClass.actionRequired,
   'project_not_deleted' => ProvisioningFailureClass.actionRequired,
   'project_deleted' => ProvisioningFailureClass.terminal,
+  'project_access_denied' => ProvisioningFailureClass.actionRequired,
   'project_identity_ambiguous' ||
   'migration_history_mismatch' ||
   'verification_failed' => ProvisioningFailureClass.terminal,
@@ -429,6 +430,8 @@ class ProvisioningSnapshot {
     this.runtimeConfig,
     this.authorizationCompleted = false,
     this.authorizationFailed = false,
+    this.creationAuthorizationPending = false,
+    this.creationAuthorizationRequired = false,
   });
 
   final String transactionId;
@@ -448,6 +451,12 @@ class ProvisioningSnapshot {
   /// The Worker claimed this OAuth callback but could not complete it.
   /// The same transaction can issue a fresh authorization URL safely.
   final bool authorizationFailed;
+
+  /// An OAuth browser round trip is pending for the selected creation org.
+  final bool creationAuthorizationPending;
+
+  /// Management OAuth must renew before an explicit project-create action.
+  final bool creationAuthorizationRequired;
 
   bool get isReady => state == ProvisioningState.ready;
 
@@ -582,17 +591,18 @@ class ProvisioningClient {
     return List<ProvisioningOrganization>.unmodifiable(organizations);
   }
 
-  /// Resolves the verified Management account before any project creation.
+  /// Verifies a remembered project first, or discovers compatible projects.
   Future<ProvisioningResolution> resolve(
     String transactionId, {
     required String capability,
+    String? projectRef,
   }) async {
     _requireTransactionId(transactionId);
     final response = await _send(
       method: 'POST',
       path: '${_transactionPath(transactionId)}/resolve',
       capability: capability,
-      body: const <String, dynamic>{},
+      body: <String, dynamic>{'projectRef': ?projectRef},
     );
     final json = _decodeObject(response);
     if (json['state'] == 'ready') {
@@ -1035,6 +1045,10 @@ class ProvisioningClient {
           json['authorizationCompleted'] == true ||
           _optionalString(json, 'subject') != null,
       authorizationFailed: json['authorizationFailed'] == true,
+      creationAuthorizationPending:
+          json['creationAuthorizationPending'] == true,
+      creationAuthorizationRequired:
+          json['creationAuthorizationRequired'] == true,
     );
   }
 

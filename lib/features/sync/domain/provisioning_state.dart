@@ -129,11 +129,12 @@ enum ProvisioningState {
     },
     ProvisioningState.projectCreating => const {
       ProvisioningState.projectReconciliationRequired,
+      ProvisioningState.projectRetryAuthorized,
       ProvisioningState.projectWaiting,
+      ProvisioningState.terminalError,
       ProvisioningState.expired,
     },
     ProvisioningState.projectReconciliationRequired => const {
-      ProvisioningState.projectRetryAuthorized,
       ProvisioningState.projectWaiting,
       ProvisioningState.terminalError,
       ProvisioningState.expired,
@@ -145,6 +146,7 @@ enum ProvisioningState {
     },
     ProvisioningState.projectWaiting => const {
       ProvisioningState.migrating,
+      ProvisioningState.terminalError,
       ProvisioningState.expired,
     },
     ProvisioningState.migrating => const {

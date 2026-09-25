@@ -24,6 +24,29 @@ export class ManagementAccountProject extends DurableObject<Env> {
     return "self";
   }
 
+  private creationOwner(): string | null {
+    return this.ctx.storage.sql.exec<{ transaction_id: string }>("SELECT transaction_id FROM creation_guard WHERE id=1").toArray()[0]?.transaction_id ?? null;
+  }
+
+  /** Worker-internal identity of the transaction that currently blocks creation. */
+  async currentCreationOwner(): Promise<string | null> {
+    return this.creationOwner();
+  }
+
+  /**
+   * Retires a guard only after the Worker proved that the exact project ref
+   * durably recorded by [expectedTransactionId] now returns authoritative 404.
+   * The project ref is required at this internal boundary so callers cannot
+   * accidentally turn an owner-only stale check into a release operation.
+   */
+  async releaseConfirmedMissingCreation(expectedTransactionId: string, expectedProjectRef: string) {
+    if (!/^[a-f0-9]{32}$/u.test(expectedTransactionId) || !/^[a-z]{20}$/u.test(expectedProjectRef)) return { kind: "conflict" as const };
+    const owner = this.creationOwner();
+    if (owner !== expectedTransactionId) return { kind: "conflict" as const };
+    this.ctx.storage.sql.exec("DELETE FROM creation_guard WHERE id=1 AND transaction_id=?", expectedTransactionId);
+    return { kind: "released" as const };
+  }
+
   /** Release only after a proven pre-create abort or a fully verified READY project. */
   async releaseCreation(transactionId: string) {
     this.ctx.storage.sql.exec("DELETE FROM creation_guard WHERE id=1 AND transaction_id=?", transactionId);

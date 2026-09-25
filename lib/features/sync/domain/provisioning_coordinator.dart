@@ -168,7 +168,7 @@ class ManagementCheckResult {
   const ManagementCheckResult({
     required this.outcome,
     this.status,
-    this.emailConfirmationRedirectAdopted = false,
+    this.readyProfileUpdated = false,
     this.mappedProjectRef,
     this.candidates = const <ProvisioningCandidate>[],
     this.message,
@@ -182,7 +182,7 @@ class ManagementCheckResult {
   /// True when this check recorded the Worker-verified confirmation-email
   /// redirect into the durable profile, so the runtime Auth client must be
   /// re-resolved before the next sign-up uses it.
-  final bool emailConfirmationRedirectAdopted;
+  final bool readyProfileUpdated;
   final String? mappedProjectRef;
   final List<ProvisioningCandidate> candidates;
 
@@ -299,6 +299,29 @@ class ProvisioningCoordinator {
       existing = null;
     }
 
+    // A second setup action or app restart must keep the transaction that may
+    // already have sent a project-create request. Its capability remains in
+    // secure storage, so the normal status path can resume it.
+    if (existing != null &&
+        const {
+          ProvisioningState.organizationSelected,
+          ProvisioningState.projectCreating,
+          ProvisioningState.projectReconciliationRequired,
+          ProvisioningState.projectRetryAuthorized,
+          ProvisioningState.projectWaiting,
+          ProvisioningState.migrating,
+          ProvisioningState.migrationReconciliationRequired,
+          ProvisioningState.verifying,
+        }.contains(existing.state) &&
+        existing.provisioningTransactionId != null) {
+      return _result(
+        await _hasCapability(existing.provisioningTransactionId!)
+            ? ProvisioningOutcome.inProgress
+            : ProvisioningOutcome.capabilityMissing,
+        profile: existing,
+      );
+    }
+
     final ProvisioningGrant grant;
     try {
       grant = await client.createTransaction();
@@ -332,6 +355,11 @@ class ProvisioningCoordinator {
         state: ProvisioningState.authorizationPending,
         createdAt: now,
         updatedAt: now,
+        // A confirmed missing ref must not trap the new attempt in an exact-X
+        // lookup. Broad discovery still requires this explicit setup action.
+        projectRef: existing?.remoteMissing == true
+            ? null
+            : existing?.projectRef,
         provisioningTransactionId: grant.transactionId,
       );
     } on BackendProfileValidationException {
@@ -395,10 +423,22 @@ class ProvisioningCoordinator {
     }),
   );
 
-  /// Restarts only Management OAuth after a failed callback. The transaction
-  /// and local project profile stay unchanged.
+  /// Restarts Management OAuth on the same transaction. After organization
+  /// selection this also renews an expired pre-create authorization; it never
+  /// calls the project-create route.
   Future<ProvisioningResult> retryAuthorization() => _serialized(
     () => _withAttempt((attempt, capability) async {
+      if (attempt.state == ProvisioningState.organizationSelected) {
+        final request = await client.startManagementAuthorization(
+          attempt.transactionId,
+          capability: capability,
+        );
+        return ProvisioningResult(
+          outcome: ProvisioningOutcome.inProgress,
+          profile: attempt.profile,
+          authorizationUrl: request.authorizationUrl,
+        );
+      }
       if (attempt.state != ProvisioningState.authorizationPending) {
         return _stale(attempt);
       }
@@ -435,6 +475,7 @@ class ProvisioningCoordinator {
       final resolution = await client.resolve(
         attempt.transactionId,
         capability: capability,
+        projectRef: attempt.profile.projectRef,
       );
       if (resolution.snapshot case final snapshot?) {
         return await _applySnapshot(attempt, snapshot);
@@ -545,8 +586,11 @@ class ProvisioningCoordinator {
       try {
         final snapshot = switch (attempt.profile.state) {
           ProvisioningState.organizationSelected ||
-          ProvisioningState.projectRetryAuthorized ||
-          ProvisioningState.projectCreating => await client.create(
+          ProvisioningState.projectRetryAuthorized => await client.create(
+            attempt.transactionId,
+            capability: capability,
+          ),
+          ProvisioningState.projectCreating => await client.snapshot(
             attempt.transactionId,
             capability: capability,
           ),
@@ -775,11 +819,11 @@ class ProvisioningCoordinator {
       }
       switch (check.existence) {
         case ProjectExistence.exists:
-          final adopted = await _recordVerifiedProject(check);
+          final updated = await _recordVerifiedProject(check);
           return ManagementCheckResult(
             outcome: ManagementCheckOutcome.exists,
             status: check.status,
-            emailConfirmationRedirectAdopted: adopted,
+            readyProfileUpdated: updated,
           );
         case ProjectExistence.missing:
           await _markRemoteMissing(attempt.projectRef);
@@ -954,24 +998,6 @@ class ProvisioningCoordinator {
         );
       });
 
-  /// Records authoritative "the project host answered 404" evidence.
-  ///
-  /// Returns true only when the durable READY profile was actually marked
-  /// remote-missing. Nothing is deleted: the profile keeps its project ref and
-  /// history so the user can inspect the state and choose what happens next.
-  Future<bool> markRemoteMissing() => _serialized(() async {
-    final profile = await _profileOrNull();
-    final projectRef = profile?.projectRef;
-    if (profile == null ||
-        profile.state != ProvisioningState.ready ||
-        projectRef == null ||
-        profile.remoteMissing) {
-      return profile?.remoteMissing ?? false;
-    }
-    await _markRemoteMissing(projectRef);
-    return true;
-  });
-
   /// True when a Management authorization is in flight on this device.
   Future<bool> hasPendingManagementAuthorization() async {
     try {
@@ -1018,7 +1044,7 @@ class ProvisioningCoordinator {
         ),
         expectedGeneration: profile.generation,
       );
-      return needsRedirect;
+      return needsRedirect || needsClear;
     } on ConnectionProfileStoreException {
       return false;
     } on StaleConnectionProfileException {
@@ -1489,7 +1515,18 @@ class ProvisioningCoordinator {
   ProvisioningResult _failure(
     ProvisioningApiException error, {
     BackendConnectionProfile? profile,
-  }) => error.code == 'project_deleted'
+  }) =>
+      profile?.state == ProvisioningState.organizationSelected &&
+          (error.code == 'provisioning_expired' ||
+              error.code == 'oauth_expired')
+      ? _result(
+          ProvisioningOutcome.needsUserAction,
+          profile: profile,
+          message:
+              'Supabase authorization expired before project creation. '
+              'Reauthorize this setup, then press Create project again.',
+        )
+      : error.code == 'project_deleted'
       ? _result(
           ProvisioningOutcome.projectDeleted,
           profile: profile,

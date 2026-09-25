@@ -123,9 +123,6 @@ abstract interface class ProvisioningApi {
 
   /// True when a Management authorization is still in flight on this device.
   Future<bool> hasPendingManagementAuthorization();
-
-  /// Records authoritative "the project host answered 404" evidence.
-  Future<bool> markRemoteMissing();
 }
 
 class _CoordinatorProvisioningApi implements ProvisioningApi {
@@ -207,9 +204,6 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
   @override
   Future<bool> hasPendingManagementAuthorization() =>
       _coordinator.hasPendingManagementAuthorization();
-
-  @override
-  Future<bool> markRemoteMissing() => _coordinator.markRemoteMissing();
 }
 
 /// Coordinator-backed provisioning API, or null when the control plane URL is

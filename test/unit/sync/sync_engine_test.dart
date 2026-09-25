@@ -437,6 +437,40 @@ void main() {
     }
   });
 
+  test('a recovered host clears only its reachability verdict', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity()
+      ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+    final gateway = _CountingGateway();
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, gateway, 'account'),
+      connectivity,
+    );
+    final snapshots = <SyncStatusSnapshot>[];
+    final subscription = engine.status.listen(snapshots.add);
+    try {
+      await engine.start();
+      final previous = await db.syncDao.getSetting('sync.last_success_at');
+      final pulls = gateway.pullCalls;
+
+      engine.noteBackendUnreachable();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(snapshots.last.state, SyncEngineState.backendUnavailable);
+      engine.noteBackendReachable();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(snapshots.last.state, SyncEngineState.synced);
+      expect(gateway.pullCalls, pulls);
+      expect(await db.syncDao.getSetting('sync.last_success_at'), previous);
+    } finally {
+      await subscription.cancel();
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
+
   test('transient backend failure recovers on connectivity restoration without duplicate states', () async {
     final db = AppDatabase(NativeDatabase.memory());
     final connectivity = _FakeConnectivity()
@@ -475,6 +509,68 @@ void main() {
       await db.close();
     }
   });
+
+  test(
+    'temporary backend failure preserves local category and queued outbox',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      final category = await CategoryRepository(db).insertCategory(
+        Category(
+          id: 'retained-category',
+          name: 'Retained locally',
+          colorHex: '#4285F4',
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+        ),
+      );
+      final gateway = _RecoveringPushGateway()..fail = true;
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, gateway, 'account'),
+        connectivity,
+      );
+      try {
+        await engine.start();
+        expect(
+          await CategoryRepository(db).getCategoryById(category.id),
+          isA<Category>(),
+        );
+        expect(
+          await db.syncDao.getActiveOperationsForRecord(
+            'categories',
+            category.id,
+          ),
+          hasLength(1),
+        );
+
+        gateway.fail = false;
+        connectivity.emit(const [ConnectivityResult.none]);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        connectivity.emit(const [ConnectivityResult.wifi]);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(
+          await CategoryRepository(db).getCategoryById(category.id),
+          isA<Category>(),
+        );
+        // A retry backoff may defer the upload, but the queued change stays
+        // durable until an actual server acknowledgement.
+        expect(
+          await db.syncDao.getActiveOperationsForRecord(
+            'categories',
+            category.id,
+          ),
+          isNotEmpty,
+        );
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
 
   test(
     'a request that never returns cannot pin the engine in syncing',
@@ -629,6 +725,36 @@ class _RecoveringGateway extends _NoopGateway {
       );
     }
     return Future<Object?>.value(const <Object>[]);
+  }
+}
+
+class _RecoveringPushGateway extends _RecoveringGateway {
+  @override
+  Future<Object?> applyOperation({
+    required String operationId,
+    required String tableName,
+    required String recordId,
+    required String operation,
+    required int? expectedServerVersion,
+    required Map<String, dynamic> payload,
+    required int payloadVersion,
+    String? baselineToken,
+  }) {
+    if (super.fail) {
+      return Future<Object?>.error(
+        Exception("ClientException with SocketException: Failed host lookup"),
+      );
+    }
+    return super.applyOperation(
+      operationId: operationId,
+      tableName: tableName,
+      recordId: recordId,
+      operation: operation,
+      expectedServerVersion: expectedServerVersion,
+      payload: payload,
+      payloadVersion: payloadVersion,
+      baselineToken: baselineToken,
+    );
   }
 }
 

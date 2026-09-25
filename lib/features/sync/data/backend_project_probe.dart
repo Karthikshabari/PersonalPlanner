@@ -6,8 +6,11 @@ enum BackendProjectProbeResult {
   /// The project host answered for this project.
   exists,
 
-  /// Supabase answered 404 for the project host: the project is gone.
+  /// The Auth health route answered 404; exact project existence is unknown.
   missing,
+
+  /// Auth rejected the health request; project existence is unknown.
+  accessDenied,
 
   /// Anything else — DNS, TLS, timeout, outage, rate limit — proves nothing.
   indeterminate,
@@ -17,13 +20,14 @@ enum BackendProjectProbeResult {
 ///
 /// Deliberately narrow:
 ///
-/// * an HTTP 404 is the only authoritative "missing" answer;
+/// * an HTTP 404 is recorded separately, but is not proof of deletion;
 /// * every transport problem (including DNS failure, which a deleted project
 ///   also causes, and which a broken network causes too) is [indeterminate];
 /// * a 5xx/429 is [indeterminate].
 ///
 /// Local-first behaviour never depends on this probe: it runs while the cloud
-/// UI is visible, and its only effect is to surface an authoritative deletion.
+/// UI is visible and only reports host reachability. Exact deletion requires
+/// a Management project lookup after user authorization.
 class BackendProjectProbe {
   BackendProjectProbe({
     HttpClient? client,
@@ -35,8 +39,12 @@ class BackendProjectProbe {
   final HttpClient _client;
   final Duration timeout;
 
-  /// Probes `<projectUrl>/auth/v1/health` for [projectUrl].
-  Future<BackendProjectProbeResult> probe(Uri projectUrl) async {
+  /// Probes `<projectUrl>/auth/v1/health` with the saved publishable API key.
+  /// Supabase's gateway requires this key even for the health endpoint.
+  Future<BackendProjectProbeResult> probe(
+    Uri projectUrl, {
+    required String publishableKey,
+  }) async {
     if (projectUrl.scheme != 'https' || projectUrl.host.isEmpty) {
       return BackendProjectProbeResult.indeterminate;
     }
@@ -44,16 +52,20 @@ class BackendProjectProbe {
       final request = await _client
           .getUrl(projectUrl.replace(path: '/auth/v1/health'))
           .timeout(timeout);
+      request.headers.set('apikey', publishableKey);
       request.followRedirects = false;
       final response = await request.close().timeout(timeout);
       await response.drain<void>().timeout(timeout);
       if (response.statusCode == 404) {
         return BackendProjectProbeResult.missing;
       }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return BackendProjectProbeResult.accessDenied;
+      }
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return BackendProjectProbeResult.exists;
       }
-      // 401/403/429 and 5xx all prove nothing about deletion.
+      // 429 and 5xx prove nothing about deletion.
       return BackendProjectProbeResult.indeterminate;
     } on TimeoutException {
       return BackendProjectProbeResult.indeterminate;

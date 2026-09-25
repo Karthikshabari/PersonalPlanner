@@ -4,23 +4,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 
-/// A deleted project must be reported as missing only when the project host
-/// itself answers 404; everything else must stay indeterminate so a network
-/// problem can never invalidate a working (or merely unreachable) backend.
+/// Health responses report reachability only. Exact project deletion requires
+/// a separate, authorized Management lookup.
 void main() {
   final project = Uri.parse('https://abcdefghijklmnopqrst.supabase.co');
 
-  test('treats only an HTTP 404 as authoritative deletion', () async {
+  test('classifies health responses without proving deletion', () async {
     for (final (status, expected) in <(int, BackendProjectProbeResult)>[
       (200, BackendProjectProbeResult.exists),
-      (401, BackendProjectProbeResult.indeterminate),
+      (401, BackendProjectProbeResult.accessDenied),
+      (403, BackendProjectProbeResult.accessDenied),
       (404, BackendProjectProbeResult.missing),
       (429, BackendProjectProbeResult.indeterminate),
       (500, BackendProjectProbeResult.indeterminate),
       (503, BackendProjectProbeResult.indeterminate),
     ]) {
       final probe = BackendProjectProbe(client: _FakeHttpClient(status));
-      expect(await probe.probe(project), expected, reason: 'HTTP $status');
+      expect(
+        await probe.probe(project, publishableKey: 'sb_publishable_test'),
+        expected,
+        reason: 'HTTP $status',
+      );
     }
   });
 
@@ -33,7 +37,7 @@ void main() {
     ]) {
       final probe = BackendProjectProbe(client: _FakeHttpClient(null, error));
       expect(
-        await probe.probe(project),
+        await probe.probe(project, publishableKey: 'sb_publishable_test'),
         BackendProjectProbeResult.indeterminate,
         reason: error.toString(),
       );
@@ -44,13 +48,18 @@ void main() {
     final client = _FakeHttpClient(200);
     final probe = BackendProjectProbe(client: client);
 
-    await probe.probe(project);
-    expect(client.requested.single.toString(), project.replace(
-      path: '/auth/v1/health',
-    ).toString());
+    await probe.probe(project, publishableKey: 'sb_publishable_test');
+    expect(
+      client.requested.single.toString(),
+      project.replace(path: '/auth/v1/health').toString(),
+    );
+    expect(client.lastRequest?.apiKey, 'sb_publishable_test');
 
     expect(
-      await probe.probe(Uri.parse('http://insecure.test')),
+      await probe.probe(
+        Uri.parse('http://insecure.test'),
+        publishableKey: 'sb_publishable_test',
+      ),
       BackendProjectProbeResult.indeterminate,
     );
   });
@@ -62,12 +71,13 @@ class _FakeHttpClient implements HttpClient {
   final int? status;
   final Object? error;
   final List<Uri> requested = <Uri>[];
+  _FakeRequest? lastRequest;
 
   @override
   Future<HttpClientRequest> getUrl(Uri url) async {
     requested.add(url);
     if (error != null) throw error!;
-    return _FakeRequest(status!);
+    return lastRequest = _FakeRequest(status!);
   }
 
   @override
@@ -81,13 +91,31 @@ class _FakeRequest implements HttpClientRequest {
   _FakeRequest(this._status);
 
   final int _status;
+  String? apiKey;
+
+  @override
+  HttpHeaders get headers => _FakeHeaders((name, value) {
+    if (name == 'apikey') apiKey = value.toString();
+  });
 
   @override
   bool followRedirects = true;
 
   @override
-  Future<HttpClientResponse> close() async =>
-      _FakeResponse(_status);
+  Future<HttpClientResponse> close() async => _FakeResponse(_status);
+
+  @override
+  noSuchMethod(Invocation invocation) => throw UnsupportedError('unused');
+}
+
+class _FakeHeaders implements HttpHeaders {
+  _FakeHeaders(this.onSet);
+
+  final void Function(String, Object) onSet;
+
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) =>
+      onSet(name, value);
 
   @override
   noSuchMethod(Invocation invocation) => throw UnsupportedError('unused');

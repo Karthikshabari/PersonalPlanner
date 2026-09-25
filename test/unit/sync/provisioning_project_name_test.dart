@@ -10,7 +10,7 @@ void main() {
 
     expect(
       provisioningProjectName(transactionId),
-      'personal-planner-0123456789ab',
+      'personal-planner-0123456789abcdef0123456789abcdef',
     );
     // The same attempt always produces the same identity, so retries continue
     // to reconcile against the same project.

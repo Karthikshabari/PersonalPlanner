@@ -397,7 +397,12 @@ class AuthSessionController {
     if (_disposed) return;
     _disposed = true;
     await _subscription?.cancel();
-    await _states.close();
-    await _callbackNotices.close();
+    // StreamController.close() waits for every paused listener to resume.
+    // Riverpod can pause a screen's listener during a backend switch, so
+    // awaiting these completion futures would hold runtime teardown forever.
+    // Closing still rejects later events immediately; listeners finish when
+    // their owners resume or dispose.
+    unawaited(_states.close());
+    unawaited(_callbackNotices.close());
   }
 }

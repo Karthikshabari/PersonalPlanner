@@ -22,21 +22,24 @@ const _workerStateNames = <String>[
 const _workerNext = <ProvisioningState, Set<ProvisioningState>>{
   ProvisioningState.authorizationPending: {
     ProvisioningState.organizationSelected,
+    ProvisioningState.ready,
     ProvisioningState.terminalError,
     ProvisioningState.expired,
   },
   ProvisioningState.organizationSelected: {
     ProvisioningState.projectCreating,
+    ProvisioningState.ready,
     ProvisioningState.terminalError,
     ProvisioningState.expired,
   },
   ProvisioningState.projectCreating: {
     ProvisioningState.projectReconciliationRequired,
+    ProvisioningState.projectRetryAuthorized,
     ProvisioningState.projectWaiting,
+    ProvisioningState.terminalError,
     ProvisioningState.expired,
   },
   ProvisioningState.projectReconciliationRequired: {
-    ProvisioningState.projectRetryAuthorized,
     ProvisioningState.projectWaiting,
     ProvisioningState.terminalError,
     ProvisioningState.expired,
@@ -48,6 +51,7 @@ const _workerNext = <ProvisioningState, Set<ProvisioningState>>{
   },
   ProvisioningState.projectWaiting: {
     ProvisioningState.migrating,
+    ProvisioningState.terminalError,
     ProvisioningState.expired,
   },
   ProvisioningState.migrating: {
@@ -142,7 +146,7 @@ void main() {
       isTrue,
     );
     expect(
-      ProvisioningState.projectReconciliationRequired.canTransitionTo(
+      ProvisioningState.projectCreating.canTransitionTo(
         ProvisioningState.projectRetryAuthorized,
       ),
       isTrue,
@@ -168,7 +172,7 @@ void main() {
   });
 
   test(
-    'ready, terminal and expired states cannot be skipped or re-entered',
+    'verified adoption can reach ready; terminal states cannot be re-entered',
     () {
       expect(
         ProvisioningState.verifying.canTransitionTo(ProvisioningState.ready),
@@ -178,7 +182,7 @@ void main() {
         ProvisioningState.authorizationPending.canTransitionTo(
           ProvisioningState.ready,
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         ProvisioningState.ready.canTransitionTo(ProvisioningState.verifying),

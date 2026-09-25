@@ -26,7 +26,7 @@ String provisioningProjectName(String transactionId) {
       'must be a 32 character lowercase hexadecimal transaction id',
     );
   }
-  return 'personal-planner-${transactionId.substring(0, 12)}';
+  return 'personal-planner-$transactionId';
 }
 
 // User-facing copy. Kept here so widgets and tests share one wording.
@@ -46,6 +46,9 @@ const cloudSetupAuthorizationBody =
 const cloudSetupWaitingMessage =
     'Waiting for Supabase authorization. Finish the steps in your browser — '
     'setup continues automatically, even if you authorize on another device.';
+const cloudSetupCreationAuthorizationWaitingMessage =
+    'Finish Supabase authorization in your browser. Return here, then press '
+    'Create project.';
 const cloudSetupStillWaitingMessage =
     'Supabase authorization is not complete yet. Finish it in your browser; '
     'setup continues automatically.';
@@ -72,6 +75,29 @@ const cloudSetupStaleMessage =
 const cloudSetupNeedsUserActionMessage =
     'That Supabase organization is no longer available for setup. Choose an '
     'organization and try again.';
+const cloudSetupQuotaMessage =
+    'Supabase could not create another active project because your project '
+    'limit was reached. Pause or remove an unused project in Supabase, then '
+    'try again. Your Planner data is safe.';
+const cloudSetupCreationRejectedMessage =
+    'Supabase rejected project creation. Check your organization permissions '
+    'and plan in Supabase before starting setup again. Your Planner data is safe.';
+const cloudSetupProjectHealthFailedMessage =
+    'Supabase reports that the new project failed to start. Check its status '
+    'in the Supabase Dashboard. Your Planner data is safe.';
+String cloudSetupTerminalMessageForCode(String? code) => switch (code) {
+  'project_quota_reached' => cloudSetupQuotaMessage,
+  'project_creation_rejected' => cloudSetupCreationRejectedMessage,
+  'project_health_failed' => cloudSetupProjectHealthFailedMessage,
+  _ => cloudSetupTerminalMessage,
+};
+const cloudSetupIndeterminateMessage =
+    'Supabase may have created the project, but its response could not be '
+    'confirmed. Check for the project before trying setup again. Your Planner '
+    'data is safe.';
+const cloudSetupRateLimitedMessage =
+    'Supabase is limiting project creation requests. Wait a minute, then '
+    'retry this same setup attempt.';
 const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
@@ -148,8 +174,13 @@ const cloudSetupCheckIndeterminateMessage =
 const cloudSetupRevokeCheckingMessage = 'Checking Supabase access…';
 const cloudSetupProjectUnreachableHintMessage =
     'Your cloud project couldn\'t be reached right now. That usually means you '
-    'are offline, and it does not mean your project was deleted. Your local '
-    'Planner data is safe.';
+    'are offline; the host check cannot tell whether the project was deleted. '
+    'Your local Planner data is safe. Check cloud project with Supabase if the '
+    'problem persists.';
+const cloudSetupProjectAccessHintMessage =
+    'Supabase rejected the cloud health check. The project may still exist; '
+    'your local Planner data is safe. Check cloud project with Supabase to '
+    'confirm its status.';
 const cloudSetupNothingToRevokeMessage =
     'Personal Planner is not holding temporary Supabase access right now, so '
     'there is nothing to cancel. Access is released as soon as each check '
@@ -183,6 +214,12 @@ enum ProvisioningUiPhase {
 
   /// Organizations were discovered and the user must choose one.
   organizationSelection,
+
+  /// An organization is selected; creation still needs an explicit press.
+  creationConfirmation,
+
+  /// The selected organization is retained, but Management OAuth must renew.
+  creationAuthorizationRequired,
 
   /// Verified legacy Planner projects need an explicit first binding.
   candidateSelection,
@@ -230,6 +267,24 @@ enum CloudSetupStage {
 /// is gone. It only lets the card say "connection unavailable" instead of
 /// claiming a healthy connection it could not confirm.
 enum CloudReachability { unknown, reachable, unavailable }
+
+/// Retry only a failed READY-project host probe, with a capped idle interval.
+/// A healthy connection has no probe timer.
+Duration cloudReachabilityRetryDelay(int consecutiveFailures) {
+  const delays = <Duration>[
+    Duration(seconds: 15),
+    Duration(seconds: 30),
+    Duration(minutes: 1),
+    Duration(minutes: 2),
+    Duration(minutes: 5),
+  ];
+  final index = (consecutiveFailures - 1).clamp(0, delays.length - 1);
+  return delays[index];
+}
+
+final cloudReachabilityRetryDelayProvider = Provider<Duration Function(int)>(
+  (ref) => cloudReachabilityRetryDelay,
+);
 
 class ProvisioningUiState {
   const ProvisioningUiState({
@@ -349,8 +404,12 @@ class ProvisioningUiState {
 
 class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Timer? _timer;
+  Timer? _reachabilityRetryTimer;
+  int _reachabilityFailures = 0;
   bool _operationInFlight = false;
+  bool _creationReconcileAttempted = false;
   bool _watching = false;
+  bool _appActive = true;
   Uri? _authorizationUrl;
   StreamSubscription<String>? _linkSubscription;
 
@@ -358,6 +417,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Future<ProvisioningUiState> build() async {
     ref.onDispose(() {
       _cancelTimer();
+      _cancelReachabilityRetry();
       unawaited(_linkSubscription?.cancel());
       _linkSubscription = null;
     });
@@ -413,8 +473,28 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       await verifyProjectHost();
       return;
     }
+    if (phase == ProvisioningUiPhase.creationConfirmation) {
+      // The app may have closed after the Worker accepted Create but before
+      // Flutter received its response. Read the transaction before showing a
+      // fresh Create action; this GET can never submit another project.
+      _applyState(
+        ProvisioningUiState(
+          phase: ProvisioningUiPhase.provisioning,
+          stage: CloudSetupStage.preparingProject,
+          transactionId: state.value?.transactionId,
+        ),
+      );
+      try {
+        final checked = await api.refresh();
+        _applyResult(checked);
+      } on ProvisioningApiException {
+        // The durable Worker guard remains authoritative if status is offline.
+      }
+      return;
+    }
     if (phase == ProvisioningUiPhase.waitingForAuthorization ||
-        phase == ProvisioningUiPhase.provisioning) {
+        phase == ProvisioningUiPhase.provisioning ||
+        phase == ProvisioningUiPhase.retryableError) {
       await advance();
     }
   }
@@ -424,6 +504,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   void stopWatching() {
     _watching = false;
     _cancelTimer();
+    _cancelReachabilityRetry();
+  }
+
+  /// Suspend host retries while the card's app is backgrounded. Resume events
+  /// perform an immediate probe, then restore backoff only if it still fails.
+  void setReachabilityChecksActive(bool active) {
+    _appActive = active;
+    if (!active) {
+      _cancelReachabilityRetry();
+    } else {
+      _syncReachabilityRetry();
+    }
   }
 
   /// Reloads durable state without touching the network.
@@ -590,17 +682,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           (current) => current.copyWith(
             managementCheckInFlight: false,
             reachability: CloudReachability.reachable,
-            message: result.emailConfirmationRedirectAdopted
+            message: result.readyProfileUpdated
                 ? cloudSetupReauthorizedWithRedirectMessage
                 : cloudSetupReauthorizedMessage,
           ),
         );
-        if (result.emailConfirmationRedirectAdopted) {
+        if (result.readyProfileUpdated) {
           await ref.read(runtimeBackendReloaderProvider)?.reload();
         }
         return;
       case ManagementCheckOutcome.missing:
         _showRemoteMissing(status: result.status);
+        await ref.read(runtimeBackendReloaderProvider)?.reload();
         return;
       case ManagementCheckOutcome.needsAuthorization:
         _update(
@@ -683,7 +776,6 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     final result = await api.recoverMappedProject();
     if (result.outcome == ProvisioningOutcome.ready) {
       _applyResult(result);
-      await ref.read(runtimeBackendReloaderProvider)?.reload();
     } else {
       _update(
         (current) => current.copyWith(
@@ -753,17 +845,29 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
 
   /// Bounded probe of the user's own project host, run while this card is open.
   ///
-  /// Only a 404 is authoritative ("the project is gone"); DNS failures,
-  /// timeouts, and outages prove nothing and leave READY untouched.
-  Future<void> verifyProjectHost() => _run(() async {
+  /// Host reachability cannot establish whether the project was deleted.
+  /// Only the exact-project Management check can make that determination.
+  Future<void> verifyProjectHost() {
+    _cancelReachabilityRetry();
+    return _probeProjectHost(markBusy: true);
+  }
+
+  Future<void> _probeProjectHost({required bool markBusy}) => _run(() async {
     final api = _api;
     final profile = state.value?.readyProfile;
     final projectUrl = profile?.projectUrl;
-    if (api == null || projectUrl == null) return;
-    final probed = await ref
-        .read(backendProjectProbeProvider)
-        .probe(Uri.parse(projectUrl));
+    final publishableKey = profile?.publishableKey;
+    if (api == null || projectUrl == null || publishableKey == null) return;
+    BackendProjectProbeResult probed;
+    try {
+      probed = await ref
+          .read(backendProjectProbeProvider)
+          .probe(Uri.parse(projectUrl), publishableKey: publishableKey);
+    } on Exception {
+      probed = BackendProjectProbeResult.indeterminate;
+    }
     if (probed == BackendProjectProbeResult.exists) {
+      _reachabilityFailures = 0;
       _update(
         (current) => current.copyWith(
           reachability: CloudReachability.reachable,
@@ -772,7 +876,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       );
       return;
     }
-    if (probed == BackendProjectProbeResult.indeterminate) {
+    if (probed == BackendProjectProbeResult.indeterminate ||
+        probed == BackendProjectProbeResult.missing ||
+        probed == BackendProjectProbeResult.accessDenied) {
+      _reachabilityFailures += 1;
       // A DNS failure, timeout, or outage proves nothing, so the backend stays
       // READY. The card reports the connection as unavailable without ever
       // claiming the project was deleted, and keeps an authoritative check
@@ -780,18 +887,14 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       _update(
         (current) => current.copyWith(
           reachability: CloudReachability.unavailable,
-          message: cloudSetupProjectUnreachableHintMessage,
+          message: probed == BackendProjectProbeResult.accessDenied
+              ? cloudSetupProjectAccessHintMessage
+              : cloudSetupProjectUnreachableHintMessage,
         ),
       );
       return;
     }
-    if (probed != BackendProjectProbeResult.missing) return;
-    // The project host answered 404 for this exact project, which is the only
-    // authoritative answer this probe accepts.
-    final marked = await api.markRemoteMissing();
-    if (!marked) return;
-    _showRemoteMissing(status: 'host_not_found');
-  });
+  }, markBusy: markBusy);
 
   /// Reconciles an earlier lightweight-probe failure with stronger evidence
   /// from the normal Planner data path.
@@ -805,6 +908,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         current?.reachability != CloudReachability.unavailable) {
       return;
     }
+    _reachabilityFailures = 0;
     _update(
       (value) => value.copyWith(
         reachability: CloudReachability.reachable,
@@ -839,9 +943,6 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       return;
     }
     _applyResult(result);
-    if (legacyRecovery && result.outcome == ProvisioningOutcome.ready) {
-      await ref.read(runtimeBackendReloaderProvider)?.reload();
-    }
   });
 
   /// Confirms the chosen organization for the current attempt.
@@ -858,9 +959,60 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _applyResult(result);
   });
 
+  /// The only UI action that starts a new upstream project creation.
+  Future<void> createProject() => _run(() async {
+    final api = _api;
+    if (api == null ||
+        state.value?.phase != ProvisioningUiPhase.creationConfirmation) {
+      return;
+    }
+    final attempt = await api.loadAttempt();
+    if (attempt?.state != ProvisioningState.organizationSelected) return;
+    _applyResult(await api.createOrContinueProject());
+  });
+
   /// Retries the next step, issuing fresh PKCE state on the same transaction
   /// when the previous OAuth callback failed after consuming its state.
   Future<void> retry() {
+    if (state.value?.phase ==
+        ProvisioningUiPhase.creationAuthorizationRequired) {
+      return _run(() async {
+        final api = _api;
+        if (api == null) return;
+        final result = await api.retryAuthorization();
+        final url = result.authorizationUrl;
+        if (result.outcome != ProvisioningOutcome.inProgress || url == null) {
+          _applyResult(result);
+          return;
+        }
+        _authorizationUrl = url;
+        final opened = await ref.read(browserLauncherProvider).open(url);
+        _applyState(
+          ProvisioningUiState(
+            phase: ProvisioningUiPhase.waitingForAuthorization,
+            transactionId: result.profile?.provisioningTransactionId,
+            authorizationUrlAvailable: true,
+            message: opened
+                ? cloudSetupCreationAuthorizationWaitingMessage
+                : cloudSetupBrowserLaunchFailedMessage,
+          ),
+        );
+      });
+    }
+    if (state.value?.phase == ProvisioningUiPhase.retryableError &&
+        !(state.value?.authorizationRetryAvailable ?? false)) {
+      return _run(() async {
+        final api = _api;
+        if (api == null) return;
+        final attempt = await api.loadAttempt();
+        if (attempt?.state == ProvisioningState.projectReconciliationRequired ||
+            attempt?.state == ProvisioningState.projectRetryAuthorized) {
+          _applyResult(await api.createOrContinueProject());
+        } else {
+          await _advanceStep();
+        }
+      });
+    }
     if (!(state.value?.authorizationRetryAvailable ?? false)) return advance();
     return _run(() async {
       final api = _api;
@@ -962,7 +1114,14 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       case ProvisioningState.projectCreating:
       case ProvisioningState.projectReconciliationRequired:
       case ProvisioningState.projectRetryAuthorized:
-        _applyResult(await api.createOrContinueProject());
+        final refreshed = await api.refresh();
+        _applyResult(refreshed);
+        if (refreshed.profile?.state ==
+                ProvisioningState.projectReconciliationRequired &&
+            !_creationReconcileAttempted) {
+          _creationReconcileAttempted = true;
+          _applyResult(await api.createOrContinueProject());
+        }
         return;
       case ProvisioningState.projectWaiting:
       case ProvisioningState.migrating:
@@ -978,6 +1137,12 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Future<void> _continueAfterAuthorization(ProvisioningApi api) async {
     final refreshed = await api.refresh();
     if (refreshed.outcome != ProvisioningOutcome.inProgress) {
+      _applyResult(refreshed);
+      return;
+    }
+    // A lost organization-selection response may leave the local profile one
+    // step behind the Worker. Never re-enter discovery after selection.
+    if (refreshed.profile?.state != ProvisioningState.authorizationPending) {
       _applyResult(refreshed);
       return;
     }
@@ -1063,6 +1228,13 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
 
   ProvisioningUiState _stateForAttempt(ProvisioningAttempt attempt) {
     if (attempt.state == ProvisioningState.ready) {
+      if (attempt.profile.remoteMissing) {
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.remoteMissing,
+          transactionId: attempt.transactionId,
+          readyProfile: attempt.profile,
+        );
+      }
       if (attempt.profile.connectionDisabled) {
         return ProvisioningUiState(
           phase: ProvisioningUiPhase.disconnected,
@@ -1099,7 +1271,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         phase: ProvisioningUiPhase.terminalError,
         transactionId: attempt.transactionId,
         errorCode: attempt.profile.errorCode,
-        message: cloudSetupTerminalMessage,
+        message: cloudSetupTerminalMessageForCode(attempt.profile.errorCode),
       );
     }
     return _provisioningState(
@@ -1111,8 +1283,43 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   ProvisioningUiState _provisioningState({
     required String? transactionId,
     required ProvisioningState? workerState,
+    bool creationAuthorizationPending = false,
+    bool creationAuthorizationRequired = false,
   }) {
     switch (workerState) {
+      case ProvisioningState.organizationSelected:
+        if (creationAuthorizationPending) {
+          return ProvisioningUiState(
+            phase: ProvisioningUiPhase.waitingForAuthorization,
+            transactionId: transactionId,
+            message: cloudSetupCreationAuthorizationWaitingMessage,
+          );
+        }
+        if (creationAuthorizationRequired) {
+          return ProvisioningUiState(
+            phase: ProvisioningUiPhase.creationAuthorizationRequired,
+            transactionId: transactionId,
+            message:
+                'Supabase authorization expired before project creation. '
+                'Reauthorize this setup, then press Create project again.',
+          );
+        }
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.creationConfirmation,
+          transactionId: transactionId,
+        );
+      case ProvisioningState.projectReconciliationRequired:
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.retryableError,
+          transactionId: transactionId,
+          message: cloudSetupIndeterminateMessage,
+        );
+      case ProvisioningState.projectRetryAuthorized:
+        return ProvisioningUiState(
+          phase: ProvisioningUiPhase.retryableError,
+          transactionId: transactionId,
+          message: cloudSetupRateLimitedMessage,
+        );
       case ProvisioningState.authorizationPending:
         return ProvisioningUiState(
           phase: ProvisioningUiPhase.waitingForAuthorization,
@@ -1197,6 +1404,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         final next = _provisioningState(
           transactionId: id,
           workerState: profile?.state,
+          creationAuthorizationPending:
+              result.snapshot?.creationAuthorizationPending ?? false,
+          creationAuthorizationRequired:
+              result.snapshot?.creationAuthorizationRequired ?? false,
         );
         _applyState(
           ProvisioningUiState(
@@ -1204,6 +1415,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             stage: next.stage,
             transactionId: next.transactionId,
             authorizationUrlAvailable: canReopen,
+            message: next.message,
           ),
         );
         return;
@@ -1234,7 +1446,9 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.terminalError,
             transactionId: id,
             errorCode: profile?.errorCode,
-            message: result.message ?? cloudSetupTerminalMessage,
+            message:
+                result.message ??
+                cloudSetupTerminalMessageForCode(profile?.errorCode),
           ),
         );
         return;
@@ -1249,6 +1463,17 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
       case ProvisioningOutcome.needsUserAction:
+        if (profile?.state == ProvisioningState.organizationSelected) {
+          _cancelTimer();
+          _applyState(
+            ProvisioningUiState(
+              phase: ProvisioningUiPhase.creationAuthorizationRequired,
+              transactionId: id,
+              message: result.message,
+            ),
+          );
+          return;
+        }
         _applyState(
           ProvisioningUiState(
             phase: ProvisioningUiPhase.retryableError,
@@ -1315,6 +1540,47 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     _timer = null;
   }
 
+  void _cancelReachabilityRetry() {
+    _reachabilityRetryTimer?.cancel();
+    _reachabilityRetryTimer = null;
+  }
+
+  void _syncReachabilityRetry() {
+    final current = state.value;
+    if (!_watching ||
+        !_appActive ||
+        current?.phase != ProvisioningUiPhase.ready ||
+        current?.reachability != CloudReachability.unavailable) {
+      _cancelReachabilityRetry();
+      _reachabilityFailures = 0;
+      return;
+    }
+    if (_operationInFlight || _reachabilityRetryTimer != null) return;
+    final delay = ref.read(cloudReachabilityRetryDelayProvider)(
+      _reachabilityFailures,
+    );
+    _reachabilityRetryTimer = Timer(delay, () {
+      _reachabilityRetryTimer = null;
+      if (!_watching ||
+          !_appActive ||
+          state.value?.phase != ProvisioningUiPhase.ready ||
+          state.value?.reachability != CloudReachability.unavailable ||
+          _operationInFlight) {
+        return;
+      }
+      unawaited(_retryProjectHost());
+    });
+  }
+
+  Future<void> _retryProjectHost() async {
+    try {
+      await _probeProjectHost(markBusy: false);
+    } on Exception {
+      // The READY profile remains authoritative. A failed retry is still
+      // unavailable and the next bounded retry is scheduled by _run.
+    }
+  }
+
   /// True while the screen is open *and* the durable state is still waiting on
   /// something the server does on its own.
   ///
@@ -1360,6 +1626,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   void _applyState(ProvisioningUiState next) {
     state = AsyncData(next);
     _syncRefreshTimer();
+    _syncReachabilityRetry();
   }
 
   void _update(
@@ -1370,6 +1637,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         const ProvisioningUiState(phase: ProvisioningUiPhase.localOnly);
     state = AsyncData(transform(current));
     _syncRefreshTimer();
+    _syncReachabilityRetry();
   }
 
   /// Serializes UI actions so a double tap cannot start the same operation
@@ -1379,13 +1647,26 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     bool markBusy = true,
   }) async {
     if (_operationInFlight) return;
+    final enteredFrom = state.value?.phase;
     _operationInFlight = true;
     if (markBusy) _update((current) => current.copyWith(busy: true));
     try {
       await body();
     } finally {
       _operationInFlight = false;
-      if (markBusy) _update((current) => current.copyWith(busy: false));
+      if (markBusy && ref.mounted) {
+        _update((current) => current.copyWith(busy: false));
+      }
+      if (enteredFrom != ProvisioningUiPhase.ready &&
+          ref.mounted &&
+          state.value?.phase == ProvisioningUiPhase.ready) {
+        // READY is durable at this point. Install its Auth/runtime providers
+        // before checking the host, so the screen and sync use the same backend
+        // without a second Management verification or an unawaited UI race.
+        await ref.read(runtimeBackendReloaderProvider)?.reload();
+        if (ref.mounted) await verifyProjectHost();
+      }
+      if (ref.mounted) _syncReachabilityRetry();
     }
   }
 }

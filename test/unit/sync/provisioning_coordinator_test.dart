@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/features/sync/data/connection_profile_store.dart';
 import 'package:personal_planner/features/sync/data/management_attempt_store.dart';
 import 'package:personal_planner/features/sync/data/provisioning_capability_store.dart';
@@ -13,6 +16,7 @@ import 'package:personal_planner/features/sync/domain/provisioning_coordinator.d
 import 'package:personal_planner/features/sync/domain/provisioning_state.dart';
 
 import '../../helpers/runtime_auth_fakes.dart';
+import '../../helpers/sqlite_setup.dart';
 
 const _projectRef = 'abcdefghijklmnopqrst';
 const _otherProjectRef = 'bcdefghijklmnopqrstu';
@@ -47,6 +51,11 @@ class _FakeTransport implements ProvisioningTransport {
             body: body is String ? body : jsonEncode(body),
           ),
         );
+  }
+
+  void replaceReply(String method, String path, Object body) {
+    _responses.remove(keyOf(method, path));
+    reply(method, path, body);
   }
 
   void fail(String method, String path, Object error) {
@@ -185,6 +194,7 @@ Future<void> _awaitRequests(_FakeTransport transport, int count) async {
 }
 
 void main() {
+  setupSqliteForTests();
   late Directory directory;
   late _FailingProfileStore profileStore;
   late _MemoryCapabilityStore capabilityStore;
@@ -225,6 +235,7 @@ void main() {
     String transactionId = _transactionA,
     bool withCapability = true,
     bool withProject = false,
+    bool remoteMissing = false,
   }) async {
     final existing = await profileStore.read();
     seedCounter += 1;
@@ -238,6 +249,7 @@ void main() {
       projectRef: withProject ? _projectRef : null,
       projectUrl: withProject ? 'https://$_projectRef.supabase.co' : null,
       publishableKey: state == ProvisioningState.ready ? _publishableKey : null,
+      remoteMissing: remoteMissing,
     );
     await profileStore.save(profile, expectedGeneration: existing?.generation);
     if (withCapability) {
@@ -254,6 +266,44 @@ void main() {
           .readAsStringSync();
 
   group('project-centric resolution', () {
+    test(
+      'explicit setup after confirmed deletion runs broad discovery',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.ready,
+          withProject: true,
+          remoteMissing: true,
+        );
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+
+        final started = await buildCoordinator().startAttempt();
+
+        expect(started.outcome, ProvisioningOutcome.inProgress);
+        expect(started.profile?.projectRef, isNull);
+        expect(await profileStore.read(), isNotNull);
+        expect(transport.keys, <String>['POST $_transactionsPath']);
+
+        transport.reply('POST', '${_snapshotPath(_transactionB)}/resolve', {
+          'kind': 'candidates',
+          'candidates': [
+            {'projectRef': _otherProjectRef, 'name': 'Other Planner cloud'},
+          ],
+        });
+        final resolution = await buildCoordinator().resolveProject();
+        expect(resolution.candidates.single.projectRef, _otherProjectRef);
+        expect(resolution.outcome, ProvisioningOutcome.inProgress);
+        expect(jsonDecode(transport.requests.last.body!)['projectRef'], isNull);
+        expect(
+          transport.keys,
+          isNot(contains('POST ${_snapshotPath(_transactionB)}/adopt')),
+        );
+        expect(
+          transport.keys,
+          isNot(contains('POST ${_snapshotPath(_transactionB)}/create')),
+        );
+      },
+    );
+
     test(
       'explicit recovery after a deleted selected candidate restarts discovery',
       () async {
@@ -328,7 +378,10 @@ void main() {
       final result = await buildCoordinator().adoptProject(_projectRef);
 
       expect(result.outcome, ProvisioningOutcome.projectDeleted);
-      expect((await profileStore.read())!.state, ProvisioningState.authorizationPending);
+      expect(
+        (await profileStore.read())!.state,
+        ProvisioningState.authorizationPending,
+      );
       expect(transport.keys, <String>[
         'POST ${_snapshotPath(_transactionA)}/adopt',
       ]);
@@ -336,6 +389,32 @@ void main() {
   });
 
   group('start', () {
+    test(
+      'carries a READY project through OAuth into exact resolution',
+      () async {
+        await seedProfile(state: ProvisioningState.ready, withProject: true);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+        final coordinator = buildCoordinator();
+        final started = await coordinator.startAttempt();
+        expect(started.profile?.projectRef, _projectRef);
+        expect((await profileStore.read())?.projectRef, _projectRef);
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionB)}/resolve',
+          _snapshotBody(
+            'ready',
+            projectRef: _projectRef,
+            runtimeConfig: _runtimeConfigBody(),
+          ),
+        );
+        final resolved = await buildCoordinator().resolveProject();
+        expect(resolved.outcome, ProvisioningOutcome.ready);
+        final sent = transport.requests.last;
+        expect(jsonDecode(sent.body!)['projectRef'], _projectRef);
+        expect((await profileStore.read())?.projectRef, _projectRef);
+      },
+    );
+
     test(
       'creates a durable attempt and keeps the capability out of it',
       () async {
@@ -695,13 +774,10 @@ void main() {
       transport.reply(
         'POST',
         '${_snapshotPath(_transactionA)}/reconcile',
-        _snapshotBody('project_retry_authorized'),
+        _snapshotBody('project_waiting', projectRef: _projectRef),
       );
       final reconciled = await buildCoordinator().createOrContinueProject();
-      expect(
-        reconciled.profile!.state,
-        ProvisioningState.projectRetryAuthorized,
-      );
+      expect(reconciled.profile!.state, ProvisioningState.projectWaiting);
 
       await seedProfile(
         state: ProvisioningState.projectWaiting,
@@ -720,23 +796,72 @@ void main() {
       );
     });
 
-    test('reports an in-progress conflict as retryable', () async {
+    test('reads an in-progress create without posting create again', () async {
       await seedProfile(state: ProvisioningState.projectCreating);
       transport.reply(
-        'POST',
-        '${_snapshotPath(_transactionA)}/create',
-        <String, dynamic>{'error': 'operation_in_progress'},
-        status: 409,
+        'GET',
+        _snapshotPath(_transactionA),
+        _snapshotBody('project_creating'),
       );
 
       final result = await buildCoordinator().createOrContinueProject();
 
-      expect(result.outcome, ProvisioningOutcome.retryable);
+      expect(result.outcome, ProvisioningOutcome.inProgress);
       expect(
         (await profileStore.read())!.state,
         ProvisioningState.projectCreating,
       );
+      expect(transport.keys, <String>['GET ${_snapshotPath(_transactionA)}']);
     });
+
+    test(
+      'expired pre-create transaction reauthorizes on the same attempt',
+      () async {
+        await seedProfile(state: ProvisioningState.organizationSelected);
+        final path = _snapshotPath(_transactionA);
+        transport.reply('POST', '$path/create', <String, dynamic>{
+          'error': 'provisioning_expired',
+        }, status: 410);
+        final expired = await buildCoordinator().createOrContinueProject();
+        expect(expired.outcome, ProvisioningOutcome.needsUserAction);
+        expect(expired.profile!.provisioningTransactionId, _transactionA);
+        expect(capabilityStore.values[_transactionA], _capability);
+
+        transport.reply('POST', '$path/authorization/start', <String, dynamic>{
+          'authorizationUrl':
+              'https://api.supabase.com/v1/oauth/authorize?client_id=x',
+          'expiresIn': 900,
+        });
+        final renewed = await buildCoordinator().retryAuthorization();
+        expect(renewed.outcome, ProvisioningOutcome.inProgress);
+        expect(renewed.profile!.state, ProvisioningState.organizationSelected);
+        expect(renewed.profile!.provisioningTransactionId, _transactionA);
+        expect(renewed.authorizationUrl, isNotNull);
+        expect(transport.keys, <String>[
+          'POST $path/create',
+          'POST $path/authorization/start',
+        ]);
+      },
+    );
+
+    test(
+      'expired Management token on reopen keeps the selected organization',
+      () async {
+        await seedProfile(state: ProvisioningState.organizationSelected);
+        final path = _snapshotPath(_transactionA);
+        transport.reply('GET', path, <String, dynamic>{
+          'error': 'oauth_expired',
+        }, status: 401);
+        final resumed = buildCoordinator();
+        final refreshed = await resumed.refresh();
+        expect(refreshed.outcome, ProvisioningOutcome.needsUserAction);
+        expect(refreshed.profile!.provisioningTransactionId, _transactionA);
+        expect(capabilityStore.values[_transactionA], _capability);
+        final restarted = await resumed.startAttempt();
+        expect(restarted.profile!.provisioningTransactionId, _transactionA);
+        expect(transport.keys, <String>['GET $path']);
+      },
+    );
 
     test('a project appearing after creation reservation returns to explicit candidate selection', () async {
       await seedProfile(state: ProvisioningState.organizationSelected);
@@ -1107,6 +1232,21 @@ void main() {
       );
     });
 
+    test(
+      'another setup action resumes the active creation transaction',
+      () async {
+        await seedProfile(state: ProvisioningState.projectCreating);
+        final before = transport.requests.length;
+
+        final resumed = await buildCoordinator().startAttempt();
+
+        expect(resumed.outcome, ProvisioningOutcome.inProgress);
+        expect(resumed.profile!.provisioningTransactionId, _transactionA);
+        expect(transport.requests.length, before);
+        expect(capabilityStore.values[_transactionA], _capability);
+      },
+    );
+
     test('a corrupt profile does not block starting a new attempt', () async {
       File(p.join(directory.path, plannerBackendProfileFileName))
           .writeAsStringSync('{"format_version":1,"state":');
@@ -1344,7 +1484,7 @@ void main() {
 
         expect(result.outcome, ManagementCheckOutcome.exists);
         expect(result.status, 'ACTIVE_HEALTHY');
-        expect(result.emailConfirmationRedirectAdopted, isTrue);
+        expect(result.readyProfileUpdated, isTrue);
         final profile = (await profileStore.read())!;
         expect(profile.state, ProvisioningState.ready);
         expect(profile.remoteMissing, isFalse);
@@ -1360,6 +1500,29 @@ void main() {
     test(
       'marks the backend remote-missing only on an authoritative 404',
       () async {
+        final database = AppDatabase(NativeDatabase.memory());
+        addTearDown(database.close);
+        await database.taskDao.insertTask(
+          TasksCompanion.insert(
+            id: 'local-task',
+            title: 'Keep this local task',
+            createdAt: clock,
+            updatedAt: clock,
+          ),
+        );
+        await database.syncDao.enqueueOperation(
+          SyncLogCompanion.insert(
+            operationId: 'pending-local-change',
+            entityTableName: 'tasks',
+            recordId: 'local-task',
+            operation: 'update',
+            payload: '{}',
+            state: const Value('pending'),
+            createdAt: clock,
+            updatedAt: clock,
+          ),
+        );
+        final pendingBefore = await database.syncDao.pendingCount();
         await seedProfile(state: ProvisioningState.ready, withProject: true);
         transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
         await buildCoordinator().startManagementCheck();
@@ -1382,6 +1545,11 @@ void main() {
         expect(profile.publishableKey, _publishableKey);
         expect(profile.generation, greaterThan(1));
         expect(await attemptStore.read(), isNull);
+        expect(
+          (await database.taskDao.getTaskById('local-task'))?.title,
+          'Keep this local task',
+        );
+        expect(await database.syncDao.pendingCount(), pendingBefore);
       },
     );
 
@@ -1433,16 +1601,26 @@ void main() {
     });
 
     test(
-      'records host-404 evidence and clears it after a confirmed project',
+      'clears a previously confirmed missing project after exact verification',
       () async {
         await seedProfile(state: ProvisioningState.ready, withProject: true);
-
-        expect(await buildCoordinator().markRemoteMissing(), isTrue);
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
+        await buildCoordinator().startManagementCheck();
+        transport.reply('POST', checkPath(), <String, dynamic>{
+          'projectExists': false,
+          'projectStatus': 'missing',
+          'emailConfirmationRedirect': null,
+          'grantReleased': true,
+        });
+        expect(
+          (await buildCoordinator().completeManagementCheck()).outcome,
+          ManagementCheckOutcome.missing,
+        );
         expect((await profileStore.read())!.remoteMissing, isTrue);
 
         transport.reply('POST', _transactionsPath, _grantBody(_transactionA));
         await buildCoordinator().startManagementCheck();
-        transport.reply('POST', checkPath(), <String, dynamic>{
+        transport.replaceReply('POST', checkPath(), <String, dynamic>{
           'projectExists': true,
           'projectStatus': 'ACTIVE_HEALTHY',
           'emailConfirmationRedirect': null,

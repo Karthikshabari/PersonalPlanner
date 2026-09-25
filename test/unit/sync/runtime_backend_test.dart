@@ -158,5 +158,15 @@ void main() {
         isNull,
       );
     });
+
+    test('a confirmed missing READY project cannot run runtime sync', () {
+      final missing = testProfile(
+        ProvisioningState.ready,
+        projectRef: projectRefA,
+        remoteMissing: true,
+      );
+      expect(ProvisionedRuntimeBackend.tryFromProfile(missing), isNull);
+      expect(_resolveWith(profile: missing), isA<LocalOnlyRuntimeBackend>());
+    });
   });
 }

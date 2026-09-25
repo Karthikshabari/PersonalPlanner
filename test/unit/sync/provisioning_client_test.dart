@@ -92,32 +92,29 @@ void main() {
       },
     );
 
-    test(
-      'parses verified candidates without guessing from a name',
-      () async {
-        final transport = _FakeTransport(
-          (_) async => _json(<String, dynamic>{
-            'kind': 'candidates',
-            'candidates': <Map<String, dynamic>>[
-              <String, dynamic>{
-                'projectRef': _projectRef,
-                'name': 'Renamed cloud',
-                'region': 'ap-south-1',
-              },
-            ],
-          }),
-        );
-        final result = await _client(transport)
-            .resolve(_transactionId, capability: _capability);
-        expect(result.snapshot, isNull);
-        expect(result.candidates.single.projectRef, _projectRef);
-        expect(result.candidates.single.name, 'Renamed cloud');
-        expect(
-          transport.requests.single.uri.path,
-          '/v1/provisioning/transactions/$_transactionId/resolve',
-        );
-      },
-    );
+    test('parses verified candidates without guessing from a name', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(<String, dynamic>{
+          'kind': 'candidates',
+          'candidates': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'projectRef': _projectRef,
+              'name': 'Renamed cloud',
+              'region': 'ap-south-1',
+            },
+          ],
+        }),
+      );
+      final result = await _client(transport)
+          .resolve(_transactionId, capability: _capability);
+      expect(result.snapshot, isNull);
+      expect(result.candidates.single.projectRef, _projectRef);
+      expect(result.candidates.single.name, 'Renamed cloud');
+      expect(
+        transport.requests.single.uri.path,
+        '/v1/provisioning/transactions/$_transactionId/resolve',
+      );
+    });
 
     test('parses an exact adopted READY project', () async {
       final transport = _FakeTransport(
@@ -412,6 +409,7 @@ void main() {
         'organization_not_found': ProvisioningFailureClass.actionRequired,
         'organization_discovery_failed': ProvisioningFailureClass.retryable,
         'candidate_discovery_changed': ProvisioningFailureClass.actionRequired,
+        'project_access_denied': ProvisioningFailureClass.actionRequired,
         'project_creation_failed': ProvisioningFailureClass.retryable,
         'migration_failed': ProvisioningFailureClass.retryable,
         'verification_indeterminate': ProvisioningFailureClass.retryable,
@@ -558,6 +556,23 @@ void main() {
   });
 
   group('snapshot parsing', () {
+    test(
+      'reads pre-create authorization recovery without exposing credentials',
+      () async {
+        final transport = _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            ..._snapshot('organization_selected'),
+            'creationAuthorizationPending': true,
+            'creationAuthorizationRequired': false,
+          }),
+        );
+        final snapshot = await _client(transport)
+            .snapshot(_transactionId, capability: _capability);
+        expect(snapshot.creationAuthorizationPending, isTrue);
+        expect(snapshot.creationAuthorizationRequired, isFalse);
+      },
+    );
+
     test(
       'reports a claimed failed callback without leaking OAuth state',
       () async {
@@ -932,6 +947,28 @@ void main() {
         _protocolError(),
       );
     });
+
+    test(
+      'accepts the 900-second OAuth window and rejects an absolute timestamp',
+      () async {
+        Future<ProvisioningAuthorizationRequest> requestFor(int expiresIn) =>
+            _client(
+              _FakeTransport(
+                (_) async => _json(<String, dynamic>{
+                  'authorizationUrl':
+                      'https://api.supabase.com/v1/oauth/authorize?state=x',
+                  'expiresIn': expiresIn,
+                }),
+              ),
+            ).startManagementAuthorization(
+              _transactionId,
+              capability: _capability,
+            );
+
+        expect((await requestFor(900)).expiresIn, const Duration(minutes: 15));
+        await expectLater(requestFor(1_790_000_000), _protocolError());
+      },
+    );
 
     test(
       'reports revocation truthfully, including the retained-token limit',
