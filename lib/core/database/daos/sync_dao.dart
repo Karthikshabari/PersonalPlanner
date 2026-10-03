@@ -19,23 +19,47 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
   Future<List<SyncLogRow>> getRetryableOperations(
     DateTime now, {
     int limit = 100,
+    int offset = 0,
   }) {
     return (select(syncLog)
-          ..where(
-            (row) =>
-                row.state.isIn(['pending', 'error', 'in_flight']) &
-                (row.nextAttemptAt.isNull() |
-                    row.nextAttemptAt.isSmallerOrEqualValue(
-                      now.toIso8601String(),
-                    )),
-          )
+          ..where((row) => _eligibleAt(row, now))
           ..orderBy([
             (row) => OrderingTerm.asc(row.createdAt),
             (row) => OrderingTerm.asc(row.operationId),
           ])
-          ..limit(limit))
+          ..limit(limit, offset: offset))
         .get();
   }
+
+  /// Rows a push started at [now] could fetch, without the batch limit.
+  Future<int> countEligibleOperations(DateTime now) async {
+    final count = syncLog.operationId.count();
+    final row =
+        await (selectOnly(syncLog)
+              ..addColumns([count])
+              ..where(_eligibleAt(syncLog, now)))
+            .getSingle();
+    return row.read(count) ?? 0;
+  }
+
+  Expression<bool> _eligibleAt($SyncLogTable row, DateTime now) =>
+      row.state.isIn(['pending', 'error', 'in_flight']) &
+      (row.nextAttemptAt.isNull() |
+          row.nextAttemptAt.isSmallerOrEqualValue(now.toIso8601String()));
+
+  /// Every operation not yet acknowledged or retired, including parked and
+  /// conflicted rows, in outbox order.
+  Future<List<SyncLogRow>> getOutstandingOperations() =>
+      (select(syncLog)
+            ..where(
+              (row) =>
+                  row.state.isIn(['pending', 'error', 'in_flight', 'conflict']),
+            )
+            ..orderBy([
+              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.operationId),
+            ]))
+          .get();
 
   Future<SyncLogRow?> getOperation(String operationId) => (select(
     syncLog,
@@ -57,6 +81,24 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
               (row) => OrderingTerm.asc(row.operationId),
             ]))
           .get();
+
+  /// True while an insert for this record has not reached the server: it is
+  /// queued, backing off, parked, or in flight. A conflicted insert is not
+  /// counted because the server already holds that record.
+  Future<bool> hasUnsentInsert(String tableName, String recordId) async {
+    final row =
+        await (select(syncLog)
+              ..where(
+                (row) =>
+                    row.entityTableName.equals(tableName) &
+                    row.recordId.equals(recordId) &
+                    row.operation.equals('insert') &
+                    row.state.isIn(['pending', 'error', 'in_flight']),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    return row != null;
+  }
 
   Future<SyncConflictRow?> getConflictForRecord(
     String tableName,

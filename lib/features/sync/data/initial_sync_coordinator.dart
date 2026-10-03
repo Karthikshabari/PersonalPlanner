@@ -671,60 +671,95 @@ class InitialSyncCoordinator {
     //    (lease takeover) is fenced by the server and cannot mutate at all. Per
     //    record compare-and-set turns any collision into an explicit conflict
     //    instead of an overwrite.
-    final pushFailure = await repository.push(baselineToken: claimToken);
-    if (!_alive) return;
-    if (pushFailure != null && isInitialBaselineFencingFailure(pushFailure)) {
-      // Another device now owns the first baseline. Stop immediately, keep the
-      // local data and keep every operation queued for the established account.
-      await persist(
-        InitialSyncPhase.conflict,
-        clearClaim: true,
-        nextMessage: baselineFencedMessage,
+    //
+    //    One push sends at most one batch, so drain the outbox pass by pass. A
+    //    pass may only be followed by another if it shrank the eligible queue,
+    //    so the loop always ends; when what is left is held or backing off,
+    //    the completion check below decides.
+    //    Returns false when the upload was stopped and its outcome persisted.
+    Future<bool> drain() async {
+      var eligible = await database.syncDao.countEligibleOperations(
+        DateTime.now().toUtc(),
       );
-      return;
+      while (true) {
+        final pushFailure = await repository.push(baselineToken: claimToken);
+        if (!_alive) return false;
+        if (pushFailure != null &&
+            isInitialBaselineFencingFailure(pushFailure)) {
+          // Another device now owns the first baseline. Stop immediately, keep
+          // the local data and keep every operation queued for the established
+          // account.
+          await persist(
+            InitialSyncPhase.conflict,
+            clearClaim: true,
+            nextMessage: baselineFencedMessage,
+          );
+          return false;
+        }
+        // An expired session or a server without the required capabilities
+        // refuses every operation alike. Push stopped without changing any
+        // row, so report that cause instead of a generic "still queued" count.
+        if (pushFailure != null &&
+            (pushFailure.kind == SyncFailureKind.authentication ||
+                isSyncUpgradeRequiredFailure(pushFailure))) {
+          await _failUpload(persist, pushFailure.message, retryable: true);
+          return false;
+        }
+        final remaining = await database.syncDao.countEligibleOperations(
+          DateTime.now().toUtc(),
+        );
+        if (remaining == 0 || remaining >= eligible) return true;
+        eligible = remaining;
+      }
     }
-    final parked = pushFailure != null &&
-        (pushFailure.kind == SyncFailureKind.permanent ||
-            pushFailure.kind == SyncFailureKind.invalidData);
-    if (pushFailure != null && !parked) {
-      await _failUpload(persist, pushFailure.message, retryable: true);
-      return;
-    }
+
+    if (!await drain()) return;
 
     // 3. Pick up the server's view of everything that was just uploaded and
     //    acknowledge any operation the server applied before a crash.
+    final outstandingBeforePull = await database.syncDao.pendingCount();
     final afterPush = await repository.pull();
     if (!_alive) return;
     if (afterPush != null) {
       await _failUpload(persist, afterPush.message, retryable: true);
       return;
     }
+    // A recovered acknowledgement can release rows that were held behind it
+    // (for example a task behind its category whose response was lost). Give
+    // them one more drain now instead of leaving them for a retry or restart.
+    if (await database.syncDao.pendingCount() < outstandingBeforePull) {
+      if (!await drain()) return;
+    }
 
-    final outstanding = await database.syncDao.pendingCount();
+    // The gate reads the durable outbox, not the first push failure: a parked
+    // row early in a pass must not hide a later row that is still backing off.
+    // Queued work means the first upload is not finished, and the baseline
+    // must not be completed on a partially uploaded dataset. Parked rows,
+    // conflicts, and rows held behind them ("held behind parked" / "held
+    // behind conflict") wait for the user rather than for a retry, so they do
+    // not block the established account. Conflicts can only be resolved once
+    // normal sync exists, which is why rows held behind one cannot block it.
+    final backlog = await repository.outboxBacklog();
     final conflicts = await database.select(database.syncConflicts).get();
-    final parkedOperation = await database.syncDao.firstPermanentOperation();
-    // A retryable operation that is merely waiting out its backoff means the
-    // first upload is not finished yet: the baseline must not be completed on a
-    // partially uploaded dataset. Operations that are parked for explicit
-    // repair are terminal (the user must repair them) and do not block the
-    // established account.
-    if (outstanding > 0 && parkedOperation == null) {
+    if (backlog.queued > 0) {
       await _failUpload(
         persist,
-        '$outstanding local operation(s) still need to be uploaded. Retry the '
-        'first synchronization to finish it.',
+        backlog.queuedError ??
+            '${backlog.queued} local operation(s) still need to be uploaded. '
+                'Retry the first synchronization to finish it.',
         retryable: true,
       );
       return;
     }
+    final waiting = backlog.heldBehindParked + backlog.heldBehindConflict;
     final notes = <String>[
       'Your local Planner data was uploaded and cloud sync is ready.',
       if (conflicts.isNotEmpty)
         '${conflicts.length} record(s) need a keep-local/keep-remote decision.',
-      if (parkedOperation != null)
-        'One record still needs a repair before it can sync.',
-      if (outstanding > 0 && conflicts.isEmpty && parkedOperation == null)
-        '$outstanding operation(s) remain queued.',
+      if (backlog.parked > 0)
+        '${backlog.parked} record(s) still need a repair before they can sync.',
+      if (waiting > 0)
+        '$waiting dependent operation(s) will sync once that is done.',
     ];
     // 4. Only after the server's authoritative completion is the local state
     //    complete and normal synchronization allowed to exist.

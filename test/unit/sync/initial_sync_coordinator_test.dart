@@ -501,10 +501,13 @@ void main() {
       var record = await durableState();
       expect(record.phase, InitialSyncPhase.retryable);
       expect(record.claimToken, isNotNull);
-      // The first operation reached the server and the change log before the
-      // response was lost; the same failure also hit the second operation.
+      // The category insert reached the server and the change log before the
+      // response was lost. Its task is held behind that unconfirmed insert
+      // rather than being sent against a parent the client cannot vouch for.
+      // The pull after the upload recovers the category acknowledgement and
+      // releases the task into one more drain, whose response is lost too.
       expect(remote.applyCalls, 2);
-      expect(await accountDb.syncDao.pendingCount(), 2);
+      expect(await accountDb.syncDao.pendingCount(), 1);
 
       // Restart with the server's acknowledgement still recorded.
       remote.applyError = null;
@@ -512,8 +515,8 @@ void main() {
 
       record = await durableState();
       expect(record.phase, InitialSyncPhase.complete);
-      // The pulled self-acknowledgement retired the lost operation; no
-      // duplicate upload happened.
+      // The pulled self-acknowledgement retired the lost task operation
+      // without re-sending it; nothing was uploaded twice.
       expect(remote.applyCalls, 2);
       expect(await localCategoryCount(), 1);
       expect(await localTaskCount(), 1);
@@ -704,4 +707,233 @@ void main() {
       }
     },
   );
+
+  group('first upload drains the outbox', () {
+    Future<void> queueCategories(int count, {String prefix = 'bulk'}) async {
+      for (var i = 0; i < count; i++) {
+        await insertLocalCategory(accountDb, id: '$prefix-$i', name: '$prefix $i');
+      }
+    }
+
+    /// Fails only the given apply calls (1-based), in order of arrival.
+    void failCalls(Map<int, Object> failures) {
+      remote.onApply = () => remote.applyError = failures[remote.applyCalls];
+    }
+
+    test(
+      '250 queued operations upload in one pass and complete the baseline',
+      () async {
+        final recording = _TokenRecordingGateway(calls: calls);
+        remote = recording;
+        await queueCategories(250);
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 250);
+        expect(recording.tokens, hasLength(250));
+        expect(recording.tokens.toSet(), {'claim-token-1'});
+        expect(initial.completions, hasLength(1));
+        expect(await accountDb.syncDao.pendingCount(), 0);
+        expect((await durableState()).phase, InitialSyncPhase.complete);
+      },
+    );
+
+    test(
+      'a parked row does not stop the remaining rows uploading before completion',
+      () async {
+        await queueCategories(151);
+        failCalls({
+          1: PostgrestException(message: 'Invalid category payload', code: '22023'),
+        });
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 151);
+        expect(remote.appliedCount, 150);
+        expect(await accountDb.syncDao.firstPermanentOperation(), isNotNull);
+        expect(await accountDb.syncDao.pendingCount(), 1);
+        expect(initial.completions, hasLength(1));
+        final record = await durableState();
+        expect(record.phase, InitialSyncPhase.complete);
+        expect(record.detail?['message'], contains('need a repair'));
+      },
+    );
+
+    test(
+      'a parked row first and a retryable row later never completes the baseline',
+      () async {
+        await queueCategories(2);
+        failCalls({
+          1: PostgrestException(message: 'Invalid category payload', code: '22023'),
+          2: Exception('SocketException: connection reset'),
+        });
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 2);
+        expect(initial.completions, isEmpty);
+        final record = await durableState();
+        expect(record.phase, InitialSyncPhase.retryable);
+        expect(record.claimToken, isNotNull);
+        expect(record.detail?['message'], 'Network unavailable; retry scheduled.');
+      },
+    );
+
+    test('a fence mid-drain stops the upload immediately', () async {
+      await queueCategories(150);
+      failCalls({
+        40: PostgrestException(
+          message: 'Initial baseline claim is no longer owned by this device',
+          code: 'P0001',
+        ),
+      });
+
+      await coordinator().start();
+
+      expect(remote.applyCalls, 40);
+      expect(remote.appliedCount, 39);
+      expect(initial.completions, isEmpty);
+      final record = await durableState();
+      expect(record.phase, InitialSyncPhase.conflict);
+      expect(record.claimToken, isNull);
+      expect(await accountDb.syncDao.pendingCount(), 111);
+    });
+
+    test(
+      'rows left in backoff end the pass as retryable without re-sending them',
+      () async {
+        await queueCategories(3);
+        remote.applyError = Exception('SocketException: connection reset');
+
+        await coordinator().start();
+
+        // Each row was attempted once; the drain did not spin on the backoff.
+        expect(remote.applyCalls, 3);
+        expect(initial.completions, isEmpty);
+        expect((await durableState()).phase, InitialSyncPhase.retryable);
+        expect(await accountDb.syncDao.pendingCount(), 3);
+      },
+    );
+
+    test(
+      'a child held behind a parked parent counts as parked for completion',
+      () async {
+        await insertLocalCategory(accountDb, id: 'parked-cat', name: 'Parked');
+        await insertLocalTask(
+          accountDb,
+          id: 'held-task',
+          title: 'Held task',
+          categoryId: 'parked-cat',
+        );
+        failCalls({
+          1: PostgrestException(message: 'Invalid category payload', code: '22023'),
+        });
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 1);
+        expect(initial.completions, hasLength(1));
+        final record = await durableState();
+        expect(record.phase, InitialSyncPhase.complete);
+        expect(record.detail?['message'], contains('1 dependent operation(s)'));
+        final backlog = await SyncRepository.withGateway(
+          accountDb,
+          remote,
+          scopeA.storageId,
+        ).outboxBacklog();
+        expect(backlog.parked, 1);
+        expect(backlog.heldBehindParked, 1);
+        expect(backlog.queued, 0);
+      },
+    );
+
+    test(
+      'a held child released by the post-upload pull is uploaded in the same pass',
+      () async {
+        remote
+          ..echoApplied = true
+          ..applyErrorAfterRecord = true;
+        await insertLocalCategory(accountDb, id: 'lost-cat', name: 'Lost ack');
+        await insertLocalTask(
+          accountDb,
+          id: 'held-task',
+          title: 'Held task',
+          categoryId: 'lost-cat',
+        );
+        // Only the category's response is lost; the server did apply it.
+        failCalls({1: Exception('SocketException: connection reset')});
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 2);
+        expect(remote.appliedCount, 2);
+        expect(await accountDb.syncDao.pendingCount(), 0);
+        expect(initial.completions, hasLength(1));
+        expect((await durableState()).phase, InitialSyncPhase.complete);
+      },
+    );
+
+    test(
+      'an upgrade-required server stops the upload with the upgrade message',
+      () async {
+        remote = _BehindServerGateway(calls: calls);
+        await queueCategories(3);
+
+        await coordinator().start();
+
+        expect(remote.applyCalls, 0);
+        expect(remote.capabilityCalls, 1);
+        expect(initial.completions, isEmpty);
+        final record = await durableState();
+        expect(record.phase, InitialSyncPhase.retryable);
+        expect(record.detail?['message'], contains('Server upgrade required'));
+        expect(await accountDb.syncDao.firstPermanentOperation(), isNull);
+      },
+    );
+  });
+}
+
+/// Records the fence token of every mutation.
+class _TokenRecordingGateway extends FakeSyncRemoteGateway {
+  _TokenRecordingGateway({required super.calls});
+
+  final tokens = <String?>[];
+
+  @override
+  Future<Object?> applyOperation({
+    required String operationId,
+    required String tableName,
+    required String recordId,
+    required String operation,
+    required int? expectedServerVersion,
+    required Map<String, dynamic> payload,
+    required int payloadVersion,
+    String? baselineToken,
+  }) {
+    tokens.add(baselineToken);
+    return super.applyOperation(
+      operationId: operationId,
+      tableName: tableName,
+      recordId: recordId,
+      operation: operation,
+      expectedServerVersion: expectedServerVersion,
+      payload: payload,
+      payloadVersion: payloadVersion,
+      baselineToken: baselineToken,
+    );
+  }
+}
+
+/// A server that has not been migrated to every Sync v2 capability.
+class _BehindServerGateway extends FakeSyncRemoteGateway {
+  _BehindServerGateway({required super.calls});
+
+  @override
+  Future<Object?> getCapabilities() async {
+    final capabilities = Map<String, dynamic>.from(
+      (await super.getCapabilities())! as Map,
+    );
+    capabilities.remove('recurrence_removal_provenance');
+    return capabilities;
+  }
 }

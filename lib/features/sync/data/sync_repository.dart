@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/database/daos/sync_dao.dart';
 import '../../../core/models/plan_title_change.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../../core/utils/uuid.dart';
@@ -41,6 +42,9 @@ class SyncRepository {
   final SyncRemoteApplier _applier;
   bool _cycleRunning = false;
   bool _v2CapabilityVerified = false;
+
+  /// Most operations one push attempts. Held rows do not count.
+  static const _pushBatchSize = 100;
   static const _legacyTitleHistoryTransitionDiagnostic =
       'Existing plan title events cannot be removed or changed';
 
@@ -75,121 +79,158 @@ class SyncRepository {
   }
 
   Future<SyncFailure?> push({String? baselineToken}) async {
-    late final List<SyncLogRow> operations;
     try {
       _assertAccountScope();
       await _repairTitleHistoryPermanentOperations();
       await _requeueAuthenticationParkedOperations();
       await _requeueUpgradeParkedOperations();
-      operations = _orderOperations(
-        await _db.syncDao.getRetryableOperations(DateTime.now().toUtc()),
-      );
     } catch (error) {
       return classifySyncFailure(error);
     }
+    // One eligibility instant for every page, so rows that fail during this
+    // push (and move to a later retry time) cannot shift the page offsets.
+    final fetchedAt = DateTime.now().toUtc();
     SyncFailure? firstFailure;
-    for (final queuedOperation in operations) {
-      // The initial batch is only a scheduling snapshot. Acknowledging an
-      // earlier operation rebases later rows in SQLite, so reload this
-      // operation immediately before sending it instead of using a stale
-      // expectedServerVersion captured at batch start.
-      final operation = await _db.syncDao.getOperation(
-        queuedOperation.operationId,
-      );
-      if (operation == null ||
-          !const {'pending', 'error', 'in_flight'}.contains(operation.state)) {
-        continue;
-      }
+    // Held rows stay eligible and keep their place at the front of the
+    // outbox. They are paged past by offset instead of being allowed to fill
+    // every batch, and only rows that are actually attempted use the budget.
+    var budget = _pushBatchSize;
+    var held = 0;
+    while (budget > 0) {
+      late final List<SyncLogRow> page;
+      late final List<SyncLogRow> operations;
       try {
-        _assertAccountScope();
-        final now = DateTime.now().toUtc();
-        final prepared = await _clientPayloadForOperation(operation);
-        final payload = prepared.payload;
-        if (prepared.version == 2) {
-          await _ensureV2Capabilities();
+        page = await _db.syncDao.getRetryableOperations(
+          fetchedAt,
+          limit: _pushBatchSize,
+          offset: held,
+        );
+        operations = _orderOperations(page);
+      } catch (error) {
+        return classifySyncFailure(error);
+      }
+      if (page.isEmpty) break;
+      final heldBefore = held;
+      final budgetBefore = budget;
+      for (final queuedOperation in operations) {
+        if (budget == 0) break;
+        // The initial batch is only a scheduling snapshot. Acknowledging an
+        // earlier operation rebases later rows in SQLite, so reload this
+        // operation immediately before sending it instead of using a stale
+        // expectedServerVersion captured at batch start.
+        final operation = await _db.syncDao.getOperation(
+          queuedOperation.operationId,
+        );
+        if (operation == null ||
+            !const {
+              'pending',
+              'error',
+              'in_flight',
+            }.contains(operation.state)) {
+          continue;
         }
-        await _db.syncDao.markInFlight(operation.operationId, now);
-        SyncPayloadValidator.validate(
-          SyncRemoteChange(
-            changeId: 0,
+        try {
+          _assertAccountScope();
+          // Leave the row exactly as queued (no attempt, no state change, same
+          // operation ID) until what it depends on has been acknowledged.
+          if (await _isHeldBehindPredecessor(operation)) {
+            held++;
+            continue;
+          }
+          budget--;
+          final now = DateTime.now().toUtc();
+          final prepared = await _clientPayloadForOperation(operation);
+          final payload = prepared.payload;
+          if (prepared.version == 2) {
+            await _ensureV2Capabilities();
+          }
+          await _db.syncDao.markInFlight(operation.operationId, now);
+          SyncPayloadValidator.validate(
+            SyncRemoteChange(
+              changeId: 0,
+              operationId: operation.operationId,
+              tableName: operation.entityTableName,
+              recordId: operation.recordId,
+              operation: operation.operation,
+              serverVersion: operation.expectedServerVersion ?? 0,
+              serverTimestamp: now,
+              payload: payload,
+            ),
+          );
+          _assertAccountScope();
+          final response = await _gateway.applyOperation(
             operationId: operation.operationId,
             tableName: operation.entityTableName,
             recordId: operation.recordId,
             operation: operation.operation,
-            serverVersion: operation.expectedServerVersion ?? 0,
-            serverTimestamp: now,
+            expectedServerVersion: operation.expectedServerVersion,
             payload: payload,
-          ),
-        );
-        _assertAccountScope();
-        final response = await _gateway.applyOperation(
-          operationId: operation.operationId,
-          tableName: operation.entityTableName,
-          recordId: operation.recordId,
-          operation: operation.operation,
-          expectedServerVersion: operation.expectedServerVersion,
-          payload: payload,
-          payloadVersion: prepared.version,
-          baselineToken: baselineToken,
-        );
-        _assertAccountScope();
-        final acknowledgement = SyncRpcAcknowledgement.fromJson(response);
-        if (acknowledgement.status == 'conflict') {
-          await _saveConflict(operation, acknowledgement);
-        } else if (acknowledgement.status == 'acknowledged' ||
-            acknowledgement.status == 'applied') {
-          await _acknowledge(operation, acknowledgement);
-        } else {
-          throw StateError('Unexpected sync acknowledgement');
-        }
-      } on _SyncAccountScopeChanged {
-        await _db.syncDao.releaseInFlight(
-          operation.operationId,
-          DateTime.now().toUtc(),
-        );
-        return _scopeFailure;
-      } on _SyncUpgradeRequired catch (error) {
-        // The backend, not this payload, is behind. The capability check runs
-        // before the operation is marked in flight, so leave it queued as-is
-        // and stop the batch; the next cycle checks capabilities again.
-        return classifySyncFailure(error);
-      } catch (error) {
-        final failure = classifySyncFailure(error);
-        // An expired or revoked session says nothing about this payload, and
-        // every later operation would be refused the same way. Return the
-        // operation to the queue without counting an attempt and stop the
-        // batch so a refresh or sign-in can resume it unchanged.
-        if (failure.kind == SyncFailureKind.authentication) {
+            payloadVersion: prepared.version,
+            baselineToken: baselineToken,
+          );
+          _assertAccountScope();
+          final acknowledgement = SyncRpcAcknowledgement.fromJson(response);
+          if (acknowledgement.status == 'conflict') {
+            await _saveConflict(operation, acknowledgement);
+          } else if (acknowledgement.status == 'acknowledged' ||
+              acknowledgement.status == 'applied') {
+            await _acknowledge(operation, acknowledgement);
+          } else {
+            throw StateError('Unexpected sync acknowledgement');
+          }
+        } on _SyncAccountScopeChanged {
           await _db.syncDao.releaseInFlight(
             operation.operationId,
             DateTime.now().toUtc(),
           );
-          return failure;
+          return _scopeFailure;
+        } on _SyncUpgradeRequired catch (error) {
+          // The backend, not this payload, is behind. The capability check runs
+          // before the operation is marked in flight, so leave it queued as-is
+          // and stop the batch; the next cycle checks capabilities again.
+          return classifySyncFailure(error);
+        } catch (error) {
+          final failure = classifySyncFailure(error);
+          // An expired or revoked session says nothing about this payload, and
+          // every later operation would be refused the same way. Return the
+          // operation to the queue without counting an attempt and stop the
+          // batch so a refresh or sign-in can resume it unchanged.
+          if (failure.kind == SyncFailureKind.authentication) {
+            await _db.syncDao.releaseInFlight(
+              operation.operationId,
+              DateTime.now().toUtc(),
+            );
+            return failure;
+          }
+          firstFailure ??= failure;
+          final failureMessage = failure.message;
+          if (failure.keepsOperationQueued) {
+            final retryAt = DateTime.now().toUtc().add(
+              _backoff(operation.attemptCount + 1),
+            );
+            await _db.syncDao.markRetryableError(
+              operation.operationId,
+              now: DateTime.now().toUtc(),
+              nextAttemptAt: retryAt,
+              error: failureMessage,
+            );
+          } else {
+            await _db.syncDao.markPermanentError(
+              operation.operationId,
+              now: DateTime.now().toUtc(),
+              error: failureMessage,
+            );
+          }
+          // A fencing rejection is a protocol-level answer: this client no longer
+          // owns the account's in-progress baseline, so no further operation from
+          // this batch may be attempted.
+          if (isInitialBaselineFencingFailure(failure)) return failure;
         }
-        firstFailure ??= failure;
-        final failureMessage = failure.message;
-        if (failure.keepsOperationQueued) {
-          final retryAt = DateTime.now().toUtc().add(
-            _backoff(operation.attemptCount + 1),
-          );
-          await _db.syncDao.markRetryableError(
-            operation.operationId,
-            now: DateTime.now().toUtc(),
-            nextAttemptAt: retryAt,
-            error: failureMessage,
-          );
-        } else {
-          await _db.syncDao.markPermanentError(
-            operation.operationId,
-            now: DateTime.now().toUtc(),
-            error: failureMessage,
-          );
-        }
-        // A fencing rejection is a protocol-level answer: this client no longer
-        // owns the account's in-progress baseline, so no further operation from
-        // this batch may be attempted.
-        if (isInitialBaselineFencingFailure(failure)) return failure;
       }
+      if (page.length < _pushBatchSize) break;
+      // Nothing on a full page was held or attempted, so every row left the
+      // queue concurrently. Stop rather than risk spinning on such a page.
+      if (held == heldBefore && budget == budgetBefore) break;
     }
     return firstFailure;
   }
@@ -272,6 +313,145 @@ class SyncRepository {
       );
     }
   }
+
+  /// Whether [operation] must wait for an earlier operation that has not been
+  /// acknowledged. Durable outbox state is the only input, so the same rule
+  /// covers a predecessor that failed earlier in this batch and one that was
+  /// never fetched because it is backing off, parked, or past the batch limit.
+  ///
+  /// - An earlier operation for the same record that is still active (queued,
+  ///   backing off, parked, in flight, or in conflict) holds it: sending it
+  ///   first would compare against a server version that the earlier one has
+  ///   not produced, which the server reports as a conflict.
+  /// - For a non-delete, a parent whose insert has not reached the server holds
+  ///   it: the server enforces the foreign key immediately. A child held
+  ///   behind a parked parent insert waits until that parent is repaired, so it
+  ///   is held-behind-parked rather than parked itself.
+  Future<bool> _isHeldBehindPredecessor(SyncLogRow operation) async {
+    final sameRecord = await _db.syncDao.getActiveOperationsForRecord(
+      operation.entityTableName,
+      operation.recordId,
+    );
+    if (sameRecord.any(
+      (earlier) =>
+          earlier.operationId != operation.operationId &&
+          _operationChronology(earlier, operation) < 0,
+    )) {
+      return true;
+    }
+    if (operation.operation == 'delete') return false;
+    for (final parent in _operationDependencies(
+      operation,
+      _clientPayload(operation.payload),
+    )) {
+      if (await _db.syncDao.hasUnsentInsert(parent.table, parent.id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Classifies the outstanding outbox with the same hold rules as push, for
+  /// the first-sync completion check.
+  ///
+  /// Parked rows and conflicts wait for a user repair or decision rather than
+  /// for the network. A row held behind one of them, directly or through a
+  /// chain of held rows, waits for that same action: it is "held behind
+  /// parked" (or "held behind conflict"), counted separately so it stays
+  /// distinguishable from both the parked row and ordinary queued work.
+  Future<SyncOutboxBacklog> outboxBacklog() async {
+    final rows = (await _db.syncDao.getOutstandingOperations())
+      ..sort(_operationChronology);
+    String key(String table, String id) => '$table\u0000$id';
+    final byRecord = <String, List<SyncLogRow>>{};
+    final unsentInserts = <String, List<SyncLogRow>>{};
+    final roots = <String, _BacklogRoot>{};
+    for (final row in rows) {
+      final recordKey = key(row.entityTableName, row.recordId);
+      (byRecord[recordKey] ??= []).add(row);
+      if (row.operation == 'insert' && row.state != 'conflict') {
+        (unsentInserts[recordKey] ??= []).add(row);
+      }
+      if (row.state == 'conflict') {
+        roots[row.operationId] = _BacklogRoot.conflict;
+      } else if (_isParked(row)) {
+        roots[row.operationId] = _BacklogRoot.parked;
+      }
+    }
+    final parkedCount =
+        roots.length - rows.where((row) => row.state == 'conflict').length;
+
+    _BacklogRoot? blockedBy(SyncLogRow row) {
+      for (final earlier in byRecord[key(row.entityTableName, row.recordId)]!) {
+        if (_operationChronology(earlier, row) >= 0) break;
+        final root = roots[earlier.operationId];
+        if (root != null) return root;
+      }
+      if (row.operation == 'delete') return null;
+      final Iterable<({String table, String id})> parents;
+      try {
+        parents = _operationDependencies(row, _clientPayload(row.payload));
+      } on Object {
+        return null;
+      }
+      for (final parent in parents) {
+        for (final insert
+            in unsentInserts[key(parent.table, parent.id)] ??
+                const <SyncLogRow>[]) {
+          final root = roots[insert.operationId];
+          if (root != null) return root;
+        }
+      }
+      return null;
+    }
+
+    // Propagate until stable: a chain of held rows can be listed in any order
+    // relative to the parked row or conflict it ultimately waits for.
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final row in rows) {
+        if (roots.containsKey(row.operationId)) continue;
+        final root = blockedBy(row);
+        if (root == null) continue;
+        roots[row.operationId] = root == _BacklogRoot.conflict
+            ? _BacklogRoot.heldBehindConflict
+            : _BacklogRoot.heldBehindParked;
+        changed = true;
+      }
+    }
+
+    var queued = 0;
+    var heldBehindParked = 0;
+    var heldBehindConflict = 0;
+    String? queuedError;
+    for (final row in rows) {
+      switch (roots[row.operationId]) {
+        case null:
+          queued++;
+          queuedError ??= row.lastError;
+        case _BacklogRoot.heldBehindParked:
+          heldBehindParked++;
+        case _BacklogRoot.heldBehindConflict:
+          heldBehindConflict++;
+        case _BacklogRoot.parked || _BacklogRoot.conflict:
+          break;
+      }
+    }
+    return SyncOutboxBacklog(
+      queued: queued,
+      parked: parkedCount,
+      heldBehindParked: heldBehindParked,
+      heldBehindConflict: heldBehindConflict,
+      queuedError: queuedError,
+    );
+  }
+
+  static bool _isParked(SyncLogRow row) =>
+      row.state == 'error' &&
+      (row.nextAttemptAt?.isAtSameMomentAs(SyncDao.permanentRetryAt) ??
+          false) &&
+      (row.lastError?.startsWith(SyncDao.permanentErrorPrefix) ?? false);
 
   /// Pulls remote changes from the durable cursor.
   ///
@@ -1650,27 +1830,9 @@ class SyncRepository {
       (item) => item.operation != 'delete',
     )) {
       final payload = _clientPayload(operation.payload);
-      final dependencies = <String, String?>{
-        'categories': payload['category_id']?.toString(),
-        'recurring_rules': payload['recurring_rule_id']?.toString(),
-        'tasks': payload['task_id']?.toString(),
-        'tags': payload['tag_id']?.toString(),
-      };
-      for (final entry in dependencies.entries) {
-        final id = entry.value;
-        if (id == null || id.isEmpty) continue;
-        final parent = inserts['${entry.key}\u0000$id'];
+      for (final dependency in _operationDependencies(operation, payload)) {
+        final parent = inserts['${dependency.table}\u0000${dependency.id}'];
         if (parent != null) before(parent, operation);
-      }
-      if (operation.entityTableName == 'tasks') {
-        for (final field in const [
-          'rescheduled_from_id',
-          'rescheduled_to_id',
-        ]) {
-          final id = payload[field]?.toString();
-          final parent = id == null ? null : inserts['tasks\u0000$id'];
-          if (parent != null) before(parent, operation);
-        }
       }
     }
 
@@ -1700,6 +1862,36 @@ class SyncRepository {
       );
     }
     return ordered;
+  }
+
+  /// Parent records that [operation]'s payload references by foreign key. A
+  /// reference to the operation's own record is not a dependency.
+  static Iterable<({String table, String id})> _operationDependencies(
+    SyncLogRow operation,
+    Map<String, dynamic> payload,
+  ) sync* {
+    const fields = {
+      'category_id': 'categories',
+      'recurring_rule_id': 'recurring_rules',
+      'task_id': 'tasks',
+      'tag_id': 'tags',
+    };
+    final references = <({String table, String? id})>[
+      for (final entry in fields.entries)
+        (table: entry.value, id: payload[entry.key]?.toString()),
+      if (operation.entityTableName == 'tasks')
+        for (final field in const ['rescheduled_from_id', 'rescheduled_to_id'])
+          (table: 'tasks', id: payload[field]?.toString()),
+    ];
+    for (final reference in references) {
+      final id = reference.id;
+      if (id == null || id.isEmpty) continue;
+      if (reference.table == operation.entityTableName &&
+          id == operation.recordId) {
+        continue;
+      }
+      yield (table: reference.table, id: id);
+    }
   }
 
   static int _operationChronology(SyncLogRow a, SyncLogRow b) {
@@ -1735,6 +1927,35 @@ class SyncRepository {
     'categories': 9,
   };
 }
+
+/// Outstanding outbox rows grouped by what they are waiting for.
+class SyncOutboxBacklog {
+  const SyncOutboxBacklog({
+    required this.queued,
+    required this.parked,
+    required this.heldBehindParked,
+    required this.heldBehindConflict,
+    this.queuedError,
+  });
+
+  /// Not acknowledged and waiting only on push, retry backoff, or an earlier
+  /// row that is itself still queued.
+  final int queued;
+
+  /// Parked for an explicit repair.
+  final int parked;
+
+  /// Queued but held behind a parked row until it is repaired.
+  final int heldBehindParked;
+
+  /// Queued but held behind a conflict until it is resolved.
+  final int heldBehindConflict;
+
+  /// Diagnostic of the oldest queued row that failed and is backing off.
+  final String? queuedError;
+}
+
+enum _BacklogRoot { parked, conflict, heldBehindParked, heldBehindConflict }
 
 class SyncRepairException implements Exception {
   final String message;
@@ -1847,6 +2068,12 @@ const initialBaselineFencedMessage =
 /// True when a classified failure is the server's baseline fencing rejection.
 bool isInitialBaselineFencingFailure(SyncFailure failure) =>
     failure.message == initialBaselineFencedMessage;
+
+/// True when push stopped because the server lacks a required Sync v2
+/// capability. No operation was attempted or changed.
+bool isSyncUpgradeRequiredFailure(SyncFailure failure) =>
+    failure.message == _upgradeRequiredMessage ||
+    failure.message == _capabilityUnavailableMessage;
 
 String safeSyncError(Object error) {
   if (error is SyncValidationException) {

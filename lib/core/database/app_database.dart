@@ -1280,6 +1280,12 @@ class AppDatabase extends _$AppDatabase {
       'ON sync_log(state, next_attempt_at, created_at) '
       "WHERE state IN ('pending', 'error')",
     );
+    // Push looks up a record's active operations and a parent's unsent insert
+    // for every row it considers; acknowledged rows are never pruned.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_sync_log_record '
+      'ON sync_log(table_name, record_id)',
+    );
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_sync_conflicts_record '
       'ON sync_conflicts(table_name, record_id, created_at)',

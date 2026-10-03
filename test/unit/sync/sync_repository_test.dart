@@ -1637,9 +1637,12 @@ void main() {
 
       final conflict = (await db.syncDao.watchConflicts().first).single;
       expect(jsonDecode(conflict.localSnapshot)['name'], 'Newest local');
+      // The newer write is held behind the conflict instead of being sent
+      // against a version the server has already moved past.
+      expect(gateway.appliedTables, hasLength(1));
       expect(
         (await db.syncDao.getOperation(conflict.operationId))!.state,
-        anyOf('acknowledged', 'conflict'),
+        anyOf('pending', 'conflict'),
       );
       expect(
         (await db.categoryDao.getCategoryById(original.id))!.syncStatus,
