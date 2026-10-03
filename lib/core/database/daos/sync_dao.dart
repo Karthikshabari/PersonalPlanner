@@ -215,15 +215,18 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
             ..limit(1))
           .getSingleOrNull();
 
+  /// A null [tableName] matches parked operations of every synced table.
   Future<List<SyncLogRow>> getPermanentOperationsMatching(
-    String tableName,
+    String? tableName,
     String diagnostic, {
     int limit = 50,
   }) =>
       (select(syncLog)
             ..where(
               (row) =>
-                  row.entityTableName.equals(tableName) &
+                  (tableName == null
+                      ? const Constant(true)
+                      : row.entityTableName.equals(tableName)) &
                   row.state.equals('error') &
                   row.nextAttemptAt.equals(permanentRetryAt.toIso8601String()) &
                   row.lastError.like('%$diagnostic%'),

@@ -313,10 +313,9 @@ void main() {
       expect(failure?.kind, SyncFailureKind.permanent);
       expect(failure?.message, contains('Server upgrade required'));
       expect(gateway.payloads, isEmpty);
-      expect(
-        (await db.syncDao.getOperation(operation.operationId))?.state,
-        'error',
-      );
+      final queued = await db.syncDao.getOperation(operation.operationId);
+      expect(queued?.state, 'pending');
+      expect(queued?.nextAttemptAt, isNull);
     } finally {
       await db.close();
     }
@@ -358,7 +357,8 @@ void main() {
         expect(failure?.kind, SyncFailureKind.permanent, reason: missing);
         expect(gateway.payloads, isEmpty, reason: missing);
         final operations = await db.select(db.syncLog).get();
-        expect(operations.single.state, 'error', reason: missing);
+        expect(operations.single.state, 'pending', reason: missing);
+        expect(operations.single.nextAttemptAt, isNull, reason: missing);
       } finally {
         await db.close();
       }

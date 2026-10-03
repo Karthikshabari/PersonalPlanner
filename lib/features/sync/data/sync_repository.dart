@@ -79,6 +79,8 @@ class SyncRepository {
     try {
       _assertAccountScope();
       await _repairTitleHistoryPermanentOperations();
+      await _requeueAuthenticationParkedOperations();
+      await _requeueUpgradeParkedOperations();
       operations = _orderOperations(
         await _db.syncDao.getRetryableOperations(DateTime.now().toUtc()),
       );
@@ -146,8 +148,24 @@ class SyncRepository {
           DateTime.now().toUtc(),
         );
         return _scopeFailure;
+      } on _SyncUpgradeRequired catch (error) {
+        // The backend, not this payload, is behind. The capability check runs
+        // before the operation is marked in flight, so leave it queued as-is
+        // and stop the batch; the next cycle checks capabilities again.
+        return classifySyncFailure(error);
       } catch (error) {
         final failure = classifySyncFailure(error);
+        // An expired or revoked session says nothing about this payload, and
+        // every later operation would be refused the same way. Return the
+        // operation to the queue without counting an attempt and stop the
+        // batch so a refresh or sign-in can resume it unchanged.
+        if (failure.kind == SyncFailureKind.authentication) {
+          await _db.syncDao.releaseInFlight(
+            operation.operationId,
+            DateTime.now().toUtc(),
+          );
+          return failure;
+        }
         firstFailure ??= failure;
         final failureMessage = failure.message;
         if (failure.keepsOperationQueued) {
@@ -211,6 +229,47 @@ class SyncRepository {
         // Leave malformed or no-longer-decodable operations permanently
         // stopped for explicit repair.
       }
+    }
+  }
+
+  /// Requeues operations that earlier builds parked for an authentication
+  /// failure. Their payload was never judged invalid; a fresh failure is now
+  /// released without parking.
+  Future<void> _requeueAuthenticationParkedOperations() async {
+    final parked = await _db.syncDao.getPermanentOperationsMatching(
+      null,
+      _authenticationExpiredMessage,
+    );
+    for (final operation in parked) {
+      await _db.syncDao.retryPermanentOperation(
+        operation.operationId,
+        DateTime.now().toUtc(),
+      );
+    }
+  }
+
+  /// Requeues operations that earlier builds parked because the server lacked
+  /// a Sync v2 capability, once the server verifies those capabilities.
+  Future<void> _requeueUpgradeParkedOperations() async {
+    final parked = [
+      for (final diagnostic in const [
+        _upgradeRequiredMessage,
+        _capabilityUnavailableMessage,
+      ])
+        ...await _db.syncDao.getPermanentOperationsMatching(null, diagnostic),
+    ];
+    if (parked.isEmpty) return;
+    try {
+      await _ensureV2Capabilities();
+    } on Object {
+      // Still behind or unreachable: leave them parked until a later cycle.
+      return;
+    }
+    for (final operation in parked) {
+      await _db.syncDao.retryPermanentOperation(
+        operation.operationId,
+        DateTime.now().toUtc(),
+      );
     }
   }
 
@@ -1523,9 +1582,7 @@ class SyncRepository {
     if (_v2CapabilityVerified) return;
     final raw = await _gateway.getCapabilities();
     if (raw is! Map) {
-      throw const _SyncUpgradeRequired(
-        'Server capability response is unavailable; upgrade sync before retrying.',
-      );
+      throw const _SyncUpgradeRequired(_capabilityUnavailableMessage);
     }
     final capabilities = Map<String, dynamic>.from(raw);
     final protocol = capabilities['protocol_version'];
@@ -1542,9 +1599,7 @@ class SyncRepository {
         capabilities['timer_state_machine'] != true ||
         capabilities['day_contexts'] != true ||
         capabilities['recurrence_removal_provenance'] != true) {
-      throw const _SyncUpgradeRequired(
-        'Server upgrade required before Sync v2 changes can sync.',
-      );
+      throw const _SyncUpgradeRequired(_upgradeRequiredMessage);
     }
     _v2CapabilityVerified = true;
   }
@@ -1693,6 +1748,11 @@ class SyncRepairException implements Exception {
 class _SyncAccountScopeChanged implements Exception {
   const _SyncAccountScopeChanged();
 }
+
+const _upgradeRequiredMessage =
+    'Server upgrade required before Sync v2 changes can sync.';
+const _capabilityUnavailableMessage =
+    'Server capability response is unavailable; upgrade sync before retrying.';
 
 class _SyncUpgradeRequired implements Exception {
   final String message;
@@ -1851,6 +1911,8 @@ bool looksLikeUnavailableBackend(String message) {
   return message.contains('404') && message.contains('supabase');
 }
 
+const _authenticationExpiredMessage = 'Authentication expired; sign in again.';
+
 SyncFailure classifySyncFailure(Object error) {
   if (error is _SyncUpgradeRequired) {
     return SyncFailure(SyncFailureKind.permanent, error.message);
@@ -1884,7 +1946,7 @@ SyncFailure classifySyncFailure(Object error) {
       message.contains('unauthorized')) {
     return const SyncFailure(
       SyncFailureKind.authentication,
-      'Authentication expired; sign in again.',
+      _authenticationExpiredMessage,
     );
   }
   // Distinct from the generic retry below: an unreachable project is a
