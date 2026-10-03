@@ -20,9 +20,58 @@ class BackupDatabaseApplier {
   final AppDatabase _db;
 
   Future<void> applyMerge(BackupMergePlan plan) async {
+    // A reschedule link between two tasks inserted by this merge would give
+    // both insert operations reciprocal payloads, which push cannot order and
+    // the remote immediate foreign keys cannot accept in either order. Such
+    // links are inserted as null and written afterwards as task updates.
+    final insertedTaskIds = {
+      for (final row in plan.rowsToInsert['tasks'] ?? const [])
+        BackupValidator.id(row, 'id'),
+    };
+    final deferredLinks = <String, Map<String, String>>{};
     for (final entry in _orderedEntries(plan.rowsToInsert)) {
       for (final row in entry.value) {
-        await insertRow(entry.key, row);
+        if (entry.key != 'tasks') {
+          await insertRow(entry.key, row);
+          continue;
+        }
+        final links = <String, String>{
+          for (final field in const [
+            'rescheduled_from_id',
+            'rescheduled_to_id',
+          ])
+            if (insertedTaskIds.contains(
+              BackupValidator.nullableId(row, field),
+            ))
+              field: BackupValidator.id(row, field),
+        };
+        if (links.isNotEmpty) {
+          deferredLinks[BackupValidator.id(row, 'id')] = links;
+        }
+        await insertRow(entry.key, {
+          ...row,
+          for (final field in links.keys) field: null,
+        });
+      }
+    }
+    if (deferredLinks.isNotEmpty) {
+      // Outbox order for one record is created_at (millisecond text) then a
+      // random operation ID, so each link update must start strictly after
+      // the millisecond of its own insert.
+      await _waitForLaterSqliteMillisecond();
+      for (final link in deferredLinks.entries) {
+        await (_db.update(
+          _db.tasks,
+        )..where((task) => task.id.equals(link.key))).write(
+          TasksCompanion(
+            rescheduledFromId: link.value.containsKey('rescheduled_from_id')
+                ? Value(link.value['rescheduled_from_id'])
+                : const Value.absent(),
+            rescheduledToId: link.value.containsKey('rescheduled_to_id')
+                ? Value(link.value['rescheduled_to_id'])
+                : const Value.absent(),
+          ),
+        );
       }
     }
     for (final entry in plan.settingsToInsert.entries) {
@@ -443,6 +492,18 @@ class BackupDatabaseApplier {
     await _db.delete(_db.weeklyReviews).go();
     await _db.delete(_db.tags).go();
     await _db.delete(_db.categories).go();
+  }
+
+  Future<void> _waitForLaterSqliteMillisecond() async {
+    Future<String> now() async =>
+        (await _db
+                .customSelect(
+                  "SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now') AS now",
+                )
+                .getSingle())
+            .read<String>('now');
+    final start = await now();
+    while ((await now()).compareTo(start) <= 0) {}
   }
 
   Future<void> _deletePortableSettings() async {
