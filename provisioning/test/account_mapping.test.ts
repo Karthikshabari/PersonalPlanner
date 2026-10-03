@@ -185,7 +185,7 @@ describe("project-centric resolution", () => {
 
   it("bounds and redacts a plain-text dedicated-endpoint 400", async () => {
     const logged = vi.spyOn(console, "info").mockImplementation(() => {});
-    const secret = "sb_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456";
+    const secret = "sb_secret_abcdefghijklmnopqrstuvwxyz0123456789";
     const calls = managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
       fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status: 400,
       failBody: `invalid query ${secret} ${"z".repeat(5000)}`, failContentType: "text/plain",
@@ -201,7 +201,7 @@ describe("project-centric resolution", () => {
 
   it("redacts credential-shaped fields from a dedicated-endpoint JSON error", async () => {
     const logged = vi.spyOn(console, "info").mockImplementation(() => {});
-    const credential = "sb_secret_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456";
+    const credential = "sb_secret_abcdefghijklmnopqrstuvwxyz0123456789";
     managementResponses([{ ref: X, name: "Existing Planner", compatible: true }], {
       fail: `/v1/projects/${X}/database/query/read-only`, failExact: true, status: 400,
       failBody: JSON.stringify({ code: "42704", message: `bad type ${credential} password=short` }),

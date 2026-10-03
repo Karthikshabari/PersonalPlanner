@@ -68,6 +68,13 @@ app.*.map.json
 /supabase.local.json
 /provisioning.local.json
 
+# This checkout may restore account-specific non-secret Worker binding values
+# over these tracked public templates. Git's local skip-worktree flags protect
+# the tracked copies; these exact rules also protect them if they become
+# untracked without hiding examples or other provisioning source.
+/provisioning/wrangler.jsonc
+/provisioning/worker-configuration.d.ts
+
 # Local SQLite runtime files
 *.sqlite
 *.sqlite3
