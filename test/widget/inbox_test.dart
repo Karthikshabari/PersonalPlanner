@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/inbox_item.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -132,8 +133,11 @@ void main() {
     expect(find.text('Overdue thing'), findsOneWidget);
     // Badge shows the original date (medium date without year part).
     expect(
-      find.textContaining(RegExp(r'(Jul|Aug|Sep) \d')),
-      findsAtLeastNWidgets(1),
+      find.descendant(
+        of: find.byKey(const ValueKey('overdue-badge')),
+        matching: find.text(DateFormat('MMM d').format(yesterday)),
+      ),
+      findsOneWidget,
     );
     await finish(tester, container);
   });

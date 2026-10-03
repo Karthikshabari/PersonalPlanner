@@ -120,6 +120,10 @@ enum ProvisioningState {
       ProvisioningState.terminalError,
       ProvisioningState.expired,
     },
+    // TODO(sync-followup): The Worker's NEXT (provisioning/src/production.ts:41)
+    // allows organization_selected -> project_waiting, but this table and
+    // the mirror in test/unit/sync/provisioning_state_test.dart:29-34 do not.
+    // Not fixed; tracked here so it survives context resets.
     ProvisioningState.organizationSelected => const {
       ProvisioningState.projectCreating,
       // Another device may have bound the account while this one selected an organization.

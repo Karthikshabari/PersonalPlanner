@@ -69,8 +69,10 @@ void main() {
     // No sync surface exists for the provisioned path.
     expect(find.text('Sync now'), findsNothing);
     expect(find.byKey(const ValueKey('sync-enable-toggle')), findsNothing);
-    // The newly ready backend is handed to the bootstrap exactly once.
-    expect(reloader.calls, 1);
+    // A backend that was already READY when the screen opened is already the
+    // installed runtime, so opening the screen does not reload it. Reload on a
+    // transition into READY is covered by provisioning_ui_controller_test.
+    expect(reloader.calls, 0);
 
     await _teardown(tester, harness);
   });

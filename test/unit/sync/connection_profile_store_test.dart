@@ -138,10 +138,11 @@ void main() {
       (ProvisioningState.authorizationPending, null),
       (ProvisioningState.organizationSelected, null),
       (ProvisioningState.projectCreating, null),
-      (ProvisioningState.projectReconciliationRequired, null),
-      (ProvisioningState.projectRetryAuthorized, null),
+      (ProvisioningState.projectRetryAuthorized, null), // 429 → bounded retry
       (ProvisioningState.projectCreating, null),
-      (ProvisioningState.projectWaiting, _projectRef),
+      // ambiguous create
+      (ProvisioningState.projectReconciliationRequired, null),
+      (ProvisioningState.projectWaiting, _projectRef), // reconciled to a ref
       (ProvisioningState.migrating, _projectRef),
       (ProvisioningState.migrationReconciliationRequired, _projectRef),
       (ProvisioningState.migrating, _projectRef),
