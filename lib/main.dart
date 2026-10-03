@@ -506,6 +506,15 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
   SyncEngine? _syncEngine;
   StreamSubscription<AuthSessionState>? _authSubscription;
 
+  /// The previous account scope after its shutdown failed (its running timer
+  /// could not be paused durably), or null.
+  ///
+  /// It stays open and unpublished. The next switch attempt, from Retry or a new
+  /// Auth target, retries its shutdown before any other database is opened.
+  ProviderContainer? _unclosedContainer;
+  AppDatabase? _unclosedDatabase;
+  SyncEngine? _unclosedSyncEngine;
+
   /// The account database/container/local services that are actually open, or
   /// null while nothing is open.
   ///
@@ -778,28 +787,37 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
       _error = null;
     });
 
-    final oldContainer = _container;
-    final oldDatabase = _database;
-    final oldEngine = _syncEngine;
+    // The scope being left stays referenced until its shutdown succeeded, so a
+    // failed timer pause is retried rather than leaking an open database.
+    if (_container != null && _database != null) {
+      _unclosedContainer = _container;
+      _unclosedDatabase = _database;
+      _unclosedSyncEngine = _syncEngine;
+    }
     _container = null;
     _database = null;
     _syncEngine = null;
     // Nothing is open while the switch is in flight. The open target is
     // published again only after this switch established it.
     _openTarget = null;
-    if (oldContainer != null && oldDatabase != null) {
-      await widget.seams.shutdownLocalServices(
-        oldContainer,
-        oldDatabase,
-        oldEngine,
-        true,
-      );
-    }
 
     AppDatabase? database;
     ProviderContainer? container;
     SyncEngine? engine;
     try {
+      final oldContainer = _unclosedContainer;
+      final oldDatabase = _unclosedDatabase;
+      if (oldContainer != null && oldDatabase != null) {
+        await widget.seams.shutdownLocalServices(
+          oldContainer,
+          oldDatabase,
+          _unclosedSyncEngine,
+          true,
+        );
+        _unclosedContainer = null;
+        _unclosedDatabase = null;
+        _unclosedSyncEngine = null;
+      }
       database = await widget.seams.openDatabase(accountId: target.accountId);
       if (!mounted || _requestedTarget != target) {
         // Superseded while the database was opening. Nothing of this target may
@@ -883,9 +901,17 @@ class _PlannerBootstrapState extends State<_PlannerBootstrap>
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_authSubscription?.cancel());
     unawaited(_disposeRuntimeAuthBootstrap());
-    final container = _container;
-    final database = _database;
-    final engine = _syncEngine;
+    // An in-flight switch owns a scope whose earlier shutdown failed; otherwise
+    // this is the last chance to retry releasing it.
+    final releaseUnclosed = _container == null && _databaseSwitch == null;
+    final container = releaseUnclosed ? _unclosedContainer : _container;
+    final database = releaseUnclosed ? _unclosedDatabase : _database;
+    final engine = releaseUnclosed ? _unclosedSyncEngine : _syncEngine;
+    if (releaseUnclosed) {
+      _unclosedContainer = null;
+      _unclosedDatabase = null;
+      _unclosedSyncEngine = null;
+    }
     _container = null;
     _database = null;
     _syncEngine = null;

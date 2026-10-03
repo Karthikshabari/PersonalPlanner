@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/planner_account_scope.dart';
+import 'package:personal_planner/core/widgets/error_panel.dart';
 import 'package:personal_planner/features/sync/data/app_link_source.dart';
 import 'package:personal_planner/features/sync/data/auth_repository.dart';
 import 'package:personal_planner/features/sync/data/initial_sync_state_store.dart';
@@ -89,6 +90,70 @@ void main() {
 
     await harness.finish(tester);
   });
+
+  testWidgets(
+    'a failed timer pause during a switch shows Retry and keeps the old scope '
+    'open until its shutdown succeeds',
+    (tester) async {
+      final harness = _Harness();
+      final stackA = await harness.startSignedIn(
+        tester,
+        projectRef: projectRefA,
+        authUserId: authUserIdX,
+      );
+      final accountA = _accountId(projectRefA, authUserIdX);
+      final containerA = harness.activeContainer(tester);
+      final databaseA = harness.databaseFor(accountA)!;
+      harness.failingShutdowns = 2;
+
+      await stackA.client.signOut();
+      await harness.pumpUntil(
+        tester,
+        () => find.byType(ErrorPanel).evaluate().isNotEmpty,
+        reason: 'expected the failed shutdown to surface the error panel',
+      );
+      expect(tester.takeException(), isA<StateError>());
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      // The old account scope is still open and nothing else was opened.
+      expect(harness.openedAccountIds, [accountA]);
+      expect(harness.shutdownContainers, [same(containerA)]);
+      expect(await databaseA.syncDao.pendingCount(), 0);
+
+      // A failing retry targets the same preserved scope and stays on the panel.
+      await tester.tap(find.text('Retry'));
+      await harness.pumpUntil(
+        tester,
+        () =>
+            harness.shutdownContainers.length == 2 &&
+            find.byType(ErrorPanel).evaluate().isNotEmpty,
+        reason: 'expected the second shutdown failure to keep the error panel',
+      );
+      expect(tester.takeException(), isA<StateError>());
+      expect(harness.openedAccountIds, [accountA]);
+      expect(harness.shutdownContainers, [same(containerA), same(containerA)]);
+
+      // A successful retry releases that scope, then opens the requested one.
+      await tester.tap(find.text('Retry'));
+      await harness.pumpUntil(
+        tester,
+        () =>
+            harness.appMounted(tester) &&
+            harness.activeScopeOrNull(tester) == null,
+        reason: 'expected the retry to finish the switch to the local scope',
+      );
+      expect(find.byType(ErrorPanel), findsNothing);
+      expect(harness.shutdownContainers, [
+        same(containerA),
+        same(containerA),
+        same(containerA),
+      ]);
+      expect(harness.shutdownAccountIds, [accountA, accountA, accountA]);
+      expect(harness.openedAccountIds, [accountA, null]);
+      expect(identical(harness.activeContainer(tester), containerA), isFalse);
+
+      await harness.finish(tester);
+    },
+  );
 
   testWidgets('signing back in returns to the same account database', (
     tester,
@@ -403,6 +468,11 @@ class _Harness {
   final List<String?> openedAccountIds = <String?>[];
   final List<String?> initializedScopes = <String?>[];
   final List<String?> shutdownAccountIds = <String?>[];
+  final List<ProviderContainer> shutdownContainers = <ProviderContainer>[];
+
+  /// Upcoming shutdowns that fail like an unpersisted timer pause: they throw
+  /// before releasing the container.
+  int failingShutdowns = 0;
   final List<_PreparedStack> installedStacks = <_PreparedStack>[];
   final List<RemoteCall> remoteCalls = <RemoteCall>[];
   final Map<String?, AppDatabase> databases = <String?, AppDatabase>{};
@@ -610,6 +680,11 @@ class _Harness {
     bool persistWindow,
   ) async {
     shutdownAccountIds.add(container.read(openAccountScopeProvider)?.storageId);
+    shutdownContainers.add(container);
+    if (failingShutdowns > 0) {
+      failingShutdowns -= 1;
+      throw StateError('the running timer could not be paused');
+    }
     container.dispose();
   }
 

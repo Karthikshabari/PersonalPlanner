@@ -7,8 +7,10 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqlite3/sqlite3.dart' show Database;
 
 import 'daos/category_dao.dart';
 import 'daos/recurring_rule_dao.dart';
@@ -159,10 +161,16 @@ class AppDatabase extends _$AppDatabase {
   );
 
   static QueryExecutor _openConnection(String path) =>
-      NativeDatabase.createInBackground(
-        File(path),
-        setup: (raw) => raw.execute('PRAGMA foreign_keys = ON'),
-      );
+      NativeDatabase.createInBackground(File(path), setup: configureConnection);
+
+  /// Pragmas applied to every connection [_openConnection] opens.
+  @visibleForTesting
+  static void configureConnection(Database raw) {
+    // The Android notification-action engine and the Linux reminder worker
+    // open this same file: wait for their locks instead of failing.
+    raw.execute('PRAGMA busy_timeout = 30000');
+    raw.execute('PRAGMA foreign_keys = ON');
+  }
 
   @override
   int get schemaVersion => 9;
