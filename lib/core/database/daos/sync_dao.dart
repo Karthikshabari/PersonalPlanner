@@ -16,6 +16,20 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
   static const permanentErrorPrefix = 'Permanent sync error: ';
   static final permanentRetryAt = DateTime.utc(9999, 12, 31, 23, 59, 59);
 
+  /// Canonical outbox order: local insertion sequence. An unassigned seq can
+  /// only be observed inside the inserting statement and sorts last.
+  static int compareOutboxOrder(SyncLogRow a, SyncLogRow b) {
+    final left = a.seq;
+    final right = b.seq;
+    if (left != null && right != null && left != right) {
+      return left.compareTo(right);
+    }
+    if (left == null && right != null) return 1;
+    if (left != null && right == null) return -1;
+    final time = a.createdAt.compareTo(b.createdAt);
+    return time == 0 ? a.operationId.compareTo(b.operationId) : time;
+  }
+
   Future<List<SyncLogRow>> getRetryableOperations(
     DateTime now, {
     int limit = 100,
@@ -24,7 +38,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
     return (select(syncLog)
           ..where((row) => _eligibleAt(row, now))
           ..orderBy([
-            (row) => OrderingTerm.asc(row.createdAt),
+            (row) => OrderingTerm.asc(row.seq),
             (row) => OrderingTerm.asc(row.operationId),
           ])
           ..limit(limit, offset: offset))
@@ -56,7 +70,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                   row.state.isIn(['pending', 'error', 'in_flight', 'conflict']),
             )
             ..orderBy([
-              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.seq),
               (row) => OrderingTerm.asc(row.operationId),
             ]))
           .get();
@@ -77,7 +91,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                   row.state.isIn(['pending', 'error', 'in_flight', 'conflict']),
             )
             ..orderBy([
-              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.seq),
               (row) => OrderingTerm.asc(row.operationId),
             ]))
           .get();
@@ -251,7 +265,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                   row.lastError.like('$permanentErrorPrefix%'),
             )
             ..orderBy([
-              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.seq),
               (row) => OrderingTerm.asc(row.operationId),
             ])
             ..limit(1))
@@ -274,7 +288,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                   row.lastError.like('%$diagnostic%'),
             )
             ..orderBy([
-              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.seq),
               (row) => OrderingTerm.asc(row.operationId),
             ])
             ..limit(limit))
@@ -306,7 +320,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                   row.lastError.like('$permanentErrorPrefix%'),
             )
             ..orderBy([
-              (row) => OrderingTerm.asc(row.createdAt),
+              (row) => OrderingTerm.asc(row.seq),
               (row) => OrderingTerm.asc(row.operationId),
             ]))
           .watch();
@@ -317,7 +331,10 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
               (row) =>
                   row.state.isIn(['pending', 'error', 'in_flight', 'conflict']),
             )
-            ..orderBy([(row) => OrderingTerm.asc(row.createdAt)]))
+            ..orderBy([
+              (row) => OrderingTerm.asc(row.seq),
+              (row) => OrderingTerm.asc(row.operationId),
+            ]))
           .watch();
 
   /// Quarantined pull payloads remain in app settings until a repair tool
@@ -499,10 +516,11 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
                 row.state.isIn(['pending', 'error', 'in_flight', 'conflict']),
           ))
           .write(
-            const SyncLogCompanion(
-              state: Value('acknowledged'),
-              nextAttemptAt: Value(null),
-              lastError: Value(null),
+            SyncLogCompanion(
+              state: const Value('acknowledged'),
+              nextAttemptAt: const Value(null),
+              lastError: const Value(null),
+              updatedAt: Value(DateTime.now().toUtc()),
             ),
           );
 
@@ -510,10 +528,28 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
       (update(
         syncLog,
       )..where((row) => row.operationId.equals(operationId))).write(
-        const SyncLogCompanion(
-          state: Value('acknowledged'),
-          nextAttemptAt: Value(null),
-          lastError: Value(null),
+        SyncLogCompanion(
+          state: const Value('acknowledged'),
+          nextAttemptAt: const Value(null),
+          lastError: const Value(null),
+          updatedAt: Value(DateTime.now().toUtc()),
         ),
       );
+
+  /// Deletes at most [limit] acknowledged operations last updated before
+  /// [olderThan], oldest first. Returns the number of rows deleted.
+  Future<int> pruneAcknowledgedOperations({
+    required DateTime olderThan,
+    int limit = 500,
+  }) => customUpdate(
+    'DELETE FROM sync_log WHERE operation_id IN (SELECT operation_id '
+    'FROM sync_log WHERE state = ? AND updated_at < ? ORDER BY seq LIMIT ?)',
+    variables: [
+      Variable<String>('acknowledged'),
+      Variable<String>(olderThan.toUtc().toIso8601String()),
+      Variable<int>(limit),
+    ],
+    updates: {syncLog},
+    updateKind: UpdateKind.delete,
+  );
 }

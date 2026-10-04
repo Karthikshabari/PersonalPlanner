@@ -45,6 +45,9 @@ class SyncRepository {
 
   /// Most operations one push attempts. Held rows do not count.
   static const _pushBatchSize = 100;
+
+  /// Retention window for acknowledged outbox rows.
+  static const acknowledgedRetention = Duration(days: 30);
   static const _legacyTitleHistoryTransitionDiagnostic =
       'Existing plan title events cannot be removed or changed';
 
@@ -69,6 +72,15 @@ class SyncRepository {
     try {
       final pushFailure = await push();
       final pullFailure = await pull();
+      if (pushFailure == null && pullFailure == null) {
+        try {
+          await _db.syncDao.pruneAcknowledgedOperations(
+            olderThan: DateTime.now().toUtc().subtract(acknowledgedRetention),
+          );
+        } on Object {
+          // Pruning is best-effort.
+        }
+      }
       return SyncCycleResult(
         pushFailure: pushFailure,
         pullFailure: pullFailure,
@@ -921,63 +933,15 @@ class SyncRepository {
     );
   }
 
+  /// The newest local intent is the last enqueued operation.
   static SyncLogRow _newestOperation(List<SyncLogRow> operations) {
     var newest = operations.first;
     for (final candidate in operations.skip(1)) {
-      final newestRevision = _snapshotRevision(newest.payload);
-      final candidateRevision = _snapshotRevision(candidate.payload);
-      if (newestRevision != null &&
-          candidateRevision != null &&
-          candidateRevision != newestRevision) {
-        if (candidateRevision > newestRevision) newest = candidate;
-        continue;
-      }
-      final newestAt = _snapshotUpdatedAt(newest.payload) ?? newest.createdAt;
-      final candidateAt =
-          _snapshotUpdatedAt(candidate.payload) ?? candidate.createdAt;
-      final isLater = candidateAt.isAfter(newestAt);
-      final isSameTime = candidateAt.isAtSameMomentAs(newestAt);
-      final isLaterCreated = candidate.createdAt.isAfter(newest.createdAt);
-      final isSameCreated = candidate.createdAt.isAtSameMomentAs(
-        newest.createdAt,
-      );
-      if (isLater ||
-          (isSameTime &&
-              (isLaterCreated ||
-                  (isSameCreated &&
-                      candidate.operationId.compareTo(newest.operationId) >
-                          0)))) {
+      if (SyncDao.compareOutboxOrder(candidate, newest) > 0) {
         newest = candidate;
       }
     }
     return newest;
-  }
-
-  static int? _snapshotRevision(String payload) {
-    try {
-      final decoded = jsonDecode(payload);
-      if (decoded is Map) {
-        final value = decoded['_planner_revision'];
-        if (value is num && value == value.toInt()) return value.toInt();
-        return int.tryParse('$value');
-      }
-    } on FormatException {
-      // Payload validation happens at the sync boundary.
-    }
-    return null;
-  }
-
-  static DateTime? _snapshotUpdatedAt(String payload) {
-    try {
-      final decoded = jsonDecode(payload);
-      if (decoded is Map) {
-        return DateTime.tryParse('${decoded['updated_at'] ?? ''}')?.toUtc();
-      }
-    } on FormatException {
-      // Payload validation happens at the sync boundary. Keep snapshot
-      // selection defensive if a legacy row contains malformed JSON.
-    }
-    return null;
   }
 
   Future<void> keepLocal(String conflictId) async {
@@ -1894,10 +1858,8 @@ class SyncRepository {
     }
   }
 
-  static int _operationChronology(SyncLogRow a, SyncLogRow b) {
-    final time = a.createdAt.compareTo(b.createdAt);
-    return time == 0 ? a.operationId.compareTo(b.operationId) : time;
-  }
+  static int _operationChronology(SyncLogRow a, SyncLogRow b) =>
+      SyncDao.compareOutboxOrder(a, b);
 
   static const _upsertOrder = {
     'day_contexts': 0,

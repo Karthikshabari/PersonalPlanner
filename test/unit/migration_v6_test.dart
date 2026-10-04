@@ -27,7 +27,7 @@ void main() {
             expect(
               (await db.customSelect('PRAGMA user_version').getSingle())
                   .read<int>('user_version'),
-              9,
+              10,
               reason: 'v$version did not reach schema v9',
             );
             expect(
@@ -36,7 +36,9 @@ void main() {
             );
             expect((await db.select(db.categories).get()).single.name, 'Work');
             expect(
-              (await db.select(db.appSettings).get()).single.value,
+              (await db.select(db.appSettings).get())
+                  .singleWhere((s) => s.key == 'theme')
+                  .value,
               'dark',
             );
             if (version >= 2) {

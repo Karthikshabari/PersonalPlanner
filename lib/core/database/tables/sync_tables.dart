@@ -22,6 +22,9 @@ class SyncLog extends Table {
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
 
+  /// Local insertion order assigned by trigger sync_log_assign_seq. Never written by Dart.
+  IntColumn get seq => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {operationId};
 

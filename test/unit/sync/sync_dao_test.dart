@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../../helpers/migration_schema.dart';
 import '../../helpers/sqlite_setup.dart';
 
 void main() {
@@ -92,4 +96,121 @@ void main() {
       await db.close();
     }
   });
+
+  test(
+    'pruneAcknowledgedOperations deletes only old acknowledged rows',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      try {
+        final now = DateTime.now().toUtc();
+        Future<void> enqueue(String id, String state, Duration age) =>
+            db.syncDao.enqueueOperation(
+              SyncLogCompanion.insert(
+                operationId: id,
+                entityTableName: 'tasks',
+                recordId: 'record-$id',
+                operation: 'update',
+                payload: '{}',
+                state: Value(state),
+                createdAt: now.subtract(age),
+                updatedAt: now.subtract(age),
+              ),
+            );
+        await enqueue(
+          'acknowledged-old',
+          'acknowledged',
+          const Duration(days: 40),
+        );
+        await enqueue(
+          'acknowledged-new',
+          'acknowledged',
+          const Duration(days: 1),
+        );
+        await enqueue('pending-old', 'pending', const Duration(days: 40));
+        await enqueue('conflict-old', 'conflict', const Duration(days: 40));
+
+        final deleted = await db.syncDao.pruneAcknowledgedOperations(
+          olderThan: now.subtract(const Duration(days: 30)),
+        );
+
+        expect(deleted, 1);
+        final remaining = await db.select(db.syncLog).get();
+        expect(
+          remaining.map((row) => row.operationId),
+          unorderedEquals(['acknowledged-new', 'pending-old', 'conflict-old']),
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
+    'v8 reconciliation is not re-enqueued after its operations are pruned',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'planner_v8_reconciliation_prune',
+      );
+      final file = File('${directory.path}/planner.sqlite3');
+      try {
+        MigrationSchema.create(file, 8);
+        final raw = sqlite3.sqlite3.open(file.path);
+        raw.execute('''
+          CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+            recovery_id TEXT NOT NULL PRIMARY KEY,
+            table_name TEXT NOT NULL,
+            row_id TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            recovered_at TEXT NOT NULL
+          )
+        ''');
+        raw.execute(
+          'INSERT INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          "VALUES ('v8:tasks:task-1', 'tasks', 'task-1', '{}', "
+          "'Migrated legacy explicit Inbox content without trimming', "
+          "'2026-01-01T00:00:00.000Z')",
+        );
+        raw.dispose();
+
+        final first = AppDatabase(NativeDatabase(file));
+        try {
+          final operation = (await first.syncDao.getActiveOperationsForRecord(
+            'tasks',
+            'task-1',
+          )).single;
+          final acknowledgedAt = DateTime.now().toUtc().subtract(
+            const Duration(days: 40),
+          );
+          await first.syncDao.markAcknowledged(
+            operation.operationId,
+            acknowledgedAt,
+          );
+          expect(
+            await first.syncDao.pruneAcknowledgedOperations(
+              olderThan: DateTime.now().toUtc().subtract(
+                const Duration(days: 30),
+              ),
+            ),
+            1,
+          );
+        } finally {
+          await first.close();
+        }
+
+        final reopened = AppDatabase(NativeDatabase(file));
+        try {
+          final count = await reopened
+              .customSelect('SELECT COUNT(*) AS count FROM sync_log')
+              .getSingle();
+          expect(count.read<int>('count'), 0);
+        } finally {
+          await reopened.close();
+        }
+      } finally {
+        directory.deleteSync(recursive: true);
+      }
+    },
+  );
 }

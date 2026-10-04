@@ -173,7 +173,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -221,6 +221,9 @@ class AppDatabase extends _$AppDatabase {
           tasks,
           tasks.recurrenceRemovalReason,
         );
+      }
+      if (from < 10) {
+        await _migrateToV10(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -699,6 +702,216 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  /// Runs [action] in one transaction with the outbound sync triggers
+  /// suppressed. The marker is removed in the same transaction, including
+  /// when [action] throws.
+  Future<void> _withOutboundSuppressed(Future<void> Function() action) {
+    return transaction(() async {
+      await customStatement(
+        "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
+      );
+      try {
+        await action();
+      } finally {
+        await customStatement(
+          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+        );
+      }
+    });
+  }
+
+  /// Schema-v10 adds the monotonic outbox sequence and rebuilds `tasks` and
+  /// `timer_sessions`, so installs upgraded through ADD COLUMN steps gain the
+  /// table-level CHECKs that fresh installs already have.
+  Future<void> _migrateToV10(Migrator m) async {
+    await _addColumnIfMissing(m, 'sync_log', syncLog, syncLog.seq);
+    // Matches the previous (created_at, operation_id) order at millisecond
+    // granularity, so queued operations keep their relative order.
+    await customStatement(
+      'UPDATE sync_log SET seq = (SELECT r.rn FROM (SELECT operation_id, '
+      'ROW_NUMBER() OVER (ORDER BY julianday(created_at), created_at, '
+      'operation_id) AS rn FROM sync_log) r '
+      'WHERE r.operation_id = sync_log.operation_id) WHERE seq IS NULL',
+    );
+    // Partial development v8 databases gain these columns only in beforeOpen;
+    // the repair and rebuild below reference them.
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.manualActualSet);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.state,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.runningSince,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.workIntervalsJson,
+    );
+    await _addColumnIfMissing(
+      m,
+      'timer_sessions',
+      timerSessions,
+      timerSessions.ownerDeviceId,
+    );
+    await _withOutboundSuppressed(_repairRowsForV10Constraints);
+    await m.alterTable(TableMigration(tasks));
+    await m.alterTable(TableMigration(timerSessions));
+    final violations = await customSelect('PRAGMA foreign_key_check').get();
+    if (violations.isNotEmpty) {
+      throw StateError(
+        'Schema v10 migration left ${violations.length} foreign-key violation(s)',
+      );
+    }
+    // The rebuild reassigned task rowids, which the external-content FTS
+    // index is keyed by. alterTable restored the FTS triggers from their
+    // stored SQL, so re-index in place and keep the released objects intact.
+    await _reindexFtsAfterTaskRebuild();
+  }
+
+  /// Re-populates `tasks_fts` with exactly the rows its installed triggers
+  /// maintain. The released v6 triggers index every task, so `rebuild` is
+  /// exact for them. The current triggers index only live tasks; a `rebuild`
+  /// would also index soft-deleted tasks and corrupt the index when one is
+  /// revived or edited.
+  Future<void> _reindexFtsAfterTaskRebuild() async {
+    final insertTrigger = await customSelect(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+      "AND name = 'tasks_fts_insert'",
+    ).getSingleOrNull();
+    if (insertTrigger == null) {
+      await _createFts();
+      return;
+    }
+    if (!insertTrigger.read<String>('sql').contains('deleted_at')) {
+      await customStatement(
+        "INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild')",
+      );
+      return;
+    }
+    await customStatement(
+      "INSERT INTO tasks_fts(tasks_fts) VALUES ('delete-all')",
+    );
+    await customStatement(
+      'INSERT INTO tasks_fts(rowid, title, description, notes) '
+      "SELECT rowid, title, COALESCE(description, ''), COALESCE(notes, '') "
+      'FROM tasks WHERE deleted_at IS NULL',
+    );
+  }
+
+  /// Corrects rows that would violate the schema-v10 table CHECKs. The
+  /// server enforces equivalent constraints, so a violating row was never
+  /// acknowledged and is repaired locally without an outbox operation. The
+  /// original row is kept in the recovery ledger.
+  Future<void> _repairRowsForV10Constraints() async {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    const timerStateBounds =
+        "NOT (state IN ('running', 'paused', 'finished') AND ("
+        "(state = 'running' AND running_since IS NOT NULL AND ended_at IS NULL) OR "
+        "(state = 'paused' AND running_since IS NULL AND ended_at IS NULL) OR "
+        "(state = 'finished' AND running_since IS NULL AND ended_at IS NOT NULL)))";
+    final repairs =
+        <({String table, String rule, String where, String assignments})>[
+          (
+            table: 'tasks',
+            rule: 'manual_actual_set',
+            where: 'manual_actual_set NOT IN (0, 1)',
+            assignments:
+                'manual_actual_set = CASE WHEN manual_actual_set <> 0 '
+                'THEN 1 ELSE 0 END',
+          ),
+          (
+            table: 'tasks',
+            rule: 'inbox_content_version',
+            where: 'inbox_content_version NOT IN (0, 1)',
+            assignments:
+                'inbox_content_version = CASE WHEN inbox_content_version > 0 '
+                'THEN 1 ELSE 0 END',
+          ),
+          (
+            table: 'tasks',
+            rule: 'plan_title_history',
+            where:
+                'NOT json_valid(plan_title_history_json) OR '
+                "json_type(plan_title_history_json) <> 'array'",
+            assignments:
+                "plan_title_history_json = '[]', display_plan_change_id = NULL",
+          ),
+          (
+            table: 'tasks',
+            rule: 'due_date',
+            where:
+                'due_date IS NOT NULL AND NOT (length(due_date) = 10 AND '
+                "due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' "
+                'AND date(due_date) = due_date)',
+            assignments: 'due_date = NULL',
+          ),
+          (
+            table: 'timer_sessions',
+            rule: 'state_bounds',
+            where: timerStateBounds,
+            assignments:
+                "state = CASE WHEN ended_at IS NOT NULL THEN 'finished' "
+                "WHEN state = 'paused' THEN 'paused' ELSE 'running' END, "
+                'running_since = CASE WHEN ended_at IS NOT NULL THEN NULL '
+                "WHEN state = 'paused' THEN NULL "
+                'ELSE COALESCE(running_since, started_at) END, '
+                'owner_device_id = CASE WHEN ended_at IS NOT NULL '
+                "OR state = 'paused' THEN owner_device_id ELSE NULL END",
+          ),
+        ];
+    // Capture every violating row before any repair so each ledger payload
+    // holds the row exactly as it was found.
+    final found = [
+      for (final repair in repairs)
+        await customSelect(
+          'SELECT * FROM ${repair.table} WHERE ${repair.where}',
+        ).get(),
+    ];
+    final recoveredAt = DateTime.now().toUtc().toIso8601String();
+    for (var i = 0; i < repairs.length; i++) {
+      final repair = repairs[i];
+      if (found[i].isEmpty) continue;
+      for (final row in found[i]) {
+        final id = row.read<String>('id');
+        await customStatement(
+          'INSERT OR IGNORE INTO planner_migration_recovery '
+          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+          'VALUES (?, ?, ?, ?, ?, ?)',
+          [
+            'v10:${repair.table}:$id:${repair.rule}',
+            repair.table,
+            id,
+            jsonEncode(row.data),
+            'Repaired row to satisfy schema v10 table constraints',
+            recoveredAt,
+          ],
+        );
+      }
+      await customStatement(
+        'UPDATE ${repair.table} SET ${repair.assignments} '
+        'WHERE ${repair.where}',
+      );
+    }
+  }
+
   Future<void> _migrateLegacyTimeAccounting() async {
     final legacyTasks = await customSelect(
       'SELECT id, actual_duration_min, manual_duration_adjustment_min, '
@@ -920,6 +1133,7 @@ class AppDatabase extends _$AppDatabase {
       await customStatement('DROP TRIGGER IF EXISTS sync_${table}_update');
       await customStatement('DROP TRIGGER IF EXISTS sync_${table}_delete');
     }
+    await customStatement('DROP TRIGGER IF EXISTS sync_log_assign_seq');
   }
 
   Future<void> _addServerVersionIfMissing(
@@ -1232,6 +1446,35 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       "CREATE INDEX IF NOT EXISTS idx_timer_owner_state ON timer_sessions (owner_device_id, state, updated_at) WHERE deleted_at IS NULL",
     );
+    // Child-side foreign-key indexes. SQLite treats `col = ?` as implying
+    // `col IS NOT NULL`, so FK lookups can use the partial ones.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_rescheduled_from_fk ON tasks (rescheduled_from_id) WHERE rescheduled_from_id IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_rescheduled_to_fk ON tasks (rescheduled_to_id) WHERE rescheduled_to_id IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_category_fk ON tasks (category_id) WHERE category_id IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_recurring_rule_fk ON tasks (recurring_rule_id) WHERE recurring_rule_id IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_task_tags_tag_fk ON task_tags (tag_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_subtasks_task_fk ON subtasks (task_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_timer_sessions_task_fk ON timer_sessions (task_id)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_recurring_rules_category_fk ON recurring_rules (category_id) WHERE category_id IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_task_templates_category_fk ON task_templates (category_id) WHERE category_id IS NOT NULL',
+    );
   }
 
   Future<void> _createFts() async {
@@ -1275,13 +1518,18 @@ class AppDatabase extends _$AppDatabase {
   }
 
   Future<void> _createSyncIndexes() async {
+    // Outbox reads filter on in-flight and conflict rows too, which the old
+    // partial index could not serve.
+    await customStatement('DROP INDEX IF EXISTS idx_sync_log_pending');
     await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_sync_log_pending '
-      'ON sync_log(state, next_attempt_at, created_at) '
-      "WHERE state IN ('pending', 'error')",
+      'CREATE INDEX IF NOT EXISTS idx_sync_log_state_seq '
+      'ON sync_log(state, seq)',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_log_seq ON sync_log(seq)',
     );
     // Push looks up a record's active operations and a parent's unsent insert
-    // for every row it considers; acknowledged rows are never pruned.
+    // for every row it considers.
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_sync_log_record '
       'ON sync_log(table_name, record_id)',
@@ -1512,6 +1760,17 @@ END;
       jsonOld:
           "json_object('id', OLD.id, 'date', OLD.date, 'kind', OLD.kind, 'custom_label', OLD.custom_label, 'created_at', OLD.created_at, 'updated_at', OLD.updated_at, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
+    // Outbox order: domain triggers, Drift inserts and raw inserts all get the
+    // next local sequence number, independent of created_at precision.
+    await customStatement('''
+CREATE TRIGGER IF NOT EXISTS sync_log_assign_seq
+AFTER INSERT ON sync_log
+WHEN NEW.seq IS NULL
+BEGIN
+  UPDATE sync_log SET seq = (SELECT COALESCE(MAX(seq), 0) + 1 FROM sync_log)
+  WHERE operation_id = NEW.operation_id;
+END;
+''');
   }
 
   Future<void> _ensureDayContextTable() async {
@@ -1645,15 +1904,27 @@ END;
       // Queue one canonical post-transform snapshot after Inbox conversion,
       // timer-state migration, manual-source inference and cache rebuild have
       // all completed. The recovery ledger is durable across a process stop;
-      // the deterministic operation ID makes reopening retry-safe.
-      final reconciliationTasks = await customSelect(
-        "SELECT DISTINCT row_id FROM planner_migration_recovery "
-        "WHERE table_name = 'tasks' AND ("
-        "reason LIKE 'Migrated legacy explicit Inbox content%' OR "
-        "reason LIKE 'Inferred one-time manual actual source%')",
-      ).get();
-      for (final row in reconciliationTasks) {
-        await _enqueueV8TaskReconciliation(row.read<String>('row_id'));
+      // the deterministic operation ID makes reopening retry-safe. Once the
+      // pass completes it is marked done, so pruning an acknowledged
+      // reconciliation operation cannot make it re-enqueue.
+      final reconciliationDone = await customSelect(
+        "SELECT value FROM app_settings "
+        "WHERE key = 'migration.v8_reconciliation_done'",
+      ).getSingleOrNull();
+      if (reconciliationDone?.read<String>('value') != '1') {
+        final reconciliationTasks = await customSelect(
+          "SELECT DISTINCT row_id FROM planner_migration_recovery "
+          "WHERE table_name = 'tasks' AND ("
+          "reason LIKE 'Migrated legacy explicit Inbox content%' OR "
+          "reason LIKE 'Inferred one-time manual actual source%')",
+        ).get();
+        for (final row in reconciliationTasks) {
+          await _enqueueV8TaskReconciliation(row.read<String>('row_id'));
+        }
+        await customStatement(
+          "INSERT OR REPLACE INTO app_settings(key, value) "
+          "VALUES ('migration.v8_reconciliation_done', '1')",
+        );
       }
     } finally {
       if (previousApplyMode == null) {

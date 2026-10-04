@@ -99,7 +99,7 @@ void main() {
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          9,
+          10,
         );
         expect(
           (await db
@@ -290,7 +290,7 @@ void main() {
     }
   });
 
-  test('v8 restores a pre-existing sync apply-mode setting', () async {
+  test('upgrade does not leave a sync apply-mode setting behind', () async {
     final directory = Directory.systemTemp.createTempSync(
       'planner_migration_v8_apply_mode',
     );
@@ -310,8 +310,8 @@ void main() {
             .customSelect(
               "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
             )
-            .getSingle();
-        expect(setting.read<String>('value'), 'legacy');
+            .getSingleOrNull();
+        expect(setting, isNull);
       } finally {
         await db.close();
       }
@@ -373,7 +373,7 @@ void main() {
           expect(
             (await db.customSelect('PRAGMA user_version').getSingle())
                 .read<int>('user_version'),
-            9,
+            10,
           );
           final task = await db.taskDao.getTaskById('task-1');
           expect(task?.planTitleHistoryJson, '[]');

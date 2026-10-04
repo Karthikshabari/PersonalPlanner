@@ -222,7 +222,7 @@ return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTa
 
 class _DailyStats implements DailyStats {
   const _DailyStats({required this.date, this.totalTasks = 0, this.completedTasks = 0, this.plannedTasks = 0, this.inProgressTasks = 0, this.missedTasks = 0, this.skippedTasks = 0, this.cancelledTasks = 0, this.rescheduledTasks = 0, this.plannedDurationMin = 0, this.actualDurationMin = 0, this.focusDurationMin = 0, this.energyLevel, this.productivityRating, this.planningAccuracyPct, required this.computedAt});
-
+  
 
 @override final  DateTime date;
 @override@JsonKey() final  int totalTasks;

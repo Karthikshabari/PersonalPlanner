@@ -98,7 +98,12 @@ void main() {
               updatedAt: now,
             ),
           );
-      await db.customStatement('ANALYZE');
+      // The app never runs ANALYZE, so production plans sync_log without
+      // statistics. Every fixture row is a pending trigger op, which would
+      // make the state index look unselective to ANALYZE; keep sync_log
+      // unanalyzed so pending-sync is planned as it is on devices.
+      await db.customStatement('ANALYZE tasks');
+      await db.customStatement('ANALYZE timer_sessions');
 
       final queries = <String, String>{
         'day/week': """
@@ -146,9 +151,9 @@ void main() {
         """,
         'pending-sync': """
           SELECT operation_id FROM sync_log
-          WHERE state IN ('pending', 'error')
+          WHERE state IN ('pending', 'error', 'in_flight')
             AND (next_attempt_at IS NULL OR next_attempt_at <= '2026-08-24T00:00:00.000Z')
-          ORDER BY state, next_attempt_at, created_at
+          ORDER BY seq, operation_id
           LIMIT 100
         """,
       };
@@ -160,7 +165,7 @@ void main() {
         'analytics': 'idx_tasks_category_date',
         'timer': 'idx_timer_sessions_task',
         'recurrence': 'idx_tasks_recurring',
-        'pending-sync': 'idx_sync_log_pending',
+        'pending-sync': 'idx_sync_log_state_seq',
       };
 
       for (final entry in queries.entries) {

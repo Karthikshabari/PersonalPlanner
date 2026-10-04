@@ -10368,6 +10368,15 @@ class $SyncLogTable extends SyncLog with TableInfo<$SyncLogTable, SyncLogRow> {
         type: DriftSqlType.string,
         requiredDuringInsert: true,
       ).withConverter<DateTime>($SyncLogTable.$converterupdatedAt);
+  static const VerificationMeta _seqMeta = const VerificationMeta('seq');
+  @override
+  late final GeneratedColumn<int> seq = GeneratedColumn<int>(
+    'seq',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     operationId,
@@ -10382,6 +10391,7 @@ class $SyncLogTable extends SyncLog with TableInfo<$SyncLogTable, SyncLogRow> {
     lastError,
     createdAt,
     updatedAt,
+    seq,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -10471,6 +10481,12 @@ class $SyncLogTable extends SyncLog with TableInfo<$SyncLogTable, SyncLogRow> {
         lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
       );
     }
+    if (data.containsKey('seq')) {
+      context.handle(
+        _seqMeta,
+        seq.isAcceptableOrUnknown(data['seq']!, _seqMeta),
+      );
+    }
     return context;
   }
 
@@ -10534,6 +10550,10 @@ class $SyncLogTable extends SyncLog with TableInfo<$SyncLogTable, SyncLogRow> {
           data['${effectivePrefix}updated_at'],
         )!,
       ),
+      seq: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}seq'],
+      ),
     );
   }
 
@@ -10563,6 +10583,9 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
   final String? lastError;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Local insertion order assigned by trigger sync_log_assign_seq. Never written by Dart.
+  final int? seq;
   const SyncLogRow({
     required this.operationId,
     required this.entityTableName,
@@ -10576,6 +10599,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
     this.lastError,
     required this.createdAt,
     required this.updatedAt,
+    this.seq,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -10608,6 +10632,9 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
         $SyncLogTable.$converterupdatedAt.toSql(updatedAt),
       );
     }
+    if (!nullToAbsent || seq != null) {
+      map['seq'] = Variable<int>(seq);
+    }
     return map;
   }
 
@@ -10631,6 +10658,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
           : Value(lastError),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      seq: seq == null && nullToAbsent ? const Value.absent() : Value(seq),
     );
   }
 
@@ -10654,6 +10682,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
       lastError: serializer.fromJson<String?>(json['lastError']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      seq: serializer.fromJson<int?>(json['seq']),
     );
   }
   @override
@@ -10672,6 +10701,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
       'lastError': serializer.toJson<String?>(lastError),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'seq': serializer.toJson<int?>(seq),
     };
   }
 
@@ -10688,6 +10718,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
     Value<String?> lastError = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
+    Value<int?> seq = const Value.absent(),
   }) => SyncLogRow(
     operationId: operationId ?? this.operationId,
     entityTableName: entityTableName ?? this.entityTableName,
@@ -10705,6 +10736,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
     lastError: lastError.present ? lastError.value : this.lastError,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    seq: seq.present ? seq.value : this.seq,
   );
   SyncLogRow copyWithCompanion(SyncLogCompanion data) {
     return SyncLogRow(
@@ -10730,6 +10762,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
       lastError: data.lastError.present ? data.lastError.value : this.lastError,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      seq: data.seq.present ? data.seq.value : this.seq,
     );
   }
 
@@ -10747,7 +10780,8 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
           ..write('nextAttemptAt: $nextAttemptAt, ')
           ..write('lastError: $lastError, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('seq: $seq')
           ..write(')'))
         .toString();
   }
@@ -10766,6 +10800,7 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
     lastError,
     createdAt,
     updatedAt,
+    seq,
   );
   @override
   bool operator ==(Object other) =>
@@ -10782,7 +10817,8 @@ class SyncLogRow extends DataClass implements Insertable<SyncLogRow> {
           other.nextAttemptAt == this.nextAttemptAt &&
           other.lastError == this.lastError &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.seq == this.seq);
 }
 
 class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
@@ -10798,6 +10834,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
   final Value<String?> lastError;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<int?> seq;
   final Value<int> rowid;
   const SyncLogCompanion({
     this.operationId = const Value.absent(),
@@ -10812,6 +10849,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
     this.lastError = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.seq = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SyncLogCompanion.insert({
@@ -10827,6 +10865,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
     this.lastError = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
+    this.seq = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : operationId = Value(operationId),
        entityTableName = Value(entityTableName),
@@ -10848,6 +10887,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
     Expression<String>? lastError,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
+    Expression<int>? seq,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -10864,6 +10904,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
       if (lastError != null) 'last_error': lastError,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (seq != null) 'seq': seq,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -10881,6 +10922,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
     Value<String?>? lastError,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<int?>? seq,
     Value<int>? rowid,
   }) {
     return SyncLogCompanion(
@@ -10897,6 +10939,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
       lastError: lastError ?? this.lastError,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      seq: seq ?? this.seq,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -10948,6 +10991,9 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
         $SyncLogTable.$converterupdatedAt.toSql(updatedAt.value),
       );
     }
+    if (seq.present) {
+      map['seq'] = Variable<int>(seq.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -10969,6 +11015,7 @@ class SyncLogCompanion extends UpdateCompanion<SyncLogRow> {
           ..write('lastError: $lastError, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('seq: $seq, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -18617,6 +18664,7 @@ typedef $$SyncLogTableCreateCompanionBuilder =
       Value<String?> lastError,
       required DateTime createdAt,
       required DateTime updatedAt,
+      Value<int?> seq,
       Value<int> rowid,
     });
 typedef $$SyncLogTableUpdateCompanionBuilder =
@@ -18633,6 +18681,7 @@ typedef $$SyncLogTableUpdateCompanionBuilder =
       Value<String?> lastError,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<int?> seq,
       Value<int> rowid,
     });
 
@@ -18707,6 +18756,11 @@ class $$SyncLogTableFilterComposer
         column: $table.updatedAt,
         builder: (column) => ColumnWithTypeConverterFilters(column),
       );
+
+  ColumnFilters<int> get seq => $composableBuilder(
+    column: $table.seq,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$SyncLogTableOrderingComposer
@@ -18777,6 +18831,11 @@ class $$SyncLogTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get seq => $composableBuilder(
+    column: $table.seq,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SyncLogTableAnnotationComposer
@@ -18834,6 +18893,9 @@ class $$SyncLogTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get seq =>
+      $composableBuilder(column: $table.seq, builder: (column) => column);
 }
 
 class $$SyncLogTableTableManager
@@ -18879,6 +18941,7 @@ class $$SyncLogTableTableManager
                 Value<String?> lastError = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<int?> seq = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncLogCompanion(
                 operationId: operationId,
@@ -18893,6 +18956,7 @@ class $$SyncLogTableTableManager
                 lastError: lastError,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                seq: seq,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -18909,6 +18973,7 @@ class $$SyncLogTableTableManager
                 Value<String?> lastError = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
+                Value<int?> seq = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SyncLogCompanion.insert(
                 operationId: operationId,
@@ -18923,6 +18988,7 @@ class $$SyncLogTableTableManager
                 lastError: lastError,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                seq: seq,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
