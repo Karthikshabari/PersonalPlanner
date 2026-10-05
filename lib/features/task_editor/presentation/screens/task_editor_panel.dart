@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'dart:async';
 
@@ -601,6 +602,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         ((_baseline?.task ?? task).actualDurationMin?.toString() ?? '');
     if (_titleController.text.trim().isEmpty) {
       _showValidationError('Title must not be blank');
+      return;
+    }
+    if (_titleController.text.trim().length > AppConstants.maxTaskTitleLength) {
+      _showValidationError(AppConstants.taskTitleTooLongMessage);
       return;
     }
     if (actualText.isNotEmpty && actual == null) {
@@ -1288,6 +1293,8 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                 const SizedBox(height: AppSpacing.md),
                 TextField(
                   controller: _titleController,
+                  maxLength: AppConstants.maxTaskTitleLength,
+                  maxLengthEnforcement: MaxLengthEnforcement.none,
                   decoration: const InputDecoration(labelText: 'Title'),
                 ),
                 const SizedBox(height: AppSpacing.md),

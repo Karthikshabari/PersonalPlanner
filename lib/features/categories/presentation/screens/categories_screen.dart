@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/category.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -22,6 +24,18 @@ const _palette = [
   '#FF9800',
 ];
 
+/// Spoken names for [_palette], index for index.
+const _paletteNames = [
+  'Purple',
+  'Blue',
+  'Green',
+  'Red',
+  'Yellow',
+  'Pink',
+  'Cyan',
+  'Orange',
+];
+
 class CategoriesScreen extends ConsumerWidget {
   const CategoriesScreen({super.key});
 
@@ -38,6 +52,7 @@ class CategoriesScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add-category'),
+        tooltip: 'Add category',
         onPressed: () => _showEditDialog(context, ref, null),
         child: const Icon(Icons.add),
       ),
@@ -129,6 +144,9 @@ class CategoriesScreen extends ConsumerWidget {
   ) async {
     final nameController = TextEditingController(text: existing?.name ?? '');
     var selectedColor = existing?.colorHex ?? _palette.first;
+    // Shown inside the dialog: a snackbar would render under its scrim.
+    String? nameError;
+    String? saveError;
     final repo = ref.read(categoryRepositoryProvider);
 
     await showDialog<void>(
@@ -140,38 +158,44 @@ class CategoriesScreen extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+                key: const ValueKey('category-name'),
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
+                maxLength: AppConstants.maxCategoryNameLength,
+                maxLengthEnforcement: MaxLengthEnforcement.none,
+                onChanged: (_) {
+                  if (nameError != null) {
+                    setDialogState(() => nameError = null);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  errorText: nameError,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
                 children: [
                   for (var i = 0; i < _palette.length; i++)
-                    GestureDetector(
+                    _PaletteSwatch(
                       key: ValueKey('palette-$i'),
+                      hex: _palette[i],
+                      name: _paletteNames[i],
+                      selected: selectedColor == _palette[i],
                       onTap: () =>
                           setDialogState(() => selectedColor = _palette[i]),
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: AppColors.parseHex(_palette[i]),
-                          shape: BoxShape.circle,
-                          border: selectedColor == _palette[i]
-                              ? Border.all(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onPrimary,
-                                  width: 2,
-                                )
-                              : null,
-                        ),
-                      ),
                     ),
                 ],
               ),
+              if (saveError != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  saveError!,
+                  key: const ValueKey('category-save-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
           ),
           actions: [
@@ -183,7 +207,17 @@ class CategoriesScreen extends ConsumerWidget {
               key: const ValueKey('save-category'),
               onPressed: () async {
                 final name = nameController.text.trim();
-                if (name.isEmpty) return;
+                final error = name.isEmpty
+                    ? 'Enter a category name'
+                    : name.length > AppConstants.maxCategoryNameLength
+                    ? 'Name must be ${AppConstants.maxCategoryNameLength} '
+                          'characters or fewer'
+                    : null;
+                setDialogState(() {
+                  nameError = error;
+                  saveError = null;
+                });
+                if (error != null) return;
                 try {
                   if (existing == null) {
                     await repo.insertCategory(
@@ -202,8 +236,8 @@ class CategoriesScreen extends ConsumerWidget {
                   }
                 } catch (error) {
                   if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(content: Text(friendlyErrorMessage(error))),
+                    setDialogState(
+                      () => saveError = friendlyErrorMessage(error),
                     );
                   }
                   return;
@@ -250,6 +284,67 @@ class CategoriesScreen extends ConsumerWidget {
         () => ref.read(categoryRepositoryProvider).deleteCategory(category.id),
       );
     }
+  }
+}
+
+/// One palette choice: a 44 px target that announces its colour name and
+/// selected state, and marks the selection with a check, not colour alone.
+class _PaletteSwatch extends StatelessWidget {
+  final String hex;
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _PaletteSwatch({
+    super.key,
+    required this.hex,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = AppColors.parseHex(hex);
+    final onColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+        ? Colors.white
+        : Colors.black;
+    return Semantics(
+      button: true,
+      inMutuallyExclusiveGroup: true,
+      selected: selected,
+      label: '$name colour',
+      onTap: onTap,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: selected
+                    ? Border.all(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                        width: 2,
+                      )
+                    : null,
+              ),
+              child: selected
+                  ? Icon(Icons.check, size: 16, color: onColor)
+                  : null,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

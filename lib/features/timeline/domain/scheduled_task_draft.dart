@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/constants/app_constants.dart';
+
 /// Ephemeral input for creating or scheduling a task.  The ID belongs to the
 /// form session, so validation failures and retries never create a second
 /// task identity.
@@ -24,13 +26,25 @@ class ScheduledTaskDraft {
   DateTime? get startTime => start;
   DateTime? get endTime => end;
 
-  String? get validationError {
-    if (title.trim().isEmpty) return 'Title must not be blank';
+  /// First problem with the title, shown next to the title field.
+  String? get titleError {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return 'Title must not be blank';
+    if (trimmed.length > AppConstants.maxTaskTitleLength) {
+      return AppConstants.taskTitleTooLongMessage;
+    }
+    return null;
+  }
+
+  /// First problem with the interval, shown under the schedule fields.
+  String? get scheduleError {
     if (start == null) return 'Start date and time are required';
     if (end == null) return 'End date and time are required';
     if (!end!.isAfter(start!)) return 'End must be later than start';
     return null;
   }
+
+  String? get validationError => titleError ?? scheduleError;
 
   bool get isValid => validationError == null;
 

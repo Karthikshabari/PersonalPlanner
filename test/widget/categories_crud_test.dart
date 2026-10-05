@@ -106,4 +106,131 @@ void main() {
     expect(reloaded.title, 'Categorized');
     await finish(tester, container);
   });
+
+  // UAT F-011: name errors are explained inside the dialog.
+  Finder nameFieldText(String text) => find.descendant(
+        of: find.byKey(const ValueKey('category-name')),
+        matching: find.text(text),
+      );
+
+  Future<List<String>> categoryNames(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async =>
+      (await runDb(
+        tester,
+        () => container.read(categoryRepositoryProvider).getAllCategories(),
+      ))
+          .map((c) => c.name)
+          .toList();
+
+  testWidgets('a name over 100 characters is rejected inline, not saved',
+      (tester) async {
+    final container = await pumpCategories(tester);
+    final before = await categoryNames(tester, container);
+
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('category-name')),
+      'LONGCAT${'0123456789' * 25}END',
+    );
+    await tester.tap(find.byKey(const ValueKey('save-category')));
+    await settle(tester);
+
+    expect(find.text('New category'), findsOneWidget);
+    expect(nameFieldText('Name must be 100 characters or fewer'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.textContaining('Something went wrong'), findsNothing);
+    expect(await categoryNames(tester, container), before);
+
+    // Shortening the name clears the error and saves.
+    await tester.enterText(
+      find.byKey(const ValueKey('category-name')),
+      'c' * 100,
+    );
+    await settle(tester);
+    expect(nameFieldText('Name must be 100 characters or fewer'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('save-category')));
+    await settle(tester);
+    expect(find.text('New category'), findsNothing);
+    expect(await categoryNames(tester, container), contains('c' * 100));
+    await finish(tester, container);
+  });
+
+  testWidgets('a blank name shows an inline error instead of doing nothing',
+      (tester) async {
+    final container = await pumpCategories(tester);
+    final before = await categoryNames(tester, container);
+
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('category-name')), '   ');
+    await tester.tap(find.byKey(const ValueKey('save-category')));
+    await settle(tester);
+
+    expect(find.text('New category'), findsOneWidget);
+    expect(nameFieldText('Enter a category name'), findsOneWidget);
+    expect(await categoryNames(tester, container), before);
+    await finish(tester, container);
+  });
+
+  testWidgets('renaming to a blank name is rejected inline', (tester) async {
+    final container = await pumpCategories(tester);
+    await tester.tap(find.byKey(const ValueKey('edit-category-Work')));
+    await settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('category-name')), '');
+    await tester.tap(find.byKey(const ValueKey('save-category')));
+    await settle(tester);
+
+    expect(find.text('Edit category'), findsOneWidget);
+    expect(nameFieldText('Enter a category name'), findsOneWidget);
+    expect(await categoryNames(tester, container), contains('Work'));
+    await finish(tester, container);
+  });
+
+  // UAT F-013: the FAB and the colour swatches are named for assistive tech.
+  testWidgets('add FAB and colour swatches expose names and selection',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
+    final container = await pumpCategories(tester);
+
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('add-category'))),
+      isSemantics(tooltip: 'Add category', isButton: true),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    for (final name in [
+      'Purple', 'Blue', 'Green', 'Red', 'Yellow', 'Pink', 'Cyan', 'Orange',
+    ]) {
+      expect(find.bySemanticsLabel('$name colour'), findsOneWidget);
+    }
+    // New categories default to the first colour.
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Purple colour')),
+      isSemantics(isButton: true, isSelected: true, hasTapAction: true),
+    );
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Blue colour')),
+      isSemantics(isButton: true, isSelected: false),
+    );
+    final size = tester.getSize(find.byKey(const ValueKey('palette-0')));
+    expect(size.width, greaterThanOrEqualTo(44));
+    expect(size.height, greaterThanOrEqualTo(44));
+
+    await tester.tap(find.byKey(const ValueKey('palette-1')));
+    await settle(tester);
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Blue colour')),
+      isSemantics(isSelected: true),
+    );
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Purple colour')),
+      isSemantics(isSelected: false),
+    );
+    semantics.dispose();
+    await finish(tester, container);
+  });
 }

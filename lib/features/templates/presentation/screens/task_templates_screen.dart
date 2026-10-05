@@ -29,6 +29,7 @@ class TaskTemplatesScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         key: const ValueKey('add-template-fab'),
+        tooltip: 'Add template',
         onPressed: () => showTemplateFormDialog(context, ref),
         child: const Icon(Icons.add),
       ),

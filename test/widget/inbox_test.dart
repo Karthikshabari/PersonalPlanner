@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -407,6 +409,90 @@ void main() {
     );
     expect(deleted?.deletedAt, isNotNull);
     expect(retained?.deletedAt, isNull);
+    await finish(tester, container);
+  });
+
+  // UAT F-006: the delete confirmation names what the user sees and where.
+  testWidgets('deleting an Inbox capture names it and says Inbox', (
+    tester,
+  ) async {
+    final container = await pumpDesktop(tester);
+    appRouter.go('/inbox');
+    await settle(tester);
+    final capture = await runDb(
+      tester,
+      () => container
+          .read(inboxRepositoryProvider)
+          .addToInbox('Call the plumber\nabout the leak'),
+    );
+    await settle(tester);
+
+    await tester.tap(find.byKey(ValueKey('inbox-menu-${capture.id}')));
+    await settle(tester);
+    await tester.tap(find.text('Delete'));
+    await settle(tester);
+
+    expect(
+      find.text(
+        '"Call the plumber" will be removed from your Inbox.\n'
+        'You can undo this with Ctrl+Z.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Inbox capture'), findsNothing);
+    expect(find.textContaining('the timeline'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await settle(tester);
+    final deleted = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(capture.id),
+    );
+    expect(deleted?.deletedAt, isNotNull);
+    await finish(tester, container);
+  });
+
+  testWidgets('deleting a scheduled task still names its title and timeline', (
+    tester,
+  ) async {
+    // Desktop: the block opens its context menu on right-click.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    final container = await pumpDesktop(tester);
+    final start = DateTime(viewDay.year, viewDay.month, viewDay.day, 9);
+    final task = await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .insertTask(
+            Task(
+              id: '',
+              title: 'Planned block',
+              startTime: start,
+              endTime: start.add(const Duration(hours: 1)),
+              estimatedDurationMin: 60,
+              createdAt: start,
+              updatedAt: start,
+            ),
+          ),
+    );
+    await settle(tester);
+
+    await tester.tap(
+      find.byKey(ValueKey('task-block-${task.id}')),
+      buttons: kSecondaryMouseButton,
+    );
+    await settle(tester);
+    await tester.tap(find.text('Delete').last);
+    await settle(tester);
+
+    expect(
+      find.text(
+        '"Planned block" will be removed from the timeline.\n'
+        'You can undo this with Ctrl+Z.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Cancel'));
+    await settle(tester);
     await finish(tester, container);
   });
 }

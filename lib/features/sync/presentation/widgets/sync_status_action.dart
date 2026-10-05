@@ -11,6 +11,8 @@ import '../../providers/sync_providers.dart';
 class SyncStatusAction extends ConsumerWidget {
   const SyncStatusAction({super.key});
 
+  static const _syncRoute = '/settings/sync';
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tokens = AppThemeTokens.of(context);
@@ -26,7 +28,13 @@ class SyncStatusAction extends ConsumerWidget {
           : _tooltip(status),
       color: _color(tokens, state),
       icon: Icon(_icon(state)),
-      onPressed: () => context.push('/settings/sync'),
+      onPressed: () {
+        // Already on Sync settings: another push would stack a duplicate
+        // page (UAT F-014).
+        final router = GoRouter.of(context);
+        if (router.state.uri.path == _syncRoute) return;
+        router.push(_syncRoute);
+      },
     );
   }
 

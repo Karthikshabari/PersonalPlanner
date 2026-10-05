@@ -295,11 +295,18 @@ abstract final class TimelineActions {
     final viewedDate = ref.read(selectedDateProvider);
     final repository = ref.read(taskRepositoryProvider);
 
+    // Inbox rows store the placeholder title "Inbox capture"; the user knows
+    // them by their captured text and finds them in the Inbox, not on the
+    // timeline.
+    final label = task.isInbox
+        ? InboxItem.explicit(task).displayPreview
+        : task.title;
+    final location = task.isInbox ? 'your Inbox' : 'the timeline';
     final confirmed = await showConfirmDialog(
       context,
       title: 'Delete task?',
       message:
-          '"${task.title}" will be removed from the timeline.\n'
+          '"$label" will be removed from $location.\n'
           'You can undo this with Ctrl+Z.',
       confirmLabel: 'Delete',
     );

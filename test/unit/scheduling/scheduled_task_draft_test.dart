@@ -28,6 +28,24 @@ void main() {
     );
   });
 
+  test('enforces the 500-character tasks.title limit on the trimmed title', () {
+    ScheduledTaskDraft draft(String title) => ScheduledTaskDraft(
+      id: 'draft-1',
+      title: title,
+      description: '',
+      start: start,
+      end: end,
+    );
+
+    expect(draft('x' * 500).isValid, isTrue);
+    // Stored titles are trimmed, so surrounding whitespace does not count.
+    expect(draft('  ${'x' * 500}  ').isValid, isTrue);
+    expect(
+      draft('x' * 501).validationError,
+      'Title must be 500 characters or fewer',
+    );
+  });
+
   test('rejects incomplete, equal and reversed intervals', () {
     ScheduledTaskDraft draft(DateTime? draftStart, DateTime? draftEnd) =>
         ScheduledTaskDraft(

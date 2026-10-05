@@ -33,6 +33,19 @@ void main() {
     await finish(tester, container);
   });
 
+  // UAT F-013: the FAB is named for assistive tech.
+  testWidgets('add-template FAB has an accessible name', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final container = await pumpTemplates(tester);
+    expect(find.byTooltip('Add template'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('add-template-fab'))),
+      isSemantics(tooltip: 'Add template', isButton: true),
+    );
+    semantics.dispose();
+    await finish(tester, container);
+  });
+
   testWidgets('create a template via the FAB form', (tester) async {
     final container = await pumpTemplates(tester);
 
