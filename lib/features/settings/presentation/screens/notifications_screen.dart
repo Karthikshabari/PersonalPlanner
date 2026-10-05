@@ -108,9 +108,9 @@ class NotificationsScreen extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 child: Text(
-                  'Scheduled notifications are armed on Android/iOS/macOS; on '
-                  'this platform the setting is stored but no system alarm is '
-                  'set.',
+                  'Task reminders fire as desktop notifications on this '
+                  'device. The daily review reminder is scheduled on Android '
+                  'only; here this setting is saved but does not fire.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),

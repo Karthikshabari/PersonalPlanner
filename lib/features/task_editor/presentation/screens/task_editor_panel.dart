@@ -873,10 +873,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     : editedTask.description,
                 durationMin: _effectiveDurationMinutes,
                 categoryId: _categoryId,
-                // Legacy priority and tag values are preserved on the rule;
-                // this editor no longer exposes or changes either field.
-                priority: liveRule.priority,
-                tags: liveRule.tags,
+                // copyWith keeps the rule's legacy priority and tags (F-010).
                 startTimeOfDay: _startTime == null
                     ? liveRule.startTimeOfDay
                     : _formatTimeOfDay(_startTime!),
@@ -949,10 +946,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                         : editedTask.description,
                     durationMin: _effectiveDurationMinutes,
                     categoryId: _categoryId,
-                    // New recurring rules keep legacy metadata empty. The
-                    // fields remain in storage for older rules and backups.
-                    priority: 0,
-                    tags: const [],
+                    // Legacy priority/tags keep their empty defaults (F-010).
                     startTimeOfDay: _startTime == null
                         ? '09:00'
                         : _formatTimeOfDay(_startTime!),

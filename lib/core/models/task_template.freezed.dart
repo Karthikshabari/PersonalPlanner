@@ -15,7 +15,9 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$TaskTemplate {
 
- String get id; String get name; String? get description; int get durationMin; String? get categoryId; int get priority; List<String> get tags; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
+ String get id; String get name; String? get description; int get durationMin; String? get categoryId;/// Legacy (UAT F-010): no UI; kept so stored values round-trip.
+ int get priority;/// Legacy (UAT F-010) tag ids: no UI; kept so stored values round-trip.
+ List<String> get tags; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
 /// Create a copy of TaskTemplate
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -226,7 +228,9 @@ class _TaskTemplate implements TaskTemplate {
 @override final  String? description;
 @override final  int durationMin;
 @override final  String? categoryId;
+/// Legacy (UAT F-010): no UI; kept so stored values round-trip.
 @override@JsonKey() final  int priority;
+/// Legacy (UAT F-010) tag ids: no UI; kept so stored values round-trip.
 @override@JsonKey() final  List<String> tags;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;

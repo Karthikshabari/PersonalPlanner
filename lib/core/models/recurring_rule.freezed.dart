@@ -15,7 +15,9 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$RecurringRule {
 
- String get id; String get rrule; String get taskTitle; String? get taskDescription; int get durationMin; String? get categoryId; int get priority; List<String> get tags;/// Local wall-clock time of day as `HH:mm`.
+ String get id; String get rrule; String get taskTitle; String? get taskDescription; int get durationMin; String? get categoryId;/// Legacy (UAT F-010): no UI; preserved and copied to occurrences.
+ int get priority;/// Legacy (UAT F-010) tag ids: no UI; preserved and linked to occurrences.
+ List<String> get tags;/// Local wall-clock time of day as `HH:mm`.
  String get startTimeOfDay;/// First date the rule can occur on (`yyyy-MM-dd`).
  DateTime get startDate; DateTime? get endDate; bool get isActive;/// Excluded dates as `yyyy-MM-dd` strings.
  List<String> get exceptions; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
@@ -236,7 +238,9 @@ class _RecurringRule implements RecurringRule {
 @override final  String? taskDescription;
 @override final  int durationMin;
 @override final  String? categoryId;
+/// Legacy (UAT F-010): no UI; preserved and copied to occurrences.
 @override@JsonKey() final  int priority;
+/// Legacy (UAT F-010) tag ids: no UI; preserved and linked to occurrences.
 @override@JsonKey() final  List<String> tags;
 /// Local wall-clock time of day as `HH:mm`.
 @override final  String startTimeOfDay;

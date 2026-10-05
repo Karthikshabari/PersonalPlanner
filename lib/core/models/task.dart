@@ -23,6 +23,9 @@ abstract class Task with _$Task {
     /// Distinguishes an explicit manual zero from no manually recorded work.
     @Default(false) bool manualActualSet,
     String? categoryId,
+
+    /// Legacy (UAT F-010): no UI reads or sets it; kept so stored, synced
+    /// and backed-up values round-trip unchanged.
     @Default(Priority.none) Priority priority,
     @Default(TaskStatus.planned) TaskStatus status,
     String? notes,

@@ -15,14 +15,21 @@ abstract class RecurringRule with _$RecurringRule {
     String? taskDescription,
     required int durationMin,
     String? categoryId,
+
+    /// Legacy (UAT F-010): no UI; preserved and copied to occurrences.
     @Default(0) int priority,
+
+    /// Legacy (UAT F-010) tag ids: no UI; preserved and linked to occurrences.
     @Default([]) List<String> tags,
+
     /// Local wall-clock time of day as `HH:mm`.
     required String startTimeOfDay,
+
     /// First date the rule can occur on (`yyyy-MM-dd`).
     required DateTime startDate,
     DateTime? endDate,
     @Default(true) bool isActive,
+
     /// Excluded dates as `yyyy-MM-dd` strings.
     @Default([]) List<String> exceptions,
     required DateTime createdAt,

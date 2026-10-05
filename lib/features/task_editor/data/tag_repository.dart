@@ -5,6 +5,10 @@ import '../../../core/database/daos/tag_dao.dart';
 import '../../../core/models/tag.dart';
 import '../../../core/utils/uuid.dart';
 
+@Deprecated(
+  'UAT F-010: tags have no UI; retired at the code level. Legacy links are '
+  'carried by TagDao, recurrence, duplicate, sync and backup code.',
+)
 class TagRepository {
   final AppDatabase _db;
 

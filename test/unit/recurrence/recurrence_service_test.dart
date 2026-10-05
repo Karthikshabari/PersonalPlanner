@@ -157,6 +157,44 @@ void main() {
       expect(await recurrence.materializeForDate(DateTime(2026, 9, 16)), 0);
     });
 
+    test('monthly on the 31st lands on the last day of shorter months '
+        '(F-008)', () async {
+      // The Repeat > Monthly preset stores the anchor day as BYMONTHDAY.
+      await rules.createRule(
+        dailyRule(
+          rrule: 'FREQ=MONTHLY;BYMONTHDAY=31',
+          startDate: DateTime(2026, 10, 31),
+        ),
+      );
+
+      Future<List<DateTime>> occurrencesIn(int year, int month) async {
+        final days = DateTime(year, month + 1, 0).day;
+        return [
+          for (var day = 1; day <= days; day++)
+            if (await recurrence.materializeForDate(
+                  DateTime(year, month, day),
+                ) ==
+                1)
+              DateTime(year, month, day),
+        ];
+      }
+
+      // 30-day month.
+      expect(await occurrencesIn(2027, 4), [DateTime(2027, 4, 30)]);
+      // February, non-leap year.
+      expect(await occurrencesIn(2027, 2), [DateTime(2027, 2, 28)]);
+      // February, leap year.
+      expect(await occurrencesIn(2028, 2), [DateTime(2028, 2, 29)]);
+      // 31-day month keeps the 31st.
+      expect(await occurrencesIn(2027, 3), [DateTime(2027, 3, 31)]);
+      // The month the UAT case skipped.
+      expect(await occurrencesIn(2026, 11), [DateTime(2026, 11, 30)]);
+
+      final april =
+          (await tasks.watchTasksForDay(DateTime(2027, 4, 30)).first).single;
+      expect(april.startTime!.hour, 9);
+    });
+
     test('exceptions are excluded from materialization', () async {
       final rule = await rules.createRule(dailyRule());
       await rules.addException(rule.id, DateTime(2026, 8, 25));
@@ -358,27 +396,30 @@ void main() {
     expect(deleted?.recurrenceRemovalReason, isNull);
   });
 
-  test('an exception blocks a rule-excluded tombstone from reactivation', () async {
-    final monday = DateTime(2026, 9, 14);
-    final tuesday = DateTime(2026, 9, 15);
-    final original = await rules.createRule(dailyRule(startDate: monday));
-    await recurrence.materializeForDate(tuesday);
-    final occurrenceId = generateDeterministicUuid(
-      'recurring-occurrence:${original.id}:2026-09-15',
-    );
-    final mondayOnly = await rules.updateRule(
-      original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
-    );
-    await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
-    await rules.addException(original.id, tuesday);
-    final withException = (await rules.getRuleById(original.id))!;
-    await rules.updateRule(withException.copyWith(rrule: 'FREQ=DAILY'));
+  test(
+    'an exception blocks a rule-excluded tombstone from reactivation',
+    () async {
+      final monday = DateTime(2026, 9, 14);
+      final tuesday = DateTime(2026, 9, 15);
+      final original = await rules.createRule(dailyRule(startDate: monday));
+      await recurrence.materializeForDate(tuesday);
+      final occurrenceId = generateDeterministicUuid(
+        'recurring-occurrence:${original.id}:2026-09-15',
+      );
+      final mondayOnly = await rules.updateRule(
+        original.copyWith(rrule: 'FREQ=WEEKLY;BYDAY=MO'),
+      );
+      await recurrence.reconcileMaterializedFuture(mondayOnly, monday);
+      await rules.addException(original.id, tuesday);
+      final withException = (await rules.getRuleById(original.id))!;
+      await rules.updateRule(withException.copyWith(rrule: 'FREQ=DAILY'));
 
-    expect(await recurrence.materializeForDate(tuesday), 0);
-    final row = await db.taskDao.getTaskById(occurrenceId);
-    expect(row?.deletedAt, isNotNull);
-    expect(row?.recurrenceRemovalReason, 'rule_excluded');
-  });
+      expect(await recurrence.materializeForDate(tuesday), 0);
+      final row = await db.taskDao.getTaskById(occurrenceId);
+      expect(row?.deletedAt, isNotNull);
+      expect(row?.recurrenceRemovalReason, 'rule_excluded');
+    },
+  );
 
   test(
     'completed skipped and cancelled occurrences are never revived',

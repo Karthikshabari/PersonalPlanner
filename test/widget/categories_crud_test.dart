@@ -16,8 +16,7 @@ void main() {
     return container;
   }
 
-  testWidgets('create a category with name and palette color',
-      (tester) async {
+  testWidgets('create a category with name and palette color', (tester) async {
     final container = await pumpCategories(tester);
 
     await tester.tap(find.byKey(const ValueKey('add-category')));
@@ -30,8 +29,10 @@ void main() {
     await settle(tester);
 
     expect(find.text('Side Projects'), findsOneWidget);
-    final all =
-        await runDb(tester, () => container.read(categoryRepositoryProvider).getAllCategories());
+    final all = await runDb(
+      tester,
+      () => container.read(categoryRepositoryProvider).getAllCategories(),
+    );
     expect(all.map((c) => c.name), contains('Side Projects'));
     final created = all.singleWhere((c) => c.name == 'Side Projects');
     expect(created.colorHex, '#4285F4'); // palette[1]
@@ -55,77 +56,85 @@ void main() {
 
   testWidgets('focus toggle switches isFocus', (tester) async {
     final container = await pumpCategories(tester);
-    await tester
-        .tap(find.byTooltip('Focus category').first);
+    await tester.tap(find.byTooltip('Focus category').first);
     await settle(tester);
     final work = await runDb(
       tester,
-      () async => (await container.read(categoryRepositoryProvider).getAllCategories())
-          .singleWhere((c) => c.name == 'Work'),
+      () async =>
+          (await container.read(categoryRepositoryProvider).getAllCategories())
+              .singleWhere((c) => c.name == 'Work'),
     );
     expect(work.isFocus, isTrue);
     await finish(tester, container);
   });
 
-  testWidgets('delete asks for confirmation; tasks keep existing but lose the category', (tester) async {
-    final container = await pumpCategories(tester);
-    // Give Work a task first.
-    final task = await runDb(
-      tester,
-      () => container.read(taskRepositoryProvider).insertTask(Task(
-            id: '',
-            title: 'Categorized',
-            createdAt: DateTime(2026, 1, 1),
-            updatedAt: DateTime(2026, 1, 1),
-          )),
-    );
-    final work = await runDb(
-      tester,
-      () async => (await container.read(categoryRepositoryProvider).getAllCategories())
-          .singleWhere((c) => c.name == 'Work'),
-    );
-    await runDb(
-      tester,
-      () => container
-          .read(taskRepositoryProvider)
-          .updateTask(task.copyWith(categoryId: work.id)),
-    );
+  testWidgets(
+    'delete asks for confirmation; tasks keep existing but lose the category',
+    (tester) async {
+      final container = await pumpCategories(tester);
+      // Give Work a task first.
+      final task = await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .insertTask(
+              Task(
+                id: '',
+                title: 'Categorized',
+                createdAt: DateTime(2026, 1, 1),
+                updatedAt: DateTime(2026, 1, 1),
+              ),
+            ),
+      );
+      final work = await runDb(
+        tester,
+        () async =>
+            (await container
+                    .read(categoryRepositoryProvider)
+                    .getAllCategories())
+                .singleWhere((c) => c.name == 'Work'),
+      );
+      await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .updateTask(task.copyWith(categoryId: work.id)),
+      );
 
-    await tester.tap(find.byKey(const ValueKey('delete-category-Work')));
-    await settle(tester);
-    expect(find.text('Delete category?'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('confirm-delete-category')));
-    await settle(tester);
+      await tester.tap(find.byKey(const ValueKey('delete-category-Work')));
+      await settle(tester);
+      expect(find.text('Delete category?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete-category')));
+      await settle(tester);
 
-    expect(find.text('Work'), findsNothing);
-    final reloaded = await runDb(
-      tester,
-      () => container.read(taskRepositoryProvider).getTaskById(task.id),
-    );
-    expect(reloaded!.categoryId, isNull);
-    expect(reloaded.title, 'Categorized');
-    await finish(tester, container);
-  });
+      expect(find.text('Work'), findsNothing);
+      final reloaded = await runDb(
+        tester,
+        () => container.read(taskRepositoryProvider).getTaskById(task.id),
+      );
+      expect(reloaded!.categoryId, isNull);
+      expect(reloaded.title, 'Categorized');
+      await finish(tester, container);
+    },
+  );
 
   // UAT F-011: name errors are explained inside the dialog.
   Finder nameFieldText(String text) => find.descendant(
-        of: find.byKey(const ValueKey('category-name')),
-        matching: find.text(text),
-      );
+    of: find.byKey(const ValueKey('category-name')),
+    matching: find.text(text),
+  );
 
   Future<List<String>> categoryNames(
     WidgetTester tester,
     ProviderContainer container,
-  ) async =>
-      (await runDb(
-        tester,
-        () => container.read(categoryRepositoryProvider).getAllCategories(),
-      ))
-          .map((c) => c.name)
-          .toList();
+  ) async => (await runDb(
+    tester,
+    () => container.read(categoryRepositoryProvider).getAllCategories(),
+  )).map((c) => c.name).toList();
 
-  testWidgets('a name over 100 characters is rejected inline, not saved',
-      (tester) async {
+  testWidgets('a name over 100 characters is rejected inline, not saved', (
+    tester,
+  ) async {
     final container = await pumpCategories(tester);
     final before = await categoryNames(tester, container);
 
@@ -139,7 +148,10 @@ void main() {
     await settle(tester);
 
     expect(find.text('New category'), findsOneWidget);
-    expect(nameFieldText('Name must be 100 characters or fewer'), findsOneWidget);
+    expect(
+      nameFieldText('Name must be 100 characters or fewer'),
+      findsOneWidget,
+    );
     expect(find.byType(SnackBar), findsNothing);
     expect(find.textContaining('Something went wrong'), findsNothing);
     expect(await categoryNames(tester, container), before);
@@ -158,8 +170,9 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('a blank name shows an inline error instead of doing nothing',
-      (tester) async {
+  testWidgets('a blank name shows an inline error instead of doing nothing', (
+    tester,
+  ) async {
     final container = await pumpCategories(tester);
     final before = await categoryNames(tester, container);
 
@@ -190,8 +203,9 @@ void main() {
   });
 
   // UAT F-013: the FAB and the colour swatches are named for assistive tech.
-  testWidgets('add FAB and colour swatches expose names and selection',
-      (tester) async {
+  testWidgets('add FAB and colour swatches expose names and selection', (
+    tester,
+  ) async {
     final semantics = tester.ensureSemantics();
     final container = await pumpCategories(tester);
 
@@ -203,7 +217,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('add-category')));
     await settle(tester);
     for (final name in [
-      'Purple', 'Blue', 'Green', 'Red', 'Yellow', 'Pink', 'Cyan', 'Orange',
+      'Purple',
+      'Blue',
+      'Green',
+      'Red',
+      'Yellow',
+      'Pink',
+      'Cyan',
+      'Orange',
     ]) {
       expect(find.bySemanticsLabel('$name colour'), findsOneWidget);
     }
@@ -232,5 +253,78 @@ void main() {
     );
     semantics.dispose();
     await finish(tester, container);
+  });
+
+  group('duplicate category name (F-012)', () {
+    Future<int> workCount(WidgetTester tester, ProviderContainer container) =>
+        runDb(
+          tester,
+          () async =>
+              (await container
+                      .read(categoryRepositoryProvider)
+                      .getAllCategories())
+                  .where((c) => c.name.trim().toLowerCase() == 'work')
+                  .length,
+        );
+
+    Future<void> submitNewCategory(WidgetTester tester, String name) async {
+      await tester.tap(find.byKey(const ValueKey('add-category')));
+      await settle(tester);
+      await tester.enterText(find.byKey(const ValueKey('category-name')), name);
+      await tester.tap(find.byKey(const ValueKey('save-category')));
+      await settle(tester);
+    }
+
+    testWidgets('warns, and Create still saves the duplicate', (tester) async {
+      final container = await pumpCategories(tester);
+      // The seeded defaults include "Work"; case and spaces are ignored.
+      expect(await workCount(tester, container), 1);
+
+      await submitNewCategory(tester, '  work ');
+
+      expect(
+        find.text('A category named "work" already exists. Create anyway?'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('duplicate-category-create')));
+      await settle(tester);
+
+      expect(await workCount(tester, container), 2);
+      expect(find.text('New category'), findsNothing);
+      await finish(tester, container);
+    });
+
+    testWidgets('Cancel aborts the create', (tester) async {
+      final container = await pumpCategories(tester);
+
+      await submitNewCategory(tester, 'Work');
+      expect(find.textContaining('already exists'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('duplicate-category-cancel')));
+      await settle(tester);
+
+      expect(find.textContaining('already exists'), findsNothing);
+      expect(await workCount(tester, container), 1);
+      // The New category dialog stays open so the name can be changed.
+      expect(find.text('New category'), findsOneWidget);
+      await finish(tester, container);
+    });
+
+    testWidgets('a unique name saves without a warning', (tester) async {
+      final container = await pumpCategories(tester);
+
+      await submitNewCategory(tester, 'Workshop');
+
+      expect(find.textContaining('already exists'), findsNothing);
+      final names = await runDb(
+        tester,
+        () async =>
+            (await container
+                    .read(categoryRepositoryProvider)
+                    .getAllCategories())
+                .map((c) => c.name),
+      );
+      expect(names, contains('Workshop'));
+      await finish(tester, container);
+    });
   });
 }

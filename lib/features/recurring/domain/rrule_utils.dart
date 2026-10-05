@@ -66,7 +66,7 @@ abstract final class RruleUtils {
     // `after >= start` assertion.
     if (dayStart.isBefore(startOfDay(ruleStartDate))) return false;
     try {
-      final rule = parse(rrule);
+      final rule = _clampToMonthEnd(parse(rrule), startOfDay(ruleStartDate));
       final start = _wallClockUtc(startOfDay(ruleStartDate));
       final dayEnd = _wallClockUtc(addDays(dayStart, 1));
       // Lower bound of the queried window; `after` is exclusive and must
@@ -83,6 +83,39 @@ abstract final class RruleUtils {
     } on Error {
       return false;
     }
+  }
+
+  /// A monthly rule on day 29–31 lands on the last day of shorter months
+  /// (Nov 30, Feb 28/29) instead of skipping them (UAT F-008). The stored
+  /// RRULE is unchanged; evaluation uses "the last existing day of 28..day"
+  /// (`BYMONTHDAY=28,..,day;BYSETPOS=-1`), so INTERVAL, COUNT and UNTIL keep
+  /// their RFC 5545 meaning. The day is BYMONTHDAY, or DTSTART's day when the
+  /// rule has none. Other monthly shapes are evaluated as stored.
+  static RecurrenceRule _clampToMonthEnd(
+    RecurrenceRule rule,
+    DateTime ruleStartDay,
+  ) {
+    if (rule.frequency != Frequency.monthly ||
+        rule.hasBySetPositions ||
+        rule.byMonthDays.length > 1 ||
+        [
+          rule.bySeconds,
+          rule.byMinutes,
+          rule.byHours,
+          rule.byWeekDays,
+          rule.byYearDays,
+          rule.byWeeks,
+        ].any((by) => by.isNotEmpty)) {
+      return rule;
+    }
+    final day = rule.byMonthDays.isEmpty
+        ? ruleStartDay.day
+        : rule.byMonthDays.single;
+    if (day <= 28) return rule;
+    return rule.copyWith(
+      byMonthDays: [for (var d = 28; d <= day; d++) d],
+      bySetPositions: const [-1],
+    );
   }
 
   static String? presetToRrule(

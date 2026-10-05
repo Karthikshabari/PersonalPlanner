@@ -16,7 +16,9 @@ T _$identity<T>(T value) => value;
 mixin _$Task {
 
  String get id; String get title; String? get description; DateTime? get startTime; DateTime? get endTime; int? get estimatedDurationMin; int? get actualDurationMin; int get manualDurationAdjustmentMin;/// Distinguishes an explicit manual zero from no manually recorded work.
- bool get manualActualSet; String? get categoryId; Priority get priority; TaskStatus get status; String? get notes; String? get recurringRuleId; String? get recurrenceRemovalReason; String? get rescheduledFromId; String? get rescheduledToId; bool get isInbox; int get inboxContentVersion; String? get dueDate; String? get missedAt; List<PlanTitleChange> get planTitleHistory; String? get displayPlanChangeId; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
+ bool get manualActualSet; String? get categoryId;/// Legacy (UAT F-010): no UI reads or sets it; kept so stored, synced
+/// and backed-up values round-trip unchanged.
+ Priority get priority; TaskStatus get status; String? get notes; String? get recurringRuleId; String? get recurrenceRemovalReason; String? get rescheduledFromId; String? get rescheduledToId; bool get isInbox; int get inboxContentVersion; String? get dueDate; String? get missedAt; List<PlanTitleChange> get planTitleHistory; String? get displayPlanChangeId; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -249,6 +251,8 @@ class _Task implements Task {
 /// Distinguishes an explicit manual zero from no manually recorded work.
 @override@JsonKey() final  bool manualActualSet;
 @override final  String? categoryId;
+/// Legacy (UAT F-010): no UI reads or sets it; kept so stored, synced
+/// and backed-up values round-trip unchanged.
 @override@JsonKey() final  Priority priority;
 @override@JsonKey() final  TaskStatus status;
 @override final  String? notes;
