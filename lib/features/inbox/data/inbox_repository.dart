@@ -6,7 +6,6 @@ import '../../../core/models/inbox_item.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/date_utils.dart';
-import '../../../core/utils/missed_at.dart';
 import '../../timeline/data/task_repository.dart';
 
 /// Inbox data access per architecture.md §3 "Inbox representation" and the
@@ -99,19 +98,20 @@ class InboxRepository {
     );
   }
 
-  /// First-detection stamping: any scheduled task whose end time has passed
-  /// while still planned/in-progress gets `missed_at` set once.
-  /// Format: `YYYY-MM-DDTHH:mm` (UTC), per architecture.md §3.
+  /// Overdue stamping: any scheduled task whose end time has passed while
+  /// still planned/in-progress gets `missed_at` set once, to the UTC minute of
+  /// its planned end. Format: `YYYY-MM-DDTHH:mm` (UTC), per architecture.md §3.
   Future<int> stampOverdue([DateTime? asOf]) async {
     final now = (asOf ?? DateTime.now()).toUtc();
-    final stamp = MissedAtCodec.formatUtcMinute(now);
+    // The minute the task became overdue is a pure function of its planned
+    // end, so every device stamps the same value and concurrent stamps
+    // converge instead of conflicting.
     return _db.customUpdate(
-      'UPDATE tasks SET missed_at = ?, updated_at = ?, sync_status = 1, '
-      'revision = revision + 1 WHERE deleted_at IS NULL AND is_inbox = 0 '
-      'AND missed_at IS NULL AND end_time IS NOT NULL AND end_time < ? '
-      "AND status IN ('planned', 'in_progress')",
+      "UPDATE tasks SET missed_at = strftime('%Y-%m-%dT%H:%M', end_time), "
+      'updated_at = ?, sync_status = 1, revision = revision + 1 '
+      'WHERE deleted_at IS NULL AND is_inbox = 0 AND missed_at IS NULL '
+      "AND end_time IS NOT NULL AND end_time < ? AND status IN ('planned', 'in_progress')",
       variables: [
-        Variable<String>(stamp),
         Variable<String>(now.toIso8601String()),
         Variable<String>(_utcIso(now)),
       ],

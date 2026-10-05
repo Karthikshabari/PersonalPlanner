@@ -428,6 +428,9 @@ Future<void> _setCreatedAt(AppDatabase db, String recordId, DateTime at) =>
 /// sending an operation ahead of its predecessor produces the same conflict or
 /// rejection the real RPC would.
 class _CasServer implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   final sent = <String>[];
   final expectedVersions = <int?>[];
   final _failures = <String, List<Object>>{};

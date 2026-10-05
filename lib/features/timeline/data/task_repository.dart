@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/task_dao.dart';
@@ -202,7 +203,8 @@ class TaskRepository {
     );
   }
 
-  /// Permanently removes the row (used to undo task creation).
+  /// Test-only hard delete. It cascades to child rows and emits sync tombstones; production Undo uses TaskAggregateSnapshot.softDelete.
+  @visibleForTesting
   Future<void> hardDeleteTask(String taskId) async {
     final row = await _dao.getTaskById(taskId);
     await _db.transaction(() async {

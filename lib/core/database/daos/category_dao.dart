@@ -38,12 +38,4 @@ class CategoryDao extends DatabaseAccessor<AppDatabase>
         );
     return count > 0;
   }
-
-  Future<int> softDeleteCategory(String id, DateTime deletedAt) =>
-      (update(categories)..where((c) => c.id.equals(id))).write(
-        CategoriesCompanion(
-          deletedAt: Value(deletedAt),
-          updatedAt: Value(deletedAt),
-        ),
-      );
 }

@@ -23,6 +23,7 @@ import '../../../review/providers/review_providers.dart';
 import '../../providers/notification_settings_providers.dart';
 import '../../data/backup_service.dart';
 import '../../data/backup_input.dart';
+import '../../../sync/providers/sync_providers.dart';
 import '../../../task_editor/providers/subtask_providers.dart';
 import '../../../templates/providers/template_providers.dart';
 import '../../../timeline/presentation/providers/day_tasks_provider.dart';
@@ -434,7 +435,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await BackupInputReader.read(selected),
         allowMalformed: false,
       );
-      final service = BackupService(ref.read(appDatabaseProvider));
+      final service = BackupService(
+        ref.read(appDatabaseProvider),
+        accountScoped: ref.read(openAccountScopeProvider) != null,
+      );
       if (replace) {
         final preImport = await service.exportJson();
         final directory = await getApplicationDocumentsDirectory();

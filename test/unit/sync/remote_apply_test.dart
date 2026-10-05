@@ -102,6 +102,52 @@ void main() {
     }
   });
 
+  test('compact tombstone stores canonical UTC deleted_at', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    try {
+      final now = DateTime.utc(2026, 1, 1, 9);
+      await db.syncDao.runWithoutOutbound(() async {
+        await db
+            .into(db.categories)
+            .insert(
+              CategoriesCompanion.insert(
+                id: 'tombstone-category',
+                name: 'Doomed',
+                colorHex: '#4285F4',
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+      });
+      await db.syncDao.runWithoutOutbound(
+        () => SyncRemoteApplier(db).apply(
+          SyncRemoteChange(
+            changeId: 1,
+            operationId: 'server-operation-tombstone',
+            tableName: 'categories',
+            recordId: 'tombstone-category',
+            operation: 'delete',
+            serverVersion: 3,
+            serverTimestamp: now,
+            payload: {
+              'id': 'tombstone-category',
+              'deleted_at': '2026-01-01T10:00:00+05:30',
+            },
+          ),
+        ),
+      );
+      final row = await db
+          .customSelect(
+            'SELECT deleted_at FROM categories '
+            "WHERE id = 'tombstone-category'",
+          )
+          .getSingle();
+      expect(row.read<String>('deleted_at'), '2026-01-01T04:30:00.000Z');
+    } finally {
+      await db.close();
+    }
+  });
+
   test(
     'remote missed markers interpret legacy UTC minutes exactly once',
     () async {

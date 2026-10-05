@@ -182,15 +182,15 @@ void main() {
         final recovery = await db
             .customSelect(
               'SELECT recovery_id, payload FROM planner_migration_recovery '
-              "WHERE recovery_id IN ('v8:tasks:task-1', 'v8:tasks:inbox-1', 'v8:tasks:legacy-tombstone')",
+              "WHERE recovery_id IN ('v8:tasks:task-1:time_accounting', 'v8:tasks:inbox-1:inbox_content', 'v8:tasks:legacy-tombstone:inbox_content')",
             )
             .get();
         expect(
           recovery.map((row) => row.read<String>('recovery_id')),
           containsAll(<String>[
-            'v8:tasks:task-1',
-            'v8:tasks:inbox-1',
-            'v8:tasks:legacy-tombstone',
+            'v8:tasks:task-1:time_accounting',
+            'v8:tasks:inbox-1:inbox_content',
+            'v8:tasks:legacy-tombstone:inbox_content',
           ]),
         );
         expect(
@@ -410,12 +410,18 @@ void main() {
       final firstRecoveryCount = await first
           .customSelect(
             "SELECT COUNT(*) AS count FROM planner_migration_recovery "
-            "WHERE recovery_id = 'v8:tasks:task-1'",
+            "WHERE recovery_id = 'v8:tasks:task-1:time_accounting'",
           )
           .getSingle();
       expect(firstOperationCount.read<int>('count'), 1);
       expect(firstRecoveryCount.read<int>('count'), 1);
       await first.close();
+
+      final clear = sqlite3.sqlite3.open(file.path);
+      clear.execute(
+        "DELETE FROM app_settings WHERE key = 'schema.maintenance_version'",
+      );
+      clear.dispose();
 
       final reopened = AppDatabase(NativeDatabase(file));
       try {
@@ -429,7 +435,7 @@ void main() {
         final recoveryCount = await reopened
             .customSelect(
               "SELECT COUNT(*) AS count FROM planner_migration_recovery "
-              "WHERE recovery_id = 'v8:tasks:task-1'",
+              "WHERE recovery_id = 'v8:tasks:task-1:time_accounting'",
             )
             .getSingle();
         expect(operationCount.read<int>('count'), 1);
@@ -441,4 +447,47 @@ void main() {
       directory.deleteSync(recursive: true);
     }
   });
+
+  test(
+    'inbox and time-accounting repairs of one task both stay in the ledger',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'planner_migration_v8_ledger',
+      );
+      final file = File('${directory.path}/planner.sqlite3');
+      try {
+        MigrationSchema.create(file, 7);
+        final raw = sqlite3.sqlite3.open(file.path);
+        raw.execute('''
+          INSERT INTO tasks
+            (id, title, is_inbox, actual_duration_min, created_at, updated_at)
+          VALUES
+            ('both-1', 'Both repairs', 1, 30,
+             '${MigrationSchema.timestamp}', '${MigrationSchema.timestamp}')
+        ''');
+        raw.dispose();
+
+        final db = AppDatabase(NativeDatabase(file));
+        try {
+          final rows = await db
+              .customSelect(
+                'SELECT recovery_id FROM planner_migration_recovery '
+                "WHERE row_id = 'both-1'",
+              )
+              .get();
+          expect(
+            rows.map((row) => row.read<String>('recovery_id')),
+            containsAll(<String>[
+              'v8:tasks:both-1:inbox_content',
+              'v8:tasks:both-1:time_accounting',
+            ]),
+          );
+        } finally {
+          await db.close();
+        }
+      } finally {
+        directory.deleteSync(recursive: true);
+      }
+    },
+  );
 }

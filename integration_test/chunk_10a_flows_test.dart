@@ -285,6 +285,9 @@ String _uuid(String suffix) =>
     '00000000-0000-7000-8000-${suffix.padLeft(12, '0')}';
 
 class _DeterministicGateway implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   final _versions = <String, int>{};
   final _snapshots = <String, Map<String, dynamic>>{};
   final _changes = <Map<String, dynamic>>[];

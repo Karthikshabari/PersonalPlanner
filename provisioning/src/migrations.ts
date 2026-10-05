@@ -12,6 +12,8 @@ import realUseV2 from "../../supabase/migrations/20260910000000_real_use_v2.sql"
 import recurrenceRemovalProvenance from "../../supabase/migrations/20260915000000_recurrence_removal_provenance.sql";
 import titleHistoryConflictOrdering from "../../supabase/migrations/20260916000000_title_history_conflict_ordering.sql";
 import initialSyncBaseline from "../../supabase/migrations/20260917000000_initial_sync_baseline.sql";
+import dbAuditServerHardening from "../../supabase/migrations/20261004000000_db_audit_server_hardening.sql";
+import syncHistoryCompaction from "../../supabase/migrations/20261004000100_sync_history_compaction.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -44,6 +46,16 @@ export const MIGRATIONS = [
     name: "20260917000000_initial_sync_baseline",
     query: initialSyncBaseline,
     sha256: "b58df9aa235d3b2729ab9118bb7ef4fc673dd9d787e45960ec9beb6cbfc5ba99",
+  },
+  {
+    name: "20261004000000_db_audit_server_hardening",
+    query: dbAuditServerHardening,
+    sha256: "261c977cdb36f02087b568d3285a9e1dd0ea12df0aea0b84742d03aee2a7700a",
+  },
+  {
+    name: "20261004000100_sync_history_compaction",
+    query: syncHistoryCompaction,
+    sha256: "219ef7c33b547c3372095bb54d83501257b23ef4f7582a3b2c965c85d9c7a1f0",
   },
 ] as const;
 
@@ -192,6 +204,22 @@ select
     and not pg_catalog.has_table_privilege('authenticated', oid, 'UPDATE')
     and not pg_catalog.has_table_privilege('authenticated', oid, 'DELETE')
   ), false) from planner_tables) as direct_authenticated_writes_revoked,
+  (select pg_catalog.count(*) = 16 and coalesce(pg_catalog.bool_and(
+    not pg_catalog.has_table_privilege('anon', oid, 'SELECT')
+    and not pg_catalog.has_table_privilege('anon', oid, 'INSERT')
+    and not pg_catalog.has_table_privilege('anon', oid, 'UPDATE')
+    and not pg_catalog.has_table_privilege('anon', oid, 'DELETE')
+  ), false) from planner_tables) as anon_access_revoked,
+  coalesce((select pg_catalog.bool_and(
+    not pg_catalog.has_function_privilege('anon', oid, 'EXECUTE')
+    and not pg_catalog.has_function_privilege('authenticated', oid, 'EXECUTE'))
+    from planner_functions
+    where proname in ('apply_sync_operation_v1_unsafe','apply_sync_operation_v1_hardened',
+      'apply_sync_operation_v1_prebaseline_base','apply_sync_operation_v2_prebaseline_base',
+      'planner_apply_sync_operation_internal','planner_recompute_task_actual',
+      'planner_validate_timer_payload','planner_validate_plan_title_history',
+      'planner_normalize_task_title_history','planner_account_has_history')), false)
+    as security_definer_helpers_private,
   coalesce((select
       prosrc = ${capabilityBodyLiteral}
       and prolang = (select oid from pg_catalog.pg_language where lanname = 'sql')

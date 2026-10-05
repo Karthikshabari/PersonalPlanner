@@ -169,7 +169,34 @@ class AppDatabase extends _$AppDatabase {
     // The Android notification-action engine and the Linux reminder worker
     // open this same file: wait for their locks instead of failing.
     raw.execute('PRAGMA busy_timeout = 30000');
+    // Readers no longer block on a commit from another connection. WAL is
+    // persistent per file; synchronous stays at its FULL default.
+    raw.execute('PRAGMA journal_mode = WAL');
     raw.execute('PRAGMA foreign_keys = ON');
+  }
+
+  /// Bump whenever a sync trigger body changes. Triggers are recreated only
+  /// when the stored `schema.sync_trigger_version` differs or one is missing.
+  static const int syncTriggerVersion = 2;
+
+  /// 11 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
+  static const int _expectedSyncTriggerCount = 34;
+
+  /// Takes the write lock with the first statement of a transaction. The
+  /// reserved `db.write_lock` key is never read.
+  static const String _writeLockStatement =
+      "INSERT INTO app_settings(key, value) VALUES ('db.write_lock', '1') "
+      'ON CONFLICT(key) DO NOTHING';
+
+  /// Runs [action] in a transaction whose first statement is a write, so the
+  /// connection never has to upgrade a read lock while another connection
+  /// holds one. A deferred read-then-write upgrade fails with SQLITE_BUSY
+  /// immediately, without consulting the busy handler.
+  Future<T> writeTransaction<T>(Future<T> Function() action) {
+    return transaction(() async {
+      await customStatement(_writeLockStatement);
+      return action();
+    });
   }
 
   @override
@@ -182,7 +209,7 @@ class AppDatabase extends _$AppDatabase {
       await _createIndexes();
       await _createFts();
       await _createSyncIndexes();
-      await _createSyncTriggers();
+      await _ensureSyncTriggers(force: true);
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -231,27 +258,87 @@ class AppDatabase extends _$AppDatabase {
       // Indexes are idempotent — always ensure they exist.
       await _createIndexes();
       await _createSyncIndexes();
-      await _createSyncTriggers();
+      await _ensureSyncTriggers(force: true);
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA foreign_keys = ON');
+      await _clearStaleApplyMode();
       // R3 adds a parentless table without advancing the already-established
       // v8 number. This idempotent guard upgrades databases that were opened
       // by the earlier v8 client before Day Context existed.
       await _ensureDayContextTable();
-      await _ensureTimeAccountingSchema();
+      await _ensureTimeAccountingColumns();
+      // Full-table repairs run once per maintenance version, not on every
+      // open of every process.
+      if (await _maintenanceDue()) {
+        await _repairTimeAccountingRows();
+        await _normalizeExistingInstants();
+        await _normalizeExistingTaskEstimates();
+        await customStatement('DROP INDEX IF EXISTS idx_tasks_overdue');
+        await customStatement('DROP INDEX IF EXISTS idx_tasks_sync');
+        await customStatement(
+          'INSERT OR REPLACE INTO app_settings(key, value) '
+          "VALUES ('$_maintenanceVersionKey', '$maintenanceVersion')",
+        );
+      }
       await _createIndexes();
       await _createSyncIndexes();
-      await _createSyncTriggers();
-      await _normalizeExistingInstants();
-      await _normalizeExistingTaskEstimates();
+      await _ensureSyncTriggers();
     },
   );
 
+  /// Bump to re-run the open-time repairs once on every existing database.
+  static const int maintenanceVersion = 1;
+  static const _maintenanceVersionKey = 'schema.maintenance_version';
+
+  Future<bool> _maintenanceDue() async {
+    final row = await customSelect(
+      'SELECT value FROM app_settings WHERE key = ?',
+      variables: [Variable<String>(_maintenanceVersionKey)],
+    ).getSingleOrNull();
+    return row?.read<String>('value') != '$maintenanceVersion';
+  }
+
+  /// No connection commits `sync.apply_mode`: every writer sets and clears it
+  /// inside one transaction. A row found at open was left by a process that
+  /// predates that rule and died mid-normalization, so it is always stale.
+  Future<void> _clearStaleApplyMode() async {
+    await customStatement(
+      "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
+    );
+  }
+
+  /// Recreates the outbound sync triggers when [force] is set, when the
+  /// stored trigger version differs from [syncTriggerVersion], or when any
+  /// expected trigger is missing. DROP and CREATE share one transaction, so
+  /// another connection never observes a table without its triggers.
+  Future<void> _ensureSyncTriggers({bool force = false}) async {
+    if (!force) {
+      final version = await customSelect(
+        "SELECT value FROM app_settings WHERE key = 'schema.sync_trigger_version'",
+      ).getSingleOrNull();
+      final count = await customSelect(
+        "SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'trigger' "
+        r"AND (name LIKE 'sync\_%' ESCAPE '\')",
+      ).getSingle();
+      if (version?.read<String>('value') == '$syncTriggerVersion' &&
+          count.read<int>('c') == _expectedSyncTriggerCount) {
+        return;
+      }
+    }
+    await writeTransaction(() async {
+      await _createSyncTriggers();
+      await customStatement(
+        'INSERT OR REPLACE INTO app_settings(key, value) '
+        "VALUES ('schema.sync_trigger_version', '$syncTriggerVersion')",
+      );
+    });
+  }
+
   /// Repairs timestamp text written by older sync clients. SQLite compares
   /// TEXT lexically, so equivalent offset and UTC forms must be normalized
-  /// before any range query runs. Malformed values are left untouched and
-  /// copied to the recovery ledger for a later repair tool.
+  /// before any range query runs. Malformed values are copied to the recovery
+  /// ledger and replaced so typed reads cannot throw.
   Future<void> _normalizeExistingInstants() async {
     const fields = <String, Map<String, String>>{
       'tasks': {
@@ -316,101 +403,187 @@ class AppDatabase extends _$AppDatabase {
         'deleted_at': 'instant',
       },
     };
-    const primaryKeys = <String, String>{
-      'task_tags': 'task_id = ? AND tag_id = ?',
-    };
-    final hasRecovery = await customSelect(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'planner_migration_recovery'",
-    ).getSingleOrNull();
-    final malformed =
-        <
-          ({
-            String table,
-            String key,
-            String column,
-            String raw,
-            Map<String, Object?> row,
-          })
-        >[];
-    final previousApplyMode = await customSelect(
-      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
-    ).getSingleOrNull();
-    await customStatement(
-      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
-    );
-    try {
+    await customStatement('''
+      CREATE TABLE IF NOT EXISTS planner_migration_recovery (
+        recovery_id TEXT NOT NULL PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        row_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        recovered_at TEXT NOT NULL
+      )
+    ''');
+    await _withOutboundSuppressed(() async {
       for (final entry in fields.entries) {
-        final table = entry.key;
-        final columns = entry.value;
-        final rows = await customSelect('SELECT * FROM $table').get();
+        final rows = await customSelect('SELECT * FROM ${entry.key}').get();
         for (final row in rows) {
-          final key = table == 'task_tags'
-              ? '${row.read<String>('task_id')}:${row.read<String>('tag_id')}'
-              : row.read<String>('id');
-          for (final field in columns.entries) {
-            final raw = row.readNullable<String>(field.key);
-            if (raw == null) continue;
-            final canonical = field.value == 'minute'
-                ? MissedAtCodec.normalize(raw)
-                : DateTime.tryParse(raw)?.toUtc().toIso8601String();
-            if (canonical == null) {
-              malformed.add((
-                table: table,
-                key: key,
-                column: field.key,
-                raw: raw,
-                row: Map<String, Object?>.from(row.data),
-              ));
-              continue;
-            }
-            if (canonical == raw) continue;
-            final where = primaryKeys[table] ?? 'id = ?';
-            final variables = table == 'task_tags'
-                ? <Object>[
-                    canonical,
-                    row.read<String>('task_id'),
-                    row.read<String>('tag_id'),
-                  ]
-                : <Object>[canonical, key];
-            await customStatement(
-              'UPDATE $table SET ${field.key} = ? WHERE $where',
-              variables,
-            );
-          }
+          await _normalizeRowInstants(entry.key, entry.value, row);
         }
       }
-      if (malformed.isEmpty || hasRecovery == null) return;
-      for (final item in malformed) {
+    });
+  }
+
+  /// Normalizes every instant column of one row with a single UPDATE in its
+  /// own savepoint.
+  ///
+  /// Repairs work on one in-memory copy of the row, so a later column never
+  /// sees a value that an earlier repair replaced, and the table's
+  /// cross-column CHECKs are enforced on the finished row. If the UPDATE
+  /// still violates a constraint, only this row rolls back: its stored values
+  /// stay as they were and the attempt is recorded in the recovery ledger.
+  /// Row data must never make the open fail.
+  Future<void> _normalizeRowInstants(
+    String table,
+    Map<String, String> columns,
+    QueryRow row,
+  ) async {
+    final original = row.data;
+    final isTaskTags = table == 'task_tags';
+    final key = isTaskTags
+        ? '${original['task_id']}:${original['tag_id']}'
+        : '${original['id']}';
+    final next = Map<String, Object?>.from(original);
+    final malformed = <String, String>{};
+    // Columns already decided by a repair of a malformed value, such as a
+    // task's end_time once its start_time could not be parsed.
+    final decided = <String>{};
+    for (final MapEntry(key: column, value: kind) in columns.entries) {
+      if (decided.contains(column)) continue;
+      final raw = original[column];
+      if (raw is! String) continue;
+      final canonical = kind == 'minute'
+          ? MissedAtCodec.normalize(raw)
+          : DateTime.tryParse(raw)?.toUtc().toIso8601String();
+      if (canonical == null) {
+        malformed[column] = raw;
+        decided.addAll(_repairMalformedInstant(table, column, next));
+        continue;
+      }
+      next[column] = canonical;
+    }
+    final adjusted = _enforceInstantInvariants(table, next);
+    final changes = <String, Object?>{
+      for (final column in next.keys)
+        if (next[column] != original[column]) column: next[column],
+    };
+    if (changes.isEmpty) return;
+
+    final now = DateTime.now().toUtc().toIso8601String();
+    Future<void> record(
+      String recoveryId,
+      Map<String, Object?> payload,
+      String reason,
+    ) => customStatement(
+      'INSERT OR IGNORE INTO planner_migration_recovery '
+      '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
+      'VALUES (?, ?, ?, ?, ?, ?)',
+      [recoveryId, table, key, jsonEncode(payload), reason, now],
+    );
+
+    try {
+      await transaction(() async {
         await customStatement(
-          'INSERT OR IGNORE INTO planner_migration_recovery '
-          '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
-          'VALUES (?, ?, ?, ?, ?, ?)',
+          'UPDATE $table SET '
+          '${changes.keys.map((column) => '$column = ?').join(', ')} '
+          'WHERE ${isTaskTags ? 'task_id = ? AND tag_id = ?' : 'id = ?'}',
           [
-            'timestamp:${item.table}:${item.key}:${item.column}',
-            item.table,
-            item.key,
-            jsonEncode({
-              'row': item.row,
-              'column': item.column,
-              'value': item.raw,
-            }),
-            'Unparseable timestamp retained during normalization',
-            DateTime.now().toUtc().toIso8601String(),
+            ...changes.values,
+            if (isTaskTags) ...[original['task_id'], original['tag_id']],
+            if (!isTaskTags) original['id'],
           ],
         );
-      }
-    } finally {
-      if (previousApplyMode == null) {
-        await customStatement(
-          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
-        );
-      } else {
-        await customStatement(
-          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
-          [previousApplyMode.read<String>('value')],
+        for (final MapEntry(key: column, value: raw) in malformed.entries) {
+          await record('timestamp:$table:$key:$column', {
+            'row': original,
+            'column': column,
+            'value': raw,
+          }, 'Unparseable timestamp retained during normalization');
+        }
+        for (final column in adjusted) {
+          if (malformed.containsKey(column)) continue;
+          await record(
+            'timestamp-adjusted:$table:$key:$column',
+            {'row': original, 'column': column, 'value': next[column]},
+            'Timestamp adjusted to satisfy table constraints during '
+                'normalization',
+          );
+        }
+      });
+    } on Object catch (error) {
+      try {
+        await record('timestamp-rollback:$table:$key', {
+          'row': original,
+          'attempted': changes,
+          'error': '$error',
+        }, 'Timestamp normalization rolled back; original values retained');
+      } on Object catch (ledgerError) {
+        stderr.writeln(
+          'Timestamp normalization of $table/$key was rolled back and could '
+          'not be recorded: $error; ledger: $ledgerError',
         );
       }
     }
+  }
+
+  /// Replaces an unparseable instant in [next] so typed reads cannot throw,
+  /// and returns the columns this repair decided. The original value is
+  /// retained in planner_migration_recovery.
+  static Set<String> _repairMalformedInstant(
+    String table,
+    String column,
+    Map<String, Object?> next,
+  ) {
+    final nowIso = DateTime.now().toUtc().toIso8601String();
+    String parsedOr(String other, String fallback) {
+      final value = DateTime.tryParse(next[other]?.toString() ?? '');
+      return value?.toUtc().toIso8601String() ?? fallback;
+    }
+
+    if (table == 'tasks' && (column == 'start_time' || column == 'end_time')) {
+      next['start_time'] = null;
+      next['end_time'] = null;
+      next['estimated_duration_min'] = null;
+      return const {'start_time', 'end_time', 'estimated_duration_min'};
+    }
+    next[column] = switch (column) {
+      'created_at' || 'updated_at' || 'deleted_at' => nowIso,
+      'missed_at' => null,
+      'started_at' => parsedOr('created_at', nowIso),
+      'ended_at' =>
+        next['state'] == 'finished' ? parsedOr('started_at', nowIso) : null,
+      'running_since' =>
+        next['state'] == 'running' ? parsedOr('started_at', nowIso) : null,
+      _ => nowIso,
+    };
+    return {column};
+  }
+
+  /// Restores the cross-column CHECKs that per-column repairs can break, in
+  /// [next], and returns the columns it changed.
+  static List<String> _enforceInstantInvariants(
+    String table,
+    Map<String, Object?> next,
+  ) {
+    switch (table) {
+      case 'tasks':
+        // CHECK (end_time IS NULL OR start_time IS NOT NULL)
+        if (next['start_time'] == null && next['end_time'] != null) {
+          next['end_time'] = null;
+          next['estimated_duration_min'] = null;
+          return const ['end_time', 'estimated_duration_min'];
+        }
+      case 'timer_sessions':
+        // CHECK (ended_at IS NULL OR ended_at >= started_at). A fallback start
+        // (created_at or now) can land after a past end; the recorded
+        // duration_sec is kept, so the session stays a valid finished one.
+        final started = DateTime.tryParse(next['started_at']?.toString() ?? '');
+        final ended = DateTime.tryParse(next['ended_at']?.toString() ?? '');
+        if (started != null && ended != null && ended.isBefore(started)) {
+          next['started_at'] = next['ended_at'];
+          return const ['started_at'];
+        }
+    }
+    return const [];
   }
 
   /// Schema-v6 is the audit stabilization migration. It upgrades every
@@ -635,13 +808,7 @@ class AppDatabase extends _$AppDatabase {
         recovered_at TEXT NOT NULL
       )
     ''');
-    final previousApplyMode = await customSelect(
-      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
-    ).getSingleOrNull();
-    await customStatement(
-      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
-    );
-    try {
+    await _withOutboundSuppressed(() async {
       // v7 databases already have triggers. Recreate them after this method
       // so migration repairs cannot create semantic sync operations.
       await _dropSyncTriggers();
@@ -663,7 +830,7 @@ class AppDatabase extends _$AppDatabase {
           '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
           'VALUES (?, ?, ?, ?, ?, ?)',
           [
-            'v8:tasks:$id',
+            'v8:tasks:$id:inbox_content',
             'tasks',
             id,
             jsonEncode({
@@ -688,18 +855,7 @@ class AppDatabase extends _$AppDatabase {
       // reached from an actual pre-v8 schema upgrade, never from an ordinary
       // open of a database that already advertises schema v8.
       await _migrateLegacyTimeAccounting();
-    } finally {
-      if (previousApplyMode == null) {
-        await customStatement(
-          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
-        );
-      } else {
-        await customStatement(
-          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
-          [previousApplyMode.read<String>('value')],
-        );
-      }
-    }
+    });
   }
 
   /// Runs [action] in one transaction with the outbound sync triggers
@@ -937,7 +1093,7 @@ class AppDatabase extends _$AppDatabase {
         '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
         'VALUES (?, ?, ?, ?, ?, ?)',
         [
-          'v8:tasks:$id',
+          'v8:tasks:$id:time_accounting',
           'tasks',
           id,
           jsonEncode(task.data),
@@ -1027,7 +1183,7 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
-  /// Repairs stale compatibility estimates whenever a database is opened.
+  /// Repairs stale compatibility estimates once per [maintenanceVersion].
   /// This covers interrupted imports and legacy rows as well as the v7 -> v8
   /// migration, without changing task revisions or generating sync outbox
   /// entries for a cache-only field.
@@ -1042,13 +1198,7 @@ class AppDatabase extends _$AppDatabase {
         recovered_at TEXT NOT NULL
       )
     ''');
-    final previousApplyMode = await customSelect(
-      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
-    ).getSingleOrNull();
-    await customStatement(
-      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
-    );
-    try {
+    await _withOutboundSuppressed(() async {
       final rows = await customSelect(
         'SELECT id, start_time, end_time, estimated_duration_min, is_inbox '
         'FROM tasks',
@@ -1073,7 +1223,7 @@ class AppDatabase extends _$AppDatabase {
           '(recovery_id, table_name, row_id, payload, reason, recovered_at) '
           'VALUES (?, ?, ?, ?, ?, ?)',
           [
-            'v8:tasks:$id',
+            'v8:tasks:$id:schedule_projection',
             'tasks',
             id,
             jsonEncode({
@@ -1100,18 +1250,7 @@ class AppDatabase extends _$AppDatabase {
           );
         }
       }
-    } finally {
-      if (previousApplyMode == null) {
-        await customStatement(
-          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
-        );
-      } else {
-        await customStatement(
-          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
-          [previousApplyMode.read<String>('value')],
-        );
-      }
-    }
+    });
   }
 
   Future<void> _dropSyncTriggers() async {
@@ -1399,15 +1538,11 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tasks_inbox ON tasks (is_inbox, status) WHERE deleted_at IS NULL',
     );
-    await customStatement('DROP INDEX IF EXISTS idx_tasks_overdue');
     await customStatement(
-      'CREATE INDEX idx_tasks_overdue ON tasks (end_time, status, missed_at) WHERE deleted_at IS NULL AND is_inbox = 0 AND status IN (\'planned\', \'in_progress\')',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_overdue ON tasks (end_time, status, missed_at) WHERE deleted_at IS NULL AND is_inbox = 0 AND status IN (\'planned\', \'in_progress\')',
     );
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tasks_overlap ON tasks (start_time, end_time, status) WHERE deleted_at IS NULL AND is_inbox = 0',
-    );
-    await customStatement(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_sync ON tasks (sync_status) WHERE sync_status != 0',
     );
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tasks_category_date ON tasks (category_id, start_time) WHERE deleted_at IS NULL AND is_inbox = 0',
@@ -1551,6 +1686,7 @@ class AppDatabase extends _$AppDatabase {
         "NOT EXISTS (SELECT 1 FROM app_settings WHERE key = 'sync.apply_mode' AND value = '1')";
     const operationId =
         "lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6)))";
+    // Millisecond precision only; outbox order comes from sync_log.seq, not created_at.
     const now = "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')";
 
     Future<void> createForTable({
@@ -1572,6 +1708,16 @@ class AppDatabase extends _$AppDatabase {
       final tombstoneJson =
           "json_set(json_set($jsonOld, '\$._planner_payload_version', 2), "
           "'\$._planner_revision', OLD.revision)";
+      final updatePayloadJson =
+          "json_set(json_set($jsonNew, '\$._planner_payload_version', 2), "
+          "'\$._planner_revision', CASE WHEN NEW.revision > OLD.revision "
+          'THEN NEW.revision ELSE OLD.revision + 1 END)';
+      final changedColumns = updateColumns
+          .split(',')
+          .map((column) => column.trim())
+          .where((column) => column.isNotEmpty && column != 'updated_at')
+          .map((column) => 'NEW.$column IS NOT OLD.$column')
+          .join(' OR ');
       await customStatement('''
 CREATE TRIGGER IF NOT EXISTS sync_${table}_insert
 AFTER INSERT ON $table
@@ -1590,7 +1736,7 @@ END;
       await customStatement('''
 CREATE TRIGGER IF NOT EXISTS sync_${table}_update
 AFTER UPDATE OF $updateColumns ON $table
-WHEN $guard
+WHEN $guard AND ($changedColumns)
 BEGIN
   UPDATE $table
   SET sync_status = 1,
@@ -1603,7 +1749,7 @@ BEGIN
     $operationId, '$tableName', $recordIdNew,
     CASE WHEN $deleteOperationWhen
       THEN 'delete' ELSE 'update' END,
-    NEW.server_version, $payloadJson, 'pending', 0, $now, $now
+    NEW.server_version, $updatePayloadJson, 'pending', 0, $now, $now
   );
 END;
 ''');
@@ -1796,7 +1942,7 @@ END;
   /// Development builds used the v8 number while the coordinated Foundation
   /// was still being completed. Repair any partial v8 shape in place without
   /// a reset or schema relabel.
-  Future<void> _ensureTimeAccountingSchema() async {
+  Future<void> _ensureTimeAccountingColumns() async {
     await customStatement('''
       CREATE TABLE IF NOT EXISTS planner_migration_recovery (
         recovery_id TEXT NOT NULL PRIMARY KEY,
@@ -1851,14 +1997,11 @@ END;
         'ALTER TABLE timer_sessions ADD COLUMN owner_device_id TEXT',
       );
     }
+  }
 
-    final previousApplyMode = await customSelect(
-      "SELECT value FROM app_settings WHERE key = 'sync.apply_mode'",
-    ).getSingleOrNull();
-    await customStatement(
-      "INSERT OR REPLACE INTO app_settings(key, value) VALUES ('sync.apply_mode', '1')",
-    );
-    try {
+  /// Row repairs for the partial v8 shape. Gated by [maintenanceVersion].
+  Future<void> _repairTimeAccountingRows() async {
+    await _withOutboundSuppressed(() async {
       final anomalousOpen = await customSelect(
         "SELECT id, task_id, started_at, duration_sec FROM timer_sessions WHERE ended_at IS NULL AND duration_sec > 0 AND deleted_at IS NULL",
       ).get();
@@ -1926,17 +2069,6 @@ END;
           "VALUES ('migration.v8_reconciliation_done', '1')",
         );
       }
-    } finally {
-      if (previousApplyMode == null) {
-        await customStatement(
-          "DELETE FROM app_settings WHERE key = 'sync.apply_mode'",
-        );
-      } else {
-        await customStatement(
-          "UPDATE app_settings SET value = ? WHERE key = 'sync.apply_mode'",
-          [previousApplyMode.read<String>('value')],
-        );
-      }
-    }
+    });
   }
 }

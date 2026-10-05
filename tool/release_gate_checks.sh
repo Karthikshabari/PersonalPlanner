@@ -24,6 +24,8 @@ CANONICAL_MIGRATIONS=(
   20260915000000_recurrence_removal_provenance
   20260916000000_title_history_conflict_ordering
   20260917000000_initial_sync_baseline
+  20261004000000_db_audit_server_hardening
+  20261004000100_sync_history_compaction
 )
 
 # Secret shapes that must never be committed: Supabase secret/service-role
@@ -66,14 +68,39 @@ secret_scan() {
   unexpected="${work}/unexpected"
   allowed="${work}/allowed"
 
+  # The untracked root dotfiles excluded below (shell, git, MCP, ripgrep and
+  # editor config) are local machine config, not repository content. The batch
+  # sandbox masks them as unreadable /dev/null devices, which would make rg
+  # exit 2.
+  #
+  # Every dot-path exclusion is anchored with a leading '/', so it matches only
+  # the entry at the top of the scanned tree. A nested .mcp.json or .vscode/
+  # (both commonly hold tokens), .github/ and every other dot path are still
+  # scanned. ripgrep resolves anchored globs against its working directory, not
+  # against the search path, and $root is usually an absolute path elsewhere
+  # (the gate passes "$REPO_ROOT"). So each scan runs from inside $root and
+  # searches "."; otherwise the anchored exclusions would match nothing.
   set +e
-  rg --no-filename --only-matching --hidden \
-    --glob '!supabase.local.json' \
-    --glob '!.git/**' \
-    --glob '!build/**' \
-    --glob '!.dart_tool/**' \
-    --glob '!artifacts/**' \
-    -- "$SECRET_PATTERN" "$root" >"$matches"
+  (
+    cd -- "$root" || exit 2
+    rg --no-filename --only-matching --hidden \
+      --glob '!supabase.local.json' \
+      --glob '!/.git/**' \
+      --glob '!build/**' \
+      --glob '!/.dart_tool/**' \
+      --glob '!artifacts/**' \
+      --glob '!/.bash_profile' \
+      --glob '!/.bashrc' \
+      --glob '!/.gitconfig' \
+      --glob '!/.gitmodules' \
+      --glob '!/.mcp.json' \
+      --glob '!/.profile' \
+      --glob '!/.ripgreprc' \
+      --glob '!/.vscode' \
+      --glob '!/.zprofile' \
+      --glob '!/.zshrc' \
+      -- "$SECRET_PATTERN" .
+  ) >"$matches"
   status=$?
   set -e
   if ((status > 1)); then
@@ -98,13 +125,27 @@ secret_scan() {
   printf 'secret scan: unexpected secret-shaped value(s):\n' >&2
   while IFS= read -r token; do
     printf '  %s\n' "$token" >&2
-    rg --line-number --fixed-strings --hidden \
-      --glob '!supabase.local.json' \
-      --glob '!.git/**' \
-      --glob '!build/**' \
-      --glob '!.dart_tool/**' \
-      --glob '!artifacts/**' \
-      -- "$token" "$root" 2>/dev/null | head -n 3 | sed 's/^/    /' >&2 || true
+    # Same anchored exclusions, run from inside $root (see above).
+    (
+      cd -- "$root" || exit 2
+      rg --line-number --fixed-strings --hidden \
+        --glob '!supabase.local.json' \
+        --glob '!/.git/**' \
+        --glob '!build/**' \
+        --glob '!/.dart_tool/**' \
+        --glob '!artifacts/**' \
+        --glob '!/.bash_profile' \
+        --glob '!/.bashrc' \
+        --glob '!/.gitconfig' \
+        --glob '!/.gitmodules' \
+        --glob '!/.mcp.json' \
+        --glob '!/.profile' \
+        --glob '!/.ripgreprc' \
+        --glob '!/.vscode' \
+        --glob '!/.zprofile' \
+        --glob '!/.zshrc' \
+        -- "$token" .
+    ) 2>/dev/null | head -n 3 | sed 's/^/    /' >&2 || true
   done <"$unexpected"
   return 1
 }

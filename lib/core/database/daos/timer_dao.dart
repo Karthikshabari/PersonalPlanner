@@ -199,48 +199,6 @@ class TimerDao extends DatabaseAccessor<AppDatabase> with _$TimerDaoMixin {
             ..limit(1))
           .getSingleOrNull();
 
-  Future<TimerSessionRow?> getActiveTimer() =>
-      (select(timerSessions)
-            ..where((s) => s.state.equals('running') & s.deletedAt.isNull())
-            ..limit(1))
-          .getSingleOrNull();
-
-  /// Compatibility task-terminal helper. New code uses the shared state
-  /// machine, but this stays idempotent for older command paths.
-  Future<bool> finalizeActiveForTask(String taskId, DateTime endedAt) async {
-    final session =
-        await (select(timerSessions)
-              ..where(
-                (s) =>
-                    s.taskId.equals(taskId) &
-                    s.state.isIn(const ['running', 'paused']) &
-                    s.deletedAt.isNull(),
-              )
-              ..limit(1))
-            .getSingleOrNull();
-    if (session == null) return false;
-    final end = endedAt.isBefore(session.startedAt)
-        ? session.startedAt
-        : endedAt;
-    await updateSession(
-      session.copyWith(
-        endedAt: Value(end),
-        durationSec: session.state == 'paused'
-            ? session.durationSec
-            : end
-                      .difference(session.runningSince ?? session.startedAt)
-                      .inSeconds
-                      .clamp(0, 1 << 31)
-                      .toInt() +
-                  session.durationSec,
-        state: 'finished',
-        runningSince: const Value(null),
-        updatedAt: end,
-      ),
-    );
-    return true;
-  }
-
   Future<List<TimerSessionRow>> getSessionsForTask(String taskId) =>
       (select(timerSessions)
             ..where((s) => s.taskId.equals(taskId) & s.deletedAt.isNull())

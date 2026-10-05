@@ -47,7 +47,7 @@ class TimerService {
 
   Future<TimerTransitionResult> start(String taskId) => _serialize(() async {
     final owner = await _repository.localDeviceId();
-    return _db.transaction(() => _startInTransaction(taskId, owner));
+    return _db.writeTransaction(() => _startInTransaction(taskId, owner));
   });
 
   /// Atomically validates a scheduled reminder and starts its task.
@@ -61,7 +61,7 @@ class TimerService {
     required DateTime expectedPlannedStart,
   }) => _serialize(() async {
     final owner = await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final task = await _db.taskDao.getTaskById(taskId);
       if (task == null ||
           task.deletedAt != null ||
@@ -150,7 +150,7 @@ class TimerService {
 
   Future<TimerTransitionResult> pause() => _serialize(() async {
     final owner = await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final running = await _db.timerDao.getRunningForOwner(owner);
       if (running == null) {
         return const TimerTransitionResult(
@@ -166,7 +166,7 @@ class TimerService {
   Future<TimerTransitionResult> pauseAt(DateTime occurredAt) =>
       _serialize(() async {
         final owner = await _repository.localDeviceId();
-        return _db.transaction(() async {
+        return _db.writeTransaction(() async {
           final running = await _db.timerDao.getRunningForOwner(owner);
           if (running == null) {
             return const TimerTransitionResult(
@@ -188,7 +188,7 @@ class TimerService {
     int? expectedRevision,
   }) => _serialize(() async {
     final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final row = await _db.timerDao.getSessionById(sessionId);
       if (row == null || row.deletedAt != null || row.ownerDeviceId != owner) {
         return const TimerTransitionResult(
@@ -265,7 +265,7 @@ class TimerService {
 
   Future<TimerTransitionResult> resume(String taskId) => _serialize(() async {
     final owner = await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final row = await _db.timerDao.getUnfinishedForOwnerTask(owner, taskId);
       if (row == null) return _startInTransaction(taskId, owner);
       if (row.state == 'running') {
@@ -286,7 +286,7 @@ class TimerService {
     int? expectedRevision,
   }) => _serialize(() async {
     final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final row = await _db.timerDao.getSessionById(sessionId);
       if (row == null || row.deletedAt != null || row.ownerDeviceId != owner) {
         return const TimerTransitionResult(
@@ -314,7 +314,7 @@ class TimerService {
   Future<TimerTransitionResult> recoverSession(String sessionId) =>
       _serialize(() async {
         final owner = await _repository.localDeviceId();
-        return _db.transaction(() async {
+        return _db.writeTransaction(() async {
           final row = await _db.timerDao.getSessionById(sessionId);
           if (row == null ||
               row.deletedAt != null ||
@@ -411,7 +411,7 @@ class TimerService {
 
   Future<TimerTransitionResult> stop() => _serialize(() async {
     final owner = await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final running = await _db.timerDao.getRunningForOwner(owner);
       final paused = running == null
           ? await _db.timerDao.getLatestPausedForOwner(owner)
@@ -431,7 +431,7 @@ class TimerService {
   Future<TimerTransitionResult> stopAt(DateTime occurredAt) =>
       _serialize(() async {
         final owner = await _repository.localDeviceId();
-        return _db.transaction(() async {
+        return _db.writeTransaction(() async {
           final running = await _db.timerDao.getRunningForOwner(owner);
           final paused = running == null
               ? await _db.timerDao.getLatestPausedForOwner(owner)
@@ -457,7 +457,7 @@ class TimerService {
     int? expectedRevision,
   }) => _serialize(() async {
     final owner = expectedOwnerDeviceId ?? await _repository.localDeviceId();
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final row = await _db.timerDao.getSessionById(sessionId);
       if (row == null || row.deletedAt != null || row.ownerDeviceId != owner) {
         return const TimerTransitionResult(

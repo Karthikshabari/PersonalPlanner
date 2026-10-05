@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/features/sync/data/sync_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
 import 'package:personal_planner/features/sync/domain/sync_validation.dart';
 
@@ -121,5 +122,58 @@ void main() {
     expect(unavailable.keepsOperationQueued, isTrue);
     expect(transient.keepsOperationQueued, isTrue);
     expect(invalid.keepsOperationQueued, isFalse);
+  });
+
+  group('SQLSTATE classification (DB-005)', () {
+    test('deterministic 22023 rejection is permanent', () {
+      final failure = classifySyncFailure(
+        const PostgrestException(
+          message: 'Finished timer sessions cannot be reopened',
+          code: '22023',
+          details: 'Bad Request',
+        ),
+      );
+
+      expect(failure.kind, SyncFailureKind.permanent);
+      expect(
+        failure.message,
+        contains('Finished timer sessions cannot be reopened'),
+      );
+    });
+
+    test('serialization failure is retryable', () {
+      final failure = classifySyncFailure(
+        const PostgrestException(
+          message: 'could not serialize access',
+          code: '40001',
+        ),
+      );
+
+      expect(failure.kind, SyncFailureKind.retryable);
+    });
+
+    test('missing JWT is authentication', () {
+      final failure = classifySyncFailure(
+        const PostgrestException(
+          message: 'Authentication required',
+          code: '42501',
+        ),
+      );
+
+      expect(failure.kind, SyncFailureKind.authentication);
+    });
+
+    test('fencing rejection keeps its retryable fencing message', () {
+      final failure = classifySyncFailure(
+        const PostgrestException(
+          message:
+              'No active initial baseline claim: this account is being '
+              'established by a fenced first synchronization',
+          code: 'P0001',
+        ),
+      );
+
+      expect(isInitialBaselineFencingFailure(failure), isTrue);
+    });
   });
 }

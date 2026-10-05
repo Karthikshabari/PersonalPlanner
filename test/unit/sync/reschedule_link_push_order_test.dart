@@ -158,6 +158,9 @@ void main() {
 /// Models the remote tasks table: reschedule foreign keys are checked
 /// immediately inside each single-operation RPC transaction.
 class _ImmediateForeignKeyGateway implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   final sent = <({String recordId, String operation})>[];
   final violations = <String>[];
   final remoteTasks = <String, Map<String, String?>>{};

@@ -187,4 +187,43 @@ void main() {
       throwsA(isA<SyncValidationException>()),
     );
   });
+
+  test('delete with an unparseable deleted_at is invalid', () {
+    final payload = {'id': 'task-1', 'deleted_at': 'not-a-timestamp'};
+    expect(
+      () => SyncPayloadValidator.validate(
+        _change('tasks', payload, operation: 'delete'),
+      ),
+      throwsA(isA<SyncValidationException>()),
+    );
+  });
+
+  test('remote task title over 500 characters is invalid', () {
+    final payload = _taskPayload()..['title'] = 'a' * 501;
+    expect(
+      () => SyncPayloadValidator.validate(_change('tasks', payload)),
+      throwsA(isA<SyncValidationException>()),
+    );
+    final atLimit = _taskPayload()..['title'] = 'a' * 500;
+    SyncPayloadValidator.validate(_change('tasks', atLimit));
+  });
+
+  test('remote category name over 100 characters is invalid', () {
+    final payload = {
+      'id': 'category-1',
+      'name': 'n' * 101,
+      'color_hex': '#4285F4',
+      'sort_order': 0,
+      'is_focus': 0,
+      'created_at': '2026-01-01T08:00:00Z',
+      'updated_at': '2026-01-01T08:00:00Z',
+      'deleted_at': null,
+    };
+    expect(
+      () => SyncPayloadValidator.validate(_change('categories', payload)),
+      throwsA(isA<SyncValidationException>()),
+    );
+    payload['name'] = 'n' * 100;
+    SyncPayloadValidator.validate(_change('categories', payload));
+  });
 }

@@ -633,6 +633,9 @@ class _FakeConnectivity implements SyncConnectivityMonitor {
 
 class _NoopGateway implements SyncRemoteGateway {
   @override
+  Future<Object?> compactHistory() async => null;
+
+  @override
   Future<Object?> getCapabilities() => Future.value(const <String, Object?>{
     'protocol_version': 2,
     'payload_versions': [1, 2],

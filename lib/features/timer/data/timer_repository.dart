@@ -19,7 +19,7 @@ class TimerRepository {
   TimerDao get _dao => _db.timerDao;
   TaskActualDurationService get _actuals => TaskActualDurationService(_db);
 
-  Future<String> localDeviceId() => _db.transaction(() async {
+  Future<String> localDeviceId() => _db.writeTransaction(() async {
     final existing = await (_db.select(
       _db.appSettings,
     )..where((row) => row.key.equals(deviceIdSettingKey))).getSingleOrNull();

@@ -23,6 +23,8 @@ void main() {
         '20260915000000_recurrence_removal_provenance.sql',
         '20260916000000_title_history_conflict_ordering.sql',
         '20260917000000_initial_sync_baseline.sql',
+        '20261004000000_db_audit_server_hardening.sql',
+        '20261004000100_sync_history_compaction.sql',
       ]),
     );
   });
@@ -31,15 +33,14 @@ void main() {
     // The Worker's migration bundle lives in a non-entry module, because a
     // Worker entry module in modules format may only export functions.
     final bundle = File('provisioning/src/migrations.ts');
-    final manifest = (bundle.existsSync()
-            ? bundle
-            : File('provisioning/src/index.ts'))
-        .readAsStringSync();
+    final manifest =
+        (bundle.existsSync() ? bundle : File('provisioning/src/index.ts'))
+            .readAsStringSync();
     final entries = RegExp(
       r'name: "([0-9a-z_]+)",\s*\n\s*query: [A-Za-z0-9]+,\s*\n\s*sha256: "([0-9a-f]{64})"',
     ).allMatches(manifest).toList();
 
-    expect(entries, hasLength(6));
+    expect(entries, hasLength(8));
     for (final entry in entries) {
       final name = entry.group(1)!;
       final expected = entry.group(2)!;
@@ -60,6 +61,8 @@ void main() {
         '20260915000000_recurrence_removal_provenance',
         '20260916000000_title_history_conflict_ordering',
         '20260917000000_initial_sync_baseline',
+        '20261004000000_db_audit_server_hardening',
+        '20261004000100_sync_history_compaction',
       ]),
     );
   });
@@ -69,10 +72,15 @@ void main() {
       'supabase/migrations/20260917000000_initial_sync_baseline.sql',
     ).readAsStringSync();
 
-    expect(migration, contains('create table if not exists public.sync_initial_baseline'));
     expect(
       migration,
-      contains('alter table public.sync_initial_baseline enable row level security'),
+      contains('create table if not exists public.sync_initial_baseline'),
+    );
+    expect(
+      migration,
+      contains(
+        'alter table public.sync_initial_baseline enable row level security',
+      ),
     );
     expect(
       migration,
@@ -81,7 +89,12 @@ void main() {
       ),
     );
     // Emptiness/history is durable evidence, not a single-table row count.
-    expect(migration, contains('create or replace function public.planner_account_has_history()'));
+    expect(
+      migration,
+      contains(
+        'create or replace function public.planner_account_has_history()',
+      ),
+    );
     expect(migration, contains('from public.sync_changes c'));
     expect(migration, contains('from public.task_tags x'));
     expect(migration, contains('from public.day_contexts x'));
@@ -105,10 +118,7 @@ void main() {
     expect(discoveryBody, contains("'established'"));
     expect(discoveryBody, contains("then 'completed'"));
     expect(discoveryBody, contains("else 'in_progress'"));
-    expect(
-      discoveryBody,
-      contains("or (state_name = 'none' and history)"),
-    );
+    expect(discoveryBody, contains("or (state_name = 'none' and history)"));
     expect(discoveryBody, contains("'expired'"));
     expect(discoveryBody, contains('public.planner_initial_baseline_lease()'));
 
@@ -152,52 +162,61 @@ void main() {
     expect(claimBody, contains("'status', 'claimed'"));
     // A takeover of an expired foreign claim is only allowed when the server can
     // prove nothing was uploaded under it.
-    final recoveryGuard = claimBody.substring(
-      recovery - 600,
-      recovery,
-    );
+    final recoveryGuard = claimBody.substring(recovery - 600, recovery);
     expect(recoveryGuard, contains('if history'));
     expect(recoveryGuard, contains('baseline_row.observed_next_change_id'));
 
     // Completion only marks the caller's own claim.
     expect(
       migration,
-      contains(
-        'where user_id = caller and claim_token = p_claim_token',
-      ),
+      contains('where user_id = caller and claim_token = p_claim_token'),
     );
 
     // Fencing: the ordinary v2 entry point refuses untokened mutations while a
     // first baseline is in progress, and v3 verifies and renews the claimant.
     final v2Body = migration.substring(
-      migration.indexOf('create or replace function public.apply_sync_operation_v2('),
-      migration.indexOf('create or replace function public.apply_sync_operation_v3('),
+      migration.indexOf(
+        'create or replace function public.apply_sync_operation_v2(',
+      ),
+      migration.indexOf(
+        'create or replace function public.apply_sync_operation_v3(',
+      ),
     );
     expect(
       migration,
-      contains(
-        ') rename to apply_sync_operation_v2_prebaseline_base',
-      ),
+      contains(') rename to apply_sync_operation_v2_prebaseline_base'),
     );
     expect(v2Body, contains('sync_initial_baseline'));
     expect(v2Body, contains('and baseline_row.completed_at is null then'));
     expect(v2Body, contains('No active initial baseline claim'));
     expect(
       v2Body,
-      contains(
-        'return public.apply_sync_operation_v2_prebaseline_base(',
-      ),
+      contains('return public.apply_sync_operation_v2_prebaseline_base('),
     );
     final v3Body = migration.substring(
-      migration.indexOf('create or replace function public.apply_sync_operation_v3('),
+      migration.indexOf(
+        'create or replace function public.apply_sync_operation_v3(',
+      ),
     );
     expect(v3Body, contains('p_baseline_token'));
-    expect(v3Body, contains("message = 'Initial baseline claim token is required'"));
-    expect(v3Body, contains('No active initial baseline claim for this account'));
+    expect(
+      v3Body,
+      contains("message = 'Initial baseline claim token is required'"),
+    );
+    expect(
+      v3Body,
+      contains('No active initial baseline claim for this account'),
+    );
     expect(v3Body, contains('no longer owned by this device'));
     expect(v3Body, contains('set claimed_at = server_now'));
-    expect(v3Body, contains('where user_id = caller and claim_token = p_baseline_token'));
-    expect(v3Body, contains('return public.apply_sync_operation_v2_prebaseline_base('));
+    expect(
+      v3Body,
+      contains('where user_id = caller and claim_token = p_baseline_token'),
+    );
+    expect(
+      v3Body,
+      contains('return public.apply_sync_operation_v2_prebaseline_base('),
+    );
     // v3 is strictly the in-progress entry point: a completed baseline is a
     // rejection, not a delegation, so a replaced/stale token can never mutate
     // after the replacement claimant completed the baseline.
@@ -235,7 +254,10 @@ void main() {
       migration,
       contains('grant execute on function public.apply_sync_operation_v3('),
     );
-    expect(migration, contains(') to authenticated;\n\nrevoke all on function '));
+    expect(
+      migration,
+      contains(') to authenticated;\n\nrevoke all on function '),
+    );
     expect(
       migration,
       contains('revoke all on function public.apply_sync_operation_v3('),
@@ -243,7 +265,9 @@ void main() {
 
     expect(
       migration,
-      contains('grant execute on function public.planner_sync_account_state() to authenticated'),
+      contains(
+        'grant execute on function public.planner_sync_account_state() to authenticated',
+      ),
     );
     expect(
       migration,
@@ -284,7 +308,9 @@ void main() {
     );
     expect(
       migration,
-      contains('grant execute on function public.apply_sync_operation(\n  uuid, text, text, text, bigint, jsonb\n) to authenticated;'),
+      contains(
+        'grant execute on function public.apply_sync_operation(\n  uuid, text, text, text, bigint, jsonb\n) to authenticated;',
+      ),
     );
 
     final v1Body = migration.substring(
@@ -315,7 +341,9 @@ void main() {
     // Every authenticated mutation wrapper uses the same guard shape, and both
     // reviewed bases are unreachable directly.
     final v2Body = migration.substring(
-      migration.indexOf('create or replace function public.apply_sync_operation_v2('),
+      migration.indexOf(
+        'create or replace function public.apply_sync_operation_v2(',
+      ),
       migration.indexOf('-- Split the historical v1 entry point as well.'),
     );
     for (final body in <String>[v1Body, v2Body]) {
@@ -329,7 +357,9 @@ void main() {
     }
     expect(
       migration,
-      contains('revoke all on function public.apply_sync_operation_v2_prebaseline_base('),
+      contains(
+        'revoke all on function public.apply_sync_operation_v2_prebaseline_base(',
+      ),
     );
   });
 

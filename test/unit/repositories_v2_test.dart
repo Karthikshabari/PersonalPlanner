@@ -130,18 +130,34 @@ void main() {
     });
 
     test(
-      'rename then recreate of the original deterministic name is explicit',
+      'rename then recreate of the original deterministic name creates a fresh identity',
       () async {
         final original = await tags.getOrCreateByName('deep-work');
         await tags.updateTag(original.copyWith(name: 'focused'));
 
-        await expectLater(
-          tags.getOrCreateByName('deep-work'),
-          throwsA(isA<StateError>()),
+        final recreated = await tags.getOrCreateByName('deep-work');
+        expect(recreated.id, isNot(original.id));
+        expect(recreated.name, 'deep-work');
+        expect(
+          (await tags.watchAllTags().first).map((t) => t.name),
+          unorderedEquals(['focused', 'deep-work']),
         );
-        expect((await tags.watchAllTags().first).single.name, 'focused');
       },
     );
+
+    test('old name of a renamed tag can be created again', () async {
+      final first = await tags.getOrCreateByName('work');
+      await tags.updateTag(first.copyWith(name: 'office'));
+
+      final again = await tags.getOrCreateByName('work');
+      expect(again.name, 'work');
+      expect(again.id, isNot(first.id));
+      expect(again.deletedAt, isNull);
+      expect(
+        (await tags.watchAllTags().first).map((t) => t.name),
+        unorderedEquals(['office', 'work']),
+      );
+    });
 
     test(
       'attach/detach tags on a task; watchTagsForTask streams them',

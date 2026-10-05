@@ -86,7 +86,7 @@ class SyncEngine with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _subscriptions.add(_connectivity.changes.listen(_onConnectivityChanged));
     _subscriptions.add(
-      _db.syncDao.watchPendingOperations().listen((_) {
+      _db.syncDao.watchOutboxSignal().distinct().listen((_) {
         _scheduleStatus();
         _scheduleWriteSync();
       }),

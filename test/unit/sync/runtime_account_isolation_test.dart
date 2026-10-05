@@ -252,6 +252,9 @@ void main() {
 }
 
 class _RecordingGateway implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   int applyCalls = 0;
   int capabilityCalls = 0;
   int pullCalls = 0;

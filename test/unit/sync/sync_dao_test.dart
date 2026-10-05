@@ -97,6 +97,50 @@ void main() {
     }
   });
 
+  test('watchOutboxSignal emits on enqueue and acknowledge', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    try {
+      final emissions = <({int outstanding, int newestSeq})>[];
+      final subscription = db.syncDao.watchOutboxSignal().listen(emissions.add);
+      Future<void> settle(int count) async {
+        for (var i = 0; i < 50 && emissions.length < count; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+      }
+
+      await settle(1);
+      expect(emissions.first, (outstanding: 0, newestSeq: 0));
+
+      final now = DateTime.utc(2026, 1, 1, 9);
+      await db
+          .into(db.categories)
+          .insert(
+            CategoriesCompanion.insert(
+              id: 'signal-category',
+              name: 'Category',
+              colorHex: '#4285F4',
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+      await settle(2);
+      final operation = (await db.syncDao.getActiveOperationsForRecord(
+        'categories',
+        'signal-category',
+      )).single;
+      expect(emissions[1].outstanding, 1);
+      final newestSeq = emissions[1].newestSeq;
+      expect(newestSeq, greaterThan(0));
+
+      await db.syncDao.markAcknowledged(operation.operationId, now);
+      await settle(3);
+      expect(emissions[2], (outstanding: 0, newestSeq: newestSeq));
+      await subscription.cancel();
+    } finally {
+      await db.close();
+    }
+  });
+
   test(
     'pruneAcknowledgedOperations deletes only old acknowledged rows',
     () async {
@@ -198,6 +242,12 @@ void main() {
         } finally {
           await first.close();
         }
+
+        final clear = sqlite3.sqlite3.open(file.path);
+        clear.execute(
+          "DELETE FROM app_settings WHERE key = 'schema.maintenance_version'",
+        );
+        clear.dispose();
 
         final reopened = AppDatabase(NativeDatabase(file));
         try {

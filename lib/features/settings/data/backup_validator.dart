@@ -756,15 +756,20 @@ class BackupValidator {
 
   void _validateUniqueBusinessDates(Map<String, dynamic> data) {
     for (final entry in const [
-      ('daily_reviews', 'date'),
-      ('weekly_reviews', 'week_start_date'),
-      ('day_contexts', 'date'),
+      ('daily_reviews', 'date', true),
+      ('weekly_reviews', 'week_start_date', true),
+      ('day_contexts', 'date', false),
+      ('tags', 'name', true),
     ]) {
       final seen = <String>{};
       for (final raw in _list(data[entry.$1], entry.$1)) {
-        final value = _string(_map(raw, entry.$1)[entry.$2], entry.$2);
+        final row = _map(raw, entry.$1);
+        if (entry.$3 && row['deleted_at'] != null) continue;
+        final value = _string(row[entry.$2], entry.$2);
         if (!seen.add(value)) {
-          throw BackupValidationException('Duplicate ${entry.$1} date: $value');
+          throw BackupValidationException(
+            'Duplicate ${entry.$1} ${entry.$2}: $value',
+          );
         }
       }
     }

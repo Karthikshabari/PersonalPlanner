@@ -426,10 +426,14 @@ ON CONFLICT(${definition.primaryKey}) DO UPDATE SET $updates
     SyncRemoteChange change,
     _SyncTableDefinition definition,
   ) async {
-    final deletedAt =
-        change.payload['deleted_at'] ??
-        DateTime.now().toUtc().toIso8601String();
-    final variables = <Object>[deletedAt.toString(), change.serverVersion];
+    final rawDeletedAt = change.payload['deleted_at'];
+    final parsedDeletedAt = rawDeletedAt == null
+        ? null
+        : DateTime.tryParse(rawDeletedAt.toString());
+    final deletedAt = (parsedDeletedAt ?? DateTime.now())
+        .toUtc()
+        .toIso8601String();
+    final variables = <Object>[deletedAt, change.serverVersion];
     final where = definition.primaryKey == 'task_id, tag_id'
         ? 'task_id = ? AND tag_id = ?'
         : 'id = ?';

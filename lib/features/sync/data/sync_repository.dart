@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/sync_dao.dart';
 import '../../../core/models/plan_title_change.dart';
+import '../../../core/utils/json_list_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../../core/utils/uuid.dart';
 import '../../settings/data/backup_codec.dart';
@@ -14,6 +15,7 @@ import '../../timer/domain/task_actual_duration_service.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import 'remote_apply.dart';
 import '../domain/sync_models.dart';
+import '../domain/sync_semantic_equality.dart';
 import '../domain/sync_validation.dart';
 
 /// The remote boundary for one authenticated account. The UI never calls the
@@ -48,6 +50,20 @@ class SyncRepository {
 
   /// Retention window for acknowledged outbox rows.
   static const acknowledgedRetention = Duration(days: 30);
+
+  /// Drained pull cycles a change may wait for a missing parent before it is
+  /// quarantined.
+  ///
+  /// A parent that is anywhere in the feed arrives within the cycle that
+  /// drains the feed, so most held changes resolve at the end of their first
+  /// cycle. Later cycles cover parents that materialize out of band, such as
+  /// a parent restored by the quarantine repair at the start of a later pull.
+  /// Five cycles span several sync triggers (startup, resume, reconnect,
+  /// periodic) before a child is given up as an orphan, yet a genuine orphan
+  /// still surfaces within about half an hour of periodic sync. Only cycles
+  /// that reach the end of the feed count; failed pulls do not.
+  static const pendingParentCycleLimit = 5;
+  static const _pendingParentPrefix = 'sync.pending_parent.';
   static const _legacyTitleHistoryTransitionDiagnostic =
       'Existing plan title events cannot be removed or changed';
 
@@ -79,6 +95,22 @@ class SyncRepository {
           );
         } on Object {
           // Pruning is best-effort.
+        }
+        try {
+          final last = DateTime.tryParse(
+            await _db.syncDao.getSetting('sync.last_compaction_at') ?? '',
+          );
+          final now = DateTime.now().toUtc();
+          if (last == null ||
+              now.difference(last) >= const Duration(hours: 24)) {
+            await _gateway.compactHistory();
+            await _db.syncDao.setSetting(
+              'sync.last_compaction_at',
+              now.toIso8601String(),
+            );
+          }
+        } on Object {
+          // Compaction is best-effort server housekeeping.
         }
       }
       return SyncCycleResult(
@@ -354,7 +386,7 @@ class SyncRepository {
     if (operation.operation == 'delete') return false;
     for (final parent in _operationDependencies(
       operation,
-      _clientPayload(operation.payload),
+      _clientPayload(operation.payload, operation.entityTableName),
     )) {
       if (await _db.syncDao.hasUnsentInsert(parent.table, parent.id)) {
         return true;
@@ -402,7 +434,10 @@ class SyncRepository {
       if (row.operation == 'delete') return null;
       final Iterable<({String table, String id})> parents;
       try {
-        parents = _operationDependencies(row, _clientPayload(row.payload));
+        parents = _operationDependencies(
+          row,
+          _clientPayload(row.payload, row.entityTableName),
+        );
       } on Object {
         return null;
       }
@@ -540,6 +575,7 @@ class SyncRepository {
           }
         }
       }
+      final endOfFeed = rawChanges.length < pageSize;
       if (received.isEmpty) {
         if (maxChangeId > cursor) {
           await _db.syncDao.advanceCursor(
@@ -547,6 +583,22 @@ class SyncRepository {
             maxChangeId,
             DateTime.now().toUtc(),
           );
+        }
+        if (endOfFeed && await _hasPendingParents()) {
+          // The feed drained without a page to settle the held changes in,
+          // so settle them on their own: retry, then count the cycle.
+          final changedTables = <String>{};
+          await _commitPage(
+            const [],
+            const [],
+            nextCursor: maxChangeId,
+            batchValidated: true,
+            endOfCycle: true,
+            beforePageCommit: beforePageCommit,
+            changedTables: changedTables,
+            onInvalid: (failure) => invalidFailure ??= failure,
+          );
+          _notifyDomainStreams(changedTables);
         }
         return invalidFailure;
       }
@@ -568,90 +620,514 @@ class SyncRepository {
       }
       final nextCursor = maxChangeId;
       final changedTables = <String>{};
-      final affectedActualTaskIds = <String>{};
-      await _db.syncDao.runWithoutOutbound(() async {
-        // A valid reschedule pair stores reciprocal self-references. SQLite
-        // must validate those foreign keys after both task snapshots exist.
-        await _db.customStatement('PRAGMA defer_foreign_keys = ON');
-        // Phase G: the restore may only continue while this local database is
-        // still free of user-authored Planner work. The check runs inside this
-        // page transaction, so a new local edit aborts the page atomically:
-        // no remote rows and no cursor advance are committed after it.
-        if (beforePageCommit != null) await beforePageCommit();
-        // Coalescing is correct for the materialized row, but it must not
-        // hide an acknowledgement that precedes a newer feed entry for the
-        // same record. Retire/rebase every matching local operation first;
-        // the newest coalesced change then decides the visible row state.
-        for (final change in changes) {
-          try {
-            _assertAccountScope();
-            // Keep a malformed relationship from aborting the whole page.
-            // The savepoint rolls back any metadata/conflict work for this
-            // one change, while valid siblings can still commit atomically
-            // with the cursor advancement below.
-            await _db.transaction(() async {
-              _assertAccountScope();
-              await _collectAffectedActualTaskIds(
-                change,
-                affectedActualTaskIds,
-              );
-              for (final acknowledgement in received) {
-                if (acknowledgement.tableName == change.tableName &&
-                    acknowledgement.recordId == change.recordId) {
-                  await _acknowledgePulledOperation(acknowledgement);
-                }
-              }
-              await _applyPulledChange(
-                change,
-                skipHistoryValidation: batchValidated,
-              );
-              changedTables.add(change.tableName);
-            });
-          } on _SyncAccountScopeChanged {
-            rethrow;
-          } catch (error) {
-            final diagnostic =
-                'Rejected remote ${change.tableName}/${change.recordId}: '
-                '${safeSyncError(error)}';
-            invalidFailure ??= SyncFailure(
-              SyncFailureKind.invalidData,
-              diagnostic,
-            );
-            await _db.syncDao.recordQuarantinedChange(
-              _accountId,
-              change.changeId,
-              diagnostic,
-              rawChange: {
-                'change_id': change.changeId,
-                'operation_id': change.operationId,
-                'table_name': change.tableName,
-                'record_id': change.recordId,
-                'operation': change.operation,
-                'server_version': change.serverVersion,
-                'server_timestamp': change.serverTimestamp.toIso8601String(),
-                'payload': change.payload,
-              },
-            );
-          }
-        }
-        if (affectedActualTaskIds.isNotEmpty) {
-          final actualDuration = TaskActualDurationService(_db);
-          for (final taskId in affectedActualTaskIds) {
-            await actualDuration.recomputeTaskInTransaction(taskId);
-          }
-          changedTables.add('tasks');
-        }
-        _assertAccountScope();
-        await _db.syncDao.advanceCursor(
-          _accountId,
-          nextCursor,
-          DateTime.now().toUtc(),
-        );
-      });
+      await _commitPage(
+        changes,
+        received,
+        nextCursor: nextCursor,
+        batchValidated: batchValidated,
+        // The last page of a drained feed also ends the pull cycle.
+        endOfCycle: endOfFeed,
+        beforePageCommit: beforePageCommit,
+        changedTables: changedTables,
+        onInvalid: (failure) => invalidFailure ??= failure,
+      );
       _notifyDomainStreams(changedTables);
       cursor = nextCursor;
-      if (rawChanges.length < pageSize) return invalidFailure;
+      if (endOfFeed) return invalidFailure;
     }
+  }
+
+  /// Runs [_applyPage] tolerantly, then once strictly if a tolerated
+  /// reciprocal partner did not materialize.
+  Future<void> _commitPage(
+    List<SyncRemoteChange> changes,
+    List<SyncRemoteChange> received, {
+    required int nextCursor,
+    required bool batchValidated,
+    required bool endOfCycle,
+    required Future<void> Function()? beforePageCommit,
+    required Set<String> changedTables,
+    required void Function(SyncFailure) onInvalid,
+  }) async {
+    final affectedActualTaskIds = <String>{};
+    Future<void> applyPage({required bool strictLinks}) => _applyPage(
+      changes,
+      received,
+      nextCursor: nextCursor,
+      strictLinks: strictLinks,
+      batchValidated: batchValidated,
+      endOfCycle: endOfCycle,
+      beforePageCommit: beforePageCommit,
+      changedTables: changedTables,
+      affectedActualTaskIds: affectedActualTaskIds,
+      onInvalid: onInvalid,
+    );
+    try {
+      await applyPage(strictLinks: false);
+    } on _PageForeignKeyViolation {
+      // A tolerated reciprocal partner did not materialize. The page rolled
+      // back as a whole; re-run it once requiring every parent up front.
+      changedTables.clear();
+      affectedActualTaskIds.clear();
+      await applyPage(strictLinks: true);
+    }
+  }
+
+  /// Applies one coalesced pull page and advances the cursor atomically.
+  /// Unless [strictLinks] is set, a task may reference its reciprocal
+  /// reschedule partner from the same page before that partner exists; the
+  /// page then fails with [_PageForeignKeyViolation] if the partner was
+  /// quarantined, so the caller can re-run it strictly.
+  ///
+  /// A change whose parent has not arrived is held in the pending-parent
+  /// queue instead of being quarantined, and the queue is retried against
+  /// the page's result before the cursor advances. With [endOfCycle] the
+  /// retry also counts a drained pull cycle for every change still held.
+  Future<void> _applyPage(
+    List<SyncRemoteChange> changes,
+    List<SyncRemoteChange> received, {
+    required int nextCursor,
+    required bool strictLinks,
+    required bool batchValidated,
+    required bool endOfCycle,
+    required Future<void> Function()? beforePageCommit,
+    required Set<String> changedTables,
+    required Set<String> affectedActualTaskIds,
+    required void Function(SyncFailure) onInvalid,
+  }) {
+    return _db.syncDao.runWithoutOutbound(() async {
+      var toleratedAny = false;
+      // A valid reschedule pair stores reciprocal self-references. SQLite
+      // must validate those foreign keys after both task snapshots exist.
+      await _db.customStatement('PRAGMA defer_foreign_keys = ON');
+      // Phase G: the restore may only continue while this local database is
+      // still free of user-authored Planner work. The check runs inside this
+      // page transaction, so a new local edit aborts the page atomically:
+      // no remote rows and no cursor advance are committed after it.
+      if (beforePageCommit != null) await beforePageCommit();
+      // Loaded inside the page transaction, so a strict re-run starts again
+      // from the committed queue.
+      final pending = await _loadPendingParents();
+      final rejected = await _quarantinedRecordKeys();
+      // Coalescing is correct for the materialized row, but it must not
+      // hide an acknowledgement that precedes a newer feed entry for the
+      // same record. Retire/rebase every matching local operation first;
+      // the newest coalesced change then decides the visible row state.
+      for (final change in changes) {
+        // A newer feed entry decides the record, exactly as coalescing does
+        // within a page, so it supersedes an older held change.
+        final superseded = pending.remove(_recordKey(change));
+        if (superseded != null) {
+          await _db.syncDao.deleteSetting(superseded.settingKey);
+        }
+        try {
+          _assertAccountScope();
+          // Keep a malformed relationship from aborting the whole page.
+          // The savepoint rolls back any metadata/conflict work for this
+          // one change, while valid siblings can still commit atomically
+          // with the cursor advancement below.
+          await _db.transaction(() async {
+            _assertAccountScope();
+            await _collectAffectedActualTaskIds(change, affectedActualTaskIds);
+            for (final acknowledgement in received) {
+              if (acknowledgement.tableName == change.tableName &&
+                  acknowledgement.recordId == change.recordId) {
+                await _acknowledgePulledOperation(acknowledgement);
+              }
+            }
+            final materialized = await _applyPulledChange(
+              change,
+              skipHistoryValidation: batchValidated,
+            );
+            if (materialized) {
+              // Deferred foreign keys are only checked at COMMIT, which a
+              // savepoint cannot catch. Check parents here so an orphan is
+              // quarantined alone instead of failing the whole page.
+              final tolerated = strictLinks
+                  ? const <String>{}
+                  : {
+                      for (final partner in changes)
+                        if (_isReciprocalReschedulePair(change, partner))
+                          '${partner.tableName}\u0000${partner.recordId}',
+                    };
+              await _assertParentsMaterialized(change, tolerated: tolerated);
+              if (tolerated.isNotEmpty) toleratedAny = true;
+            }
+            changedTables.add(change.tableName);
+          });
+        } on _SyncAccountScopeChanged {
+          rethrow;
+        } catch (error) {
+          if (error is _MissingSyncParent &&
+              !_isRejectedParent(error.parentKey, pending, rejected)) {
+            // The parent may still arrive in a later page or cycle.
+            final entry = _PendingParent(
+              settingKey: '$_pendingParentPrefix$_accountId.${change.changeId}',
+              change: change,
+              parentKey: error.parentKey,
+              cycles: 0,
+            );
+            pending[_recordKey(change)] = entry;
+            await _writePendingParent(entry);
+            continue;
+          }
+          await _quarantinePulledChange(
+            change,
+            'Rejected remote ${change.tableName}/${change.recordId}: '
+            '${safeSyncError(error)}',
+            rejected: rejected,
+            onInvalid: onInvalid,
+          );
+        }
+      }
+      if (await _retryPendingParents(
+        pending,
+        rejected,
+        strictLinks: strictLinks,
+        endOfCycle: endOfCycle,
+        changedTables: changedTables,
+        affectedActualTaskIds: affectedActualTaskIds,
+        onInvalid: onInvalid,
+      )) {
+        toleratedAny = true;
+      }
+      if (affectedActualTaskIds.isNotEmpty) {
+        final actualDuration = TaskActualDurationService(_db);
+        for (final taskId in affectedActualTaskIds) {
+          await actualDuration.recomputeTaskInTransaction(taskId);
+        }
+        changedTables.add('tasks');
+      }
+      if (toleratedAny) {
+        final violations = await _db
+            .customSelect('PRAGMA foreign_key_check(tasks)')
+            .get();
+        if (violations.isNotEmpty) throw const _PageForeignKeyViolation();
+      }
+      _assertAccountScope();
+      await _db.syncDao.advanceCursor(
+        _accountId,
+        nextCursor,
+        DateTime.now().toUtc(),
+      );
+    });
+  }
+
+  /// Throws [_MissingSyncParent] when a dependency of [change] other than one
+  /// in [tolerated] has no local row, so the caller's savepoint rolls
+  /// [change] back and the caller holds or quarantines it.
+  Future<void> _assertParentsMaterialized(
+    SyncRemoteChange change, {
+    required Set<String> tolerated,
+  }) async {
+    for (final key in _changeDependencies(change)) {
+      if (tolerated.contains(key)) continue;
+      if (!await _parentExists(key)) {
+        final split = key.indexOf('\u0000');
+        throw _MissingSyncParent(
+          key,
+          'Remote ${change.tableName}/${change.recordId} references missing '
+          '${key.substring(0, split)}/${key.substring(split + 1)}',
+        );
+      }
+    }
+  }
+
+  /// [key] is a `table\u0000id` dependency key from [_changeDependencies].
+  Future<bool> _parentExists(String key) async {
+    final split = key.indexOf('\u0000');
+    final row = await _db
+        .customSelect(
+          'SELECT 1 FROM ${key.substring(0, split)} WHERE id = ? LIMIT 1',
+          variables: [Variable<String>(key.substring(split + 1))],
+        )
+        .getSingleOrNull();
+    return row != null;
+  }
+
+  static String _recordKey(SyncRemoteChange change) =>
+      '${change.tableName}\u0000${change.recordId}';
+
+  /// A missing parent whose own feed change was quarantined (and is not
+  /// itself waiting for a parent) was rejected, not delayed: its children
+  /// are quarantined with it instead of waiting.
+  static bool _isRejectedParent(
+    String parentKey,
+    Map<String, _PendingParent> pending,
+    Set<String> rejected,
+  ) => rejected.contains(parentKey) && !pending.containsKey(parentKey);
+
+  Future<void> _quarantinePulledChange(
+    SyncRemoteChange change,
+    String diagnostic, {
+    required Set<String> rejected,
+    required void Function(SyncFailure) onInvalid,
+  }) async {
+    onInvalid(SyncFailure(SyncFailureKind.invalidData, diagnostic));
+    rejected.add(_recordKey(change));
+    await _db.syncDao.recordQuarantinedChange(
+      _accountId,
+      change.changeId,
+      diagnostic,
+      rawChange: _rawChangeJson(change),
+    );
+  }
+
+  static Map<String, Object?> _rawChangeJson(SyncRemoteChange change) => {
+    'change_id': change.changeId,
+    'operation_id': change.operationId,
+    'table_name': change.tableName,
+    'record_id': change.recordId,
+    'operation': change.operation,
+    'server_version': change.serverVersion,
+    'server_timestamp': change.serverTimestamp.toIso8601String(),
+    'payload': change.payload,
+  };
+
+  Future<bool> _hasPendingParents() async =>
+      (await _db.syncDao.readSettingsWithPrefix(
+        '$_pendingParentPrefix$_accountId.',
+      )).isNotEmpty;
+
+  /// The durable pending-parent queue, one entry per record (newest wins).
+  Future<Map<String, _PendingParent>> _loadPendingParents() async {
+    final settings = await _db.syncDao.readSettingsWithPrefix(
+      '$_pendingParentPrefix$_accountId.',
+    );
+    final pending = <String, _PendingParent>{};
+    for (final MapEntry(:key, :value) in settings.entries) {
+      final _PendingParent entry;
+      try {
+        final record = jsonDecode(value) as Map;
+        final parent = record['missing_parent'] as Map;
+        entry = _PendingParent(
+          settingKey: key,
+          change: SyncRemoteChange.fromJson(record['raw_change']),
+          parentKey: '${parent['table']}\u0000${parent['id']}',
+          cycles: (record['cycles'] as num).toInt(),
+        );
+      } on Object {
+        // Unreadable entries stay reviewable as quarantine records.
+        await _db.syncDao.deleteSetting(key);
+        await _db.syncDao.recordQuarantinedChange(
+          _accountId,
+          int.tryParse(key.substring(key.lastIndexOf('.') + 1)) ?? 0,
+          'Unreadable pending-parent record',
+          rawChange: value,
+        );
+        continue;
+      }
+      final recordKey = _recordKey(entry.change);
+      final existing = pending[recordKey];
+      if (existing != null &&
+          existing.change.changeId > entry.change.changeId) {
+        await _db.syncDao.deleteSetting(entry.settingKey);
+        continue;
+      }
+      if (existing != null) {
+        await _db.syncDao.deleteSetting(existing.settingKey);
+      }
+      pending[recordKey] = entry;
+    }
+    return pending;
+  }
+
+  Future<void> _writePendingParent(_PendingParent entry) {
+    final split = entry.parentKey.indexOf('\u0000');
+    return _db.syncDao.setSetting(
+      entry.settingKey,
+      jsonEncode({
+        'account_id': _accountId,
+        'change_id': entry.change.changeId,
+        'missing_parent': {
+          'table': entry.parentKey.substring(0, split),
+          'id': entry.parentKey.substring(split + 1),
+        },
+        'cycles': entry.cycles,
+        'raw_change': _rawChangeJson(entry.change),
+        'recorded_at': DateTime.now().toUtc().toIso8601String(),
+      }),
+    );
+  }
+
+  /// Record keys whose quarantined feed change named them.
+  Future<Set<String>> _quarantinedRecordKeys() async {
+    final settings = await _db.syncDao.readSettingsWithPrefix(
+      'sync.quarantine.$_accountId.',
+    );
+    final keys = <String>{};
+    for (final value in settings.values) {
+      try {
+        final record = jsonDecode(value);
+        final raw = record is Map ? record['raw_change'] : null;
+        if (raw is! Map) continue;
+        final table = raw['table_name'];
+        final id = raw['record_id'];
+        if (table is String && id != null) keys.add('$table\u0000$id');
+      } on Object {
+        continue;
+      }
+    }
+    return keys;
+  }
+
+  /// Retries held changes until a pass makes no progress, so a chain of
+  /// held parents and children resolves in one call. With [endOfCycle],
+  /// every change still held afterwards has one more drained cycle counted
+  /// and is quarantined once it reaches [pendingParentCycleLimit]. Returns
+  /// whether a reciprocal reschedule partner was tolerated, so the caller
+  /// verifies task foreign keys before committing.
+  Future<bool> _retryPendingParents(
+    Map<String, _PendingParent> pending,
+    Set<String> rejected, {
+    required bool strictLinks,
+    required bool endOfCycle,
+    required Set<String> changedTables,
+    required Set<String> affectedActualTaskIds,
+    required void Function(SyncFailure) onInvalid,
+  }) async {
+    var toleratedAny = false;
+    Future<void> settle(_PendingParent entry) async {
+      pending.remove(_recordKey(entry.change));
+      await _db.syncDao.deleteSetting(entry.settingKey);
+    }
+
+    String diagnostic(_PendingParent entry, Object error) =>
+        'Rejected remote ${entry.change.tableName}/${entry.change.recordId}: '
+        '${safeSyncError(error)}';
+
+    var progressed = true;
+    while (progressed && pending.isNotEmpty) {
+      progressed = false;
+      final ordered = pending.values.toList()
+        ..sort((a, b) => a.change.changeId.compareTo(b.change.changeId));
+      for (final entry in ordered) {
+        _assertAccountScope();
+        final change = entry.change;
+        if (_isRejectedParent(entry.parentKey, pending, rejected)) {
+          await settle(entry);
+          await _quarantinePulledChange(
+            change,
+            diagnostic(
+              entry,
+              _MissingSyncParent(
+                entry.parentKey,
+                'Remote ${change.tableName}/${change.recordId} references '
+                'rejected ${entry.parentKey.replaceFirst('\u0000', '/')}',
+              ),
+            ),
+            rejected: rejected,
+            onInvalid: onInvalid,
+          );
+          progressed = true;
+          continue;
+        }
+        // A held reciprocal reschedule partner is tolerated exactly as a
+        // partner in the same page is; the caller's foreign-key check and
+        // strict re-run cover a partner that then fails to materialize.
+        final tolerated = strictLinks
+            ? const <String>{}
+            : {
+                for (final other in pending.values)
+                  if (!identical(other, entry) &&
+                      _isReciprocalReschedulePair(change, other.change))
+                    _recordKey(other.change),
+              };
+        if (!tolerated.contains(entry.parentKey) &&
+            !await _parentExists(entry.parentKey)) {
+          continue;
+        }
+        try {
+          await _db.transaction(() async {
+            _assertAccountScope();
+            // Never move a record back to an older server version than one
+            // this device already holds.
+            if (await _hasLocalVersionAtLeast(change)) return;
+            await _collectAffectedActualTaskIds(change, affectedActualTaskIds);
+            if (await _applyPulledChange(change)) {
+              await _assertParentsMaterialized(change, tolerated: tolerated);
+              if (tolerated.isNotEmpty) toleratedAny = true;
+            }
+            changedTables.add(change.tableName);
+          });
+          await settle(entry);
+          progressed = true;
+        } on _SyncAccountScopeChanged {
+          rethrow;
+        } catch (error) {
+          if (error is _MissingSyncParent &&
+              !_isRejectedParent(error.parentKey, pending, rejected)) {
+            // Another parent of the same change is still missing.
+            if (error.parentKey != entry.parentKey) {
+              entry.parentKey = error.parentKey;
+              await _writePendingParent(entry);
+            }
+            continue;
+          }
+          await settle(entry);
+          await _quarantinePulledChange(
+            change,
+            diagnostic(entry, error),
+            rejected: rejected,
+            onInvalid: onInvalid,
+          );
+          progressed = true;
+        }
+      }
+    }
+    if (!endOfCycle) return toleratedAny;
+    for (final entry in pending.values.toList()) {
+      entry.cycles++;
+      if (entry.cycles < pendingParentCycleLimit) {
+        await _writePendingParent(entry);
+        continue;
+      }
+      await settle(entry);
+      final change = entry.change;
+      await _quarantinePulledChange(
+        change,
+        diagnostic(
+          entry,
+          _MissingSyncParent(
+            entry.parentKey,
+            'Remote ${change.tableName}/${change.recordId} references missing '
+            '${entry.parentKey.replaceFirst('\u0000', '/')}, which did not '
+            'arrive within $pendingParentCycleLimit pull cycles',
+          ),
+        ),
+        rejected: rejected,
+        onInvalid: onInvalid,
+      );
+    }
+    return toleratedAny;
+  }
+
+  Future<bool> _hasLocalVersionAtLeast(SyncRemoteChange change) async {
+    if (!SyncPayloadValidator.tables.contains(change.tableName)) return false;
+    final QueryRow? row;
+    if (change.tableName == 'task_tags') {
+      final pieces = change.recordId.split(':');
+      if (pieces.length != 2) return false;
+      row = await _db
+          .customSelect(
+            'SELECT server_version FROM task_tags '
+            'WHERE task_id = ? AND tag_id = ?',
+            variables: [
+              Variable<String>(pieces[0]),
+              Variable<String>(pieces[1]),
+            ],
+          )
+          .getSingleOrNull();
+    } else {
+      row = await _db
+          .customSelect(
+            'SELECT server_version FROM ${change.tableName} WHERE id = ?',
+            variables: [Variable<String>(change.recordId)],
+          )
+          .getSingleOrNull();
+    }
+    final version = row?.readNullable<int>('server_version');
+    return version != null && version >= change.serverVersion;
   }
 
   static int? _rawChangeId(Object? raw) {
@@ -743,7 +1219,9 @@ class SyncRepository {
     );
   }
 
-  Future<void> _applyPulledChange(
+  /// Returns true when [change] was materialized through the applier, false
+  /// when only remote metadata or a conflict was recorded.
+  Future<bool> _applyPulledChange(
     SyncRemoteChange change, {
     bool skipHistoryValidation = false,
   }) async {
@@ -771,22 +1249,38 @@ class SyncRepository {
       );
       if (newer.isEmpty) {
         await _applier.apply(change, checkHistoryLinks: !skipHistoryValidation);
-      } else {
-        await _setRemoteMetadata(
-          change.tableName,
-          change.recordId,
-          change.serverVersion,
-          pending: newer.isNotEmpty,
-          conflict: newer.any((operation) => operation.state == 'conflict'),
-        );
+        return true;
       }
-      return;
+      await _setRemoteMetadata(
+        change.tableName,
+        change.recordId,
+        change.serverVersion,
+        pending: newer.isNotEmpty,
+        conflict: newer.any((operation) => operation.state == 'conflict'),
+      );
+      return false;
+    }
+    if (active.isNotEmpty &&
+        active.every((op) => op.state == 'pending' || op.state == 'error') &&
+        !active.any(_isParked) &&
+        semanticallyEqualSnapshots(
+          change.tableName,
+          _clientPayload(active.last.payload, change.tableName),
+          change.payload,
+        )) {
+      final now = DateTime.now().toUtc();
+      for (final op in active) {
+        await _db.syncDao.markAcknowledged(op.operationId, now);
+      }
+      await _applier.apply(change, checkHistoryLinks: !skipHistoryValidation);
+      return true;
     }
     if (active.isNotEmpty) {
       await _savePulledConflict(active.last, change);
-      return;
+      return false;
     }
     await _applier.apply(change, checkHistoryLinks: !skipHistoryValidation);
+    return true;
   }
 
   /// A coalesced page can contain a task source edit and several timer source
@@ -839,6 +1333,18 @@ class SyncRepository {
     SyncLogRow operation,
     SyncRpcAcknowledgement acknowledgement,
   ) async {
+    final actualVersion = acknowledgement.actualServerVersion;
+    final remoteSnapshot = acknowledgement.remoteSnapshot;
+    if (actualVersion != null &&
+        remoteSnapshot != null &&
+        semanticallyEqualSnapshots(
+          operation.entityTableName,
+          _clientPayload(operation.payload, operation.entityTableName),
+          remoteSnapshot,
+        )) {
+      await _acknowledgeEquivalent(operation, actualVersion);
+      return;
+    }
     final remote = acknowledgement.remoteSnapshot ?? <String, dynamic>{};
     await _db.transaction(() async {
       await _db.syncDao.markConflict(
@@ -880,6 +1386,37 @@ class SyncRepository {
           remoteSnapshot: jsonEncode(remote),
           createdAt: DateTime.now().toUtc(),
         ),
+      );
+    });
+    _notifyDomainStreams({operation.entityTableName});
+  }
+
+  /// The server already holds exactly this operation's intent (for example a
+  /// deterministic occurrence materialized on two devices). Adopt the server
+  /// version instead of asking the user to choose between identical states.
+  Future<void> _acknowledgeEquivalent(
+    SyncLogRow operation,
+    int serverVersion,
+  ) async {
+    final now = DateTime.now().toUtc();
+    await _db.transaction(() async {
+      await _db.syncDao.markAcknowledged(operation.operationId, now);
+      await _db.syncDao.rebasePendingOperations(
+        operation.entityTableName,
+        operation.recordId,
+        serverVersion,
+        now,
+      );
+      final remaining = await _db.syncDao.getActiveOperationsForRecord(
+        operation.entityTableName,
+        operation.recordId,
+      );
+      await _setRemoteMetadata(
+        operation.entityTableName,
+        operation.recordId,
+        serverVersion,
+        pending: remaining.isNotEmpty,
+        conflict: remaining.any((entry) => entry.state == 'conflict'),
       );
     });
     _notifyDomainStreams({operation.entityTableName});
@@ -979,6 +1516,20 @@ class SyncRepository {
         local['_planner_payload_version'] = 2;
         await _writeMergedTaskHistory(conflict.recordId, local, now);
       }
+      if (conflict.entityTableName == 'recurring_rules') {
+        final remote = Map<String, dynamic>.from(
+          jsonDecode(conflict.remoteSnapshot) as Map,
+        );
+        local['exceptions_json'] = _unionExceptions(
+          local['exceptions_json'],
+          remote['exceptions_json'],
+        );
+        await _writeRuleExceptions(
+          conflict.recordId,
+          local['exceptions_json'] as String,
+          now,
+        );
+      }
       final localDeleted =
           local['deleted'] == true || local['deleted_at'] != null;
       final actualVersion = conflict.actualServerVersion;
@@ -1033,6 +1584,7 @@ class SyncRepository {
     await _db.syncDao.runWithoutOutbound(() async {
       final now = DateTime.now().toUtc();
       Map<String, dynamic>? historyPreservingPayload;
+      Map<String, dynamic>? localRuleSnapshot;
       if (conflict.entityTableName == 'tasks' &&
           actualVersion != null &&
           remotePayload['title'] != null) {
@@ -1055,6 +1607,26 @@ class SyncRepository {
             _mergeTaskHistoryPayload(chosen: remotePayload, other: localPayload)
               ..['_planner_payload_version'] = 2
               ..['updated_at'] = now.toIso8601String();
+        if (_sameTitleHistory(historyPreservingPayload, remotePayload)) {
+          historyPreservingPayload = null;
+        }
+      }
+      if (conflict.entityTableName == 'recurring_rules' &&
+          actualVersion != null) {
+        final active = await _db.syncDao.getActiveOperationsForRecord(
+          conflict.entityTableName,
+          conflict.recordId,
+        );
+        final newerLocal = active
+            .where((entry) => entry.state != 'conflict')
+            .toList(growable: false);
+        localRuleSnapshot = Map<String, dynamic>.from(
+          jsonDecode(
+            newerLocal.isEmpty
+                ? conflict.localSnapshot
+                : _newestOperation(newerLocal).payload,
+          ) as Map,
+        );
       }
       await _collectAffectedActualTaskIds(
         SyncRemoteChange(
@@ -1113,6 +1685,38 @@ class SyncRepository {
             updatedAt: now,
           ),
         );
+      }
+      final ruleSnapshot = localRuleSnapshot;
+      if (ruleSnapshot != null &&
+          remotePayload['deleted'] != true &&
+          remotePayload['deleted_at'] == null) {
+        final merged = _unionExceptions(
+          remotePayload['exceptions_json'],
+          ruleSnapshot['exceptions_json'],
+        );
+        if (merged !=
+            _unionExceptions(remotePayload['exceptions_json'], null)) {
+          await _writeRuleExceptions(conflict.recordId, merged, now);
+          final followUp = Map<String, dynamic>.from(remotePayload)
+            ..remove('server_version')
+            ..remove('user_id')
+            ..['exceptions_json'] = merged
+            ..['updated_at'] = now.toIso8601String()
+            ..['_planner_payload_version'] = 2;
+          await _db.syncDao.enqueueOperation(
+            SyncLogCompanion.insert(
+              operationId: generateUuidV7(),
+              entityTableName: 'recurring_rules',
+              recordId: conflict.recordId,
+              operation: 'update',
+              expectedServerVersion: Value(actualVersion),
+              payload: jsonEncode(followUp),
+              state: const Value('pending'),
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+        }
       }
       await _db.syncDao.deleteConflict(conflictId);
       if (affectedActualTaskIds.isNotEmpty) {
@@ -1280,6 +1884,48 @@ class SyncRepository {
     merged['display_plan_change_id'] = pointer;
     return merged;
   }
+
+  /// True when the union added no locally unique title event and kept the
+  /// remote display pointer, so applying the remote row is the whole answer.
+  static bool _sameTitleHistory(
+    Map<String, dynamic> merged,
+    Map<String, dynamic> remote,
+  ) {
+    Set<String> events(Object? raw) => raw is String
+        ? PlanTitleHistory.decodeJson(raw)
+              .map((event) => jsonEncode(event.toJson()))
+              .toSet()
+        : <String>{};
+    final mergedEvents = events(merged['plan_title_history_json']);
+    final remoteEvents = events(remote['plan_title_history_json']);
+    return mergedEvents.length == remoteEvents.length &&
+        mergedEvents.containsAll(remoteEvents) &&
+        merged['display_plan_change_id']?.toString() ==
+            remote['display_plan_change_id']?.toString();
+  }
+
+  static String _unionExceptions(Object? a, Object? b) {
+    final dates = <String>{
+      ...JsonListUtils.decode(a is String ? a : null),
+      ...JsonListUtils.decode(b is String ? b : null),
+    }.toList()..sort();
+    return JsonListUtils.encode(dates);
+  }
+
+  Future<void> _writeRuleExceptions(
+    String ruleId,
+    String exceptionsJson,
+    DateTime now,
+  ) => _db.customUpdate(
+    'UPDATE recurring_rules SET exceptions_json = ?, updated_at = ?, '
+    'sync_status = 1, revision = revision + 1 WHERE id = ?',
+    variables: [
+      Variable<String>(exceptionsJson),
+      Variable<String>(now.toIso8601String()),
+      Variable<String>(ruleId),
+    ],
+    updates: {_db.recurringRules},
+  );
 
   Future<void> _writeMergedTaskHistory(
     String taskId,
@@ -1629,7 +2275,7 @@ class SyncRepository {
     }
   }
 
-  static Map<String, dynamic> _clientPayload(String encoded) {
+  static Map<String, dynamic> _clientPayload(String encoded, String table) {
     final decoded = jsonDecode(encoded);
     if (decoded is! Map) {
       throw const SyncValidationException(
@@ -1647,17 +2293,19 @@ class SyncRepository {
     }) {
       payload.remove(field);
     }
-    if (payload['is_inbox'] == true ||
-        payload['is_inbox'] == 1 ||
-        payload['is_inbox'] == '1') {
-      payload['start_time'] = null;
-      payload['end_time'] = null;
-      payload['estimated_duration_min'] = null;
-    } else {
-      payload['estimated_duration_min'] = TaskTimeMetrics.plannedMinutes(
-        DateTime.tryParse(payload['start_time']?.toString() ?? ''),
-        DateTime.tryParse(payload['end_time']?.toString() ?? ''),
-      );
+    if (table == 'tasks') {
+      if (payload['is_inbox'] == true ||
+          payload['is_inbox'] == 1 ||
+          payload['is_inbox'] == '1') {
+        payload['start_time'] = null;
+        payload['end_time'] = null;
+        payload['estimated_duration_min'] = null;
+      } else {
+        payload['estimated_duration_min'] = TaskTimeMetrics.plannedMinutes(
+          DateTime.tryParse(payload['start_time']?.toString() ?? ''),
+          DateTime.tryParse(payload['end_time']?.toString() ?? ''),
+        );
+      }
     }
     return payload;
   }
@@ -1681,7 +2329,10 @@ class SyncRepository {
         'Unsupported local sync payload version: $rawVersion',
       );
     }
-    final payload = _clientPayload(operation.payload);
+    final payload = _clientPayload(
+      operation.payload,
+      operation.entityTableName,
+    );
     if (payloadVersion == 2 || operation.entityTableName != 'tasks') {
       return (payload: payload, version: payloadVersion);
     }
@@ -1793,7 +2444,10 @@ class SyncRepository {
     for (final operation in operations.where(
       (item) => item.operation != 'delete',
     )) {
-      final payload = _clientPayload(operation.payload);
+      final payload = _clientPayload(
+        operation.payload,
+        operation.entityTableName,
+      );
       for (final dependency in _operationDependencies(operation, payload)) {
         final parent = inserts['${dependency.table}\u0000${dependency.id}'];
         if (parent != null) before(parent, operation);
@@ -1932,6 +2586,33 @@ class _SyncAccountScopeChanged implements Exception {
   const _SyncAccountScopeChanged();
 }
 
+class _PageForeignKeyViolation implements Exception {
+  const _PageForeignKeyViolation();
+}
+
+/// A pulled change references a parent with no local row. [parentKey] is the
+/// `table\u0000id` dependency key.
+class _MissingSyncParent extends SyncValidationException {
+  const _MissingSyncParent(this.parentKey, super.message);
+
+  final String parentKey;
+}
+
+/// One held change in the durable pending-parent queue.
+class _PendingParent {
+  _PendingParent({
+    required this.settingKey,
+    required this.change,
+    required this.parentKey,
+    required this.cycles,
+  });
+
+  final String settingKey;
+  final SyncRemoteChange change;
+  String parentKey;
+  int cycles;
+}
+
 const _upgradeRequiredMessage =
     'Server upgrade required before Sync v2 changes can sync.';
 const _capabilityUnavailableMessage =
@@ -1958,6 +2639,8 @@ abstract interface class SyncRemoteGateway {
   });
 
   Future<Object?> pullChanges({required int afterChangeId, required int limit});
+
+  Future<Object?> compactHistory();
 }
 
 class SupabaseSyncRemoteGateway implements SyncRemoteGateway {
@@ -2016,6 +2699,10 @@ class SupabaseSyncRemoteGateway implements SyncRemoteGateway {
     'pull_sync_changes',
     params: {'p_after_change_id': afterChangeId, 'p_limit': limit},
   );
+
+  @override
+  Future<Object?> compactHistory() =>
+      _client.rpc('planner_compact_sync_history');
 }
 
 /// Diagnostic for a mutation that the server refused because the caller no
@@ -2102,6 +2789,39 @@ bool looksLikeUnavailableBackend(String message) {
 
 const _authenticationExpiredMessage = 'Authentication expired; sign in again.';
 
+/// SQLSTATE-first classification of a server rejection. Returns null when the
+/// error carries no recognised code, so the message rules in
+/// [classifySyncFailure] still apply.
+SyncFailure? classifyBySqlState(Object error) {
+  if (error is! PostgrestException) return null;
+  final code = error.code ?? '';
+  final message = error.message;
+  if (message.toLowerCase().contains('initial baseline claim')) return null;
+  if ((code == '42501' && message.contains('Authentication required')) ||
+      const {'PGRST301', 'PGRST302', 'PGRST303'}.contains(code)) {
+    return const SyncFailure(
+      SyncFailureKind.authentication,
+      _authenticationExpiredMessage,
+    );
+  }
+  if (code.startsWith('22') ||
+      code.startsWith('23') ||
+      code == '42501' ||
+      code == '55000') {
+    return SyncFailure(
+      SyncFailureKind.permanent,
+      'Sync action needs attention: $message',
+    );
+  }
+  if (const {'40001', '40P01', '55P03', '57014', '53300'}.contains(code)) {
+    return const SyncFailure(
+      SyncFailureKind.retryable,
+      'Sync request failed; retry scheduled.',
+    );
+  }
+  return null;
+}
+
 SyncFailure classifySyncFailure(Object error) {
   if (error is _SyncUpgradeRequired) {
     return SyncFailure(SyncFailureKind.permanent, error.message);
@@ -2125,6 +2845,8 @@ SyncFailure classifySyncFailure(Object error) {
       initialBaselineFencedMessage,
     );
   }
+  final bySqlState = classifyBySqlState(error);
+  if (bySqlState != null) return bySqlState;
   // Authentication is checked before backend availability: an expired session
   // is recoverable by signing in again, and must never look like a backend that
   // disappeared. (Project-gone evidence never carries these markers.)

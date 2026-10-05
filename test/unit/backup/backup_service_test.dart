@@ -9,6 +9,7 @@ import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/features/settings/data/backup_codec.dart';
 import 'package:personal_planner/features/settings/data/backup_format.dart';
+import 'package:personal_planner/features/settings/data/backup_merge_planner.dart';
 import 'package:personal_planner/features/settings/data/backup_service.dart';
 import 'package:personal_planner/features/day_context/data/day_context_repository.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
@@ -155,30 +156,31 @@ void main() {
     expect(row?.recurrenceRemovalReason, 'rule_excluded');
   });
 
-  test('v2 backup imports with conservative null recurrence provenance', () async {
-    await _seedDatabase(database);
-    final document = jsonDecode(
-      await BackupService(database).exportJson(),
-    ) as Map<String, dynamic>;
-    final content = document['content'] as Map<String, dynamic>;
-    final data = content['data'] as Map<String, dynamic>;
-    for (final raw in data['tasks'] as List) {
-      (raw as Map<String, dynamic>).remove('recurrence_removal_reason');
-    }
-    document['schema_version'] = 2;
-    content['schema_version'] = 2;
-    document['content_checksum'] = BackupCodec.checksum(content);
+  test(
+    'v2 backup imports with conservative null recurrence provenance',
+    () async {
+      await _seedDatabase(database);
+      final document = jsonDecode(
+        await BackupService(database).exportJson(),
+      ) as Map<String, dynamic>;
+      final content = document['content'] as Map<String, dynamic>;
+      final data = content['data'] as Map<String, dynamic>;
+      for (final raw in data['tasks'] as List) {
+        (raw as Map<String, dynamic>).remove('recurrence_removal_reason');
+      }
+      document['schema_version'] = 2;
+      content['schema_version'] = 2;
+      document['content_checksum'] = BackupCodec.checksum(content);
 
-    final restored = AppDatabase(NativeDatabase.memory());
-    addTearDown(restored.close);
-    await BackupService(restored).importJson(
-      jsonEncode(document),
-      ownershipConfirmed: true,
-    );
+      final restored = AppDatabase(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await BackupService(restored)
+          .importJson(jsonEncode(document), ownershipConfirmed: true);
 
-    final task = await restored.taskDao.getTaskById(_taskId);
-    expect(task?.recurrenceRemovalReason, isNull);
-  });
+      final task = await restored.taskDao.getTaskById(_taskId);
+      expect(task?.recurrenceRemovalReason, isNull);
+    },
+  );
 
   test(
     'backup round trips structured plan history and rejects corrupt events',
@@ -735,6 +737,9 @@ void main() {
         .customSelect('SELECT title FROM tasks_fts ORDER BY rowid')
         .get();
 
+    await target.customStatement(
+      "CREATE TEMP TRIGGER backup_test_late_failure BEFORE INSERT ON main.timer_sessions BEGIN SELECT RAISE(ABORT, 'injected late database failure'); END",
+    );
     await expectLater(
       BackupService(target).importJson(source, ownershipConfirmed: true),
       throwsA(anything),
@@ -944,6 +949,138 @@ void main() {
       );
     },
   );
+
+  test('replace is refused for an account-scoped database', () async {
+    final source = await BackupService(database).exportJson();
+    final incoming = AppDatabase(NativeDatabase.memory());
+    addTearDown(incoming.close);
+    await _seedDatabase(incoming);
+    final replacement = await BackupService(incoming).exportJson();
+    await _seedDatabase(database);
+    final tasksBefore = (await database.select(database.tasks).get()).length;
+
+    await expectLater(
+      BackupService(database, accountScoped: true).replaceFromJson(
+        replacement,
+        preImportBackup: source,
+        confirmed: true,
+        ownershipConfirmed: true,
+      ),
+      throwsA(isA<BackupValidationException>()),
+    );
+    expect(await database.select(database.tasks).get(), hasLength(tasksBefore));
+  });
+
+  test(
+    'new tag with an existing active name is a conflict, not an insert',
+    () async {
+      const localTagId = '00000000-0000-7000-8000-0000000000a1';
+      const incomingTagId = '00000000-0000-7000-8000-0000000000a2';
+      final incoming = AppDatabase(NativeDatabase.memory());
+      addTearDown(incoming.close);
+      await database
+          .into(database.tags)
+          .insert(
+            TagsCompanion.insert(
+              id: localTagId,
+              name: 'work',
+              createdAt: _time,
+              updatedAt: _time,
+            ),
+          );
+      await incoming
+          .into(incoming.tags)
+          .insert(
+            TagsCompanion.insert(
+              id: incomingTagId,
+              name: 'work',
+              createdAt: _time,
+              updatedAt: _time,
+            ),
+          );
+
+      final plan = BackupMergePlanner().build(
+        incoming: await BackupCodec.exportData(incoming),
+        local: await BackupCodec.exportData(database),
+      );
+
+      expect(plan.rowsToInsert['tags'], isEmpty);
+      expect(
+        plan.conflicts,
+        contains(
+          isA<BackupConflict>()
+              .having((conflict) => conflict.table, 'table', 'tags')
+              .having((conflict) => conflict.id, 'id', incomingTagId)
+              .having(
+                (conflict) => conflict.kind,
+                'kind',
+                BackupConflictKind.differing,
+              ),
+        ),
+      );
+    },
+  );
+
+  test('tombstone and live review on the same date are valid', () async {
+    await _seedDatabase(database);
+    await database
+        .into(database.dailyReviews)
+        .insert(
+          DailyReviewsCompanion.insert(
+            id: _otherReviewId,
+            date: '2026-08-29',
+            createdAt: _time,
+            updatedAt: _time,
+            deletedAt: Value(_time.add(const Duration(minutes: 1))),
+          ),
+        );
+    final source = await BackupService(database).exportJson();
+    final target = AppDatabase(NativeDatabase.memory());
+    addTearDown(target.close);
+
+    final result = await BackupService(target)
+        .importJson(source, ownershipConfirmed: true);
+
+    expect(result.conflicts, isEmpty);
+    expect(await target.select(target.dailyReviews).get(), hasLength(2));
+  });
+
+  test('duplicate active tag names are rejected', () async {
+    await _seedDatabase(database);
+    final source = await BackupService(database).exportJson();
+    final document = jsonDecode(source) as Map<String, dynamic>;
+    final content = document['content'] as Map<String, dynamic>;
+    final data = content['data'] as Map<String, dynamic>;
+    final tags = [
+      for (final raw in data['tags'] as List)
+        Map<String, dynamic>.from(raw as Map<String, dynamic>),
+    ];
+    tags.add({
+      ...tags.first,
+      'id': '00000000-0000-7000-8000-0000000000a3',
+      'name': 'work',
+    });
+    tags.first['name'] = 'work';
+    data['tags'] = tags;
+    (document['validation'] as Map<String, dynamic>)['record_counts'] =
+        BackupCodec.recordCounts(data);
+    document['content_checksum'] = BackupCodec.checksum(content);
+    final target = AppDatabase(NativeDatabase.memory());
+    addTearDown(target.close);
+
+    await expectLater(
+      BackupService(target)
+          .importJson(jsonEncode(document), ownershipConfirmed: true),
+      throwsA(
+        isA<BackupValidationException>().having(
+          (error) => error.toString(),
+          'message',
+          contains('Duplicate tags name: work'),
+        ),
+      ),
+    );
+    expect(await target.select(target.tags).get(), isEmpty);
+  });
 }
 
 void _convertEnvelopeToV1(Map<String, dynamic> document) {

@@ -56,7 +56,7 @@ class TaskActualDurationService {
     if (minutes < 0) {
       throw ArgumentError.value(minutes, 'minutes', 'must not be negative');
     }
-    return _db.transaction(() async {
+    return _db.writeTransaction(() async {
       final task = await _db.taskDao.getTaskById(taskId);
       if (task == null || task.deletedAt != null) {
         throw StateError('Task $taskId not found');

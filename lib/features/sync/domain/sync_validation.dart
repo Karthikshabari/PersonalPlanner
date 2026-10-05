@@ -48,6 +48,9 @@ abstract final class SyncPayloadValidator {
     }
     if (change.operation == 'delete') {
       _validateIdentity(change);
+      if (change.payload['deleted_at'] != null) {
+        _dateTime(change.payload['deleted_at']);
+      }
       return;
     }
     _normalizeLegacyPayload(change);
@@ -56,7 +59,7 @@ abstract final class SyncPayloadValidator {
     _validateOptionalDateTimes(change.tableName, p);
     switch (change.tableName) {
       case 'tasks':
-        _requiredText(p, 'title');
+        _boundedText(p, 'title', 500);
         _requiredEnum(p, 'status', {
           'planned',
           'in_progress',
@@ -143,7 +146,7 @@ abstract final class SyncPayloadValidator {
         _requiredDateTime(p, 'updated_at');
         break;
       case 'categories':
-        _requiredText(p, 'name');
+        _boundedText(p, 'name', 100);
         final color = _requiredText(p, 'color_hex');
         if (!RegExp(r'^#[0-9A-Fa-f]{6}$').hasMatch(color)) {
           throw const SyncValidationException('Invalid category color');
@@ -155,14 +158,14 @@ abstract final class SyncPayloadValidator {
         break;
       case 'subtasks':
         _requiredId(p, 'task_id');
-        _requiredText(p, 'title');
+        _boundedText(p, 'title', 500);
         _intInRange(p, 'is_completed', 0, 1);
         _nonNegativeIfPresent(p, 'sort_order');
         _requiredDateTime(p, 'created_at');
         _requiredDateTime(p, 'updated_at');
         break;
       case 'tags':
-        _requiredText(p, 'name');
+        _boundedText(p, 'name', 100);
         _requiredDateTime(p, 'created_at');
         _requiredDateTime(p, 'updated_at');
         break;
@@ -173,13 +176,13 @@ abstract final class SyncPayloadValidator {
         _requiredDateTime(p, 'updated_at');
         break;
       case 'recurring_rules':
-        final rrule = _requiredText(p, 'rrule');
+        final rrule = _boundedText(p, 'rrule', 500);
         try {
           RruleUtils.parse(rrule);
         } on Object {
           throw const SyncValidationException('Invalid recurrence rule');
         }
-        _requiredText(p, 'task_title');
+        _boundedText(p, 'task_title', 500);
         _positive(p, 'duration_min');
         _intInRange(p, 'priority', 0, 4);
         _nullableId(p, 'category_id');
@@ -202,7 +205,7 @@ abstract final class SyncPayloadValidator {
         _requiredDateTime(p, 'updated_at');
         break;
       case 'task_templates':
-        _requiredText(p, 'name');
+        _boundedText(p, 'name', 500);
         _positive(p, 'duration_min');
         _intInRange(p, 'priority', 0, 4);
         _nullableId(p, 'category_id');
@@ -377,6 +380,14 @@ abstract final class SyncPayloadValidator {
     final value = raw is String ? raw.trim() : null;
     if (value == null || value.isEmpty) {
       throw SyncValidationException('Missing or blank $key');
+    }
+    return value;
+  }
+
+  static String _boundedText(Map<String, dynamic> p, String key, int max) {
+    final value = _requiredText(p, key);
+    if ((p[key] as String).length > max) {
+      throw SyncValidationException('$key is longer than $max characters');
     }
     return value;
   }

@@ -84,6 +84,8 @@ canonical_migrations=(
   20260915000000_recurrence_removal_provenance
   20260916000000_title_history_conflict_ordering
   20260917000000_initial_sync_baseline
+  20261004000000_db_audit_server_hardening
+  20261004000100_sync_history_compaction
 )
 
 rg -q 'provisioning/src/index\.ts' "$CHECKS" ||
@@ -207,4 +209,4 @@ rg -q 'Set<Column> get primaryKey => \{taskId, tagId\}' "$TAGS_TABLE" || {
   exit 1
 }
 
-printf 'release_gate regression: PASS (11 tables, composite task_tags projection, owned direct DML, 6 canonical migrations, placeholder-aware secret scan)\n'
+printf 'release_gate regression: PASS (11 tables, composite task_tags projection, owned direct DML, 8 canonical migrations, placeholder-aware secret scan)\n'

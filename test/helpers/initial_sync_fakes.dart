@@ -287,6 +287,9 @@ const fakeNoActiveClaimMessage =
 /// are recorded and (optionally) echoed into the feed, exactly like the
 /// append-only server change log.
 class FakeSyncRemoteGateway implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   FakeSyncRemoteGateway({
     required this.calls,
     this.echoApplied = false,

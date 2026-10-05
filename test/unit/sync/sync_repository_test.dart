@@ -235,6 +235,84 @@ void main() {
     }
   });
 
+  test(
+    'compaction runs at most once per 24 hours after a successful sync',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final gateway = _FakeGateway();
+      try {
+        final repository = SyncRepository.withGateway(db, gateway, 'account');
+
+        expect((await repository.sync()).succeeded, isTrue);
+        expect(gateway.compactCalls, 1);
+        expect(
+          await db.syncDao.getSetting('sync.last_compaction_at'),
+          isNotNull,
+        );
+
+        expect((await repository.sync()).succeeded, isTrue);
+        expect(gateway.compactCalls, 1);
+
+        await db.syncDao.setSetting(
+          'sync.last_compaction_at',
+          DateTime.now()
+              .toUtc()
+              .subtract(const Duration(hours: 25))
+              .toIso8601String(),
+        );
+        expect((await repository.sync()).succeeded, isTrue);
+        expect(gateway.compactCalls, 2);
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test('compaction failure does not fail the sync', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gateway = _FakeGateway()
+      ..compactError = StateError('function missing');
+    try {
+      final result = await SyncRepository.withGateway(
+        db,
+        gateway,
+        'account',
+      ).sync();
+
+      expect(result.succeeded, isTrue);
+      expect(gateway.compactCalls, 1);
+      expect(await db.syncDao.getSetting('sync.last_compaction_at'), isNull);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('non-task payloads are sent without estimated_duration_min', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gateway = _FakeGateway();
+    try {
+      await CategoryRepository(db).insertCategory(
+        Category(
+          id: 'category-payload-shape',
+          name: 'Work',
+          colorHex: '#4285F4',
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+        ),
+      );
+
+      await SyncRepository.withGateway(db, gateway, 'account').push();
+      expect(gateway.payloads, hasLength(1));
+      expect(gateway.payloads.single['id'], 'category-payload-shape');
+      expect(
+        gateway.payloads.single.containsKey('estimated_duration_min'),
+        isFalse,
+      );
+    } finally {
+      await db.close();
+    }
+  });
+
   test('push preserves the expected token and strips server fields', () async {
     final db = AppDatabase(NativeDatabase.memory());
     final gateway = _FakeGateway();
@@ -1243,6 +1321,207 @@ void main() {
         'remote-task',
       );
       expect(await db.syncDao.getCursor('account'), 2);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('a child is held, not quarantined, until its parent arrives on a later page', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gateway = _FakeGateway();
+    final now = DateTime.utc(2026, 1, 1, 9);
+    // Compaction left the category's only surviving change (a rename) on a
+    // later page than the task that references it.
+    gateway.pullPages
+      ..add([
+        _taskChange(
+          changeId: 105,
+          operationId: 'remote-child-task-105',
+          payload: {
+            ..._taskPayload(
+              id: 'child-task',
+              title: 'Child',
+              history: const [],
+              displayPlanChangeId: null,
+              now: now,
+            ),
+            'category_id': 'late-category',
+          },
+          now: now,
+        ),
+      ])
+      ..add([
+        _categoryChange(
+          changeId: 999,
+          id: 'late-category',
+          name: 'Renamed',
+          now: now,
+        ),
+      ]);
+    Future<Map<String, String>>? heldBeforePage2;
+    Future<List<AppSetting>>? quarantinedBeforePage2;
+    gateway.onPull = () {
+      if (gateway.pullCursors.last != 105) return;
+      heldBeforePage2 = db.syncDao.readSettingsWithPrefix(
+        'sync.pending_parent.account.',
+      );
+      quarantinedBeforePage2 = db.syncDao.getQuarantinedChanges('account');
+    };
+    try {
+      final result = await SyncRepository.withGateway(
+        db,
+        gateway,
+        'account',
+      ).pull(limit: 1);
+
+      expect(gateway.pullCursors, [0, 105, 999]);
+      expect((await heldBeforePage2)!.keys, [
+        'sync.pending_parent.account.105',
+      ]);
+      expect(await quarantinedBeforePage2, isEmpty);
+
+      expect(result, isNull);
+      expect(
+        (await db.taskDao.getTaskById('child-task'))?.categoryId,
+        'late-category',
+      );
+      expect(
+        (await db.categoryDao.getCategoryById('late-category'))?.name,
+        'Renamed',
+      );
+      expect(await db.syncDao.getQuarantinedChanges('account'), isEmpty);
+      expect(
+        await db.syncDao.readSettingsWithPrefix('sync.pending_parent.'),
+        isEmpty,
+      );
+      expect(await db.syncDao.getCursor('account'), 999);
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('a held child survives restarts and materializes when its parent '
+      'arrives in a later pull cycle', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gateway = _FakeGateway();
+    final now = DateTime.utc(2026, 1, 1, 9);
+    gateway.pullPages.add([
+      _taskChange(
+        changeId: 105,
+        operationId: 'remote-child-task-105',
+        payload: {
+          ..._taskPayload(
+            id: 'child-task',
+            title: 'Child',
+            history: const [],
+            displayPlanChangeId: null,
+            now: now,
+          ),
+          'category_id': 'late-category',
+        },
+        now: now,
+      ),
+    ]);
+    try {
+      expect(
+        await SyncRepository.withGateway(db, gateway, 'account').pull(),
+        isNull,
+      );
+      expect(await db.taskDao.getTaskById('child-task'), isNull);
+      expect(await db.syncDao.getCursor('account'), 105);
+
+      gateway.pullPages.add([
+        _categoryChange(
+          changeId: 999,
+          id: 'late-category',
+          name: 'Renamed',
+          now: now,
+        ),
+      ]);
+      expect(
+        await SyncRepository.withGateway(db, gateway, 'account').pull(),
+        isNull,
+      );
+
+      expect(
+        (await db.taskDao.getTaskById('child-task'))?.categoryId,
+        'late-category',
+      );
+      expect(await db.syncDao.getQuarantinedChanges('account'), isEmpty);
+      expect(
+        await db.syncDao.readSettingsWithPrefix('sync.pending_parent.'),
+        isEmpty,
+      );
+    } finally {
+      await db.close();
+    }
+  });
+
+  test('a change whose parent never arrives is quarantined only after the '
+      'pending-parent cycle limit', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final gateway = _FakeGateway();
+    final now = DateTime.utc(2026, 1, 1, 9);
+    gateway.pullPages.add([
+      _taskChange(
+        changeId: 105,
+        operationId: 'remote-orphan-task-105',
+        payload: {
+          ..._taskPayload(
+            id: 'orphan-task',
+            title: 'Orphan',
+            history: const [],
+            displayPlanChangeId: null,
+            now: now,
+          ),
+          'category_id': 'missing-category',
+        },
+        now: now,
+      ),
+    ]);
+    final repository = SyncRepository.withGateway(db, gateway, 'account');
+    try {
+      expect(SyncRepository.pendingParentCycleLimit, 5);
+      for (
+        var cycle = 1;
+        cycle < SyncRepository.pendingParentCycleLimit;
+        cycle++
+      ) {
+        expect(await repository.pull(), isNull, reason: 'cycle $cycle');
+        final held = await db.syncDao.readSettingsWithPrefix(
+          'sync.pending_parent.account.',
+        );
+        expect(held.keys, [
+          'sync.pending_parent.account.105',
+        ], reason: 'cycle $cycle');
+        final record = jsonDecode(held.values.single) as Map;
+        expect(record['cycles'], cycle);
+        expect(record['missing_parent'], {
+          'table': 'categories',
+          'id': 'missing-category',
+        });
+        expect(await db.syncDao.getQuarantinedChanges('account'), isEmpty);
+        expect(await db.taskDao.getTaskById('orphan-task'), isNull);
+        expect(await db.syncDao.getCursor('account'), 105);
+      }
+
+      final result = await repository.pull();
+
+      expect(result?.kind, SyncFailureKind.invalidData);
+      expect(
+        await db.syncDao.readSettingsWithPrefix('sync.pending_parent.'),
+        isEmpty,
+      );
+      final quarantine = jsonDecode(
+        (await db.syncDao.getSetting('sync.quarantine.account.105'))!,
+      ) as Map<String, dynamic>;
+      expect(
+        quarantine['diagnostic'],
+        contains('references missing categories/missing-category'),
+      );
+      expect((quarantine['raw_change'] as Map)['record_id'], 'orphan-task');
+      expect(await db.taskDao.getTaskById('orphan-task'), isNull);
+      expect(gateway.pullCursors, [0, 105, 105, 105, 105]);
     } finally {
       await db.close();
     }
@@ -2397,6 +2676,94 @@ void main() {
   );
 
   test(
+    'keep remote without locally unique title events enqueues no follow-up',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final now = DateTime.utc(2026, 9, 13, 11);
+      const taskId = '00000000-0000-7000-8000-0000000000f1';
+      const operationId = '00000000-0000-7000-8000-0000000000f2';
+      const conflictId = '00000000-0000-7000-8000-0000000000f3';
+      final localPayload = _taskPayload(
+        id: taskId,
+        title: 'Local title',
+        history: const [],
+        displayPlanChangeId: null,
+        now: now,
+      );
+      final remotePayload = _taskPayload(
+        id: taskId,
+        title: 'Remote title',
+        history: const [],
+        displayPlanChangeId: null,
+        now: now.add(const Duration(minutes: 1)),
+      );
+      try {
+        await db.syncDao.runWithoutOutbound(() async {
+          await db
+              .into(db.tasks)
+              .insert(
+                TasksCompanion.insert(
+                  id: taskId,
+                  title: 'Local title',
+                  startTime: Value(now),
+                  endTime: Value(now.add(const Duration(hours: 1))),
+                  estimatedDurationMin: const Value(60),
+                  createdAt: now,
+                  updatedAt: now,
+                  serverVersion: const Value(5),
+                ),
+              );
+        });
+        await db.syncDao.enqueueOperation(
+          SyncLogCompanion.insert(
+            operationId: operationId,
+            entityTableName: 'tasks',
+            recordId: taskId,
+            operation: 'update',
+            expectedServerVersion: const Value(5),
+            payload: jsonEncode(localPayload),
+            state: const Value('pending'),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await db.syncDao.markConflict(operationId, now);
+        await db.syncDao.insertConflict(
+          SyncConflictsCompanion.insert(
+            id: conflictId,
+            operationId: operationId,
+            entityTableName: 'tasks',
+            recordId: taskId,
+            expectedServerVersion: const Value(5),
+            actualServerVersion: const Value(6),
+            localSnapshot: jsonEncode(localPayload),
+            remoteSnapshot: jsonEncode(remotePayload),
+            createdAt: now,
+          ),
+        );
+
+        await SyncRepository.withGateway(
+          db,
+          _FakeGateway(),
+          'account',
+        ).keepRemote(conflictId);
+
+        expect((await db.taskDao.getTaskById(taskId))!.title, 'Remote title');
+        final pending =
+            await (db.select(db.syncLog)..where(
+                  (row) =>
+                      row.recordId.equals(taskId) & row.state.equals('pending'),
+                ))
+                .get();
+        expect(pending, isEmpty);
+        expect(await db.syncDao.watchConflicts().first, isEmpty);
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test(
     'identified F03 permanent operation retries with its original identity',
     () async {
       final db = AppDatabase(NativeDatabase.memory());
@@ -2686,6 +3053,17 @@ Map<String, dynamic> _dayContextChange({
 }
 
 class _FakeGateway implements SyncRemoteGateway {
+  var compactCalls = 0;
+  Object? compactError;
+
+  @override
+  Future<Object?> compactHistory() async {
+    compactCalls++;
+    final error = compactError;
+    if (error != null) throw error;
+    return null;
+  }
+
   final expectedVersions = <int?>[];
   final payloadVersions = <int>[];
   final payloads = <Map<String, dynamic>>[];

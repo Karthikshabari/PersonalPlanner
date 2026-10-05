@@ -18,7 +18,7 @@ class TagRepository {
     if (normalizedName.isEmpty) {
       throw ArgumentError.value(tag.name, 'name', 'must not be blank');
     }
-    final effective = tag.copyWith(
+    var effective = tag.copyWith(
       id: tag.id.isEmpty
           ? generateDeterministicUuid('tag:$normalizedName')
           : tag.id,
@@ -42,10 +42,15 @@ class TagRepository {
     final sameId = await _dao.getTagById(effective.id);
     if (sameId != null) {
       if (sameId.deletedAt == null && sameId.name != effective.name) {
-        throw StateError(
-          'Tag ID ${effective.id} is already named "${sameId.name}". '
-          'Rename or delete that tag before recreating "${effective.name}".',
-        );
+        if (tag.id.isNotEmpty) {
+          throw StateError(
+            'Tag ID ${effective.id} is already named "${sameId.name}". '
+            'Rename or delete that tag before recreating "${effective.name}".',
+          );
+        }
+        // The deterministic identity now belongs to a renamed tag. Keep
+        // it and give the recreated name a fresh identity.
+        effective = effective.copyWith(id: generateUuidV7());
       }
       if (sameId.deletedAt != null) {
         final restored = sameId.copyWith(
@@ -83,9 +88,13 @@ class TagRepository {
     final deterministic = await _dao.getTagById(deterministicId);
     if (deterministic != null) {
       if (deterministic.deletedAt == null && deterministic.name != trimmed) {
-        throw StateError(
-          'Tag "$deterministicId" is currently named "${deterministic.name}". '
-          'Rename or delete it before recreating "$trimmed".',
+        return insertTag(
+          Tag(
+            id: generateUuidV7(),
+            name: trimmed,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          ),
         );
       }
       if (deterministic.deletedAt != null) {

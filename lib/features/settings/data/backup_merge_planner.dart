@@ -85,6 +85,32 @@ class BackupMergePlanner {
       }
     }
 
+    // A new identity can still collide with a local unique index. Report it
+    // instead of letting the insert abort the whole import transaction.
+    const uniqueColumns = <String, (String, bool)>{
+      'tags': ('name', true),
+      'daily_reviews': ('date', true),
+      'weekly_reviews': ('week_start_date', true),
+      'day_contexts': ('date', false),
+    };
+    for (final entry in uniqueColumns.entries) {
+      final table = entry.key;
+      final (column, activeOnly) = entry.value;
+      bool counts(Map<String, dynamic> row) =>
+          !activeOnly || row['deleted_at'] == null;
+      final taken = <String>{
+        for (final row in localRows[table]!.values)
+          if (counts(row)) '${row[column]}',
+      };
+      for (final row in candidates[table]!) {
+        if (!counts(row)) continue;
+        if (taken.add('${row[column]}')) continue;
+        final id = BackupValidator.entryId(table, row);
+        directConflicts.add(_key(table, id));
+        addConflict(table, id, BackupConflictKind.differing);
+      }
+    }
+
     final localSettings = <String, String>{
       for (final entry in BackupValidator.map(
         local['settings'],

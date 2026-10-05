@@ -248,6 +248,9 @@ void main() {
         )
       ''');
         final pendingBefore = await before.syncDao.pendingCount();
+        await before.customStatement(
+          "DELETE FROM app_settings WHERE key = 'schema.maintenance_version'",
+        );
         await before.close();
 
         final after = AppDatabase(NativeDatabase(file));

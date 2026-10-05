@@ -26,7 +26,7 @@ class InsightsService {
     // Retained for source compatibility with older callers. The consistency
     // history is now always the rolling year on every form factor.
     int desktopMonthCount = 12,
-  }) => _db.transaction(() async {
+  }) async {
     final effectiveNow = now ?? DateTime.now();
     final today = startOfDay(effectiveNow);
     final currentWeekStart = startOfWeek(today);
@@ -168,7 +168,7 @@ class InsightsService {
       selectedWeekStart: selectedWeek,
       consistencyStart: consistencyStart,
     );
-  });
+  }
 }
 
 /// Pure duration-weighted Insights formulas, independent of Flutter and SQL.

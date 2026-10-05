@@ -311,6 +311,22 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
         );
   }
 
+  /// Cheap outbox change signal: outstanding count and newest sequence.
+  /// Consumers compare values instead of loading payload rows.
+  Stream<({int outstanding, int newestSeq})> watchOutboxSignal() =>
+      customSelect(
+        'SELECT COUNT(*) AS outstanding, '
+        'COALESCE((SELECT MAX(seq) FROM sync_log), 0) AS newest_seq '
+        'FROM sync_log '
+        "WHERE state IN ('pending', 'error', 'in_flight', 'conflict')",
+        readsFrom: {syncLog},
+      ).watchSingle().map(
+        (row) => (
+          outstanding: row.read<int>('outstanding'),
+          newestSeq: row.read<int>('newest_seq'),
+        ),
+      );
+
   Stream<List<SyncLogRow>> watchPermanentOperations() =>
       (select(syncLog)
             ..where(
@@ -422,7 +438,7 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
   /// outbox triggers. The marker is itself local-only and is removed in the
   /// same transaction, including when [action] throws.
   Future<T> runWithoutOutbound<T>(Future<T> Function() action) {
-    return transaction(() async {
+    return attachedDatabase.writeTransaction(() async {
       await into(appSettings).insertOnConflictUpdate(
         AppSettingsCompanion.insert(key: 'sync.apply_mode', value: '1'),
       );

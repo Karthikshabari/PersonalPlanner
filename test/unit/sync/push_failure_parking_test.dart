@@ -207,6 +207,9 @@ Future<void> _queueCategories(AppDatabase db, List<String> ids) async {
 }
 
 class _ScriptedGateway implements SyncRemoteGateway {
+  @override
+  Future<Object?> compactHistory() async => null;
+
   /// Errors thrown by successive [applyOperation] calls; once empty, calls
   /// are acknowledged.
   final applyErrors = <Object>[];

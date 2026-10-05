@@ -55,9 +55,12 @@ class BackupRecoveryWriter {
 /// separate units so a malformed document is rejected before any write and
 /// the UI workflow does not own persistence details.
 class BackupService {
-  BackupService(this._db);
+  BackupService(this._db, {this.accountScoped = false});
 
   final AppDatabase _db;
+
+  /// True when [_db] is an account-scoped (cloud-connected) database.
+  final bool accountScoped;
 
   Future<String> exportJson() async {
     final data = await BackupCodec.exportData(_db);
@@ -107,6 +110,11 @@ class BackupService {
     }
     _decodeAndValidate(preImportBackup);
     final data = _decodeAndValidate(source);
+    if (accountScoped) {
+      throw const BackupValidationException(
+        'Replace is unavailable for a cloud-connected account. Use merge or export first.',
+      );
+    }
     // A synced account has server history that a portable backup does not
     // contain. Replacing it locally would either resurrect stale server rows
     // or require an account-wide tombstone protocol. Refuse that ambiguous
