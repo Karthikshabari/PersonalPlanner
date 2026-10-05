@@ -518,7 +518,7 @@ class ProvisioningCoordinator {
         );
         return await _applySnapshot(attempt, snapshot);
       } on ProvisioningApiException catch (error) {
-        return _failure(error, profile: attempt.profile);
+        return _failureOrExpiry(attempt, error);
       }
     }),
   );
@@ -570,7 +570,7 @@ class ProvisioningCoordinator {
               return await _applySnapshot(attempt, current);
             }
           }
-          return _failure(error, profile: attempt.profile);
+          return _failureOrExpiry(attempt, error);
         }
       }),
     );
@@ -628,7 +628,7 @@ class ProvisioningCoordinator {
             resolutionComplete: true,
           );
         }
-        return _failure(error, profile: attempt.profile);
+        return _failureOrExpiry(attempt, error);
       }
     }),
   );
@@ -1150,7 +1150,7 @@ class ProvisioningCoordinator {
     try {
       return await action(attempt, capability);
     } on ProvisioningApiException catch (error) {
-      return _failure(error, profile: profile);
+      return _failureOrExpiry(attempt, error);
     }
   }
 
@@ -1511,6 +1511,28 @@ class ProvisioningCoordinator {
         ProvisioningState.expired => ProvisioningOutcome.restartRequired,
         _ => ProvisioningOutcome.inProgress,
       };
+
+  /// A 410 means the Worker already expired this transaction and destroyed its
+  /// credentials. Persist that fact so the next setup action starts a new
+  /// transaction instead of resuming one that can never answer again. The
+  /// creation guard lets the new transaction recover any project this one made.
+  Future<ProvisioningResult> _failureOrExpiry(
+    ProvisioningAttempt attempt,
+    ProvisioningApiException error,
+  ) async {
+    if (error.code == 'provisioning_expired' &&
+        attempt.profile.state != ProvisioningState.organizationSelected) {
+      return _applySnapshot(
+        attempt,
+        ProvisioningSnapshot(
+          transactionId: attempt.transactionId,
+          state: ProvisioningState.expired,
+          errorCode: 'provisioning_expired',
+        ),
+      );
+    }
+    return _failure(error, profile: attempt.profile);
+  }
 
   ProvisioningResult _failure(
     ProvisioningApiException error, {

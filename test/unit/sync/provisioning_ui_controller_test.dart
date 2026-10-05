@@ -647,6 +647,10 @@ void main() {
       ProvisioningState.projectWaiting,
       projectRef: testProjectRef,
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.projectWaiting,
+      projectRef: testProjectRef,
+    );
     api.migrateResult = testInProgress(
       ProvisioningState.migrating,
       projectRef: testProjectRef,
@@ -659,6 +663,10 @@ void main() {
       ProvisioningState.verifying,
       projectRef: testProjectRef,
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
     api.verifyResult = testInProgress(
       ProvisioningState.verifying,
       projectRef: testProjectRef,
@@ -667,6 +675,85 @@ void main() {
     expect(api.calls, contains('verify'));
     expect(current().stage, CloudSetupStage.verifyingCloudStorage);
   });
+
+  test('a client stuck at project_waiting verifies when the Worker already verifies', () async {
+    api.attempt = testAttempt(
+      ProvisioningState.projectWaiting,
+      projectRef: testProjectRef,
+    );
+    api.refreshResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
+    api.verifyResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
+    buildContainer(withApi: api);
+    await loadState();
+
+    await controller().advance();
+
+    expect(
+      api.calls.where((c) => c == 'refresh' || c == 'migrate' || c == 'verify'),
+      <String>['refresh', 'verify'],
+    );
+  });
+
+  test(
+    'a client at migrating that the Worker reports ready becomes ready without '
+    'migrating',
+    () async {
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.ready,
+        profile: testProfile(
+          ProvisioningState.ready,
+          projectRef: testProjectRef,
+        ),
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().advance();
+
+      expect(api.calls, isNot(contains('migrate')));
+      expect(api.calls, isNot(contains('verify')));
+      expect(current().phase, ProvisioningUiPhase.ready);
+    },
+  );
+
+  test(
+    'migration continues after refresh when the Worker still migrates',
+    () async {
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().advance();
+
+      expect(
+        api.calls.where(
+          (c) => c == 'refresh' || c == 'migrate' || c == 'verify',
+        ),
+        <String>['refresh', 'migrate'],
+      );
+    },
+  );
 
   test('five progress polls never repeat the explicit Create action', () async {
     api.attempt = testAttempt(ProvisioningState.organizationSelected);
@@ -1000,6 +1087,10 @@ void main() {
       outcome: ProvisioningOutcome.ready,
       profile: testProfile(ProvisioningState.ready, projectRef: testProjectRef),
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
     buildContainer(withApi: api);
     await loadState();
 
@@ -1060,6 +1151,10 @@ void main() {
       outcome: ProvisioningOutcome.retryable,
       message: 'Provisioning stopped: operation_in_progress (HTTP 409).',
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.projectWaiting,
+      projectRef: testProjectRef,
+    );
     buildContainer(withApi: api);
     await loadState();
     await controller().advance();
@@ -1087,6 +1182,10 @@ void main() {
     api.verifyResult = const ProvisioningResult(
       outcome: ProvisioningOutcome.retryable,
       message: 'Provisioning stopped: invalid_request (HTTP 400).',
+    );
+    api.refreshResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
     );
     buildContainer(withApi: api);
     await loadState();
@@ -1147,6 +1246,10 @@ void main() {
       );
       api.migrateResult = testInProgress(
         ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.projectWaiting,
         projectRef: testProjectRef,
       );
       buildContainer(withApi: api);
@@ -1321,6 +1424,10 @@ void main() {
         ProvisioningState.projectWaiting,
         projectRef: testProjectRef,
       );
+      api.refreshResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
       buildPollingContainer(api: api);
       await loadState();
 
@@ -1369,6 +1476,10 @@ void main() {
     test('automatic refresh never overlaps a slow request', () async {
       final slow = _CountingProvisioningApi()
         ..attempt = testAttempt(ProvisioningState.projectWaiting)
+        ..refreshResult = testInProgress(
+          ProvisioningState.projectWaiting,
+          projectRef: testProjectRef,
+        )
         ..migrateResult = testInProgress(
           ProvisioningState.projectWaiting,
           projectRef: testProjectRef,
@@ -1402,6 +1513,10 @@ void main() {
           projectRef: testProjectRef,
         ),
       );
+      api.refreshResult = testInProgress(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
       buildPollingContainer(api: api);
       await loadState();
 
@@ -1417,6 +1532,10 @@ void main() {
     test('automatic refresh stops when the screen is closed', () async {
       api.attempt = testAttempt(ProvisioningState.projectWaiting);
       api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
         ProvisioningState.projectWaiting,
         projectRef: testProjectRef,
       );
@@ -1438,6 +1557,10 @@ void main() {
         projectRef: testProjectRef,
       );
       api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
         ProvisioningState.projectWaiting,
         projectRef: testProjectRef,
       );
@@ -1464,6 +1587,10 @@ void main() {
       api.attempt = testAttempt(ProvisioningState.projectWaiting);
       api.migrateResult = testInProgress(
         ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.projectWaiting,
         projectRef: testProjectRef,
       );
       buildContainer(withApi: api);

@@ -111,12 +111,16 @@ class ProvisioningHttpRequest {
     required this.uri,
     this.headers = const <String, String>{},
     this.body,
+    this.timeout,
   });
 
   final String method;
   final Uri uri;
   final Map<String, String> headers;
   final String? body;
+
+  /// Overrides the transport's default timeout; null keeps the default.
+  final Duration? timeout;
 
   @override
   String toString() => '$method $uri';
@@ -153,6 +157,7 @@ class IoProvisioningTransport implements ProvisioningTransport {
 
   @override
   Future<ProvisioningHttpResponse> send(ProvisioningHttpRequest request) async {
+    final timeout = request.timeout ?? this.timeout;
     try {
       final httpRequest = await _client
           .openUrl(request.method, request.uri)
@@ -492,6 +497,10 @@ class ProvisioningClient {
   static final RegExp _capabilityPattern = RegExp(r'^[A-Za-z0-9_-]{32,256}$');
   static final RegExp _projectRefPattern = RegExp(r'^[a-z]{20}$');
 
+  /// Step routes may run several Management calls server-side, so they get
+  /// more time than the 25 s default used for reads.
+  static const Duration _stepTimeout = Duration(seconds: 90);
+
   final Uri _base;
   final ProvisioningTransport transport;
 
@@ -603,6 +612,7 @@ class ProvisioningClient {
       path: '${_transactionPath(transactionId)}/resolve',
       capability: capability,
       body: <String, dynamic>{'projectRef': ?projectRef},
+      timeout: _stepTimeout,
     );
     final json = _decodeObject(response);
     if (json['state'] == 'ready') {
@@ -666,6 +676,7 @@ class ProvisioningClient {
         path: '${_transactionPath(transactionId)}/adopt',
         capability: capability,
         body: <String, dynamic>{'projectRef': projectRef},
+        timeout: _stepTimeout,
       ),
     );
   }
@@ -940,6 +951,7 @@ class ProvisioningClient {
         path: '${_transactionPath(transactionId)}/$operation',
         capability: capability,
         body: const <String, dynamic>{},
+        timeout: _stepTimeout,
       ),
     );
   }
@@ -949,6 +961,7 @@ class ProvisioningClient {
     required String path,
     String? capability,
     Map<String, dynamic>? body,
+    Duration? timeout,
   }) {
     final headers = <String, String>{'accept': 'application/json'};
     if (capability != null) {
@@ -961,6 +974,7 @@ class ProvisioningClient {
         uri: Uri.parse('${_base.toString()}$path'),
         headers: headers,
         body: body == null ? null : jsonEncode(body),
+        timeout: timeout,
       ),
     );
   }

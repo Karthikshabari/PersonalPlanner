@@ -483,6 +483,10 @@ void main() {
       ProvisioningState.migrating,
       projectRef: testProjectRef,
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    );
     await _pumpCard(tester, api: api, launcher: launcher);
 
     expect(find.text(cloudStorageTitle), findsOneWidget);
@@ -543,6 +547,10 @@ void main() {
     api.migrateResult = const ProvisioningResult(
       outcome: ProvisioningOutcome.retryable,
       message: 'Provisioning stopped: operation_in_progress (HTTP 409).',
+    );
+    api.refreshResult = testInProgress(
+      ProvisioningState.projectWaiting,
+      projectRef: testProjectRef,
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
@@ -614,6 +622,10 @@ void main() {
           transactionId: newTransactionId,
         ),
         authorizationUrl: testAuthorizationUrl,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
       );
       await _pumpCard(tester, api: api, launcher: launcher);
 
@@ -804,6 +816,10 @@ void main() {
       outcome: ProvisioningOutcome.ready,
       profile: testProfile(ProvisioningState.ready, projectRef: testProjectRef),
     );
+    api.refreshResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
     await _pumpCard(tester, api: api, launcher: launcher);
 
     // One authoritative status, not a "ready" block plus a second one.
@@ -845,6 +861,10 @@ void main() {
       projectRef: testProjectRef,
     );
     api.verifyResult = testInProgress(
+      ProvisioningState.verifying,
+      projectRef: testProjectRef,
+    );
+    api.refreshResult = testInProgress(
       ProvisioningState.verifying,
       projectRef: testProjectRef,
     );

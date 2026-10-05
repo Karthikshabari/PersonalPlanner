@@ -952,6 +952,69 @@ void main() {
       expect(capabilityStore.values, isEmpty);
     });
 
+    test(
+      'a 410 during migration persists expired and drops the capability',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.migrating,
+          withProject: true,
+        );
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/migrate',
+          <String, dynamic>{'error': 'provisioning_expired'},
+          status: 410,
+        );
+
+        final result = await buildCoordinator().migrate();
+
+        expect(result.outcome, ProvisioningOutcome.restartRequired);
+        expect((await profileStore.read())!.state, ProvisioningState.expired);
+        expect(capabilityStore.values, isEmpty);
+      },
+    );
+
+    test(
+      'after a persisted expiry, startAttempt creates a new transaction',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.migrating,
+          withProject: true,
+        );
+        transport.reply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/migrate',
+          <String, dynamic>{'error': 'provisioning_expired'},
+          status: 410,
+        );
+        await buildCoordinator().migrate();
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+
+        final started = await buildCoordinator().startAttempt();
+
+        expect(started.profile!.provisioningTransactionId, _transactionB);
+        expect(
+          started.profile!.provisioningTransactionId,
+          isNot(_transactionA),
+        );
+        expect(transport.keys, contains('POST $_transactionsPath'));
+      },
+    );
+
+    test('a 410 on refresh at verifying persists expired', () async {
+      await seedProfile(state: ProvisioningState.verifying, withProject: true);
+      transport.reply('GET', _snapshotPath(_transactionA), <String, dynamic>{
+        'error': 'provisioning_expired',
+      }, status: 410);
+
+      final result = await buildCoordinator().refresh();
+
+      expect(result.outcome, ProvisioningOutcome.restartRequired);
+      expect((await profileStore.read())!.state, ProvisioningState.expired);
+      expect(capabilityStore.values, isEmpty);
+    });
+
+    // The live Worker answers an expired transaction with 410 (see the 410 tests); this 200 body covers a hypothetical snapshot.
     test('cleans up an expired transaction and requires a restart', () async {
       await seedProfile(state: ProvisioningState.verifying, withProject: true);
       transport.reply(

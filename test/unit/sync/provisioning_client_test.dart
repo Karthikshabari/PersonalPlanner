@@ -449,6 +449,65 @@ void main() {
     });
   });
 
+  group('per-route timeout', () {
+    const stepTimeout = Duration(seconds: 90);
+
+    Future<ProvisioningHttpRequest> sent(
+      Map<String, dynamic> body,
+      Future<void> Function(ProvisioningClient client) call,
+    ) async {
+      final transport = _FakeTransport((_) async => _json(body));
+      await call(_client(transport));
+      return transport.requests.single;
+    }
+
+    test(
+      'step routes carry the 90 s timeout and GETs use the default',
+      () async {
+        final progress = _snapshot('migrating', projectRef: _projectRef);
+        final byRoute = <String, ProvisioningHttpRequest>{
+          'create': await sent(
+            _snapshot('project_creating'),
+            (c) => c.create(_transactionId, capability: _capability),
+          ),
+          'reconcile': await sent(
+            _snapshot('project_creating'),
+            (c) => c.reconcile(_transactionId, capability: _capability),
+          ),
+          'migrate': await sent(
+            progress,
+            (c) => c.migrate(_transactionId, capability: _capability),
+          ),
+          'verify': await sent(
+            _snapshot('verifying', projectRef: _projectRef),
+            (c) => c.verify(_transactionId, capability: _capability),
+          ),
+          'resolve': await sent(<String, dynamic>{
+            'kind': 'candidates',
+            'candidates': <Map<String, dynamic>>[],
+          }, (c) => c.resolve(_transactionId, capability: _capability)),
+          'adopt': await sent(
+            _snapshot('verifying', projectRef: _projectRef),
+            (c) => c.adopt(
+              _transactionId,
+              capability: _capability,
+              projectRef: _projectRef,
+            ),
+          ),
+        };
+        for (final entry in byRoute.entries) {
+          expect(entry.value.timeout, stepTimeout, reason: entry.key);
+        }
+
+        final snapshot = await sent(
+          _snapshot('migrating', projectRef: _projectRef),
+          (c) => c.snapshot(_transactionId, capability: _capability),
+        );
+        expect(snapshot.timeout, isNull);
+      },
+    );
+  });
+
   group('authenticated requests', () {
     final operations = <String, ({String method, String path, String body})>{
       'snapshot': (

@@ -1128,10 +1128,22 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       case ProvisioningState.projectWaiting:
       case ProvisioningState.migrating:
       case ProvisioningState.migrationReconciliationRequired:
-        _applyResult(await api.migrate());
-        return;
       case ProvisioningState.verifying:
-        _applyResult(await api.verify());
+        // Act on the Worker's state, never on a cached copy: a response lost
+        // to a client timeout can leave this device one or more steps behind.
+        final refreshed = await api.refresh();
+        final workerState = refreshed.profile?.state;
+        if (refreshed.outcome != ProvisioningOutcome.inProgress) {
+          _applyResult(refreshed);
+        } else if (workerState == ProvisioningState.verifying) {
+          _applyResult(await api.verify());
+        } else if (workerState == ProvisioningState.projectWaiting ||
+            workerState == ProvisioningState.migrating ||
+            workerState == ProvisioningState.migrationReconciliationRequired) {
+          _applyResult(await api.migrate());
+        } else {
+          _applyResult(refreshed);
+        }
         return;
     }
   }
