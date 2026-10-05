@@ -617,6 +617,45 @@ describe("first project creation state machine", () => {
     expect(h.countCreates()).toBe(1);
   });
 
+  it("ends in terminal_error with operation_budget_exhausted once eight attempts have failed", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    await productionFetch(request("create"), h.env);
+    h.setHealthy();
+    h.write({ ...h.read()!, state: "project_waiting", healthRetryAfter: undefined, expensiveAttempts: 8 });
+    const response = await productionFetch(request("migrate"), h.env);
+    expect(response!.status).toBe(200);
+    expect(await response!.json()).toMatchObject({ state: "terminal_error", error: "operation_budget_exhausted" });
+    expect(h.read()).toMatchObject({ state: "terminal_error", error: "operation_budget_exhausted" });
+    expect(h.upstream.some(x => x.includes("/database/migrations"))).toBe(false);
+  });
+
+  it("applies one migration per migrate request and resumes until verifying", async () => {
+    const h = await harness(() => Response.json({ ref }, { status: 201 }));
+    await productionFetch(request("create"), h.env);
+    h.setHealthy();
+    const applied: string[] = [];
+    const previous = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith(`/v1/projects/${ref}/database/migrations`)) return previous(input, init);
+      if (init?.method === "POST") applied.push((JSON.parse(String(init.body)) as { name: string }).name);
+      return Response.json(applied.map(name => ({ name })));
+    });
+    const bodies: Array<{ state: string }> = [];
+    for (let step = 1; step < MIGRATIONS.length; step++) {
+      const response = await productionFetch(request("migrate"), h.env);
+      expect(response!.status).toBe(202);
+      bodies.push(await response!.json() as { state: string });
+      expect(applied).toHaveLength(step);
+      expect(h.read()).toMatchObject({ state: "migrating", expensiveAttempts: 0 });
+      expect(h.read()!.operation).toBeUndefined();
+    }
+    expect(bodies.every(body => body.state === "migrating")).toBe(true);
+    const last = await productionFetch(request("migrate"), h.env);
+    expect(last!.status).toBe(200);
+    expect(h.read()!.state).toBe("verifying");
+    expect(applied).toEqual(MIGRATIONS.map(m => m.name));
+  });
+
   it("honors bounded health 429 backoff without claiming migration", async () => {
     const h = await harness(() => Response.json({ ref }, { status: 201 }));
     await productionFetch(request("create"), h.env);
@@ -947,6 +986,46 @@ describe("migration and verification recovery", () => {
     expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "999_platform_bootstrap" }]))).toEqual({ kind: "indeterminate" });
   });
 
+  it("runCanonicalMigrations with maxSteps 1 applies exactly one migration and reports progress", async () => {
+    const history: Array<{ name: string }> = [];
+    const posts: string[] = [];
+    const management = async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const request = JSON.parse(String(init.body)) as { name: string };
+        posts.push(request.name);
+        history.push({ name: request.name });
+      }
+      return Response.json(history);
+    };
+    expect(await runCanonicalMigrations(ref, management, { maxSteps: 1 })).toEqual({ kind: "progress" });
+    expect(posts).toEqual([MIGRATIONS[0]!.name]);
+    // Each further call resumes from the recorded history and applies exactly one more.
+    for (let step = 2; step < MIGRATIONS.length; step++) {
+      expect(await runCanonicalMigrations(ref, management, { maxSteps: 1 })).toEqual({ kind: "progress" });
+      expect(posts).toHaveLength(step);
+    }
+    expect(await runCanonicalMigrations(ref, management, { maxSteps: 1 })).toEqual({ kind: "complete" });
+    expect(posts).toEqual(MIGRATIONS.map(m => m.name));
+    // A complete history is a no-op regardless of the step budget.
+    expect(await runCanonicalMigrations(ref, management, { maxSteps: 1 })).toEqual({ kind: "complete" });
+    expect(posts).toHaveLength(MIGRATIONS.length);
+  });
+
+  it("runCanonicalMigrations with maxSteps 1 completes when the applied step was the last one", async () => {
+    const history = MIGRATIONS.slice(0, -1).map(m => ({ name: m.name }));
+    const posts: string[] = [];
+    const management = async (_path: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        const request = JSON.parse(String(init.body)) as { name: string };
+        posts.push(request.name);
+        history.push({ name: request.name });
+      }
+      return Response.json(history);
+    };
+    expect(await runCanonicalMigrations(ref, management, { maxSteps: 1 })).toEqual({ kind: "complete" });
+    expect(posts).toEqual([MIGRATIONS[MIGRATIONS.length - 1]!.name]);
+  });
+
   it("applies only the missing suffix when the project history also holds foreign rows", async () => {
     const history: Array<{ name?: string; version?: string }> = [{ name: "20211115170000_init" }];
     const posts: string[] = [];
@@ -1043,6 +1122,107 @@ describe("migration and verification recovery", () => {
     expect(SCHEMA_VERIFICATION_SQL).toContain("prosrc = ");
     expect(SCHEMA_VERIFICATION_SQL).toContain("pg_catalog.pg_get_functiondef(");
     expect(SCHEMA_VERIFICATION_SQL).not.toMatch(/(?<![\w.])(?:pg_class|pg_namespace|pg_constraint|pg_get_functiondef|has_function_privilege|has_table_privilege|array_length|strpo?s|count|bool_and|regclass|regprocedure)\b/u);
+  });
+});
+
+describe("failure-only operation budget", () => {
+  async function projectWaiting() {
+    const durable = durableTransaction();
+    const access = "a".repeat(48);
+    await durable.tx.create(access, "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(durable.tx, access);
+    await durable.tx.recordDiscovery(access, []);
+    await durable.tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+    const create = await durable.tx.reserveCreate(access);
+    await durable.tx.recordProject(access, create.nonce, ref);
+    return { ...durable, access };
+  }
+
+  it("does not spend the budget when an operation is claimed", async () => {
+    const { tx, read, access } = await projectWaiting();
+    await tx.claimOperation(access, "migration");
+    expect(read()!.expensiveAttempts).toBe(0);
+  });
+
+  it("counts only indeterminate migration outcomes and then ends in terminal_error", async () => {
+    const { tx, read, access } = await projectWaiting();
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const claim = await tx.claimOperation(access, "migration");
+      await tx.finishMigration(access, claim.nonce, { kind: "indeterminate" });
+      expect(read()!.expensiveAttempts).toBe(attempt);
+      expect(read()!.state).toBe("migration_reconciliation_required");
+    }
+    await expect(tx.claimOperation(access, "migration")).rejects.toThrow("budget_exhausted");
+    expect(read()).toMatchObject({ state: "terminal_error", error: "operation_budget_exhausted" });
+    expect(read()!.operation).toBeUndefined();
+    expect(read()!.tokenCiphertext).toBeUndefined();
+  });
+
+  it("counts only indeterminate verification outcomes and then ends in terminal_error", async () => {
+    const { tx, read, access } = await projectWaiting();
+    const migration = await tx.claimOperation(access, "migration");
+    await tx.finishMigration(access, migration.nonce, { kind: "complete" });
+    expect(read()!.expensiveAttempts).toBe(0);
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const claim = await tx.claimOperation(access, "verification");
+      await tx.finishVerification(access, claim.nonce, "indeterminate");
+      expect(read()!.expensiveAttempts).toBe(attempt);
+      expect(read()!.state).toBe("verifying");
+    }
+    await expect(tx.claimOperation(access, "verification")).rejects.toThrow("budget_exhausted");
+    expect(read()).toMatchObject({ state: "terminal_error", error: "operation_budget_exhausted" });
+    expect(read()!.tokenCiphertext).toBeUndefined();
+  });
+
+  it("finishMigration progress keeps migrating and clears the operation", async () => {
+    const { tx, read, access } = await projectWaiting();
+    const claim = await tx.claimOperation(access, "migration");
+    expect(read()).toMatchObject({ state: "migrating", operation: { kind: "migration", nonce: claim.nonce } });
+    const snapshot = await tx.finishMigration(access, claim.nonce, { kind: "progress" }) as Record<string, unknown>;
+    expect(snapshot.state).toBe("migrating");
+    expect(snapshot.operation).toBeUndefined();
+    expect(snapshot.error).toBeUndefined();
+    expect(read()!.state).toBe("migrating");
+    expect(read()!.operation).toBeUndefined();
+  });
+
+  it("does not spend the budget on progress and keeps claiming from migrating", async () => {
+    const { tx, read, access } = await projectWaiting();
+    for (let step = 0; step < 9; step++) {
+      const claim = await tx.claimOperation(access, "migration");
+      await tx.finishMigration(access, claim.nonce, { kind: "progress" });
+      expect(read()!.expensiveAttempts).toBe(0);
+      expect(read()!.state).toBe("migrating");
+    }
+    const claim = await tx.claimOperation(access, "migration");
+    await tx.finishMigration(access, claim.nonce, { kind: "complete" });
+    expect(read()!.state).toBe("verifying");
+  });
+
+  it("an expired migration lease is reclaimed in place instead of throwing", async () => {
+    const { tx, read, write, access } = await projectWaiting();
+    const first = await tx.claimOperation(access, "migration");
+    write({ ...read()!, operation: { ...(read()!.operation as object), leaseExpiresAt: Date.now() - 1 } });
+    const second = await tx.claimOperation(access, "migration");
+    expect(second.nonce).not.toBe(first.nonce);
+    expect(read()).toMatchObject({ state: "migrating", operation: { kind: "migration", nonce: second.nonce } });
+    expect(read()!.expensiveAttempts).toBe(0);
+    // The runner that lost its lease can no longer complete the operation.
+    await expect(tx.finishMigration(access, first.nonce, { kind: "complete" })).rejects.toThrow("stale_operation");
+    await tx.finishMigration(access, second.nonce, { kind: "complete" });
+    expect(read()!.state).toBe("verifying");
+  });
+
+  it("a live migration lease still reports operation_in_progress", async () => {
+    const { tx, read, access } = await projectWaiting();
+    const first = await tx.claimOperation(access, "migration");
+    await expect(tx.claimOperation(access, "migration")).rejects.toThrow("operation_in_progress");
+    expect(read()).toMatchObject({ state: "migrating", operation: { nonce: first.nonce } });
+  });
+
+  it("still reports illegal_transition for a claim that does not match the state", async () => {
+    const { tx, access } = await projectWaiting();
+    await expect(tx.claimOperation(access, "verification")).rejects.toThrow("illegal_transition");
   });
 });
 
@@ -1415,7 +1595,7 @@ describe("management authorization lifecycle", () => {
       environment(worker) as any,
     );
     expect(unauthorized!.status).toBe(401);
-    expect(await unauthorized!.json()).toEqual({ error: "invalid_request" });
+    expect(await unauthorized!.json()).toEqual({ error: "capability_invalid" });
     const wrongMethod = await productionManagementAuthorization(
       request("", "DELETE"),
       environment(worker) as any,
@@ -2076,6 +2256,78 @@ describe("provisioning route contract", () => {
     );
     expect(invalid!.status).toBe(401);
     expect(await invalid!.json()).toEqual({ error: "oauth_expired" });
+  });
+
+  const migrateUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/migrate`;
+  const retryUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/authorization/retry`;
+
+  async function expectError(response: Response | null, status: number, error: string) {
+    expect(response!.status).toBe(status);
+    expect(await response!.json()).toEqual({ error });
+  }
+
+  it("illegal transition is reported as state_conflict 409, not invalid_request", async () => {
+    const worker = fakeTransaction({ claimOperation: async () => { throw Error("illegal_transition"); } });
+    await expectError(await productionFetch(postRequest(migrateUrl), environment(worker) as any), 409, "state_conflict");
+    await expectError(await productionFetch(postRequest(verifyUrl), environment(worker) as any), 409, "state_conflict");
+  });
+
+  it("stale operation completion is state_conflict 409", async () => {
+    vi.stubGlobal("fetch", async () => Response.json(MIGRATIONS.map(m => ({ name: m.name }))));
+    const worker = fakeTransaction({ finishMigration: async () => { throw Error("stale_operation"); } });
+    await expectError(await productionFetch(postRequest(migrateUrl), environment(worker) as any), 409, "state_conflict");
+  });
+
+  it("a lapsed migration lease is operation_in_progress 409, not invalid_request", async () => {
+    const worker = fakeTransaction({ claimOperation: async () => { throw Error("reconciliation_required"); } });
+    await expectError(await productionFetch(postRequest(migrateUrl), environment(worker) as any), 409, "operation_in_progress");
+  });
+
+  it("capability mismatch is capability_invalid 401", async () => {
+    const worker = fakeTransaction({ createContext: async () => { throw Error("forbidden"); } });
+    await expectError(await productionFetch(postRequest(migrateUrl), environment(worker) as any), 401, "capability_invalid");
+  });
+
+  it("unknown thrown error is internal_error 500 and logs only the error name", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const worker = fakeTransaction({ claimOperation: async () => { throw Error("database password hunter2 leaked"); } });
+    await expectError(await productionFetch(postRequest(verifyUrl), environment(worker) as any), 500, "internal_error");
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(log.mock.calls[0]![0]))).toMatchObject({ event: "provisioning_route_internal_error" });
+  });
+
+  it("a thrown invalid_request stays a 400 and an expired transaction stays 410", async () => {
+    const invalid = fakeTransaction({ claimOperation: async () => { throw Error("invalid_request"); } });
+    await expectError(await productionFetch(postRequest(verifyUrl), environment(invalid) as any), 400, "invalid_request");
+    const expired = fakeTransaction({ claimOperation: async () => { throw Error("expired"); } });
+    await expectError(await productionFetch(postRequest(verifyUrl), environment(expired) as any), 410, "provisioning_expired");
+  });
+
+  it("an exhausted budget answers with the terminal snapshot instead of an error", async () => {
+    const terminal = { state: "terminal_error", error: "operation_budget_exhausted" };
+    const worker = fakeTransaction({
+      claimOperation: async () => { throw Error("budget_exhausted"); },
+      get: async () => terminal,
+    });
+    for (const url of [migrateUrl, verifyUrl]) {
+      const response = await productionFetch(postRequest(url), environment(worker) as any);
+      expect(response!.status).toBe(200);
+      expect(await response!.json()).toEqual(terminal);
+    }
+  });
+
+  it("management authorization maps capability, expiry, precondition and unknown errors precisely", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const run = (message: string) => productionManagementAuthorization(
+      postRequest(retryUrl),
+      environment({ retryProvisioningAuthorization: async () => { throw Error(message); } }) as any,
+    );
+    await expectError(await run("forbidden"), 401, "capability_invalid");
+    await expectError(await run("operation_in_progress"), 409, "operation_in_progress");
+    await expectError(await run("invalid_request"), 400, "invalid_request");
+    await expectError(await run("expired"), 410, "provisioning_expired");
+    await expectError(await run("something_else"), 500, "internal_error");
+    expect(log).toHaveBeenCalledTimes(1);
   });
 
   it("answers a repeated verify with the ready snapshot instead of an error", async () => {
