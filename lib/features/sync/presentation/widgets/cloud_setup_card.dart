@@ -488,9 +488,10 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             ),
             // Explicit escape hatch: some retryable failures can never succeed
             // on this transaction (for example a missing OAuth scope that was
-            // granted after this attempt was authorized). Start Again abandons
-            // this local attempt and asks the coordinator for a brand-new
-            // transaction; it never deletes a Supabase project.
+            // granted after this attempt was authorized). Start Again asks the
+            // coordinator for a brand-new transaction, except once an
+            // organization is selected, where it resumes the existing one to
+            // avoid creating a second project. It never deletes a project.
             if (!state.authorizationRetryAvailable &&
                 state.message != cloudSetupIndeterminateMessage &&
                 state.message != cloudSetupRateLimitedMessage)

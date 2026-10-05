@@ -407,6 +407,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Timer? _reachabilityRetryTimer;
   int _reachabilityFailures = 0;
   bool _operationInFlight = false;
+  Future<void>? _backgroundPoll;
+  bool _pressWaiting = false;
   bool _creationReconcileAttempted = false;
   bool _watching = false;
   bool _appActive = true;
@@ -1616,10 +1618,12 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Future<void> _backgroundRefresh() async {
     if (_operationInFlight || !_shouldRefreshInBackground) return;
     try {
-      await _run(_advanceStep, markBusy: false);
+      await (_backgroundPoll = _run(_advanceStep, markBusy: false));
     } catch (_) {
       // Background reconciliation never interrupts the user; the next tick
       // retries and the durable attempt stays authoritative.
+    } finally {
+      _backgroundPoll = null;
     }
   }
 
@@ -1646,7 +1650,21 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     Future<void> Function() body, {
     bool markBusy = true,
   }) async {
-    if (_operationInFlight) return;
+    if (_operationInFlight) {
+      // A press during a background poll waits for it instead of being dropped;
+      // one may wait, and it is discarded if the poll replaced its card.
+      final poll = _backgroundPoll, pressedIn = state.value?.phase;
+      if (!markBusy || poll == null || _pressWaiting) return;
+      _pressWaiting = true;
+      _update((current) => current.copyWith(busy: true));
+      await poll.catchError((_) {});
+      _pressWaiting = false;
+      if (!ref.mounted) return;
+      if (_operationInFlight || state.value?.phase != pressedIn) {
+        _update((current) => current.copyWith(busy: false));
+        return;
+      }
+    }
     final enteredFrom = state.value?.phase;
     _operationInFlight = true;
     if (markBusy) _update((current) => current.copyWith(busy: true));

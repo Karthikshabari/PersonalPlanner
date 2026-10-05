@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +108,56 @@ Future<void> _startTemporaryAccess(
 }
 
 final FakeProjectProbe _probe = FakeProjectProbe();
+
+/// Fake whose candidate discovery can be held in flight, like a slow Worker.
+class _HeldDiscoveryApi extends FakeProvisioningApi {
+  _HeldDiscoveryApi()
+    : super(attempt: testAttempt(ProvisioningState.authorizationPending));
+
+  Completer<void>? holdResolve;
+
+  @override
+  Future<ProvisioningResult> resolveProject() async {
+    calls.add('resolveProject');
+    await holdResolve?.future;
+    return resolutionResult;
+  }
+}
+
+/// Pauses the card on a retryable discovery failure, then lets the 5 s
+/// background poll start and keeps its discovery call in flight.
+Future<_HeldDiscoveryApi> _pausedWithPollInFlight(
+  WidgetTester tester,
+  FakeBrowserLauncher launcher,
+) async {
+  final api = _HeldDiscoveryApi()
+    ..refreshResult = testInProgress(ProvisioningState.authorizationPending)
+    ..resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.retryable,
+      message: 'Provisioning stopped: candidate_discovery_failed (HTTP 502).',
+    )
+    ..startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(
+        ProvisioningState.authorizationPending,
+        transactionId: 'ffffffffffffffffffffffffffffffff',
+      ),
+      authorizationUrl: testAuthorizationUrl,
+    );
+  await _pumpCard(
+    tester,
+    api: api,
+    launcher: launcher,
+    pollInterval: const Duration(seconds: 5),
+  );
+  expect(find.text('Cloud setup paused'), findsOneWidget);
+
+  api.holdResolve = Completer<void>();
+  await tester.pump(const Duration(seconds: 5));
+  await tester.pump();
+  expect(api.calls.last, 'resolveProject');
+  return api;
+}
 
 void main() {
   late FakeProvisioningApi api;
@@ -304,7 +356,9 @@ void main() {
     'expired pre-create attempt offers reauthorization without creating',
     (tester) async {
       api.attempt = testAttempt(ProvisioningState.organizationSelected);
-      api.refreshResult = testInProgress(ProvisioningState.organizationSelected);
+      api.refreshResult = testInProgress(
+        ProvisioningState.organizationSelected,
+      );
       api.createResult = ProvisioningResult(
         outcome: ProvisioningOutcome.needsUserAction,
         profile: testProfile(ProvisioningState.organizationSelected),
@@ -537,6 +591,10 @@ void main() {
     await _unmount(tester);
   });
 
+  // TODO: the fake hands back a fresh transaction from `verifying`, but the real
+  // coordinator resumes the existing one once an organization is selected
+  // (provisioning_coordinator_test: 'another setup action resumes...'). This
+  // only proves the UI calls startAttempt, not that a new transaction results.
   testWidgets(
     'Start Again abandons a retryable attempt and starts a new transaction',
     (tester) async {
@@ -584,6 +642,69 @@ void main() {
       await _unmount(tester);
     },
   );
+
+  testWidgets('Start Again pressed during a background poll runs after it', (
+    tester,
+  ) async {
+    final api = await _pausedWithPollInFlight(tester, launcher);
+    final button = tester.widget<TextButton>(
+      find.byKey(const ValueKey('cloud-start-again')),
+    );
+    expect(button.onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-start-again')));
+    await tester.pump();
+    expect(api.startAttemptCount, 0, reason: 'waits for the poll to finish');
+
+    api.holdResolve!.complete();
+    await _settle(tester);
+
+    expect(api.startAttemptCount, 1);
+    expect(launcher.opened, <Uri>[testAuthorizationUrl]);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('two Start Again presses during a poll start one attempt', (
+    tester,
+  ) async {
+    final api = await _pausedWithPollInFlight(tester, launcher);
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(CloudSetupCard)),
+    ).read(provisioningUiProvider.notifier);
+
+    unawaited(controller.startAgain());
+    unawaited(controller.startAgain());
+    api.holdResolve!.complete();
+    await _settle(tester);
+
+    expect(api.startAttemptCount, 1);
+    await _unmount(tester);
+  });
+
+  testWidgets('a press is dropped when the poll moved the card elsewhere', (
+    tester,
+  ) async {
+    final api = await _pausedWithPollInFlight(tester, launcher);
+    // The poll learns authorization is still outstanding, so the paused card
+    // (and the Start Again button that was pressed) is replaced.
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.restartRequired,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('cloud-start-again')));
+    await tester.pump();
+    api.holdResolve!.complete();
+    await _settle(tester);
+
+    expect(api.startAttemptCount, 0);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
+    final button = tester.widget<TextButton>(
+      find.byKey(const ValueKey('cloud-start-again')),
+    );
+    expect(button.onPressed, isNotNull, reason: 'not stuck busy');
+    await _unmount(tester);
+  });
 
   testWidgets(
     'keeps Open authorization page available on a retryable failure',
