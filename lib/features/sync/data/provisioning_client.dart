@@ -71,6 +71,8 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
 ) => switch (code) {
   'oauth_expired' ||
   'oauth_state_invalid' ||
+  'oauth_revoked' ||
+  'capability_invalid' ||
   'provisioning_expired' => ProvisioningFailureClass.restartRequired,
   'organization_not_found' => ProvisioningFailureClass.actionRequired,
   'organization_discovery_failed' ||
@@ -79,6 +81,9 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
   'verification_indeterminate' ||
   'runtime_config_unavailable' ||
   'operation_in_progress' ||
+  'state_conflict' ||
+  'internal_error' ||
+  'reconciliation_required' ||
   'rate_limited' => ProvisioningFailureClass.retryable,
   'temporarily_unavailable' => ProvisioningFailureClass.retryable,
   'candidate_discovery_failed' ||
@@ -90,6 +95,7 @@ ProvisioningFailureClass classifyProvisioningErrorCode(
   'project_access_denied' => ProvisioningFailureClass.actionRequired,
   'project_identity_ambiguous' ||
   'migration_history_mismatch' ||
+  'operation_budget_exhausted' ||
   'verification_failed' => ProvisioningFailureClass.terminal,
   'invalid_request' => ProvisioningFailureClass.protocol,
   _ =>

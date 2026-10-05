@@ -760,6 +760,285 @@ void main() {
     },
   );
 
+  Future<void> startSetupWaitingOnBrowser(WidgetTester tester) async {
+    api.startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      authorizationUrl: testAuthorizationUrl,
+    );
+    await _pumpCard(
+      tester,
+      api: api,
+      launcher: launcher,
+      pollInterval: const Duration(seconds: 5),
+    );
+    await tester.tap(find.byKey(const ValueKey('cloud-enable-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-preflight-continue')));
+    await _settle(tester);
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-open-authorization')),
+      findsOneWidget,
+    );
+  }
+
+  testWidgets(
+    'Open authorization page is hidden once the setup has passed authorization',
+    (tester) async {
+      await startSetupWaitingOnBrowser(tester);
+
+      // Authorization completed: the Worker is configuring the database, and
+      // the single-use authorization URL can no longer do anything.
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        message: 'Provisioning stopped: operation_in_progress (HTTP 409).',
+      );
+      await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 5));
+      await _settle(tester);
+
+      expect(api.calls, contains('migrate'));
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsNothing,
+      );
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'Open authorization page is hidden when a failure reports a later step',
+    (tester) async {
+      await startSetupWaitingOnBrowser(tester);
+
+      // Raised from the waiting card, so no quiet retry applies: the paused
+      // card is shown and must not offer the consumed URL.
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        message: 'Provisioning stopped: migration_failed (HTTP 502).',
+      );
+      await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+      await _settle(tester);
+
+      expect(find.text('Cloud setup paused'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsNothing,
+      );
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'Open authorization page is hidden when the snapshot says it was consumed',
+    (tester) async {
+      await startSetupWaitingOnBrowser(tester);
+
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(ProvisioningState.authorizationPending),
+        snapshot: const ProvisioningSnapshot(
+          transactionId: testTransactionId,
+          state: ProvisioningState.authorizationPending,
+          authorizationCompleted: true,
+        ),
+        message: 'Provisioning stopped: temporarily_unavailable (HTTP 503).',
+      );
+      await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+      await _settle(tester);
+
+      expect(find.text('Cloud setup paused'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsNothing,
+      );
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets('discovery failure after authorization hides the authorization '
+      'page', (tester) async {
+    await startSetupWaitingOnBrowser(tester);
+
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.retryable,
+      message: 'Provisioning stopped: candidate_discovery_failed (HTTP 502).',
+    );
+    await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+    await _settle(tester);
+
+    expect(api.calls, contains('resolveProject'));
+    expect(find.text('Cloud setup paused'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-open-authorization')),
+      findsNothing,
+    );
+
+    await _unmount(tester);
+  });
+
+  testWidgets('Open authorization page stays while the browser step is '
+      'still outstanding', (tester) async {
+    await startSetupWaitingOnBrowser(tester);
+
+    // The Worker has no Management token yet: the user has not finished.
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.restartRequired,
+      profile: testProfile(ProvisioningState.authorizationPending),
+    );
+    await tester.tap(find.byKey(const ValueKey('cloud-check-authorization')));
+    await _settle(tester);
+
+    expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-open-authorization')),
+      findsOneWidget,
+    );
+
+    await _unmount(tester);
+  });
+
+  ProvisioningResult transientMigrateFailure() => ProvisioningResult(
+    outcome: ProvisioningOutcome.retryable,
+    profile: testProfile(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    ),
+    message: 'Provisioning stopped: operation_in_progress (HTTP 409).',
+  );
+
+  Future<void> pumpMigratingWithFailingMigrate(WidgetTester tester) async {
+    api.attempt = testAttempt(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    );
+    api.refreshResult = testInProgress(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    );
+    api.migrateResult = transientMigrateFailure();
+    await _pumpCard(
+      tester,
+      api: api,
+      launcher: launcher,
+      pollInterval: const Duration(seconds: 5),
+    );
+  }
+
+  Future<void> pumpSeconds(WidgetTester tester, int seconds) async {
+    for (var elapsed = 0; elapsed < seconds; elapsed += 5) {
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump();
+    }
+  }
+
+  int migrateCalls() => api.calls.where((call) => call == 'migrate').length;
+
+  testWidgets(
+    'a transient migrate failure keeps the provisioning card and retries with '
+    'backoff',
+    (tester) async {
+      await pumpMigratingWithFailingMigrate(tester);
+
+      // The first failure is quiet: the provisioning card stays.
+      expect(migrateCalls(), 1);
+      expect(find.textContaining('Configuring your database'), findsOneWidget);
+      expect(find.text('Cloud setup paused'), findsNothing);
+
+      // One tick is skipped after the first failure (5 s base, doubling).
+      await pumpSeconds(tester, 5);
+      expect(migrateCalls(), 1);
+      await pumpSeconds(tester, 5);
+      expect(migrateCalls(), 2);
+
+      // Three ticks are skipped after the second failure.
+      await pumpSeconds(tester, 15);
+      expect(migrateCalls(), 2);
+      await pumpSeconds(tester, 5);
+      expect(migrateCalls(), 3);
+
+      // Seven after the third.
+      await pumpSeconds(tester, 35);
+      expect(migrateCalls(), 3);
+      await pumpSeconds(tester, 5);
+      expect(migrateCalls(), 4);
+
+      expect(find.textContaining('Configuring your database'), findsOneWidget);
+      expect(find.text('Cloud setup paused'), findsNothing);
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets('six consecutive transient failures show the paused card', (
+    tester,
+  ) async {
+    await pumpMigratingWithFailingMigrate(tester);
+
+    // Calls land at 0, 10, 30, 70, 130 s; the sixth, at 190 s, pauses.
+    await pumpSeconds(tester, 130);
+    expect(migrateCalls(), 5);
+    expect(find.textContaining('Configuring your database'), findsOneWidget);
+    expect(find.text('Cloud setup paused'), findsNothing);
+
+    await pumpSeconds(tester, 60);
+    expect(migrateCalls(), 6);
+    expect(find.text('Cloud setup paused'), findsOneWidget);
+    expect(find.byKey(const ValueKey('cloud-retry-action')), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('a successful step resets the transient failure backoff', (
+    tester,
+  ) async {
+    await pumpMigratingWithFailingMigrate(tester);
+    await pumpSeconds(tester, 10);
+    expect(migrateCalls(), 2);
+
+    // Progress: the next scheduled call (30 s) succeeds and clears the ladder.
+    api.migrateResult = testInProgress(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    );
+    await pumpSeconds(tester, 20);
+    expect(migrateCalls(), 3);
+
+    // A later failure starts the ladder over: one skipped tick, not seven.
+    api.migrateResult = transientMigrateFailure();
+    await pumpSeconds(tester, 5);
+    expect(migrateCalls(), 4);
+    await pumpSeconds(tester, 5);
+    expect(migrateCalls(), 4);
+    await pumpSeconds(tester, 5);
+    expect(migrateCalls(), 5);
+
+    await _unmount(tester);
+  });
+
   testWidgets('offers Start Setup Again for an expired session', (
     tester,
   ) async {

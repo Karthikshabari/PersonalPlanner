@@ -71,6 +71,7 @@ const snapshotAllowlist = new Set([
   "authorizationFailed",
   "creationAuthorizationPending",
   "creationAuthorizationRequired",
+  "managementAuthorizationPending",
   "organizationSlug",
   "requestedProjectName",
   "idempotencyKey",
@@ -1754,6 +1755,45 @@ describe("management grant durability", () => {
     // releases it once ownership and redirects have been verified.
     expect(updated.refreshCipher).toBeDefined();
     expect(await tx.takeManagementRefresh(access)).toBe("second-refresh-token");
+  });
+
+  it("reports a pending management re-authorization in the snapshot until its callback is claimed", async () => {
+    const { tx, access } = await transactionAtVerifying();
+    expect(await tx.get(access)).toMatchObject({ state: "verifying", managementAuthorizationPending: false });
+
+    const grant = await tx.beginManagementAuthorization(access);
+    const pending = await tx.get(access) as Record<string, unknown>;
+    expect(pending).toMatchObject({ state: "verifying", managementAuthorizationPending: true });
+    // The flag is derived; none of the underlying material is exposed.
+    const serialized = JSON.stringify(pending);
+    expect(serialized).not.toContain(grant.state);
+    expect(serialized).not.toContain(grant.verifier);
+    for (const hidden of ["oauthPurpose", "oauthStateHash", "oauthStateUsed", "grantExpiresAt"]) {
+      expect(Object.prototype.hasOwnProperty.call(pending, hidden)).toBe(false);
+    }
+
+    await tx.oauthCallback(grant.state);
+    expect(await tx.get(access)).toMatchObject({ managementAuthorizationPending: false });
+  });
+
+  it("stops reporting a management re-authorization once it completes, fails or lapses", async () => {
+    const completed = await transactionAtVerifying();
+    const grant = await completed.tx.beginManagementAuthorization(completed.access);
+    await completed.tx.oauthCallback(grant.state);
+    await completed.tx.saveOAuthFromCallback(grant.state, "second-access-token", undefined, Date.now() + 600_000);
+    expect(await completed.tx.get(completed.access)).toMatchObject({ managementAuthorizationPending: false });
+
+    const failed = await transactionAtVerifying();
+    const failedGrant = await failed.tx.beginManagementAuthorization(failed.access);
+    await failed.tx.oauthCallback(failedGrant.state);
+    await failed.tx.markOAuthFailure(failedGrant.state);
+    expect(await failed.tx.get(failed.access)).toMatchObject({ managementAuthorizationPending: false });
+
+    const lapsed = await transactionAtVerifying();
+    await lapsed.tx.beginManagementAuthorization(lapsed.access);
+    expect(await lapsed.tx.get(lapsed.access)).toMatchObject({ managementAuthorizationPending: true });
+    (lapsed.tx as any).save({ ...lapsed.read()!, grantExpiresAt: Date.now() - 1 });
+    expect(await lapsed.tx.get(lapsed.access)).toMatchObject({ managementAuthorizationPending: false });
   });
 
   it("refuses a management re-authorization for a record with no project", async () => {

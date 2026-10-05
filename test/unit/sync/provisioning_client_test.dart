@@ -421,6 +421,12 @@ void main() {
         'migration_history_mismatch': ProvisioningFailureClass.terminal,
         'verification_failed': ProvisioningFailureClass.terminal,
         'invalid_request': ProvisioningFailureClass.protocol,
+        'state_conflict': ProvisioningFailureClass.retryable,
+        'internal_error': ProvisioningFailureClass.retryable,
+        'reconciliation_required': ProvisioningFailureClass.retryable,
+        'capability_invalid': ProvisioningFailureClass.restartRequired,
+        'oauth_revoked': ProvisioningFailureClass.restartRequired,
+        'operation_budget_exhausted': ProvisioningFailureClass.terminal,
       };
 
       for (final entry in expected.entries) {
@@ -446,6 +452,25 @@ void main() {
         classifyProvisioningErrorCode('something_new', 400),
         ProvisioningFailureClass.protocol,
       );
+    });
+
+    test('the new Worker codes win over the HTTP status they arrive with', () {
+      // Without an explicit mapping a 409/401 falls to the protocol default
+      // and a 500 only retries by accident of the status code.
+      const wire = <(String, int, ProvisioningFailureClass)>[
+        ('state_conflict', 409, ProvisioningFailureClass.retryable),
+        ('internal_error', 500, ProvisioningFailureClass.retryable),
+        ('capability_invalid', 401, ProvisioningFailureClass.restartRequired),
+        ('oauth_revoked', 401, ProvisioningFailureClass.restartRequired),
+        ('reconciliation_required', 400, ProvisioningFailureClass.retryable),
+      ];
+      for (final (code, status, expected) in wire) {
+        expect(
+          classifyProvisioningErrorCode(code, status),
+          expected,
+          reason: '$code/$status',
+        );
+      }
     });
   });
 

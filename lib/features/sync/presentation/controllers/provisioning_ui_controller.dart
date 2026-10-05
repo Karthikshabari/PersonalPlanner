@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -402,12 +403,17 @@ class ProvisioningUiState {
   );
 }
 
+/// Consecutive transient failures tolerated quietly before the card pauses.
+const _quietTransientFailureLimit = 6;
+
 class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Timer? _timer;
   Timer? _reachabilityRetryTimer;
   int _reachabilityFailures = 0;
   bool _operationInFlight = false;
   Future<void>? _backgroundPoll;
+  int _transientFailures = 0;
+  int _ticksToSkip = 0;
   bool _pressWaiting = false;
   bool _creationReconcileAttempted = false;
   bool _watching = false;
@@ -1161,6 +1167,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
       return;
     }
     final resolution = await api.resolveProject();
+    // Anything but "no Management credential yet" proves the Worker holds one,
+    // so the OAuth state was consumed and the URL cannot be reused.
+    if (resolution.outcome != ProvisioningOutcome.restartRequired) {
+      _authorizationUrl = null;
+    }
     if (resolution.outcome == ProvisioningOutcome.ready) {
       _applyResult(resolution);
       return;
@@ -1373,11 +1384,33 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     }
   }
 
+  /// The authorization URL is single-use; offer it only while its browser step
+  /// can still complete.
+  void _forgetConsumedAuthorizationUrl(ProvisioningResult result) {
+    final workerState = result.profile?.state;
+    final creationAuthPending =
+        result.snapshot?.creationAuthorizationPending ?? false;
+    final consumed =
+        (result.snapshot?.authorizationCompleted ?? false) &&
+        !creationAuthPending;
+    final pastAuthorization =
+        workerState != null &&
+        workerState != ProvisioningState.authorizationPending &&
+        !(workerState == ProvisioningState.organizationSelected &&
+            creationAuthPending);
+    if (consumed || pastAuthorization) _authorizationUrl = null;
+  }
+
   void _applyResult(
     ProvisioningResult result, {
     String? transactionId,
     bool? authorizationUrlAvailable,
   }) {
+    _forgetConsumedAuthorizationUrl(result);
+    if (result.outcome != ProvisioningOutcome.retryable) {
+      _transientFailures = 0;
+      _ticksToSkip = 0;
+    }
     final profile = result.profile;
     final id =
         profile?.provisioningTransactionId ??
@@ -1506,6 +1539,23 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
       case ProvisioningOutcome.retryable:
+        // A transient failure while the Worker is doing its own work keeps the
+        // progress card and backs off; only a streak pauses the card.
+        final quiet =
+            result.snapshot?.authorizationFailed != true &&
+            state.value?.phase == ProvisioningUiPhase.provisioning &&
+            const {
+              ProvisioningState.projectCreating,
+              ProvisioningState.projectWaiting,
+              ProvisioningState.migrating,
+              ProvisioningState.migrationReconciliationRequired,
+              ProvisioningState.verifying,
+            }.contains(profile?.state);
+        if (quiet) {
+          _transientFailures += 1;
+          _ticksToSkip = math.min((1 << _transientFailures) - 1, 11);
+          if (_transientFailures < _quietTransientFailureLimit) return;
+        }
         final authorizationRetry = result.snapshot?.authorizationFailed == true;
         _applyState(
           ProvisioningUiState(
@@ -1629,6 +1679,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// simply waits for the next tick with the durable state untouched.
   Future<void> _backgroundRefresh() async {
     if (_operationInFlight || !_shouldRefreshInBackground) return;
+    if (_ticksToSkip > 0) {
+      _ticksToSkip -= 1;
+      return;
+    }
     try {
       await (_backgroundPoll = _run(_advanceStep, markBusy: false));
     } catch (_) {
@@ -1640,6 +1694,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   }
 
   void _applyState(ProvisioningUiState next) {
+    if (next.phase == ProvisioningUiPhase.ready) {
+      _transientFailures = 0;
+      _ticksToSkip = 0;
+    }
     state = AsyncData(next);
     _syncRefreshTimer();
     _syncReachabilityRetry();
