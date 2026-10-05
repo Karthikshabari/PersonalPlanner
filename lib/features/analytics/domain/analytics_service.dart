@@ -41,7 +41,13 @@ class InsightsService {
     final actualRangeStart = baselineStart.isBefore(consistencyStart)
         ? baselineStart
         : consistencyStart;
-    final actualRangeEnd = addDays(today, 1);
+    // Actual extends to the end of the selected week so its total matches the
+    // Weekly Review, which counts a manual Actual on a later day of the week.
+    // Calendar days and elapsed-weekday comparisons still stop at today.
+    final selectedWeekEnd = addDays(selectedWeek, 7);
+    final actualRangeEnd = selectedWeekEnd.isAfter(addDays(today, 1))
+        ? selectedWeekEnd
+        : addDays(today, 1);
     final currentWeekEnd = addDays(currentWeekStart, 7);
     final plannedRangeEnd = currentWeekEnd.isAfter(consistencyEnd)
         ? currentWeekEnd
@@ -73,12 +79,23 @@ class InsightsService {
             ))
             .get();
 
+    // Same task set as DailyStatsService: every task starting in range,
+    // including soft-deleted ones, so their manual Actual is not dropped.
+    final tasksStartingInRange =
+        await (_db.selectOnly(_db.tasks)
+              ..addColumns([_db.tasks.id])
+              ..where(
+                _db.tasks.startTime.isBiggerOrEqualValue(
+                      actualRangeStart.toUtc().toIso8601String(),
+                    ) &
+                    _db.tasks.startTime.isSmallerThanValue(
+                      actualRangeEnd.toUtc().toIso8601String(),
+                    ),
+              ))
+            .map((row) => row.read(_db.tasks.id)!)
+            .get();
     final actualTaskIds = <String>{
-      for (final row in plannedRows)
-        if (row.startTime != null &&
-            !row.startTime!.isBefore(actualRangeStart) &&
-            row.startTime!.isBefore(actualRangeEnd))
-          row.id,
+      ...tasksStartingInRange,
       for (final session in overlappingSessions) session.taskId,
     };
     final actualRows = actualTaskIds.isEmpty
