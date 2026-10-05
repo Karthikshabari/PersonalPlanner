@@ -78,11 +78,22 @@ abstract final class ConflictResolver {
     return ResolutionPlan(shifts: shifts);
   }
 
-  /// **Shift Only Overlapping**: for each conflicting task, computes its
-  /// individual overlap with whatever pushed onto it and shifts it forward,
-  /// then re-checks for newly created conflicts (cascade). After
-  /// [maxCascadeDepth] rounds, remaining conflicts fall back to keep-overlap
-  /// (their ids are returned in [ResolutionPlan.keepOverlapIds]).
+  /// **Shift Only Overlapping**: the moved block stays where it was dropped
+  /// and every block it overlaps is pushed forward just far enough to clear
+  /// it, cascading into blocks that a pushed block lands on.
+  ///
+  /// Victims are placed one at a time in original start order: each starts
+  /// at its original start and is moved past every already placed block it
+  /// overlaps (the moved block, earlier victims, blocks left in place), so
+  /// several victims of one pusher stack one after another instead of
+  /// landing on the same slot. Untouched blocks that a placed victim now
+  /// overlaps join the queue one cascade generation deeper.
+  ///
+  /// A victim is left in place, and its id returned in
+  /// [ResolutionPlan.keepOverlapIds] together with the moved block, when its
+  /// generation exceeds [maxCascadeDepth] or when the push would carry its
+  /// end past the end of the planner day it starts on (rows on the next day
+  /// are not part of the candidate set, so they cannot be checked).
   static ResolutionPlan planShiftOnlyOverlapping({
     required Task moved,
     required List<Task> dayTasks,
@@ -93,95 +104,89 @@ abstract final class ConflictResolver {
       return const ResolutionPlan();
     }
 
-    // Simulated positions of every active scheduled block, keyed by id.
-    final starts = <String, DateTime>{};
-    final ends = <String, DateTime>{};
-    final originals = <String, Task>{};
-    final cumulativeDelta = <String, Duration>{};
-    for (final t in _sortedActive(dayTasks)) {
-      starts[t.id] = t.startTime!;
-      ends[t.id] = t.endTime!;
-      originals[t.id] = t;
-      cumulativeDelta[t.id] = Duration.zero;
-    }
     final movedId = moved.id;
-    starts[movedId] = moved.startTime!;
-    ends[movedId] = moved.endTime!;
-    originals[movedId] = moved;
-
-    // Worklist of (pusherId, victimId) conflicts to resolve.
-    var worklist = [
-      for (final c in initialConflicts) (pusher: movedId, victim: c.id),
+    final untouched = {
+      for (final t in _sortedActive(dayTasks))
+        if (t.id != movedId) t.id: t,
+    };
+    // Blocks whose final position is decided: the moved block, shifted
+    // victims and victims left in place.
+    final placed = <({DateTime start, DateTime end})>[
+      (start: moved.startTime!, end: moved.endTime!),
     ];
-    final shiftedOnce = <String>{};
+    final queue = <({Task task, int depth})>[];
+    for (final c in initialConflicts) {
+      if (untouched.remove(c.id) != null) queue.add((task: c, depth: 1));
+    }
     final keepIds = <String>{};
-    final shifts = <String, PlannedShift>{};
-    var depth = 0;
+    final shifts = <PlannedShift>[];
 
-    while (worklist.isNotEmpty) {
-      if (depth >= maxCascadeDepth) {
-        // Fall back to keep overlap for everything still unresolved.
-        for (final pair in worklist) {
-          keepIds.add(pair.victim);
-        }
-        keepIds.add(movedId);
-        break;
-      }
-      depth++;
-      final nextWork = <({String pusher, String victim})>[];
-      // Resolve earliest victims first so pushes cascade forward naturally.
-      final ordered = [...worklist]
-        ..sort((a, b) => starts[a.victim]!.compareTo(starts[b.victim]!));
-      for (final pair in ordered) {
-        final victimId = pair.victim;
-        if (shiftedOnce.contains(victimId)) {
-          // Would need a second shift of the same block — keep overlap
-          // instead of looping.
-          keepIds.add(victimId);
-          continue;
-        }
-        final victimStart = starts[victimId]!;
-        final pusherEnd = ends[pair.pusher]!;
-        final delta = pusherEnd.difference(victimStart);
-        if (delta <= Duration.zero) continue;
-        shiftedOnce.add(victimId);
+    while (queue.isNotEmpty) {
+      queue.sort((a, b) {
+        final byStart = a.task.startTime!.compareTo(b.task.startTime!);
+        return byStart != 0 ? byStart : a.task.id.compareTo(b.task.id);
+      });
+      final (:task, :depth) = queue.removeAt(0);
+      final oldStart = task.startTime!;
+      final oldEnd = task.endTime!;
+      final duration = oldEnd.difference(oldStart);
 
-        final original = originals[victimId]!;
-        final totalDelta = cumulativeDelta[victimId]! + delta;
-        cumulativeDelta[victimId] = totalDelta;
-        final newStart = original.startTime!.add(totalDelta);
-        final newEnd = original.endTime!.add(totalDelta);
-        starts[victimId] = newStart;
-        ends[victimId] = newEnd;
-        shifts[victimId] = PlannedShift(
-          taskId: victimId,
-          oldStart: original.startTime!,
-          oldEnd: original.endTime!,
-          newStart: newStart,
-          newEnd: newEnd,
-        );
-
-        // Re-check: does the shifted block now collide with anything else?
-        for (final entry in starts.entries) {
-          final otherId = entry.key;
-          if (otherId == victimId || otherId == pair.pusher) continue;
+      var newStart = oldStart;
+      var progressed = true;
+      while (progressed) {
+        progressed = false;
+        for (final p in placed) {
           if (_intervalsOverlap(
             newStart,
-            newEnd,
-            starts[otherId]!,
-            ends[otherId]!,
+            newStart.add(duration),
+            p.start,
+            p.end,
           )) {
-            nextWork.add((pusher: victimId, victim: otherId));
+            newStart = p.end;
+            progressed = true;
           }
         }
       }
-      worklist = nextWork;
+      final newEnd = newStart.add(duration);
+      final (_, dayEnd) = PlannerTimeZone.dayBounds(oldStart);
+
+      if (depth > maxCascadeDepth || newEnd.isAfter(dayEnd)) {
+        keepIds.add(task.id);
+        placed.add((start: oldStart, end: oldEnd));
+        continue;
+      }
+      placed.add((start: newStart, end: newEnd));
+      if (newStart != oldStart) {
+        shifts.add(
+          PlannedShift(
+            taskId: task.id,
+            oldStart: oldStart,
+            oldEnd: oldEnd,
+            newStart: newStart,
+            newEnd: newEnd,
+          ),
+        );
+      }
+
+      // Cascade: untouched blocks the shifted block now lands on.
+      final hit = [
+        for (final other in untouched.values)
+          if (_intervalsOverlap(
+            newStart,
+            newEnd,
+            other.startTime!,
+            other.endTime!,
+          ))
+            other,
+      ];
+      for (final other in hit) {
+        untouched.remove(other.id);
+        queue.add((task: other, depth: depth + 1));
+      }
     }
 
-    return ResolutionPlan(
-      shifts: shifts.values.toList(),
-      keepOverlapIds: keepIds,
-    );
+    if (keepIds.isNotEmpty) keepIds.add(movedId);
+    return ResolutionPlan(shifts: shifts, keepOverlapIds: keepIds);
   }
 
   /// Finds the next slot (minute-of-day on the viewed day) at/after

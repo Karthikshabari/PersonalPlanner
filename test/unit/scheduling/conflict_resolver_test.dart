@@ -1,14 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/timeline/domain/conflict_detector.dart';
 import 'package:personal_planner/features/timeline/domain/conflict_resolver.dart';
 
-Task task(
-  String id,
-  int startMinutes,
-  int endMinutes, {
-  DateTime? onDay,
-}) {
+Task task(String id, int startMinutes, int endMinutes, {DateTime? onDay}) {
   final day = onDay ?? DateTime(2026, 7, 23);
   return Task(
     id: id,
@@ -21,9 +17,9 @@ Task task(
 }
 
 Task move(Task t, int deltaMinutes) => t.copyWith(
-      startTime: t.startTime!.add(Duration(minutes: deltaMinutes)),
-      endTime: t.endTime!.add(Duration(minutes: deltaMinutes)),
-    );
+  startTime: t.startTime!.add(Duration(minutes: deltaMinutes)),
+  endTime: t.endTime!.add(Duration(minutes: deltaMinutes)),
+);
 
 void main() {
   final day = DateTime(2026, 7, 23);
@@ -46,7 +42,10 @@ void main() {
       final shiftById = {for (final s in plan.shifts) s.taskId: s};
       // Overlap duration = 10:30 − 9:00 = 90 min.
       final bs = shiftById['b']!;
-      expect(bs.newStart, DateTime(2026, 7, 23).add(const Duration(minutes: 630)));
+      expect(
+        bs.newStart,
+        DateTime(2026, 7, 23).add(const Duration(minutes: 630)),
+      );
       expect(bs.newEnd, day.add(const Duration(minutes: 690)));
       final cs = shiftById['c']!;
       expect(cs.newStart, day.add(const Duration(minutes: 690)));
@@ -132,6 +131,149 @@ void main() {
     });
   });
 
+  group('planShiftOnlyOverlapping stacking (F-005)', () {
+    tearDown(() => PlannerTimeZone.initialize(identifier: 'UTC'));
+
+    Task at(String id, DateTime start, DateTime end) => Task(
+      id: id,
+      title: 'Task $id',
+      startTime: start,
+      endTime: end,
+      createdAt: start,
+      updatedAt: start,
+    );
+
+    // Applies the plan and asserts that the moved block and every shifted
+    // block are pairwise overlap-free.
+    void expectNoOverlapAmongResolved(
+      Task moved,
+      List<Task> dayTasks,
+      ResolutionPlan plan,
+    ) {
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      final resolved = [
+        moved,
+        for (final t in dayTasks)
+          if (shiftById.containsKey(t.id))
+            t.copyWith(
+              startTime: shiftById[t.id]!.newStart,
+              endTime: shiftById[t.id]!.newEnd,
+            ),
+      ];
+      for (var i = 0; i < resolved.length; i++) {
+        for (var j = i + 1; j < resolved.length; j++) {
+          expect(
+            ConflictDetector.overlaps(resolved[i], resolved[j]),
+            isFalse,
+            reason: '${resolved[i].id} overlaps ${resolved[j].id}',
+          );
+        }
+      }
+    }
+
+    test('two victims of one pusher stack instead of sharing a slot', () {
+      // The exact UAT T-022 scenario, in the tester's timezone.
+      PlannerTimeZone.initialize(identifier: 'Asia/Kolkata');
+      DateTime ist(int h, int m) =>
+          PlannerTimeZone.calendarDate(2026, 10, 5, hour: h, minute: m);
+      final t001 = at('t001', ist(12, 0), ist(12, 30));
+      final t018 = at('t018', ist(16, 0), ist(16, 30));
+      final t022 = at('t022', ist(12, 10), ist(18, 30));
+
+      final plan = ConflictResolver.planShiftOnlyOverlapping(
+        moved: t022,
+        dayTasks: [t001, t018],
+      );
+
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      expect(plan.keepOverlapIds, isEmpty);
+      expect(shiftById['t001']!.newStart, ist(18, 30));
+      expect(shiftById['t001']!.newEnd, ist(19, 0));
+      expect(shiftById['t018']!.newStart, ist(19, 0));
+      expect(shiftById['t018']!.newEnd, ist(19, 30));
+      expectNoOverlapAmongResolved(t022, [t001, t018], plan);
+    });
+
+    test('three victims are stacked in original start order', () {
+      final d = DateTime.utc(2026, 7, 23);
+      DateTime hm(int h, int m) => d.add(Duration(hours: h, minutes: m));
+      final moved = at('m', hm(9, 0), hm(12, 0));
+      final a = at('a', hm(9, 30), hm(10, 0)); // 30 min
+      final b = at('b', hm(10, 30), hm(11, 30)); // 60 min
+      final c = at('c', hm(11, 0), hm(11, 15)); // 15 min
+      final later = at('z', hm(14, 0), hm(15, 0)); // clear of the stack
+
+      // Input order deliberately differs from start order.
+      final dayTasks = [c, later, a, b];
+      final plan = ConflictResolver.planShiftOnlyOverlapping(
+        moved: moved,
+        dayTasks: dayTasks,
+      );
+
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      expect(plan.keepOverlapIds, isEmpty);
+      expect(shiftById.keys, unorderedEquals(['a', 'b', 'c']));
+      expect(shiftById['a']!.newStart, hm(12, 0));
+      expect(shiftById['a']!.newEnd, hm(12, 30));
+      expect(shiftById['b']!.newStart, hm(12, 30));
+      expect(shiftById['b']!.newEnd, hm(13, 30));
+      expect(shiftById['c']!.newStart, hm(13, 30));
+      expect(shiftById['c']!.newEnd, hm(13, 45));
+      expectNoOverlapAmongResolved(moved, dayTasks, plan);
+    });
+
+    test('cascade through a victim\'s new slot keeps every block apart', () {
+      final d = DateTime.utc(2026, 7, 23);
+      DateTime hm(int h, int m) => d.add(Duration(hours: h, minutes: m));
+      final moved = at('m', hm(9, 0), hm(10, 0));
+      final a = at('a', hm(9, 30), hm(10, 30)); // victim -> 10:00-11:00
+      final b = at('b', hm(9, 45), hm(10, 15)); // victim, stacks after a
+      final x = at('x', hm(10, 45), hm(11, 15)); // hit by a's new slot
+      final y = at('y', hm(11, 40), hm(12, 10)); // hit by x's new slot
+      final z = at('z', hm(12, 30), hm(13, 0)); // touches y's slot only
+      final early = at('w', hm(7, 0), hm(8, 0)); // unrelated
+
+      final dayTasks = [early, a, b, x, y, z];
+      final plan = ConflictResolver.planShiftOnlyOverlapping(
+        moved: moved,
+        dayTasks: dayTasks,
+      );
+
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      expect(plan.keepOverlapIds, isEmpty);
+      expect(shiftById.keys, unorderedEquals(['a', 'b', 'x', 'y']));
+      expect(shiftById['a']!.newStart, hm(10, 0));
+      expect(shiftById['b']!.newStart, hm(11, 0));
+      expect(shiftById['b']!.newEnd, hm(11, 30));
+      expect(shiftById['x']!.newStart, hm(11, 30));
+      expect(shiftById['x']!.newEnd, hm(12, 0));
+      expect(shiftById['y']!.newStart, hm(12, 0));
+      expect(shiftById['y']!.newEnd, hm(12, 30));
+      expectNoOverlapAmongResolved(moved, dayTasks, plan);
+    });
+
+    test('a push past the end of the day leaves that block in place', () {
+      PlannerTimeZone.initialize(identifier: 'UTC');
+      final d = DateTime.utc(2026, 7, 23);
+      DateTime hm(int h, int m) => d.add(Duration(hours: h, minutes: m));
+      final moved = at('m', hm(22, 0), hm(23, 30));
+      final a = at('a', hm(22, 30), hm(23, 0)); // -> 23:30-24:00, fits
+      final b = at('b', hm(23, 0), hm(23, 45)); // would end 00:45 next day
+
+      final plan = ConflictResolver.planShiftOnlyOverlapping(
+        moved: moved,
+        dayTasks: [a, b],
+      );
+
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      expect(shiftById.keys, ['a']);
+      expect(shiftById['a']!.newStart, hm(23, 30));
+      expect(shiftById['a']!.newEnd, DateTime.utc(2026, 7, 24));
+      // b is not moved onto the next day; the overlap is reported instead.
+      expect(plan.keepOverlapIds, {'b', 'm'});
+    });
+  });
+
   group('findNextAvailableSlot', () {
     test('returns original end when free', () {
       final a = task('a', 540, 600);
@@ -180,8 +322,10 @@ void main() {
     test('moved hypothetical against original list finds targets', () {
       final a = task('a', 540, 600);
       final movedOriginal = task('x', 480, 540);
-      final hypothetical =
-          move(movedOriginal, 90); // now 9:30–10:00 overlapping a
+      final hypothetical = move(
+        movedOriginal,
+        90,
+      ); // now 9:30–10:00 overlapping a
       expect(ConflictDetector.detect(hypothetical, [a]), [a]);
     });
   });

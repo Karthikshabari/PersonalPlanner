@@ -535,6 +535,17 @@ abstract final class TimelineActions {
         ...plan.keepOverlapIds,
         hypothetical.id,
       };
+      final unshifted = plan.keepOverlapIds
+          .where((id) => id != hypothetical.id)
+          .length;
+      if (unshifted > 0 && context.mounted) {
+        showAppToast(
+          context,
+          unshifted == 1
+              ? '1 block could not be shifted without overlapping and was left in place'
+              : '$unshifted blocks could not be shifted without overlapping and were left in place',
+        );
+      }
     }
     return true;
   }
