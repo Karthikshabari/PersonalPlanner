@@ -50,6 +50,9 @@ const cloudSetupWaitingMessage =
 const cloudSetupCreationAuthorizationWaitingMessage =
     'Finish Supabase authorization in your browser. Return here, then press '
     'Create project.';
+const cloudSetupManagementReauthorizationWaitingMessage =
+    'Finish Supabase authorization in your browser; setup continues '
+    'automatically.';
 const cloudSetupStillWaitingMessage =
     'Supabase authorization is not complete yet. Finish it in your browser; '
     'setup continues automatically.';
@@ -1000,9 +1003,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.waitingForAuthorization,
             transactionId: result.profile?.provisioningTransactionId,
             authorizationUrlAvailable: true,
-            message: opened
-                ? cloudSetupCreationAuthorizationWaitingMessage
-                : cloudSetupBrowserLaunchFailedMessage,
+            message: !opened
+                ? cloudSetupBrowserLaunchFailedMessage
+                : canReauthorizeProjectInPlace(result.profile)
+                ? cloudSetupManagementReauthorizationWaitingMessage
+                : cloudSetupCreationAuthorizationWaitingMessage,
           ),
         );
       });
@@ -1139,7 +1144,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         // to a client timeout can leave this device one or more steps behind.
         final refreshed = await api.refresh();
         final workerState = refreshed.profile?.state;
-        if (refreshed.outcome != ProvisioningOutcome.inProgress) {
+        // A pending re-authorization (browser step or its token exchange) has no
+        // usable Management token yet: wait for it instead of failing a step.
+        if (refreshed.outcome != ProvisioningOutcome.inProgress ||
+            (refreshed.snapshot?.managementAuthorizationPending ?? false)) {
           _applyResult(refreshed);
         } else if (workerState == ProvisioningState.verifying) {
           _applyResult(await api.verify());
@@ -1310,7 +1318,22 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     required ProvisioningState? workerState,
     bool creationAuthorizationPending = false,
     bool creationAuthorizationRequired = false,
+    bool managementAuthorizationPending = false,
   }) {
+    if (managementAuthorizationPending &&
+        const <ProvisioningState>{
+          ProvisioningState.projectWaiting,
+          ProvisioningState.migrating,
+          ProvisioningState.migrationReconciliationRequired,
+          ProvisioningState.verifying,
+        }.contains(workerState)) {
+      return ProvisioningUiState(
+        phase: ProvisioningUiPhase.waitingForAuthorization,
+        transactionId: transactionId,
+        authorizationUrlAvailable: _authorizationUrl != null,
+        message: cloudSetupManagementReauthorizationWaitingMessage,
+      );
+    }
     switch (workerState) {
       case ProvisioningState.organizationSelected:
         if (creationAuthorizationPending) {
@@ -1387,6 +1410,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// The authorization URL is single-use; offer it only while its browser step
   /// can still complete.
   void _forgetConsumedAuthorizationUrl(ProvisioningResult result) {
+    // A pending Management re-authorization's URL is the fresh one.
+    if (result.snapshot?.managementAuthorizationPending ?? false) return;
     final workerState = result.profile?.state;
     final creationAuthPending =
         result.snapshot?.creationAuthorizationPending ?? false;
@@ -1455,6 +1480,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
               result.snapshot?.creationAuthorizationPending ?? false,
           creationAuthorizationRequired:
               result.snapshot?.creationAuthorizationRequired ?? false,
+          managementAuthorizationPending:
+              result.snapshot?.managementAuthorizationPending ?? false,
         );
         _applyState(
           ProvisioningUiState(
@@ -1510,7 +1537,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         );
         return;
       case ProvisioningOutcome.needsUserAction:
-        if (profile?.state == ProvisioningState.organizationSelected) {
+        if (profile?.state == ProvisioningState.organizationSelected ||
+            canReauthorizeProjectInPlace(profile)) {
           _cancelTimer();
           _applyState(
             ProvisioningUiState(

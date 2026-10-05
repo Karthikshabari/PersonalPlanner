@@ -8,6 +8,17 @@ import '../data/provisioning_client.dart';
 import 'backend_connection_profile.dart';
 import 'provisioning_state.dart';
 
+/// Whether [profile]'s transaction already owns its project, so the Worker can
+/// renew an ended Management authorization in place instead of starting over.
+bool canReauthorizeProjectInPlace(BackendConnectionProfile? profile) =>
+    profile?.projectRef != null &&
+    const <ProvisioningState>{
+      ProvisioningState.projectWaiting,
+      ProvisioningState.migrating,
+      ProvisioningState.migrationReconciliationRequired,
+      ProvisioningState.verifying,
+    }.contains(profile?.state);
+
 /// Outcome of one provisioning coordinator action.
 enum ProvisioningOutcome {
   /// No provisioning attempt exists; the Planner stays local-only.
@@ -424,11 +435,12 @@ class ProvisioningCoordinator {
   );
 
   /// Restarts Management OAuth on the same transaction. After organization
-  /// selection this also renews an expired pre-create authorization; it never
-  /// calls the project-create route.
+  /// selection this also renews an expired pre-create authorization, and after
+  /// project creation an ended one; it never calls the project-create route.
   Future<ProvisioningResult> retryAuthorization() => _serialized(
     () => _withAttempt((attempt, capability) async {
-      if (attempt.state == ProvisioningState.organizationSelected) {
+      if (attempt.state == ProvisioningState.organizationSelected ||
+          canReauthorizeProjectInPlace(attempt.profile)) {
         final request = await client.startManagementAuthorization(
           attempt.transactionId,
           capability: capability,
@@ -1547,6 +1559,17 @@ class ProvisioningCoordinator {
           message:
               'Supabase authorization expired before project creation. '
               'Reauthorize this setup, then press Create project again.',
+        )
+      // 410 never reaches this branch for these states: _failureOrExpiry
+      // persists it as expired first.
+      : canReauthorizeProjectInPlace(profile) &&
+            (error.code == 'oauth_expired' || error.code == 'oauth_revoked')
+      ? _result(
+          ProvisioningOutcome.needsUserAction,
+          profile: profile,
+          message:
+              'Supabase authorization ended during setup. Reauthorize to '
+              'continue; your cloud project is kept.',
         )
       : error.code == 'project_deleted'
       ? _result(

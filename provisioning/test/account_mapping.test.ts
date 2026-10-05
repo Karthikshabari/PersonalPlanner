@@ -43,6 +43,7 @@ function transaction() {
   let uncertain = false;
   return {
     managementToken: async () => "temporary-management-token",
+    managementTokenStatus: async () => ({ token: "temporary-management-token" }),
     get: async () => ({ state, projectRef: null }),
     recordDiscovery: async (_capability: string, refs: string[]) => { discovered = refs; empty = refs.length === 0; },
     discoveredCandidate: async (_capability: string, ref: string) => discovered.includes(ref),

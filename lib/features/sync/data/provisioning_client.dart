@@ -443,6 +443,7 @@ class ProvisioningSnapshot {
     this.authorizationFailed = false,
     this.creationAuthorizationPending = false,
     this.creationAuthorizationRequired = false,
+    this.managementAuthorizationPending = false,
   });
 
   final String transactionId;
@@ -468,6 +469,10 @@ class ProvisioningSnapshot {
 
   /// Management OAuth must renew before an explicit project-create action.
   final bool creationAuthorizationRequired;
+
+  /// A Management re-authorization of this transaction is out in the browser,
+  /// including while its callback is being exchanged.
+  final bool managementAuthorizationPending;
 
   bool get isReady => state == ProvisioningState.ready;
 
@@ -1069,6 +1074,8 @@ class ProvisioningClient {
           json['creationAuthorizationPending'] == true,
       creationAuthorizationRequired:
           json['creationAuthorizationRequired'] == true,
+      managementAuthorizationPending:
+          json['managementAuthorizationPending'] == true,
     );
   }
 

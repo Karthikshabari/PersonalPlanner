@@ -23,6 +23,7 @@ import {
   productionOAuthCallback,
   productionFetch,
   productionProjectCheck,
+  productionProjectResolution,
   reconcileMigrations,
   redact,
   runCanonicalMigrations,
@@ -187,6 +188,22 @@ describe("Management OAuth callback failures", () => {
     expect(page).toContain("Supabase authorization could not be completed");
     expect(page).toContain(`${PLANNER_MANAGEMENT_CALLBACK_URI}?result=failed`);
     expect(saved).toBe(false);
+  });
+
+  it("logs the granted lifetime and whether a refresh token was issued, never the tokens", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const env = { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => ({ oauthCallback: async () => ({ verifier: "verifier", management: false }), saveOAuthFromCallback: async () => undefined, markOAuthFailure: async () => true }) }, SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret", SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback" } as any;
+    const callback = () => productionOAuthCallback(new Request(`https://worker.test/oauth/callback?state=${transactionId}.state&code=valid-code`), env);
+
+    vi.stubGlobal("fetch", async () => Response.json({ access_token: "new-management-token", refresh_token: "new-refresh-token-value", token_type: "Bearer", expires_in: 7200 }));
+    expect((await callback())!.status).toBe(200);
+    vi.stubGlobal("fetch", async () => Response.json({ access_token: "other-management-token", token_type: "Bearer" }));
+    expect((await callback())!.status).toBe(200);
+
+    expect(info).toHaveBeenCalledWith(JSON.stringify({ event: "oauth_callback_succeeded", management: false, expires_in_s: 7200, refresh_token_present: true }));
+    expect(info).toHaveBeenCalledWith(JSON.stringify({ event: "oauth_callback_succeeded", management: false, expires_in_s: 300, refresh_token_present: false }));
+    const logged = JSON.stringify(info.mock.calls);
+    for (const secretValue of ["new-management-token", "new-refresh-token-value", "other-management-token", "valid-code"]) expect(logged).not.toContain(secretValue);
   });
 });
 
@@ -462,7 +479,7 @@ describe("first project creation state machine", () => {
     expect(secondBody.expiresIn).toBeLessThanOrEqual(900);
     const stateB = new URL(secondBody.authorizationUrl).searchParams.get("state")!.split(".")[1]!;
     expect(stateB).toBe(stateA);
-    const tokenCall = vi.spyOn(h.tx, "managementToken");
+    const tokenCall = vi.spyOn(h.tx, "managementTokenStatus");
     const pendingCreate = await productionFetch(request("create"), h.env);
     expect(pendingCreate!.status).toBe(202);
     expect(await pendingCreate!.json()).toMatchObject({ state: "organization_selected", creationAuthorizationPending: true });
@@ -1757,7 +1774,7 @@ describe("management grant durability", () => {
     expect(await tx.takeManagementRefresh(access)).toBe("second-refresh-token");
   });
 
-  it("reports a pending management re-authorization in the snapshot until its callback is claimed", async () => {
+  it("reports pending through the token exchange until the callback completes, fails, or the grant window lapses", async () => {
     const { tx, access } = await transactionAtVerifying();
     expect(await tx.get(access)).toMatchObject({ state: "verifying", managementAuthorizationPending: false });
 
@@ -1773,7 +1790,7 @@ describe("management grant durability", () => {
     }
 
     await tx.oauthCallback(grant.state);
-    expect(await tx.get(access)).toMatchObject({ managementAuthorizationPending: false });
+    expect(await tx.get(access)).toMatchObject({ managementAuthorizationPending: true });
   });
 
   it("stops reporting a management re-authorization once it completes, fails or lapses", async () => {
@@ -1972,6 +1989,226 @@ describe("management grant durability", () => {
     const status = await tx.managementAuthorizationStatus(access) as Record<string, unknown>;
     expect(status.authorized).toBe(true);
     expect(status.emailConfirmationRedirect).toBeNull();
+  });
+});
+
+describe("Management token refresh and revocation", () => {
+  const access = "a".repeat(48);
+
+  /** A transaction whose Management access token expires in [lifetimeMs], with client credentials to refresh it. */
+  async function grantExpiringIn(lifetimeMs: number, options: { project?: boolean } = {}) {
+    let body: string | undefined;
+    const sql = {
+      exec(query: string, ...values: unknown[]) {
+        if (query.startsWith("SELECT")) return { toArray: () => body ? [{ body }] : [] };
+        if (query.startsWith("INSERT")) body = String(values[0]);
+        return { toArray: () => [] };
+      },
+    };
+    const ctx = { storage: { sql, setAlarm: async () => undefined }, blockConcurrencyWhile: (operation: () => Promise<unknown>) => operation() };
+    const tx = new ProvisioningTransaction(ctx as any, { OAUTH_SESSION_KEY: "test-session-key", SUPABASE_OAUTH_CLIENT_ID: "client-id", SUPABASE_OAUTH_CLIENT_SECRET: "client-secret" } as any);
+    const read = () => JSON.parse(body!) as Record<string, unknown>;
+    const state = "s".repeat(48);
+    await tx.create(access, state, "v".repeat(48));
+    await tx.oauthCallback(state);
+    await tx.saveOAuthFromCallback(state, "old-access-token", "old-refresh-token-value", Date.now() + lifetimeMs);
+    if (options.project) {
+      await tx.recordDiscovery(access, []);
+      await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+      const create = await tx.reserveCreate(access);
+      await tx.recordProject(access, create.nonce, ref);
+    }
+    return { tx, read };
+  }
+
+  /** Stubs Supabase's token endpoint; every other upstream request fails the test. */
+  function tokenEndpoint(reply: (body: URLSearchParams, headers: Headers) => Promise<Response> | Response) {
+    const calls: URLSearchParams[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.supabase.com/v1/oauth/token");
+      const body = new URLSearchParams(String(init?.body));
+      calls.push(body);
+      return reply(body, new Headers(init?.headers));
+    });
+    return calls;
+  }
+
+  function routeEnvironment(tx: ProvisioningTransaction) {
+    return { PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => tx } } as any;
+  }
+
+  function stepRequest(step: "migrate" | "verify") {
+    return new Request(`https://worker.test/v1/provisioning/transactions/${transactionId}/${step}`, {
+      method: "POST",
+      headers: { authorization: `Provisioning ${access}`, "content-type": "application/json" },
+      body: "{}",
+    });
+  }
+
+  it("does not refresh a token with more than a minute left", async () => {
+    const { tx } = await grantExpiringIn(600_000);
+    const calls = tokenEndpoint(() => { throw Error("unexpected refresh"); });
+    expect(await tx.managementTokenStatus(access)).toEqual({ token: "old-access-token" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refreshes an access token that is about to expire, once for concurrent callers", async () => {
+    const { tx, read } = await grantExpiringIn(30_000);
+    const before = read();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const calls = tokenEndpoint(async (body, headers) => {
+      expect(headers.get("authorization")).toBe(`Basic ${btoa("client-id:client-secret")}`);
+      expect(headers.get("content-type")).toBe("application/x-www-form-urlencoded");
+      expect(body.get("grant_type")).toBe("refresh_token");
+      expect(body.get("refresh_token")).toBe("old-refresh-token-value");
+      await gate;
+      return Response.json({ access_token: "new-access-token", refresh_token: "new-refresh-token-value", token_type: "Bearer", expires_in: 3600 });
+    });
+
+    const first = tx.managementTokenStatus(access), second = tx.managementTokenStatus(access);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    release();
+    expect(await first).toEqual({ token: "new-access-token" });
+    expect(await second).toEqual({ token: "new-access-token" });
+    expect(calls).toHaveLength(1);
+
+    const after = read();
+    expect(after.tokenCiphertext).not.toBe(before.tokenCiphertext);
+    expect(after.refreshCipher).not.toBe(before.refreshCipher);
+    expect(after.tokenExpiresAt).toBeGreaterThan(Date.now() + 3_500_000);
+    expect(JSON.stringify(after)).not.toContain("new-access-token");
+    expect(JSON.stringify(after)).not.toContain("new-refresh-token-value");
+    expect(await tx.managementToken(access)).toBe("new-access-token");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps the previous refresh token when the token endpoint does not rotate it", async () => {
+    const { tx, read } = await grantExpiringIn(30_000);
+    const before = read();
+    tokenEndpoint(() => Response.json({ access_token: "new-access-token", token_type: "Bearer" }));
+    expect(await tx.managementTokenStatus(access)).toEqual({ token: "new-access-token" });
+    expect(read().refreshCipher).toBe(before.refreshCipher);
+    // Same lifetime rule as the callback: a missing expires_in means 300 s.
+    expect(read().tokenExpiresAt).toBeGreaterThan(Date.now() + 290_000);
+    expect(read().tokenExpiresAt).toBeLessThanOrEqual(Date.now() + 300_000);
+  });
+
+  it("a rejected refresh reports revoked and clears token material", async () => {
+    for (const status of [400, 401]) {
+      const { tx, read } = await grantExpiringIn(30_000);
+      const calls = tokenEndpoint(() => new Response(null, { status }));
+      expect(await tx.managementTokenStatus(access)).toEqual({ reason: "revoked" });
+      expect(read().tokenCiphertext).toBeUndefined();
+      expect(read().tokenExpiresAt).toBeUndefined();
+      expect(read().refreshCipher).toBeUndefined();
+      expect(read().oauthRevokedAt).toBeTypeOf("number");
+      // Nothing is left to refresh, so the next route sees an expired grant without another upstream call.
+      expect(await tx.managementTokenStatus(access)).toEqual({ reason: "expired" });
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it("a refresh network failure reports unavailable without clearing tokens", async () => {
+    const replies: Array<() => Response> = [
+      () => { throw Error("network down"); },
+      () => new Response(null, { status: 503 }),
+      () => new Response(null, { status: 429 }),
+      () => new Response(null, { status: 403 }),
+      () => Response.json({ token_type: "Bearer" }),
+      () => new Response("not json", { status: 200 }),
+    ];
+    for (const reply of replies) {
+      const { tx, read } = await grantExpiringIn(30_000);
+      const before = read();
+      tokenEndpoint(reply);
+      expect(await tx.managementTokenStatus(access)).toEqual({ reason: "unavailable" });
+      expect(read().tokenCiphertext).toBe(before.tokenCiphertext);
+      expect(read().refreshCipher).toBe(before.refreshCipher);
+      expect(read().oauthRevokedAt).toBeUndefined();
+    }
+  });
+
+  it("a rejected refresh does not clear tokens if a new authorization started during the refresh", async () => {
+    const { tx, read } = await grantExpiringIn(30_000, { project: true });
+    const before = read();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let grant!: { state: string };
+    tokenEndpoint(async () => {
+      grant = await tx.beginManagementAuthorization(access);
+      return new Response(null, { status: 400 });
+    });
+
+    expect(await tx.managementTokenStatus(access)).toEqual({ reason: "revoked" });
+    expect(read().oauthRevokedAt).toBeUndefined();
+    expect(read().tokenCiphertext).toBe(before.tokenCiphertext);
+    expect(read().refreshCipher).toBe(before.refreshCipher);
+    expect(JSON.stringify(info.mock.calls)).toContain("management_token_refresh_superseded");
+
+    // The re-authorization the user started still completes.
+    await tx.oauthCallback(grant.state);
+    await expect(tx.saveOAuthFromCallback(grant.state, "reauthorized-token", "reauthorized-refresh-token", Date.now() + 600_000)).resolves.toBeUndefined();
+    expect(await tx.managementToken(access)).toBe("reauthorized-token");
+  });
+
+  it("a rejected refresh does not undo a re-authorization that completed during the refresh", async () => {
+    const { tx, read } = await grantExpiringIn(30_000, { project: true });
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    tokenEndpoint(async () => {
+      const grant = await tx.beginManagementAuthorization(access);
+      await tx.oauthCallback(grant.state);
+      // No refresh token in the new grant, so only the access token changes.
+      await tx.saveOAuthFromCallback(grant.state, "reauthorized-token", undefined, Date.now() + 600_000);
+      return new Response(null, { status: 401 });
+    });
+
+    expect(await tx.managementTokenStatus(access)).toEqual({ reason: "revoked" });
+    expect(read().oauthRevokedAt).toBeUndefined();
+    expect(await tx.managementToken(access)).toBe("reauthorized-token");
+  });
+
+  it("a rejected refresh does not block a re-authorization that was already pending", async () => {
+    const { tx, read } = await grantExpiringIn(30_000, { project: true });
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const grant = await tx.beginManagementAuthorization(access);
+    tokenEndpoint(() => new Response(null, { status: 400 }));
+
+    expect(await tx.managementTokenStatus(access)).toEqual({ reason: "revoked" });
+    expect(read().oauthRevokedAt).toBeUndefined();
+    await tx.oauthCallback(grant.state);
+    await expect(tx.saveOAuthFromCallback(grant.state, "reauthorized-token", undefined, Date.now() + 600_000)).resolves.toBeUndefined();
+    expect(await tx.managementToken(access)).toBe("reauthorized-token");
+  });
+
+  it("migrate maps a Management 401 to oauth_revoked without spending the budget", async () => {
+    for (const status of [401, 403]) {
+      const { tx, read } = await grantExpiringIn(600_000, { project: true });
+      const progress = await tx.claimOperation(access, "migration");
+      await tx.finishMigration(access, progress.nonce, { kind: "progress" });
+      vi.stubGlobal("fetch", async () => new Response(null, { status }));
+
+      const response = await productionFetch(stepRequest("migrate"), routeEnvironment(tx));
+      expect(response!.status).toBe(401);
+      expect(await response!.json()).toEqual({ error: "oauth_revoked" });
+      expect(read()).toMatchObject({ state: "migration_reconciliation_required", expensiveAttempts: 0, error: "oauth_revoked" });
+      expect(read().operation).toBeUndefined();
+    }
+  });
+
+  it("verify maps a Management 403 to oauth_revoked without spending the budget", async () => {
+    for (const status of [401, 403]) {
+      const { tx, read } = await grantExpiringIn(600_000, { project: true });
+      const migration = await tx.claimOperation(access, "migration");
+      await tx.finishMigration(access, migration.nonce, { kind: "complete" });
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      vi.stubGlobal("fetch", async () => new Response(null, { status }));
+
+      const response = await productionFetch(stepRequest("verify"), routeEnvironment(tx));
+      expect(response!.status).toBe(401);
+      expect(await response!.json()).toEqual({ error: "oauth_revoked" });
+      expect(read()).toMatchObject({ state: "verifying", expensiveAttempts: 0, error: "oauth_revoked" });
+      expect(read().operation).toBeUndefined();
+    }
   });
 });
 
@@ -2244,6 +2481,8 @@ describe("provisioning route contract", () => {
     return {
       managementToken: async (capability: string) =>
         capability === "capability-1" ? "management-token" : null,
+      managementTokenStatus: async (capability: string) =>
+        capability === "capability-1" ? { token: "management-token" } : { reason: "expired" },
       createContext: async () => ({ state: "authorization_pending", projectRef: ref, discoveryEmptyAt: Date.now() }),
       owner: async () => "11111111-1111-4111-8111-111111111111",
       claimOperation: async () => ({ nonce: "op-nonce", projectRef: ref }),
@@ -2368,6 +2607,28 @@ describe("provisioning route contract", () => {
     await expectError(await run("expired"), 410, "provisioning_expired");
     await expectError(await run("something_else"), 500, "internal_error");
     expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps each unusable Management token status to its route error", async () => {
+    const base = `https://worker.test/v1/provisioning/transactions/${transactionId}`;
+    const cases: Array<[unknown, number, string]> = [
+      [{ reason: "revoked" }, 401, "oauth_revoked"],
+      [{ reason: "unavailable" }, 502, "temporarily_unavailable"],
+      [{ reason: "expired" }, 401, "oauth_expired"],
+    ];
+    for (const [status, code, error] of cases) {
+      const worker = fakeTransaction({
+        managementTokenStatus: async () => status,
+        createContext: async () => ({ state: "organization_selected", discoveryEmptyAt: Date.now() }),
+        get: async () => ({ state: "authorization_pending" }),
+      });
+      for (const request of [getRequest(organizationsUrl), postRequest(`${base}/organization`), postRequest(`${base}/create`), postRequest(`${base}/reconcile`), postRequest(migrateUrl), postRequest(verifyUrl)]) {
+        await expectError(await productionFetch(request, environment(worker) as any), code, error);
+      }
+      for (const step of ["resolve", "adopt"]) {
+        await expectError(await productionProjectResolution(postRequest(`${base}/${step}`), environment(worker) as any), code, error);
+      }
+    }
   });
 
   it("answers a repeated verify with the ready snapshot instead of an error", async () => {

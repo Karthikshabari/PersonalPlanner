@@ -863,6 +863,62 @@ void main() {
       },
     );
 
+    test('oauth_expired during migration asks for re-authorization and keeps the transaction', () async {
+      await seedProfile(state: ProvisioningState.migrating, withProject: true);
+      transport.reply(
+        'POST',
+        '${_snapshotPath(_transactionA)}/migrate',
+        <String, dynamic>{'error': 'oauth_expired'},
+        status: 401,
+      );
+
+      final result = await buildCoordinator().migrate();
+
+      expect(result.outcome, ProvisioningOutcome.needsUserAction);
+      expect(
+        result.message,
+        'Supabase authorization ended during setup. Reauthorize to '
+        'continue; your cloud project is kept.',
+      );
+      expect(result.profile!.state, ProvisioningState.migrating);
+      expect(result.profile!.projectRef, _projectRef);
+      expect((await profileStore.read())!.state, ProvisioningState.migrating);
+      expect(capabilityStore.values[_transactionA], _capability);
+    });
+
+    test('oauth_revoked at verifying asks for re-authorization and keeps the transaction', () async {
+      await seedProfile(state: ProvisioningState.verifying, withProject: true);
+      transport.reply('GET', _snapshotPath(_transactionA), <String, dynamic>{
+        'error': 'oauth_revoked',
+      }, status: 401);
+
+      final result = await buildCoordinator().refresh();
+
+      expect(result.outcome, ProvisioningOutcome.needsUserAction);
+      expect(result.profile!.state, ProvisioningState.verifying);
+      expect((await profileStore.read())!.state, ProvisioningState.verifying);
+      expect(capabilityStore.values[_transactionA], _capability);
+    });
+
+    test('retryAuthorization at migrating starts a management authorization on the same transaction', () async {
+      await seedProfile(state: ProvisioningState.migrating, withProject: true);
+      final path = _snapshotPath(_transactionA);
+      transport.reply('POST', '$path/authorization/start', <String, dynamic>{
+        'authorizationUrl':
+            'https://api.supabase.com/v1/oauth/authorize?client_id=x',
+        'expiresIn': 900,
+      });
+
+      final renewed = await buildCoordinator().retryAuthorization();
+
+      expect(renewed.outcome, ProvisioningOutcome.inProgress);
+      expect(renewed.authorizationUrl, isNotNull);
+      expect(renewed.profile!.provisioningTransactionId, _transactionA);
+      expect(renewed.profile!.state, ProvisioningState.migrating);
+      expect(capabilityStore.values[_transactionA], _capability);
+      expect(transport.keys, <String>['POST $path/authorization/start']);
+    });
+
     test('a project appearing after creation reservation returns to explicit candidate selection', () async {
       await seedProfile(state: ProvisioningState.organizationSelected);
       transport.reply(

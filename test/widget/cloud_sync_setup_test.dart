@@ -398,6 +398,203 @@ void main() {
     },
   );
 
+  const postCreateReauthorizationMessage =
+      'Supabase authorization ended during setup. Reauthorize to continue; '
+      'your cloud project is kept.';
+  final reauthorizationUrl = Uri.parse(
+    'https://api.supabase.com/v1/oauth/authorize?client_id=reauthorize',
+  );
+  ProvisioningResult pendingReauthorization() => ProvisioningResult(
+    outcome: ProvisioningOutcome.inProgress,
+    profile: testProfile(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    ),
+    snapshot: const ProvisioningSnapshot(
+      transactionId: testTransactionId,
+      state: ProvisioningState.migrating,
+      projectRef: testProjectRef,
+      managementAuthorizationPending: true,
+    ),
+  );
+
+  testWidgets(
+    'an expired Management authorization during migration offers Reauthorize Supabase and resumes after the browser returns',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        message: postCreateReauthorizationMessage,
+      );
+      await _pumpCard(
+        tester,
+        api: api,
+        launcher: launcher,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+
+      expect(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+        findsOneWidget,
+      );
+      expect(find.text(postCreateReauthorizationMessage), findsOneWidget);
+      final migrationsBefore = api.calls.where((c) => c == 'migrate').length;
+
+      api.retryAuthorizationResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.inProgress,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        authorizationUrl: reauthorizationUrl,
+      );
+      api.refreshResult = pendingReauthorization();
+      await tester.tap(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+      );
+      await _settle(tester);
+      expect(api.calls, contains('retryAuthorization'));
+      expect(launcher.opened, contains(reauthorizationUrl));
+      expect(
+        find.text(cloudSetupManagementReauthorizationWaitingMessage),
+        findsOneWidget,
+      );
+
+      // While the browser step (and its token exchange) is pending, polls keep
+      // waiting and the fresh authorization page stays available.
+      await _pollTicks(tester);
+      expect(
+        api.calls.where((c) => c == 'migrate'),
+        hasLength(migrationsBefore),
+      );
+      expect(
+        find.text(cloudSetupManagementReauthorizationWaitingMessage),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsOneWidget,
+      );
+
+      // The callback completed: the Worker holds a fresh token again.
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = testInProgress(
+        ProvisioningState.verifying,
+        projectRef: testProjectRef,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await _settle(tester);
+      await _pollTicks(tester);
+
+      expect(
+        api.calls.where((c) => c == 'migrate').length,
+        greaterThan(migrationsBefore),
+      );
+      expect(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('cloud-open-authorization')),
+        findsNothing,
+      );
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets('a pending management re-authorization does not call migrate', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(
+      ProvisioningState.migrating,
+      projectRef: testProjectRef,
+    );
+    api.refreshResult = pendingReauthorization();
+    await _pumpCard(
+      tester,
+      api: api,
+      launcher: launcher,
+      pollInterval: const Duration(milliseconds: 20),
+    );
+    await _pollTicks(tester);
+
+    expect(api.calls, contains('refresh'));
+    expect(api.calls, isNot(contains('migrate')));
+    expect(api.calls, isNot(contains('verify')));
+    expect(
+      find.text(cloudSetupManagementReauthorizationWaitingMessage),
+      findsOneWidget,
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets(
+    'a post-create authorization failure after quiet transient retries still reaches the re-authorization card',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      await _pumpCard(
+        tester,
+        api: api,
+        launcher: launcher,
+        pollInterval: const Duration(milliseconds: 20),
+      );
+      api.migrateResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+      );
+      await _pollTicks(tester, ticks: 3);
+      // Quiet backoff: still the progress card.
+      expect(find.text('Configuring your database…'), findsOneWidget);
+
+      api.migrateResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        message: postCreateReauthorizationMessage,
+      );
+      await _pollTicks(tester, ticks: 20);
+
+      expect(
+        find.byKey(const ValueKey('cloud-renew-creation-authorization')),
+        findsOneWidget,
+      );
+      expect(find.text(postCreateReauthorizationMessage), findsOneWidget);
+      await _unmount(tester);
+    },
+  );
+
   testWidgets(
     'shows one verified legacy cloud and binds it only on Use this project',
     (tester) async {

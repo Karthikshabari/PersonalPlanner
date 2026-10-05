@@ -657,6 +657,23 @@ void main() {
       },
     );
 
+    test('reads a pending post-create Management re-authorization', () async {
+      final pending = await _client(
+        _FakeTransport(
+          (_) async => _json(<String, dynamic>{
+            ..._snapshot('migrating'),
+            'managementAuthorizationPending': true,
+          }),
+        ),
+      ).snapshot(_transactionId, capability: _capability);
+      expect(pending.managementAuthorizationPending, isTrue);
+
+      final absent = await _client(
+        _FakeTransport((_) async => _json(_snapshot('migrating'))),
+      ).snapshot(_transactionId, capability: _capability);
+      expect(absent.managementAuthorizationPending, isFalse);
+    });
+
     test(
       'reports a claimed failed callback without leaking OAuth state',
       () async {
