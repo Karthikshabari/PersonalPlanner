@@ -228,6 +228,13 @@ class TaskRepository {
     return row == null ? null : fromRow(row);
   }
 
+  /// Live view of one row. Soft-deleted rows are still emitted (with
+  /// `deletedAt` set) so an open editor can tell a deletion from an unknown id.
+  Stream<Task?> watchTaskById(String taskId) =>
+      (_db.select(_db.tasks)..where((task) => task.id.equals(taskId)))
+          .watchSingleOrNull()
+          .map((row) => row == null ? null : fromRow(row));
+
   /// Reads the domain task and its persistence revision as one snapshot. UI
   /// editors use the revision for an optimistic compare-and-swap at save time.
   Future<(Task task, int revision)?> getTaskWithRevision(String taskId) async {

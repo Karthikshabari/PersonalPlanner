@@ -272,7 +272,16 @@ void main() {
       await pumpApp(tester, container, surface: const Size(1400, 1000));
 
       await openEditor(tester, container, inserted);
+      // A clean editor no longer prompts (UAT F-007); make a real edit so the
+      // scope dialog's Cancel branch is reached.
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'Title',
+        ),
+        'Edited then cancelled',
+      );
       await saveTask(tester);
+      expect(find.text('This occurrence only'), findsOneWidget);
       await tester.tap(find.text('Cancel').last);
       await settle(tester);
 
@@ -317,6 +326,14 @@ void main() {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
 
     await openEditor(tester, container, inserted);
+    // A clean editor no longer saves (UAT F-007); edit a non-recurrence field
+    // so the all-future write runs with an untouched Repeat picker.
+    await tester.enterText(
+      find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Description',
+      ),
+      'Series description',
+    );
     await saveTask(tester);
     await tester.tap(find.byKey(const ValueKey('scope-all-future')));
     await settle(tester);

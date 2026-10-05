@@ -10,7 +10,9 @@ final selectedTaskIdProvider = StateProvider<String?>((ref) => null);
 /// deliberately separate so the Day timeline can stay full-width by default.
 final taskEditorOpenProvider = StateProvider<bool>((ref) => false);
 
-final selectedTaskByIdProvider = FutureProvider.autoDispose
+/// Live row for an open editor. A one-shot read would go stale as soon as the
+/// task left the viewed day's stream (another day viewed, or deleted).
+final selectedTaskByIdProvider = StreamProvider.autoDispose
     .family<Task?, String>((ref, taskId) {
-      return ref.watch(taskRepositoryProvider).getTaskById(taskId);
+      return ref.watch(taskRepositoryProvider).watchTaskById(taskId);
     });

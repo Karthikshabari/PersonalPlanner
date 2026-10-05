@@ -16,6 +16,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/utils/task_time_metrics.dart';
 import '../../../../core/utils/uuid.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
@@ -45,6 +46,8 @@ import '../widgets/plan_change_dialog.dart';
 import '../../../timeline/presentation/widgets/schedule_fields.dart';
 
 enum TaskEditorPresentation { desktopPanel, bottomSheet }
+
+const _taskDeletedMessage = 'This task was deleted.';
 
 class TaskEditorPanel extends ConsumerStatefulWidget {
   final TaskEditorPresentation presentation;
@@ -368,6 +371,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
   }
 
+  void _closeForDeletedTask() {
+    if (!mounted) return;
+    // Close silently: the action that deleted the task owns the user-facing
+    // feedback (e.g. "Occurrence deleted"); a second toast would replace it.
+    _closeImmediately();
+  }
+
   Future<void> _requestClose() async {
     if (_saving) return;
     if (!_hasDraftChanges) {
@@ -561,6 +571,16 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   Future<void> _saveImpl(Task task, {bool close = false}) async {
     if (_saving) return;
+    // A clean editor has nothing to persist: no recurrence scope prompt and
+    // no row rewrite (which would still bump the local revision).
+    if (!_hasDraftChanges) {
+      if (close) {
+        _closeImmediately();
+      } else {
+        showAppToast(context, 'No changes to save');
+      }
+      return;
+    }
     // A schedule control is a projection of the persisted instant. Recompute
     // this flag from the snapshot instead of treating any picker interaction
     // as a permanent dirty marker, so changing a time and changing it back is
@@ -633,7 +653,11 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     final latest = latestSnapshot?.$1;
     final latestRevision = latestSnapshot?.$2;
     if (latest == null || latest.deletedAt != null || latestRevision == null) {
-      throw StateError('Task ${task.id} is no longer available');
+      // Retrying cannot succeed, so do not route this through the generic
+      // "please retry" mapping.
+      if (mounted) setState(() => _saving = false);
+      _showValidationError(_taskDeletedMessage);
+      return;
     }
     final conflictBaseline = _conflictBaselineTask ?? _originalTask ?? task;
     final mergeBaseline = _baseline?.task ?? conflictBaseline;
@@ -1164,23 +1188,31 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       );
     }
 
+    ref.listen<AsyncValue<Task?>>(selectedTaskByIdProvider(taskId), (_, next) {
+      final row = next.value;
+      if (!next.hasValue || (row != null && row.deletedAt == null)) return;
+      // Only a task this editor was showing closes the panel; an id that
+      // never resolved keeps the "no longer available" state below. A Save
+      // in flight reports the deletion itself.
+      if (_saving || _activeTask?.id != taskId) return;
+      _closeForDeletedTask();
+    });
+
+    // The live by-id row is authoritative: it follows the task across days
+    // and reports deletion. The day list only seeds the first frame while
+    // that stream is loading.
     Task? task;
-    for (final t in tasksAsync.value ?? const <Task>[]) {
-      if (t.id == taskId) {
-        task = t;
-        break;
+    if (selectedTaskAsync.hasValue) {
+      final row = selectedTaskAsync.value;
+      task = row != null && row.deletedAt == null ? row : null;
+    } else {
+      for (final t in tasksAsync.value ?? const <Task>[]) {
+        if (t.id == taskId) {
+          task = t;
+          break;
+        }
       }
-    }
-    task ??= selectedTaskAsync.value;
-    // A task update can briefly invalidate the day stream before the
-    // selected-task query publishes its replacement row. Keep the mounted
-    // editor alive during that transient gap so a successful Save cannot
-    // remove its controls or lose focus; an explicit null query result still
-    // represents a genuinely deleted/missing task.
-    if (task == null &&
-        !selectedTaskAsync.hasValue &&
-        _activeTask?.id == taskId) {
-      task = _activeTask;
+      if (task == null && _activeTask?.id == taskId) task = _activeTask;
     }
     _activeTask = task;
     _syncFromTask(task);
