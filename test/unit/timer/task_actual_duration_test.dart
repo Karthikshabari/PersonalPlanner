@@ -1,4 +1,6 @@
-import 'package:drift/drift.dart' show Value;
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
@@ -131,6 +133,33 @@ void main() {
       expect(after?.revision, before?.revision);
       expect(after?.updatedAt, before?.updatedAt);
       expect(await db.syncDao.pendingCount(), 0);
+    },
+  );
+
+  test(
+    'each manual Actual save queues a snapshot carrying the newly saved cache',
+    () async {
+      final tracked = await task();
+      Future<Map<String, Object?>> lastQueuedTaskPayload() async {
+        final rows = await db
+            .customSelect(
+              'SELECT payload FROM sync_log WHERE record_id = ? ORDER BY seq DESC LIMIT 1',
+              variables: [Variable.withString(tracked.id)],
+            )
+            .get();
+        return jsonDecode(rows.single.read<String>('payload'))
+            as Map<String, Object?>;
+      }
+
+      for (final minutes in [25, 30, 0]) {
+        await actuals.setDisplayedTotal(tracked.id, minutes);
+        final local = await db.taskDao.getTaskById(tracked.id);
+        final queued = await lastQueuedTaskPayload();
+        expect(local?.actualDurationMin, minutes);
+        expect(queued['actual_duration_min'], minutes);
+        expect(queued['manual_duration_adjustment_min'], minutes);
+        expect(queued['manual_actual_set'], anyOf(1, true));
+      }
     },
   );
 

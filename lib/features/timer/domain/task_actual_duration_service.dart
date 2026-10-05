@@ -72,13 +72,18 @@ class TaskActualDurationService {
       final adjustment = minutes - (finishedSeconds ~/ 60);
       final now = DateTime.now();
       // These are semantic source fields, so the normal task trigger records
-      // one CAS/outbox mutation and increments its local revision.
+      // one CAS/outbox mutation and increments its local revision. The trigger
+      // snapshots the whole row, so the derived cache must be written in this
+      // same UPDATE or the queued payload carries the previous cache. With a
+      // manual source set, the total is finished minutes plus the adjustment,
+      // which is exactly [minutes].
       await (_db.update(
         _db.tasks,
       )..where((row) => row.id.equals(taskId))).write(
         TasksCompanion(
           manualDurationAdjustmentMin: Value(adjustment),
           manualActualSet: const Value(true),
+          actualDurationMin: Value(minutes),
           updatedAt: Value(now),
         ),
       );
