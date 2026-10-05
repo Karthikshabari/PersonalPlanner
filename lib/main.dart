@@ -36,6 +36,8 @@ import 'features/timer/domain/notification_service.dart';
 import 'features/timer/domain/planner_notification.dart';
 import 'features/timer/providers/timer_providers.dart';
 import 'platform/desktop/window_manager.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:fluttersdk_dusk/dusk.dart';
 
 _RuntimeAuthBootstrap? _runtimeAuthBootstrap;
 
@@ -274,6 +276,9 @@ Future<void> main(List<String> arguments) async {
     FlutterError.reportError(
       FlutterErrorDetails(exception: error, stack: stack),
     );
+  }
+  if (!kReleaseMode) {
+    DuskPlugin.install();
   }
   runApp(
     plannerBootstrap(

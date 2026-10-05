@@ -95,3 +95,4 @@ android/*.jks
 android/*.keystore
 android/*.p12
 android/*.pem
+.artisan/

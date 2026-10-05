@@ -59,6 +59,8 @@ dependencies:
   # The integration test API remains used only by integration-test targets.
   integration_test:
     sdk: flutter
+  fluttersdk_artisan: any
+  fluttersdk_dusk: ^0.0.17
 
 dev_dependencies:
   flutter_test:
