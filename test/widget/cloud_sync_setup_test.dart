@@ -419,6 +419,33 @@ void main() {
   );
 
   testWidgets(
+    'a post-create re-authorization card title does not claim the grant expired',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.migrating,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+        profile: testProfile(
+          ProvisioningState.migrating,
+          projectRef: testProjectRef,
+        ),
+        message: postCreateReauthorizationMessage,
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      expect(find.text('Supabase authorization ended'), findsOneWidget);
+      expect(find.text('Supabase authorization expired'), findsNothing);
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets(
     'an expired Management authorization during migration offers Reauthorize Supabase and resumes after the browser returns',
     (tester) async {
       api.attempt = testAttempt(

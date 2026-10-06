@@ -831,8 +831,9 @@ export async function productionProjectCheck(r:Request,env:Env):Promise<Response
   if(!validProjectRef(projectRef))return fail("invalid_request",400);
   const d=tx(env,match[1]!);
   try{
-    const token=await d.managementToken(access);
-    if(token===null)return fail("oauth_expired",401);
+    const status=await d.managementTokenStatus(access);
+    if(!("token" in status))return tokenFailure(status);
+    const token=status.token;
     let projectExists:boolean|null=null,projectStatus="indeterminate",emailConfirmationRedirect:string|null=null;
     const compatible=await plannerCompatibility(projectRef,(path,init={})=>management(token,path,init));
     if(compatible==="missing"){projectExists=false;projectStatus="missing";}
@@ -861,7 +862,7 @@ export async function productionProjectCheck(r:Request,env:Env):Promise<Response
   }catch(error){
     const message=error instanceof Error?error.message:"";
     if(message==="expired")return fail("provisioning_expired",410);
-    if(message==="forbidden")return fail("invalid_request",401);
+    if(message==="forbidden")return fail("capability_invalid",401);
     return fail("invalid_request",400);
   }
 }

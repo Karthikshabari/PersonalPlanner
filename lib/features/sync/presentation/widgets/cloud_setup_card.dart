@@ -362,7 +362,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
       case ProvisioningUiPhase.creationAuthorizationRequired:
         return _CloudCard(
           icon: Icons.lock_clock_outlined,
-          title: 'Supabase authorization expired',
+          title: 'Supabase authorization ended',
           body:
               state.message ??
               'Reauthorize this cloud setup, then press Create project again.',

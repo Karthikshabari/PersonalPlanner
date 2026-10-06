@@ -1382,7 +1382,7 @@ describe("management authorization lifecycle", () => {
   it("reports an existing project, repairs its redirects, and releases the credential", async () => {
     let released = 0;
     const worker = {
-      managementToken: async () => "management-token",
+      managementTokenStatus: async () => ({ token: "management-token" }),
       owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => {
         released += 1;
@@ -1425,7 +1425,7 @@ describe("management authorization lifecycle", () => {
   it("keeps verification retryable when the project's Auth redirects cannot be confirmed", async () => {
     let released = 0;
     const worker = {
-      managementToken: async () => "management-token",
+      managementTokenStatus: async () => ({ token: "management-token" }),
       owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => { released += 1; return { released: true, revoked: true, unconfirmed: false }; },
     };
@@ -1450,7 +1450,7 @@ describe("management authorization lifecycle", () => {
     let released = 0;
     const calls: string[] = [];
     const worker = {
-      managementToken: async () => "management-token",
+      managementTokenStatus: async () => ({ token: "management-token" }),
       owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => {
         released += 1;
@@ -1478,7 +1478,7 @@ describe("management authorization lifecycle", () => {
 
   it("checks the exact local project without consulting a stored account mapping", async () => {
     const worker = {
-      managementToken: async () => "temporary-token",
+      managementTokenStatus: async () => ({ token: "temporary-token" }),
       releaseManagementGrant: async () => ({ released: true, revoked: false, unconfirmed: false }),
     };
     const calls: string[] = [];
@@ -1491,7 +1491,7 @@ describe("management authorization lifecycle", () => {
 
   it("never reports deletion for transport, outage, or authorization failures", async () => {
     const worker = {
-      managementToken: async () => "management-token",
+      managementTokenStatus: async () => ({ token: "management-token" }),
       owner: async () => "11111111-1111-4111-8111-111111111111",
       releaseManagementGrant: async () => ({ released: true, revoked: false, unconfirmed: true }),
     };
@@ -1521,7 +1521,7 @@ describe("management authorization lifecycle", () => {
   });
 
   it("requires a capability, a project ref, and POST", async () => {
-    const worker = { managementToken: async () => "management-token" };
+    const worker = { managementTokenStatus: async () => ({ token: "management-token" }) };
     const missingCapability = await productionProjectCheck(
       new Request(checkUrl, { method: "POST", body: JSON.stringify({ projectRef: ref }) }),
       checkEnvironment(worker) as any,
@@ -1543,12 +1543,41 @@ describe("management authorization lifecycle", () => {
     const unauthorized = await productionProjectCheck(
       checkRequest({ projectRef: ref }),
       checkEnvironment({
-        managementToken: async () => {
+        managementTokenStatus: async () => {
           throw new Error("forbidden");
         },
       }) as any,
     );
     expect(unauthorized!.status).toBe(401);
+  });
+
+  it("reports a capability mismatch on project-check as capability_invalid, not invalid_request", async () => {
+    const response = await productionProjectCheck(
+      checkRequest({ projectRef: ref }),
+      checkEnvironment({
+        managementTokenStatus: async () => {
+          throw new Error("forbidden");
+        },
+      }) as any,
+    );
+    expect(response!.status).toBe(401);
+    expect(await response!.json()).toMatchObject({ error: "capability_invalid" });
+  });
+
+  it("maps each unusable Management token status on project-check to its route error", async () => {
+    const cases: Array<[unknown, number, string]> = [
+      [{ reason: "revoked" }, 401, "oauth_revoked"],
+      [{ reason: "unavailable" }, 502, "temporarily_unavailable"],
+      [{ reason: "expired" }, 401, "oauth_expired"],
+    ];
+    for (const [status, code, error] of cases) {
+      const response = await productionProjectCheck(
+        checkRequest({ projectRef: ref }),
+        checkEnvironment({ managementTokenStatus: async () => status }) as any,
+      );
+      expect(response!.status).toBe(code);
+      expect(await response!.json()).toMatchObject({ error });
+    }
   });
 
   const authorizationUrl = `https://worker.test/v1/provisioning/transactions/${transactionId}/authorization`;
