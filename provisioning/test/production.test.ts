@@ -1842,6 +1842,94 @@ describe("management grant durability", () => {
     expect(await lapsed.tx.get(lapsed.access)).toMatchObject({ managementAuthorizationPending: false });
   });
 
+  async function transactionBeforeCreate() {
+    const { tx, read } = durableTransaction();
+    await tx.create(access, "s".repeat(48), "v".repeat(48));
+    await authorizeForCreation(tx, access);
+    await tx.selectOrganization(access, "owner-org", "personal-planner-safe-project", "k".repeat(32));
+    return { tx, read, access };
+  }
+
+  it("starts a fresh re-authorization right after a failed one, before and after project creation", async () => {
+    for (const { tx } of [await transactionAtVerifying(), await transactionBeforeCreate()]) {
+      const failed = await tx.beginManagementAuthorization(access);
+      await tx.oauthCallback(failed.state);
+      await tx.markOAuthFailure(failed.state);
+
+      const fresh = await tx.beginManagementAuthorization(access);
+      expect(fresh.state).not.toBe(failed.state);
+      expect(fresh.verifier).not.toBe(failed.verifier);
+      // The consumed state stays single-use.
+      expect(await tx.oauthCallback(failed.state)).toBeNull();
+      expect(await tx.oauthCallback(fresh.state)).not.toBeNull();
+    }
+  });
+
+  it("reports a fresh re-authorization after a failed one as pending through its token exchange", async () => {
+    const postCreate = await transactionAtVerifying();
+    const failed = await postCreate.tx.beginManagementAuthorization(access);
+    await postCreate.tx.oauthCallback(failed.state);
+    await postCreate.tx.markOAuthFailure(failed.state);
+    expect(await postCreate.tx.get(access)).toMatchObject({ managementAuthorizationPending: false });
+    const fresh = await postCreate.tx.beginManagementAuthorization(access);
+    expect(await postCreate.tx.get(access)).toMatchObject({ state: "verifying", managementAuthorizationPending: true });
+    await postCreate.tx.oauthCallback(fresh.state);
+    expect(await postCreate.tx.get(access)).toMatchObject({ managementAuthorizationPending: true });
+    await postCreate.tx.saveOAuthFromCallback(fresh.state, "fresh-token", undefined, Date.now() + 600_000);
+    expect(await postCreate.tx.get(access)).toMatchObject({ managementAuthorizationPending: false });
+
+    // A grant issued after the failed one's window lapsed must not inherit its failure.
+    const lapsed = await transactionAtVerifying();
+    const lapsedFailure = await lapsed.tx.beginManagementAuthorization(access);
+    await lapsed.tx.oauthCallback(lapsedFailure.state);
+    await lapsed.tx.markOAuthFailure(lapsedFailure.state);
+    (lapsed.tx as any).save({ ...lapsed.read()!, grantExpiresAt: Date.now() - 1 });
+    await lapsed.tx.beginManagementAuthorization(access);
+    expect(await lapsed.tx.get(access)).toMatchObject({ managementAuthorizationPending: true });
+
+    const preCreate = await transactionBeforeCreate();
+    const preCreateFailure = await preCreate.tx.beginManagementAuthorization(access);
+    await preCreate.tx.oauthCallback(preCreateFailure.state);
+    await preCreate.tx.markOAuthFailure(preCreateFailure.state);
+    await preCreate.tx.beginManagementAuthorization(access);
+    expect(await preCreate.tx.get(access)).toMatchObject({
+      state: "organization_selected",
+      creationAuthorizationPending: true,
+      managementAuthorizationPending: true,
+    });
+  });
+
+  it("after a denied re-authorization, a restarted one is reported pending on the snapshot the client polls before /migrate", async () => {
+    const { tx } = await transactionAtVerifying();
+    const env = {
+      PROVISIONING_TRANSACTION: { idFromName: (name: string) => name, get: () => tx },
+      SUPABASE_OAUTH_CLIENT_ID: "client-id",
+      SUPABASE_OAUTH_REDIRECT_URI: "https://worker.test/oauth/callback",
+    } as any;
+    const route = (path: string, method = "POST") => new Request(
+      `https://worker.test/v1/provisioning/transactions/${transactionId}${path}`,
+      { method, headers: { authorization: `Provisioning ${access}` } },
+    );
+    const stateOf = async (response: Response | null) =>
+      new URL((await response!.json() as { authorizationUrl: string }).authorizationUrl).searchParams.get("state")!.split(".")[1]!;
+
+    const first = await productionManagementAuthorization(route("/authorization/start"), env);
+    expect(first!.status).toBe(200);
+    const deniedState = await stateOf(first);
+    const denied = await productionOAuthCallback(
+      new Request(`https://worker.test/oauth/callback?state=${transactionId}.${deniedState}&error=access_denied`),
+      env,
+    );
+    expect(denied!.status).toBe(400);
+
+    const restarted = await productionManagementAuthorization(route("/authorization/start"), env);
+    expect(restarted!.status).toBe(200);
+    expect(await stateOf(restarted)).not.toBe(deniedState);
+    const snapshot = await productionFetch(route("", "GET"), env);
+    expect(snapshot!.status).toBe(200);
+    expect(await snapshot!.json()).toMatchObject({ state: "verifying", managementAuthorizationPending: true });
+  });
+
   it("refuses a management re-authorization for a record with no project", async () => {
     const { tx } = durableTransaction();
     await tx.create(access, "s".repeat(48), "v".repeat(48));

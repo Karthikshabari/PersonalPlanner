@@ -184,7 +184,7 @@ export class ProvisioningTransaction extends DurableObject<Env>{
    if(t.oauthState&&t.oauthStateHash&&t.oauthVerifier)return{state:t.oauthState,verifier:t.oauthVerifier,expiresIn:Math.ceil((t.grantExpiresAt-now)/1000)};
   }
   const grantExpiresAt=now+MANAGEMENT_WINDOW_MS;
-  const next:Tx={...t,...(preCreate?{state:"organization_selected" as const,expiresAt:now+CREATION_WINDOW_MS,tokenCiphertext:undefined,tokenExpiresAt:undefined}:{}),oauthState:state,oauthStateHash,oauthVerifier:verifier,oauthStateUsed:false,oauthPurpose:"management",oauthRevokedAt:undefined,grantExpiresAt,updatedAt:now};
+  const next:Tx={...t,...(preCreate?{state:"organization_selected" as const,expiresAt:now+CREATION_WINDOW_MS,tokenCiphertext:undefined,tokenExpiresAt:undefined}:{}),oauthState:state,oauthStateHash,oauthVerifier:verifier,oauthStateUsed:false,oauthPurpose:"management",oauthRevokedAt:undefined,oauthFailure:undefined,grantExpiresAt,updatedAt:now};
   this.save(next);
   await this.ctx.storage.setAlarm(preCreate?next.expiresAt:now<t.expiresAt?t.expiresAt:grantExpiresAt);
   return{state,verifier,expiresIn:Math.ceil((grantExpiresAt-now)/1000)};
@@ -202,8 +202,12 @@ export class ProvisioningTransaction extends DurableObject<Env>{
   * browser round-trip is still within its window. A claim is single-use.
   */
  async oauthCallback(state:string){const h=await hash(state),t=this.load();if(!t||t.oauthStateUsed||!t.oauthStateHash||!same(h,t.oauthStateHash))return null;const now=Date.now(),management=t.oauthPurpose==="management";const live=management?t.grantExpiresAt!==undefined&&now<t.grantExpiresAt:t.state==="authorization_pending"&&now<t.expiresAt;if(!live){if(t.state!=="expired"&&now>=t.expiresAt)this.expire(t);return null;}this.save({...t,oauthStateUsed:true,updatedAt:now});return{verifier:t.oauthVerifier!,management};}
- /** A claimed callback that failed is visible to polling and can retry within this transaction. */
- async markOAuthFailure(state:string){const h=await hash(state),t=this.load();if(!t||t.oauthStateUsed!==true||!t.oauthStateHash||!same(h,t.oauthStateHash))return false;this.save({...t,oauthFailure:true,oauthState:undefined,oauthVerifier:undefined,updatedAt:Date.now()});return true;}
+ /**
+  * A claimed callback that failed is visible to polling and can retry within this transaction.
+  * A failed Management re-authorization also drops its consumed state, so a fresh one can start
+  * at once; the provisioning retry still needs `oauthStateUsed` to issue its new state.
+  */
+ async markOAuthFailure(state:string){const h=await hash(state),t=this.load();if(!t||t.oauthStateUsed!==true||!t.oauthStateHash||!same(h,t.oauthStateHash))return false;this.save({...t,oauthFailure:true,oauthState:undefined,oauthVerifier:undefined,...(t.oauthPurpose==="management"?{oauthStateHash:undefined,oauthStateUsed:undefined}:{}),updatedAt:Date.now()});return true;}
  /** Issues fresh PKCE state only after the previous callback was consumed without authorization. */
  async retryProvisioningAuthorization(a:string){const t=await this.auth(a);if(t.state!=="authorization_pending"||t.oauthAuthorizedAt!==undefined||t.oauthStateUsed!==true)throw Error("invalid_request");const state=secret(),verifier=secret();this.save({...t,oauthState:state,oauthStateHash:await hash(state),oauthVerifier:verifier,oauthStateUsed:false,oauthFailure:undefined,updatedAt:Date.now()});return{state,verifier};}
  /**
