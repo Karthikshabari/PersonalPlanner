@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -11,7 +13,6 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/global_search_action.dart';
 import '../../../day_context/providers/day_context_providers.dart';
@@ -24,6 +25,8 @@ import '../../providers/review_providers.dart';
 import '../widgets/review_mode_switcher.dart';
 import '../widgets/review_mood_card.dart';
 import '../widgets/review_note_card.dart';
+import '../widgets/review_save_button.dart';
+import '../widgets/review_snack_bar.dart';
 import '../widgets/review_sections.dart';
 import '../widgets/review_status_chip.dart';
 import '../widgets/task_outcomes_card.dart';
@@ -68,65 +71,85 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       body: ColoredBox(
         color: tokens.canvas,
         child: LayoutBuilder(
-          builder: (context, constraints) => ListView(
-            controller: _scrollController,
-            padding: EdgeInsets.all(
-              constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
-            ),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: ReviewModeSwitcher(
-                          weekly: false,
-                          onChanged: (mode) {
-                            if (mode == 'overview') {
-                              openReviewPath(context, '/review/overview');
-                              return;
-                            }
-                            if (mode != 'weekly') return;
-                            ref.read(selectedWeekStartProvider.notifier).state =
-                                startOfWeek(date);
-                            if (isDesktopWidth(
-                              MediaQuery.sizeOf(context).width,
-                            )) {
-                              context.go('/review/weekly');
-                            } else {
-                              context.push('/review/weekly');
-                            }
-                          },
+          builder: (context, constraints) {
+            final listView = ListView(
+              controller: _scrollController,
+              padding: EdgeInsets.all(
+                constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
+              ),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1000),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ReviewModeSwitcher(
+                            weekly: false,
+                            onChanged: (mode) {
+                              if (mode == 'overview') {
+                                openReviewPath(context, '/review/overview');
+                                return;
+                              }
+                              if (mode != 'weekly') return;
+                              ref
+                                  .read(selectedWeekStartProvider.notifier)
+                                  .state = startOfWeek(
+                                date,
+                              );
+                              if (isDesktopWidth(
+                                MediaQuery.sizeOf(context).width,
+                              )) {
+                                context.go('/review/weekly');
+                              } else {
+                                context.push('/review/weekly');
+                              }
+                            },
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.sm),
-                      _buildDateNav(
-                        context,
-                        ref,
-                        date,
-                        dayContext?.displayLabel,
-                        reviewAsync,
-                        future,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      _buildBody(
-                        date: date,
-                        statsAsync: statsAsync,
-                        insightsAsync: insightsAsync,
-                        outcomesAsync: outcomesAsync,
-                        draft: draft,
-                        notifier: notifier,
-                        future: future,
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.sm),
+                        _buildDateNav(
+                          context,
+                          ref,
+                          date,
+                          dayContext?.displayLabel,
+                          reviewAsync,
+                          future,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        _buildBody(
+                          date: date,
+                          statsAsync: statsAsync,
+                          insightsAsync: insightsAsync,
+                          outcomesAsync: outcomesAsync,
+                          draft: draft,
+                          notifier: notifier,
+                          future: future,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  control: true,
+                ): () =>
+                    _save(date),
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  meta: true,
+                ): () =>
+                    _save(date),
+              },
+              child: Focus(autofocus: true, child: listView),
+            );
+          },
         ),
       ),
     );
@@ -160,7 +183,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
         final note = ReviewNoteCard(
           draft: draft,
           onNoteChanged: notifier.setNote,
-          showShortcutHint: false,
+          showShortcutHint: wide,
           saveButton: KeyedSubtree(
             key: _saveButtonKey,
             child: _buildSaveButton(date, draft, outcomesAsync),
@@ -276,16 +299,11 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     ReviewDraft draft,
     AsyncValue<List<TaskOutcomeRow>> outcomesAsync,
   ) {
-    return FilledButton(
-      key: const ValueKey('review-save'),
+    return ReviewSaveButton(
+      status: draft.saveStatus,
+      enabled: draft.hydrated && outcomesAsync.hasValue,
       focusNode: _saveFocusNode,
-      onPressed:
-          draft.hydrated &&
-              outcomesAsync.hasValue &&
-              draft.saveStatus != ReviewSaveStatus.saving
-          ? () => _save(date)
-          : null,
-      child: const Text('Save review'),
+      onPressed: () => _save(date),
     );
   }
 
@@ -296,9 +314,25 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
         .read(reviewDraftProvider(date).notifier)
         .save(rows: rows);
     if (!mounted) return;
-    showAppToast(
+    if (!ok) {
+      // `save` also returns false for "already saving / not hydrated"; only a
+      // real write failure gets the error message.
+      if (ref.read(reviewDraftProvider(date)).saveStatus ==
+          ReviewSaveStatus.failed) {
+        showReviewSnackBar(context, 'Couldn\'t save the review. Try again.');
+      }
+      return;
+    }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      HapticFeedback.lightImpact();
+    }
+    showReviewSnackBar(
       context,
-      ok ? 'Review saved' : 'Couldn\'t save the review. Try again.',
+      'Review saved',
+      actionLabel: 'See in Overview',
+      onAction: () {
+        if (mounted) openReviewPath(context, '/review/overview');
+      },
     );
   }
 
