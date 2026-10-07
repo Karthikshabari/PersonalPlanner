@@ -267,4 +267,83 @@ void main() {
     expect(retried?.planTitleHistory.single.previousTitle, 'Remote plan');
     await finish(tester, container);
   });
+
+  Finder reasonField() => find.byKey(const ValueKey('plan-change-reason'));
+
+  testWidgets('dialog shows an optional reason field', (tester) async {
+    final container = await buildTestContainer(tester);
+    await createAndOpen(tester, container);
+
+    await tester.enterText(titleField(), 'Read book');
+    await submitToDecision(tester);
+
+    expect(reasonField(), findsOneWidget);
+    expect(find.text('Reason (optional)'), findsOneWidget);
+    expect(find.text('Saved with the plan change.'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('plan-change-cancel')));
+    await settle(tester);
+    await finish(tester, container);
+  });
+
+  testWidgets('Preserve stores the reason with the plan change', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await createAndOpen(tester, container);
+
+    await tester.enterText(titleField(), 'Read book');
+    await submitToDecision(tester);
+    await tester.enterText(reasonField(), '  Renamed to match the ticket ');
+    await tester.tap(find.byKey(const ValueKey('plan-change-preserve')));
+    await settle(tester);
+
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved?.displayPlanChangeId, isNotNull);
+    expect(
+      saved?.planChangeReasons[saved.displayPlanChangeId],
+      'Renamed to match the ticket',
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('Replace ignores the reason', (tester) async {
+    final container = await buildTestContainer(tester);
+    final task = await createAndOpen(tester, container);
+
+    await tester.enterText(titleField(), 'Read book');
+    await submitToDecision(tester);
+    await tester.enterText(reasonField(), 'Should be ignored');
+    await tester.tap(find.byKey(const ValueKey('plan-change-replace')));
+    await settle(tester);
+
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved?.title, 'Read book');
+    expect(saved?.planChangeReasons, isEmpty);
+    await finish(tester, container);
+  });
+
+  testWidgets('Preserve without a reason stores no entry', (tester) async {
+    final container = await buildTestContainer(tester);
+    final task = await createAndOpen(tester, container);
+
+    await tester.enterText(titleField(), 'Read book');
+    await submitToDecision(tester);
+    await tester.enterText(reasonField(), '   ');
+    await tester.tap(find.byKey(const ValueKey('plan-change-preserve')));
+    await settle(tester);
+
+    final saved = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(saved?.planTitleHistory, hasLength(1));
+    expect(saved?.planChangeReasons, isEmpty);
+    await finish(tester, container);
+  });
 }

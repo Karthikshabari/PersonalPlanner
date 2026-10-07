@@ -545,6 +545,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     required Task latest,
     required _TitleSaveIntent intent,
     required bool allFuture,
+    String? reason,
   }) {
     if (intent.decision == PlanChangeDecision.replace) {
       return task.copyWith(displayPlanChangeId: null);
@@ -567,6 +568,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     return task.copyWith(
       planTitleHistory: history,
       displayPlanChangeId: event.id,
+      planChangeReasons: reason == null
+          ? task.planChangeReasons
+          : {...task.planChangeReasons, event.id: reason},
     );
   }
 
@@ -712,6 +716,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     // Creation/Inbox conversion do not use this editor path; unscheduled
     // rows are also excluded so an ordinary capture cannot gain fake history.
     PlanChangeDecision? titleDecision;
+    String? titleReason;
     _TitleSaveIntent? titleIntent;
     final titleChanged =
         !latest.isInbox &&
@@ -721,17 +726,19 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
             PlanTitleHistory.normalizeTitle(latest.title);
     if (titleChanged) {
       if (!mounted) return;
-      titleDecision = await showPlanChangeDialog(
+      final titleResult = await showPlanChangeDialog(
         context,
         previousTitle: latest.title,
         nextTitle: editedTask.title,
         allFuture: scope == RecurrenceScope.allFuture,
       );
-      if (titleDecision == null) {
+      if (titleResult == null) {
         _pendingTitleSaveIntent = null;
         if (mounted) setState(() => _saving = false);
         return;
       }
+      titleDecision = titleResult.decision;
+      titleReason = titleResult.reason;
       titleIntent = _titleSaveIntentFor(
         previousTitle: latest.title,
         nextTitle: editedTask.title,
@@ -742,6 +749,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         latest: latest,
         intent: titleIntent,
         allFuture: scope == RecurrenceScope.allFuture,
+        reason: titleReason,
       );
     }
 
@@ -887,6 +895,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     excludeTaskId: task.id,
                     planTitleChangeIntentId: titleIntent?.id,
                     planTitleChangedAt: titleIntent?.changedAt,
+                    planTitleChangeReason:
+                        titleDecision == PlanChangeDecision.preserve
+                        ? titleReason
+                        : null,
                     preservePlanTitleChange:
                         titleDecision == PlanChangeDecision.preserve,
                     clearPlanTitleDisplay:

@@ -16,6 +16,7 @@ import 'package:personal_planner/features/recurring/data/recurring_repository.da
 import 'package:personal_planner/features/recurring/domain/recurrence_service.dart';
 import 'package:personal_planner/features/templates/data/template_repository.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/features/sync/data/remote_apply.dart';
 import 'package:personal_planner/features/sync/domain/sync_models.dart';
@@ -748,4 +749,50 @@ void main() {
       await sub.cancel();
     });
   });
+
+  test(
+    'all-future preserve copies the reason to every occurrence\'s event',
+    () async {
+      final original = await rules.createRule(
+        dailyRule(startDate: DateTime(2026, 8, 1)),
+      );
+      final monday = DateTime(2026, 8, 24, 9);
+      final tuesday = DateTime(2026, 8, 25, 9);
+      final ids = <String>[];
+      for (final day in [monday, tuesday]) {
+        final id = generateDeterministicUuid(
+          'recurring-occurrence:${original.id}:${isoDateString(day)}',
+        );
+        ids.add(id);
+        await tasks.insertTask(
+          Task(
+            id: id,
+            title: 'Old title',
+            startTime: day,
+            endTime: day.add(const Duration(minutes: 30)),
+            recurringRuleId: original.id,
+            createdAt: day,
+            updatedAt: day,
+          ),
+        );
+      }
+      final intentId = generateUuidV7();
+      await recurrence.reconcileMaterializedFuture(
+        original.copyWith(taskTitle: 'New title'),
+        monday,
+        preservePlanTitleChange: true,
+        planTitleChangeIntentId: intentId,
+        planTitleChangedAt: DateTime.utc(2026, 8, 24, 8),
+        planTitleChangeReason: 'Client renamed',
+      );
+      for (final id in ids) {
+        final task = (await tasks.getTaskById(id))!;
+        final eventId = generateDeterministicUuid(
+          'plan-title-change:$intentId:$id',
+        );
+        expect(task.displayPlanChangeId, eventId);
+        expect(task.planChangeReasons, {eventId: 'Client renamed'});
+      }
+    },
+  );
 }

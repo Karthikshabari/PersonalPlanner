@@ -7,6 +7,39 @@ import '../domain/review_draft.dart';
 import '../domain/task_outcome.dart';
 import 'review_providers.dart';
 
+/// Most unsaved drafts kept in memory at once; the oldest edit is dropped first.
+const maxKeptReviewDrafts = 30;
+
+/// Holds the keep-alive links of dirty drafts, least recently edited first.
+class ReviewDraftKeeper {
+  final _links = <DateTime, KeepAliveLink>{};
+
+  bool holds(DateTime date) => _links.containsKey(date);
+
+  void hold(DateTime date, KeepAliveLink link) {
+    _links.remove(date);
+    _links[date] = link;
+    while (_links.length > maxKeptReviewDrafts) {
+      final oldest = _links.keys.first;
+      _links.remove(oldest)!.close();
+    }
+  }
+
+  void touch(DateTime date) {
+    final link = _links.remove(date);
+    if (link != null) _links[date] = link;
+  }
+
+  void release(DateTime date) => _links.remove(date)?.close();
+
+  /// The draft provider was disposed; its link is already gone.
+  void forget(DateTime date) => _links.remove(date);
+}
+
+final reviewDraftKeeperProvider = Provider<ReviewDraftKeeper>(
+  (ref) => ReviewDraftKeeper(),
+);
+
 /// Draft for one date. Callers must pass `startOfDay(date)`. Unsaved edits
 /// keep the draft alive across tab switches (D17).
 final reviewDraftProvider = NotifierProvider.autoDispose
@@ -18,15 +51,21 @@ class ReviewDraftController extends Notifier<ReviewDraft> {
   ReviewDraftController(this.date);
 
   final DateTime date;
-  KeepAliveLink? _keepAlive;
+  late final ReviewDraftKeeper _keeper;
 
   @override
   ReviewDraft build() {
-    ref.onDispose(() => _keepAlive = null);
+    _keeper = ref.read(reviewDraftKeeperProvider);
+    ref.onDispose(() => _keeper.forget(date));
     ref.listen<AsyncValue<DailyReview?>>(dailyReviewProvider(date), (_, next) {
       if (!next.hasValue) return;
-      if (state.dirty || state.saveStatus == ReviewSaveStatus.saving) return;
-      state = state.hydrateFrom(next.value);
+      if (state.saveStatus == ReviewSaveStatus.saving) return;
+      if (!state.dirty) {
+        state = state.hydrateFrom(next.value);
+        return;
+      }
+      state = state.rebase(next.value);
+      if (!state.dirty) _keeper.release(date);
     });
     final current = ref.read(dailyReviewProvider(date));
     final initial = ReviewDraft(date: date);
@@ -55,9 +94,16 @@ class ReviewDraftController extends Notifier<ReviewDraft> {
   }
 
   void _edit(ReviewDraft next) {
-    _keepAlive ??= ref.keepAlive();
-    state = next.copyWith(
-      dirty: true,
+    final edited = next.copyWith(dirty: next.differsFromSaved);
+    if (!edited.dirty) {
+      _keeper.release(date);
+    } else if (_keeper.holds(date)) {
+      _keeper.touch(date);
+    } else {
+      _keeper.hold(date, ref.keepAlive());
+    }
+    state = edited.copyWith(
+      dirty: edited.dirty,
       editVersion: state.editVersion + 1,
       saveStatus: state.saveStatus == ReviewSaveStatus.saving
           ? ReviewSaveStatus.saving
@@ -101,14 +147,19 @@ class ReviewDraftController extends Notifier<ReviewDraft> {
     }
     if (!ref.mounted) return true;
     final untouched = state.editVersion == snapshot.editVersion;
-    state = state.copyWith(
-      dirty: untouched ? false : state.dirty,
-      saveStatus: untouched ? ReviewSaveStatus.saved : ReviewSaveStatus.idle,
-    );
-    if (untouched) {
-      _keepAlive?.close();
-      _keepAlive = null;
-    }
+    state = state
+        .afterSave(
+          mood: snapshot.mood,
+          note: snapshot.note,
+          reasons: reasons,
+          adoptSaved: untouched,
+        )
+        .copyWith(
+          saveStatus: untouched
+              ? ReviewSaveStatus.saved
+              : ReviewSaveStatus.idle,
+        );
+    if (!state.dirty) _keeper.release(date);
     return true;
   }
 }

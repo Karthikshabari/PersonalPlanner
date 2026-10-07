@@ -181,6 +181,9 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
           onChanged: notifier.setMood,
         );
         final note = ReviewNoteCard(
+          // One text controller per date: a draft restored for date A must not
+          // be shown through the field state of date B.
+          key: ValueKey('review-note-card-${isoDateString(date)}'),
           draft: draft,
           onNoteChanged: notifier.setNote,
           showShortcutHint: wide,
@@ -300,7 +303,10 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     AsyncValue<List<TaskOutcomeRow>> outcomesAsync,
   ) {
     return ReviewSaveButton(
-      status: draft.saveStatus,
+      // "Saved" is only true while nothing differs from what is stored.
+      status: draft.dirty && draft.saveStatus == ReviewSaveStatus.saved
+          ? ReviewSaveStatus.idle
+          : draft.saveStatus,
       enabled: draft.hydrated && outcomesAsync.hasValue,
       focusNode: _saveFocusNode,
       onPressed: () => _save(date),

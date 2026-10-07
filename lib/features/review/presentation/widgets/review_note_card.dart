@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../domain/review_draft.dart';
 import 'review_theme.dart';
@@ -75,9 +76,38 @@ class _ReviewNoteCardState extends State<ReviewNoteCard> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               widget.saveButton,
+              if (widget.draft.dirty) const _UnsavedHint(),
               if (widget.showShortcutHint)
                 Text('Ctrl + Enter', style: reviewMonoStyle(context)),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Neutral reminder that the visible values are not stored yet.
+class _UnsavedHint extends StatelessWidget {
+  const _UnsavedHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Semantics(
+      label: 'Not saved yet',
+      container: true,
+      excludeSemantics: true,
+      child: Row(
+        key: const ValueKey('review-unsaved-hint'),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.edit_note_rounded, size: 18, color: tokens.textMuted),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            'Not saved yet',
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: tokens.textMuted),
           ),
         ],
       ),

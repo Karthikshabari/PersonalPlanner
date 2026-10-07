@@ -79,6 +79,7 @@ class RecurrenceService {
     String? excludeTaskId,
     String? planTitleChangeIntentId,
     DateTime? planTitleChangedAt,
+    String? planTitleChangeReason,
     bool preservePlanTitleChange = false,
     bool clearPlanTitleDisplay = false,
   }) async {
@@ -138,6 +139,7 @@ class RecurrenceService {
           PlanTitleHistory.normalizeTitle(current.title) !=
           PlanTitleHistory.normalizeTitle(rule.taskTitle);
       var history = current.planTitleHistory;
+      var reasons = current.planChangeReasons;
       var displayPlanChangeId = current.displayPlanChangeId;
       if (titleChanged && preservePlanTitleChange) {
         final intentId = planTitleChangeIntentId;
@@ -157,6 +159,9 @@ class RecurrenceService {
         );
         history = PlanTitleHistory.appendOrRestore(history, event);
         displayPlanChangeId = event.id;
+        if (planTitleChangeReason != null) {
+          reasons = {...reasons, event.id: planTitleChangeReason};
+        }
       } else if (titleChanged && clearPlanTitleDisplay) {
         displayPlanChangeId = null;
       }
@@ -169,6 +174,7 @@ class RecurrenceService {
         startTime: start,
         endTime: start.add(Duration(minutes: rule.durationMin)),
         planTitleHistory: history,
+        planChangeReasons: reasons,
         displayPlanChangeId: displayPlanChangeId,
         recurrenceRemovalReason: null,
       );
