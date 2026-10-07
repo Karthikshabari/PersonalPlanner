@@ -39,6 +39,9 @@ abstract class Task with _$Task {
     String? missedAt,
     @Default(<PlanTitleChange>[]) List<PlanTitleChange> planTitleHistory,
     String? displayPlanChangeId,
+
+    /// Reasons typed in the plan-change dialog, keyed by PlanTitleChange ID.
+    @Default(<String, String>{}) Map<String, String> planChangeReasons,
     required DateTime createdAt,
     required DateTime updatedAt,
     DateTime? deletedAt,

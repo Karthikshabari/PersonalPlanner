@@ -16,6 +16,12 @@ abstract class DailyReview with _$DailyReview {
     int? planningAccuracyRating,
     @Default([]) List<String> wins,
     @Default([]) List<String> improvements,
+
+    /// 1 = Good … 4 = Legendary. Null when the review predates moods.
+    int? mood,
+
+    /// Reason per task ID for tasks not completed that day.
+    @Default(<String, String>{}) Map<String, String> taskReasons,
     required DateTime createdAt,
     required DateTime updatedAt,
     DateTime? deletedAt,

@@ -200,7 +200,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -251,6 +251,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 10) {
         await _migrateToV10(m);
+      }
+      if (from < 11) {
+        await _migrateToV11(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -609,6 +612,7 @@ class AppDatabase extends _$AppDatabase {
           tasks.dueDate,
           tasks.planTitleHistoryJson,
           tasks.displayPlanChangeId,
+          tasks.planChangeReasonsJson,
           tasks.recurrenceRemovalReason,
           tasks.serverVersion,
         ],
@@ -652,7 +656,14 @@ class AppDatabase extends _$AppDatabase {
     }
     if (originalVersion >= 4) {
       await m.alterTable(
-        TableMigration(dailyReviews, newColumns: [dailyReviews.serverVersion]),
+        TableMigration(
+          dailyReviews,
+          newColumns: [
+            dailyReviews.serverVersion,
+            dailyReviews.mood,
+            dailyReviews.taskReasonsJson,
+          ],
+        ),
       );
       await m.alterTable(
         TableMigration(
@@ -894,6 +905,7 @@ class AppDatabase extends _$AppDatabase {
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.manualActualSet);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planChangeReasonsJson);
     await _addColumnIfMissing(
       m,
       'timer_sessions',
@@ -931,6 +943,24 @@ class AppDatabase extends _$AppDatabase {
     // index is keyed by. alterTable restored the FTS triggers from their
     // stored SQL, so re-index in place and keep the released objects intact.
     await _reindexFtsAfterTaskRebuild();
+  }
+
+  /// Schema-v11 adds the review redesign fields. All three are additive and
+  /// defaulted, so every existing row stays valid.
+  Future<void> _migrateToV11(Migrator m) async {
+    await _addColumnIfMissing(
+      m,
+      'daily_reviews',
+      dailyReviews,
+      dailyReviews.mood,
+    );
+    await _addColumnIfMissing(
+      m,
+      'daily_reviews',
+      dailyReviews,
+      dailyReviews.taskReasonsJson,
+    );
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.planChangeReasonsJson);
   }
 
   /// Re-populates `tasks_fts` with exactly the rows its installed triggers

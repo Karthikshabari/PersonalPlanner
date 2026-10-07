@@ -249,6 +249,7 @@ class InboxRepository {
           manualDurationAdjustmentMin: 0,
           manualActualSet: false,
           planTitleHistory: const [],
+          planChangeReasons: const {},
           displayPlanChangeId: null,
           status: TaskStatus.planned,
           recurringRuleId: original.recurringRuleId,

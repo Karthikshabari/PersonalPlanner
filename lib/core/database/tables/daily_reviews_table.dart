@@ -5,6 +5,7 @@ import '../converters.dart';
 @DataClassName('DailyReviewRow')
 class DailyReviews extends Table {
   TextColumn get id => text()();
+
   /// Local calendar day as `yyyy-MM-dd`; unique so a date has at most one
   /// review (architecture.md §3 DAILY_REVIEWS).
   TextColumn get date => text()();
@@ -14,6 +15,16 @@ class DailyReviews extends Table {
   IntColumn get planningAccuracyRating => integer().nullable()();
   TextColumn get winsJson => text().nullable()();
   TextColumn get improvementsJson => text().nullable()();
+
+  /// Mood of the day, 1 = Good … 4 = Legendary. Null for reviews saved
+  /// before the review redesign.
+  IntColumn get mood => integer().nullable().customConstraint(
+    'CHECK (mood IS NULL OR mood BETWEEN 1 AND 4)',
+  )();
+
+  /// JSON object `{task_id: reason}` written by Save review.
+  TextColumn get taskReasonsJson => text().withDefault(const Constant('{}'))();
+
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
   TextColumn get deletedAt =>
@@ -27,8 +38,8 @@ class DailyReviews extends Table {
 
   @override
   List<String> get customConstraints => const [
-        'CHECK (energy_level IS NULL OR energy_level BETWEEN 1 AND 5)',
-        'CHECK (productivity_rating IS NULL OR productivity_rating BETWEEN 1 AND 5)',
-        'CHECK (planning_accuracy_rating IS NULL OR planning_accuracy_rating BETWEEN 1 AND 5)',
-      ];
+    'CHECK (energy_level IS NULL OR energy_level BETWEEN 1 AND 5)',
+    'CHECK (productivity_rating IS NULL OR productivity_rating BETWEEN 1 AND 5)',
+    'CHECK (planning_accuracy_rating IS NULL OR planning_accuracy_rating BETWEEN 1 AND 5)',
+  ];
 }

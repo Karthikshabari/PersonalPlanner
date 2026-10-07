@@ -42,6 +42,11 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
           .toList() ??
       const <PlanTitleChange>[],
   displayPlanChangeId: json['displayPlanChangeId'] as String?,
+  planChangeReasons:
+      (json['planChangeReasons'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ) ??
+      const <String, String>{},
   createdAt: DateTime.parse(json['createdAt'] as String),
   updatedAt: DateTime.parse(json['updatedAt'] as String),
   deletedAt: json['deletedAt'] == null
@@ -73,6 +78,7 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'missedAt': instance.missedAt,
   'planTitleHistory': instance.planTitleHistory,
   'displayPlanChangeId': instance.displayPlanChangeId,
+  'planChangeReasons': instance.planChangeReasons,
   'createdAt': instance.createdAt.toIso8601String(),
   'updatedAt': instance.updatedAt.toIso8601String(),
   'deletedAt': instance.deletedAt?.toIso8601String(),

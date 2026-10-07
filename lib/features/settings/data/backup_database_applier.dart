@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/json_list_utils.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
 import '../../task_editor/domain/plan_title_history.dart';
@@ -215,6 +216,11 @@ class BackupDatabaseApplier {
                 displayPlanChangeId: Value(
                   BackupValidator.nullableId(row, 'display_plan_change_id'),
                 ),
+                planChangeReasonsJson: Value(
+                  JsonMapUtils.encode(
+                    BackupValidator.reasonMap(row, 'plan_change_reasons'),
+                  ),
+                ),
                 createdAt: BackupValidator.dateTime(row, 'created_at'),
                 updatedAt: BackupValidator.dateTime(row, 'updated_at'),
                 deletedAt: Value(
@@ -359,6 +365,12 @@ class BackupDatabaseApplier {
                 ),
                 winsJson: Value(_stringListJson(row, 'wins')),
                 improvementsJson: Value(_stringListJson(row, 'improvements')),
+                mood: Value(BackupValidator.mood(row, 'mood')),
+                taskReasonsJson: Value(
+                  JsonMapUtils.encode(
+                    BackupValidator.reasonMap(row, 'task_reasons'),
+                  ),
+                ),
                 createdAt: BackupValidator.dateTime(row, 'created_at'),
                 updatedAt: BackupValidator.dateTime(row, 'updated_at'),
                 deletedAt: Value(

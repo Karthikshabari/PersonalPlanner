@@ -2036,6 +2036,18 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _planChangeReasonsJsonMeta =
+      const VerificationMeta('planChangeReasonsJson');
+  @override
+  late final GeneratedColumn<String> planChangeReasonsJson =
+      GeneratedColumn<String>(
+        'plan_change_reasons_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('{}'),
+      );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -2123,6 +2135,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     missedAt,
     planTitleHistoryJson,
     displayPlanChangeId,
+    planChangeReasonsJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2305,6 +2318,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         ),
       );
     }
+    if (data.containsKey('plan_change_reasons_json')) {
+      context.handle(
+        _planChangeReasonsJsonMeta,
+        planChangeReasonsJson.isAcceptableOrUnknown(
+          data['plan_change_reasons_json']!,
+          _planChangeReasonsJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -2431,6 +2453,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.string,
         data['${effectivePrefix}display_plan_change_id'],
       ),
+      planChangeReasonsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}plan_change_reasons_json'],
+      )!,
       createdAt: $TasksTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -2509,6 +2535,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final String? missedAt;
   final String planTitleHistoryJson;
   final String? displayPlanChangeId;
+
+  /// JSON object `{plan_change_id: reason}`; keys are PlanTitleChange IDs.
+  final String planChangeReasonsJson;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -2541,6 +2570,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     this.missedAt,
     required this.planTitleHistoryJson,
     this.displayPlanChangeId,
+    required this.planChangeReasonsJson,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -2610,6 +2640,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     if (!nullToAbsent || displayPlanChangeId != null) {
       map['display_plan_change_id'] = Variable<String>(displayPlanChangeId);
     }
+    map['plan_change_reasons_json'] = Variable<String>(planChangeReasonsJson);
     {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt),
@@ -2686,6 +2717,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       displayPlanChangeId: displayPlanChangeId == null && nullToAbsent
           ? const Value.absent()
           : Value(displayPlanChangeId),
+      planChangeReasonsJson: Value(planChangeReasonsJson),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -2742,6 +2774,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       displayPlanChangeId: serializer.fromJson<String?>(
         json['displayPlanChangeId'],
       ),
+      planChangeReasonsJson: serializer.fromJson<String>(
+        json['planChangeReasonsJson'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -2781,6 +2816,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'missedAt': serializer.toJson<String?>(missedAt),
       'planTitleHistoryJson': serializer.toJson<String>(planTitleHistoryJson),
       'displayPlanChangeId': serializer.toJson<String?>(displayPlanChangeId),
+      'planChangeReasonsJson': serializer.toJson<String>(planChangeReasonsJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -2814,6 +2850,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     Value<String?> missedAt = const Value.absent(),
     String? planTitleHistoryJson,
     Value<String?> displayPlanChangeId = const Value.absent(),
+    String? planChangeReasonsJson,
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -2859,6 +2896,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     displayPlanChangeId: displayPlanChangeId.present
         ? displayPlanChangeId.value
         : this.displayPlanChangeId,
+    planChangeReasonsJson: planChangeReasonsJson ?? this.planChangeReasonsJson,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -2919,6 +2957,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       displayPlanChangeId: data.displayPlanChangeId.present
           ? data.displayPlanChangeId.value
           : this.displayPlanChangeId,
+      planChangeReasonsJson: data.planChangeReasonsJson.present
+          ? data.planChangeReasonsJson.value
+          : this.planChangeReasonsJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -2958,6 +2999,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('missedAt: $missedAt, ')
           ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
+          ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -2993,6 +3035,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     missedAt,
     planTitleHistoryJson,
     displayPlanChangeId,
+    planChangeReasonsJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -3028,6 +3071,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.missedAt == this.missedAt &&
           other.planTitleHistoryJson == this.planTitleHistoryJson &&
           other.displayPlanChangeId == this.displayPlanChangeId &&
+          other.planChangeReasonsJson == this.planChangeReasonsJson &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -3060,6 +3104,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<String?> missedAt;
   final Value<String> planTitleHistoryJson;
   final Value<String?> displayPlanChangeId;
+  final Value<String> planChangeReasonsJson;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -3091,6 +3136,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.missedAt = const Value.absent(),
     this.planTitleHistoryJson = const Value.absent(),
     this.displayPlanChangeId = const Value.absent(),
+    this.planChangeReasonsJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3123,6 +3169,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.missedAt = const Value.absent(),
     this.planTitleHistoryJson = const Value.absent(),
     this.displayPlanChangeId = const Value.absent(),
+    this.planChangeReasonsJson = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -3158,6 +3205,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? missedAt,
     Expression<String>? planTitleHistoryJson,
     Expression<String>? displayPlanChangeId,
+    Expression<String>? planChangeReasonsJson,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -3196,6 +3244,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         'plan_title_history_json': planTitleHistoryJson,
       if (displayPlanChangeId != null)
         'display_plan_change_id': displayPlanChangeId,
+      if (planChangeReasonsJson != null)
+        'plan_change_reasons_json': planChangeReasonsJson,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -3230,6 +3280,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<String?>? missedAt,
     Value<String>? planTitleHistoryJson,
     Value<String?>? displayPlanChangeId,
+    Value<String>? planChangeReasonsJson,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -3264,6 +3315,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       missedAt: missedAt ?? this.missedAt,
       planTitleHistoryJson: planTitleHistoryJson ?? this.planTitleHistoryJson,
       displayPlanChangeId: displayPlanChangeId ?? this.displayPlanChangeId,
+      planChangeReasonsJson:
+          planChangeReasonsJson ?? this.planChangeReasonsJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -3358,6 +3411,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         displayPlanChangeId.value,
       );
     }
+    if (planChangeReasonsJson.present) {
+      map['plan_change_reasons_json'] = Variable<String>(
+        planChangeReasonsJson.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt.value),
@@ -3414,6 +3472,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('missedAt: $missedAt, ')
           ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
+          ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -6841,6 +6900,28 @@ class $DailyReviewsTable extends DailyReviews
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _moodMeta = const VerificationMeta('mood');
+  @override
+  late final GeneratedColumn<int> mood = GeneratedColumn<int>(
+    'mood',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'CHECK (mood IS NULL OR mood BETWEEN 1 AND 4)',
+  );
+  static const VerificationMeta _taskReasonsJsonMeta = const VerificationMeta(
+    'taskReasonsJson',
+  );
+  @override
+  late final GeneratedColumn<String> taskReasonsJson = GeneratedColumn<String>(
+    'task_reasons_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -6913,6 +6994,8 @@ class $DailyReviewsTable extends DailyReviews
     planningAccuracyRating,
     winsJson,
     improvementsJson,
+    mood,
+    taskReasonsJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -6993,6 +7076,21 @@ class $DailyReviewsTable extends DailyReviews
         ),
       );
     }
+    if (data.containsKey('mood')) {
+      context.handle(
+        _moodMeta,
+        mood.isAcceptableOrUnknown(data['mood']!, _moodMeta),
+      );
+    }
+    if (data.containsKey('task_reasons_json')) {
+      context.handle(
+        _taskReasonsJsonMeta,
+        taskReasonsJson.isAcceptableOrUnknown(
+          data['task_reasons_json']!,
+          _taskReasonsJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -7055,6 +7153,14 @@ class $DailyReviewsTable extends DailyReviews
         DriftSqlType.string,
         data['${effectivePrefix}improvements_json'],
       ),
+      mood: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mood'],
+      ),
+      taskReasonsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_reasons_json'],
+      )!,
       createdAt: $DailyReviewsTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -7113,6 +7219,13 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
   final int? planningAccuracyRating;
   final String? winsJson;
   final String? improvementsJson;
+
+  /// Mood of the day, 1 = Good … 4 = Legendary. Null for reviews saved
+  /// before the review redesign.
+  final int? mood;
+
+  /// JSON object `{task_id: reason}` written by Save review.
+  final String taskReasonsJson;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -7128,6 +7241,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     this.planningAccuracyRating,
     this.winsJson,
     this.improvementsJson,
+    this.mood,
+    required this.taskReasonsJson,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -7158,6 +7273,10 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     if (!nullToAbsent || improvementsJson != null) {
       map['improvements_json'] = Variable<String>(improvementsJson);
     }
+    if (!nullToAbsent || mood != null) {
+      map['mood'] = Variable<int>(mood);
+    }
+    map['task_reasons_json'] = Variable<String>(taskReasonsJson);
     {
       map['created_at'] = Variable<String>(
         $DailyReviewsTable.$convertercreatedAt.toSql(createdAt),
@@ -7203,6 +7322,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       improvementsJson: improvementsJson == null && nullToAbsent
           ? const Value.absent()
           : Value(improvementsJson),
+      mood: mood == null && nullToAbsent ? const Value.absent() : Value(mood),
+      taskReasonsJson: Value(taskReasonsJson),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -7232,6 +7353,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       ),
       winsJson: serializer.fromJson<String?>(json['winsJson']),
       improvementsJson: serializer.fromJson<String?>(json['improvementsJson']),
+      mood: serializer.fromJson<int?>(json['mood']),
+      taskReasonsJson: serializer.fromJson<String>(json['taskReasonsJson']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -7252,6 +7375,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       'planningAccuracyRating': serializer.toJson<int?>(planningAccuracyRating),
       'winsJson': serializer.toJson<String?>(winsJson),
       'improvementsJson': serializer.toJson<String?>(improvementsJson),
+      'mood': serializer.toJson<int?>(mood),
+      'taskReasonsJson': serializer.toJson<String>(taskReasonsJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -7270,6 +7395,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     Value<int?> planningAccuracyRating = const Value.absent(),
     Value<String?> winsJson = const Value.absent(),
     Value<String?> improvementsJson = const Value.absent(),
+    Value<int?> mood = const Value.absent(),
+    String? taskReasonsJson,
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -7291,6 +7418,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     improvementsJson: improvementsJson.present
         ? improvementsJson.value
         : this.improvementsJson,
+    mood: mood.present ? mood.value : this.mood,
+    taskReasonsJson: taskReasonsJson ?? this.taskReasonsJson,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -7320,6 +7449,10 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
       improvementsJson: data.improvementsJson.present
           ? data.improvementsJson.value
           : this.improvementsJson,
+      mood: data.mood.present ? data.mood.value : this.mood,
+      taskReasonsJson: data.taskReasonsJson.present
+          ? data.taskReasonsJson.value
+          : this.taskReasonsJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -7344,6 +7477,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           ..write('planningAccuracyRating: $planningAccuracyRating, ')
           ..write('winsJson: $winsJson, ')
           ..write('improvementsJson: $improvementsJson, ')
+          ..write('mood: $mood, ')
+          ..write('taskReasonsJson: $taskReasonsJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -7364,6 +7499,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
     planningAccuracyRating,
     winsJson,
     improvementsJson,
+    mood,
+    taskReasonsJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -7383,6 +7520,8 @@ class DailyReviewRow extends DataClass implements Insertable<DailyReviewRow> {
           other.planningAccuracyRating == this.planningAccuracyRating &&
           other.winsJson == this.winsJson &&
           other.improvementsJson == this.improvementsJson &&
+          other.mood == this.mood &&
+          other.taskReasonsJson == this.taskReasonsJson &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -7400,6 +7539,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
   final Value<int?> planningAccuracyRating;
   final Value<String?> winsJson;
   final Value<String?> improvementsJson;
+  final Value<int?> mood;
+  final Value<String> taskReasonsJson;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -7416,6 +7557,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     this.planningAccuracyRating = const Value.absent(),
     this.winsJson = const Value.absent(),
     this.improvementsJson = const Value.absent(),
+    this.mood = const Value.absent(),
+    this.taskReasonsJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -7433,6 +7576,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     this.planningAccuracyRating = const Value.absent(),
     this.winsJson = const Value.absent(),
     this.improvementsJson = const Value.absent(),
+    this.mood = const Value.absent(),
+    this.taskReasonsJson = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -7453,6 +7598,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     Expression<int>? planningAccuracyRating,
     Expression<String>? winsJson,
     Expression<String>? improvementsJson,
+    Expression<int>? mood,
+    Expression<String>? taskReasonsJson,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -7471,6 +7618,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
         'planning_accuracy_rating': planningAccuracyRating,
       if (winsJson != null) 'wins_json': winsJson,
       if (improvementsJson != null) 'improvements_json': improvementsJson,
+      if (mood != null) 'mood': mood,
+      if (taskReasonsJson != null) 'task_reasons_json': taskReasonsJson,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -7490,6 +7639,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     Value<int?>? planningAccuracyRating,
     Value<String?>? winsJson,
     Value<String?>? improvementsJson,
+    Value<int?>? mood,
+    Value<String>? taskReasonsJson,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -7508,6 +7659,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
           planningAccuracyRating ?? this.planningAccuracyRating,
       winsJson: winsJson ?? this.winsJson,
       improvementsJson: improvementsJson ?? this.improvementsJson,
+      mood: mood ?? this.mood,
+      taskReasonsJson: taskReasonsJson ?? this.taskReasonsJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -7546,6 +7699,12 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
     }
     if (improvementsJson.present) {
       map['improvements_json'] = Variable<String>(improvementsJson.value);
+    }
+    if (mood.present) {
+      map['mood'] = Variable<int>(mood.value);
+    }
+    if (taskReasonsJson.present) {
+      map['task_reasons_json'] = Variable<String>(taskReasonsJson.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
@@ -7588,6 +7747,8 @@ class DailyReviewsCompanion extends UpdateCompanion<DailyReviewRow> {
           ..write('planningAccuracyRating: $planningAccuracyRating, ')
           ..write('winsJson: $winsJson, ')
           ..write('improvementsJson: $improvementsJson, ')
+          ..write('mood: $mood, ')
+          ..write('taskReasonsJson: $taskReasonsJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -13384,6 +13545,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<String?> missedAt,
       Value<String> planTitleHistoryJson,
       Value<String?> displayPlanChangeId,
+      Value<String> planChangeReasonsJson,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -13417,6 +13579,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<String?> missedAt,
       Value<String> planTitleHistoryJson,
       Value<String?> displayPlanChangeId,
+      Value<String> planChangeReasonsJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -13659,6 +13822,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<String> get displayPlanChangeId => $composableBuilder(
     column: $table.displayPlanChangeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get planChangeReasonsJson => $composableBuilder(
+    column: $table.planChangeReasonsJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13967,6 +14135,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get planChangeReasonsJson => $composableBuilder(
+    column: $table.planChangeReasonsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14171,6 +14344,11 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<String> get displayPlanChangeId => $composableBuilder(
     column: $table.displayPlanChangeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get planChangeReasonsJson => $composableBuilder(
+    column: $table.planChangeReasonsJson,
     builder: (column) => column,
   );
 
@@ -14423,6 +14601,7 @@ class $$TasksTableTableManager
                 Value<String?> missedAt = const Value.absent(),
                 Value<String> planTitleHistoryJson = const Value.absent(),
                 Value<String?> displayPlanChangeId = const Value.absent(),
+                Value<String> planChangeReasonsJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14454,6 +14633,7 @@ class $$TasksTableTableManager
                 missedAt: missedAt,
                 planTitleHistoryJson: planTitleHistoryJson,
                 displayPlanChangeId: displayPlanChangeId,
+                planChangeReasonsJson: planChangeReasonsJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -14487,6 +14667,7 @@ class $$TasksTableTableManager
                 Value<String?> missedAt = const Value.absent(),
                 Value<String> planTitleHistoryJson = const Value.absent(),
                 Value<String?> displayPlanChangeId = const Value.absent(),
+                Value<String> planChangeReasonsJson = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14518,6 +14699,7 @@ class $$TasksTableTableManager
                 missedAt: missedAt,
                 planTitleHistoryJson: planTitleHistoryJson,
                 displayPlanChangeId: displayPlanChangeId,
+                planChangeReasonsJson: planChangeReasonsJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -16918,6 +17100,8 @@ typedef $$DailyReviewsTableCreateCompanionBuilder =
       Value<int?> planningAccuracyRating,
       Value<String?> winsJson,
       Value<String?> improvementsJson,
+      Value<int?> mood,
+      Value<String> taskReasonsJson,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -16936,6 +17120,8 @@ typedef $$DailyReviewsTableUpdateCompanionBuilder =
       Value<int?> planningAccuracyRating,
       Value<String?> winsJson,
       Value<String?> improvementsJson,
+      Value<int?> mood,
+      Value<String> taskReasonsJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -16991,6 +17177,16 @@ class $$DailyReviewsTableFilterComposer
 
   ColumnFilters<String> get improvementsJson => $composableBuilder(
     column: $table.improvementsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mood => $composableBuilder(
+    column: $table.mood,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskReasonsJson => $composableBuilder(
+    column: $table.taskReasonsJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -17077,6 +17273,16 @@ class $$DailyReviewsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get mood => $composableBuilder(
+    column: $table.mood,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskReasonsJson => $composableBuilder(
+    column: $table.taskReasonsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -17151,6 +17357,14 @@ class $$DailyReviewsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get mood =>
+      $composableBuilder(column: $table.mood, builder: (column) => column);
+
+  GeneratedColumn<String> get taskReasonsJson => $composableBuilder(
+    column: $table.taskReasonsJson,
+    builder: (column) => column,
+  );
+
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -17213,6 +17427,8 @@ class $$DailyReviewsTableTableManager
                 Value<int?> planningAccuracyRating = const Value.absent(),
                 Value<String?> winsJson = const Value.absent(),
                 Value<String?> improvementsJson = const Value.absent(),
+                Value<int?> mood = const Value.absent(),
+                Value<String> taskReasonsJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -17229,6 +17445,8 @@ class $$DailyReviewsTableTableManager
                 planningAccuracyRating: planningAccuracyRating,
                 winsJson: winsJson,
                 improvementsJson: improvementsJson,
+                mood: mood,
+                taskReasonsJson: taskReasonsJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -17247,6 +17465,8 @@ class $$DailyReviewsTableTableManager
                 Value<int?> planningAccuracyRating = const Value.absent(),
                 Value<String?> winsJson = const Value.absent(),
                 Value<String?> improvementsJson = const Value.absent(),
+                Value<int?> mood = const Value.absent(),
+                Value<String> taskReasonsJson = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -17263,6 +17483,8 @@ class $$DailyReviewsTableTableManager
                 planningAccuracyRating: planningAccuracyRating,
                 winsJson: winsJson,
                 improvementsJson: improvementsJson,
+                mood: mood,
+                taskReasonsJson: taskReasonsJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,

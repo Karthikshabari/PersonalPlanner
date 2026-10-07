@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:personal_planner/features/settings/data/backup_format.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dart';
+import 'package:personal_planner/core/utils/json_map_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
@@ -65,6 +66,7 @@ class BackupValidator {
       'missed_at',
       'plan_title_history',
       'display_plan_change_id',
+      'plan_change_reasons',
       'created_at',
       'updated_at',
       'deleted_at',
@@ -136,6 +138,8 @@ class BackupValidator {
       'planning_accuracy_rating',
       'wins',
       'improvements',
+      'mood',
+      'task_reasons',
       'created_at',
       'updated_at',
       'deleted_at',
@@ -192,7 +196,10 @@ class BackupValidator {
           'due_date',
           'plan_title_history',
           'display_plan_change_id',
+          'plan_change_reasons',
         });
+      } else if (table == 'daily_reviews') {
+        expected.removeAll(const {'mood', 'task_reasons'});
       } else if (table == 'timer_sessions') {
         expected.removeAll(const {
           'state',
@@ -406,6 +413,23 @@ class BackupValidator {
     return value;
   }
 
+  static int? mood(Map<String, dynamic> row, String field) {
+    if (row[field] == null) return null;
+    final value = integer(row, field);
+    if (value < 1 || value > 4) {
+      throw BackupValidationException('$field is out of range.');
+    }
+    return value;
+  }
+
+  static Map<String, String> reasonMap(Map<String, dynamic> row, String field) {
+    try {
+      return JsonMapUtils.parseReasons(row[field]);
+    } on FormatException catch (error) {
+      throw BackupValidationException('$field: ${error.message}');
+    }
+  }
+
   static List<String> stringList(Map<String, dynamic> row, String field) {
     final value = row[field];
     if (value is! List || value.any((item) => item is! String)) {
@@ -513,6 +537,7 @@ class BackupValidator {
         } on FormatException catch (error) {
           throw BackupValidationException(error.message);
         }
+        reasonMap(row, 'plan_change_reasons');
         if (boolean(row, 'is_inbox') && (start != null || end != null)) {
           throw const BackupValidationException(
             'Inbox tasks must not have a schedule.',
@@ -580,6 +605,8 @@ class BackupValidator {
         rating(row, 'planning_accuracy_rating');
         stringList(row, 'wins');
         stringList(row, 'improvements');
+        mood(row, 'mood');
+        reasonMap(row, 'task_reasons');
         _validateAuditDates(row);
       case 'weekly_reviews':
         id(row, 'id');

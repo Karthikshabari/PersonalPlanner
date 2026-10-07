@@ -29,6 +29,7 @@ class ReviewPlanChange {
       kind: ReviewPlanChangeKind.title,
       oldValue: event.previousTitle,
       newValue: event.newTitle,
+      reason: task.planChangeReasons[event.id],
     );
   }
 }

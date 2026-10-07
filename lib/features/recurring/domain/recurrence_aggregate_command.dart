@@ -698,6 +698,7 @@ class RecurrenceAggregateCommand implements SchedulingCommand {
       dueDate: const Value(null),
       missedAt: const Value(null),
       planTitleHistoryJson: '[]',
+      planChangeReasonsJson: '{}',
       displayPlanChangeId: const Value(null),
       deletedAt: const Value(null),
     );

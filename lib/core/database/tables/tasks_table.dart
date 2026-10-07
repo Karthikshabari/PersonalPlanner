@@ -51,6 +51,10 @@ class Tasks extends Table {
   TextColumn get planTitleHistoryJson =>
       text().withDefault(const Constant('[]'))();
   TextColumn get displayPlanChangeId => text().nullable()();
+
+  /// JSON object `{plan_change_id: reason}`; keys are PlanTitleChange IDs.
+  TextColumn get planChangeReasonsJson =>
+      text().withDefault(const Constant('{}'))();
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
   TextColumn get deletedAt =>

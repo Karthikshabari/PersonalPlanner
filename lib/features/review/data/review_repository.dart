@@ -6,6 +6,7 @@ import '../../../core/models/daily_review.dart';
 import '../../../core/models/weekly_review.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/json_list_utils.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 
 /// CRUD for daily and weekly reviews (planner.md Chunk 5 #4).
@@ -26,6 +27,7 @@ class ReviewRepository {
     final dateIso = isoDateString(startOfDay(review.date));
     final existing = await _dao.getAnyDailyReviewByDate(dateIso);
     final now = DateTime.now();
+    JsonMapUtils.parseReasons(review.taskReasons);
     final effective = review.copyWith(
       id:
           existing?.id ??
@@ -36,6 +38,7 @@ class ReviewRepository {
       energyLevel: _clampRating(review.energyLevel),
       productivityRating: _clampRating(review.productivityRating),
       planningAccuracyRating: _clampRating(review.planningAccuracyRating),
+      mood: review.mood?.clamp(1, 4),
       updatedAt: now,
       createdAt: existing?.createdAt ?? now,
       deletedAt: null,
@@ -51,6 +54,36 @@ class ReviewRepository {
       await _db.statsDao.invalidateForDate(dateIso);
     });
     return effective;
+  }
+
+  /// Saves the redesigned review form in one row write: mood, note and the
+  /// reasons map. Legacy rating and list fields of an existing review are
+  /// preserved. `updated_at` doubles as the reviewed-at timestamp.
+  Future<DailyReview> saveReviewDraft({
+    required DateTime date,
+    required int mood,
+    required String note,
+    required Map<String, String> taskReasons,
+  }) async {
+    final existing = await getReviewForDate(date);
+    final trimmed = note.trim();
+    final now = DateTime.now();
+    return saveDailyReview(
+      DailyReview(
+        id: existing?.id ?? '',
+        date: startOfDay(date),
+        reflection: trimmed.isEmpty ? null : trimmed,
+        energyLevel: existing?.energyLevel,
+        productivityRating: existing?.productivityRating,
+        planningAccuracyRating: existing?.planningAccuracyRating,
+        wins: existing?.wins ?? const [],
+        improvements: existing?.improvements ?? const [],
+        mood: mood,
+        taskReasons: taskReasons,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      ),
+    );
   }
 
   Stream<DailyReview?> watchReviewForDate(DateTime date) => _dao
@@ -149,6 +182,8 @@ class ReviewRepository {
     planningAccuracyRating: row.planningAccuracyRating,
     wins: JsonListUtils.decode(row.winsJson),
     improvements: JsonListUtils.decode(row.improvementsJson),
+    mood: row.mood,
+    taskReasons: JsonMapUtils.decode(row.taskReasonsJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -166,6 +201,8 @@ class ReviewRepository {
         improvementsJson: Value(
           r.improvements.isEmpty ? null : JsonListUtils.encode(r.improvements),
         ),
+        mood: Value(r.mood),
+        taskReasonsJson: Value(JsonMapUtils.encode(r.taskReasons)),
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         deletedAt: Value(r.deletedAt),
@@ -188,6 +225,8 @@ class ReviewRepository {
     improvementsJson: r.improvements.isEmpty
         ? null
         : JsonListUtils.encode(r.improvements),
+    mood: r.mood,
+    taskReasonsJson: JsonMapUtils.encode(r.taskReasons),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     deletedAt: r.deletedAt,

@@ -15,7 +15,9 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$DailyReview {
 
- String get id; DateTime get date; String? get reflection; int? get energyLevel; int? get productivityRating; int? get planningAccuracyRating; List<String> get wins; List<String> get improvements; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
+ String get id; DateTime get date; String? get reflection; int? get energyLevel; int? get productivityRating; int? get planningAccuracyRating; List<String> get wins; List<String> get improvements;/// 1 = Good … 4 = Legendary. Null when the review predates moods.
+ int? get mood;/// Reason per task ID for tasks not completed that day.
+ Map<String, String> get taskReasons; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
 /// Create a copy of DailyReview
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +30,16 @@ $DailyReviewCopyWith<DailyReview> get copyWith => _$DailyReviewCopyWithImpl<Dail
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DailyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.date, date) || other.date == date)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyRating, planningAccuracyRating) || other.planningAccuracyRating == planningAccuracyRating)&&const DeepCollectionEquality().equals(other.wins, wins)&&const DeepCollectionEquality().equals(other.improvements, improvements)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is DailyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.date, date) || other.date == date)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyRating, planningAccuracyRating) || other.planningAccuracyRating == planningAccuracyRating)&&const DeepCollectionEquality().equals(other.wins, wins)&&const DeepCollectionEquality().equals(other.improvements, improvements)&&(identical(other.mood, mood) || other.mood == mood)&&const DeepCollectionEquality().equals(other.taskReasons, taskReasons)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,date,reflection,energyLevel,productivityRating,planningAccuracyRating,const DeepCollectionEquality().hash(wins),const DeepCollectionEquality().hash(improvements),createdAt,updatedAt,deletedAt);
+int get hashCode => Object.hash(runtimeType,id,date,reflection,energyLevel,productivityRating,planningAccuracyRating,const DeepCollectionEquality().hash(wins),const DeepCollectionEquality().hash(improvements),mood,const DeepCollectionEquality().hash(taskReasons),createdAt,updatedAt,deletedAt);
 
 @override
 String toString() {
-  return 'DailyReview(id: $id, date: $date, reflection: $reflection, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyRating: $planningAccuracyRating, wins: $wins, improvements: $improvements, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+  return 'DailyReview(id: $id, date: $date, reflection: $reflection, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyRating: $planningAccuracyRating, wins: $wins, improvements: $improvements, mood: $mood, taskReasons: $taskReasons, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
 }
 
 
@@ -48,7 +50,7 @@ abstract mixin class $DailyReviewCopyWith<$Res>  {
   factory $DailyReviewCopyWith(DailyReview value, $Res Function(DailyReview) _then) = _$DailyReviewCopyWithImpl;
 @useResult
 $Res call({
- String id, DateTime date, String? reflection, int? energyLevel, int? productivityRating, int? planningAccuracyRating, List<String> wins, List<String> improvements, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
+ String id, DateTime date, String? reflection, int? energyLevel, int? productivityRating, int? planningAccuracyRating, List<String> wins, List<String> improvements, int? mood, Map<String, String> taskReasons, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
 });
 
 
@@ -65,7 +67,7 @@ class _$DailyReviewCopyWithImpl<$Res>
 
 /// Create a copy of DailyReview
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? date = null,Object? reflection = freezed,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyRating = freezed,Object? wins = null,Object? improvements = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? date = null,Object? reflection = freezed,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyRating = freezed,Object? wins = null,Object? improvements = null,Object? mood = freezed,Object? taskReasons = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
@@ -75,7 +77,9 @@ as int?,productivityRating: freezed == productivityRating ? _self.productivityRa
 as int?,planningAccuracyRating: freezed == planningAccuracyRating ? _self.planningAccuracyRating : planningAccuracyRating // ignore: cast_nullable_to_non_nullable
 as int?,wins: null == wins ? _self.wins : wins // ignore: cast_nullable_to_non_nullable
 as List<String>,improvements: null == improvements ? _self.improvements : improvements // ignore: cast_nullable_to_non_nullable
-as List<String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>,mood: freezed == mood ? _self.mood : mood // ignore: cast_nullable_to_non_nullable
+as int?,taskReasons: null == taskReasons ? _self.taskReasons : taskReasons // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,deletedAt: freezed == deletedAt ? _self.deletedAt : deletedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -163,10 +167,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  int? mood,  Map<String, String> taskReasons,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _DailyReview() when $default != null:
-return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.mood,_that.taskReasons,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   return orElse();
 
 }
@@ -184,10 +188,10 @@ return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.pro
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  int? mood,  Map<String, String> taskReasons,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)  $default,) {final _that = this;
 switch (_that) {
 case _DailyReview():
-return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.mood,_that.taskReasons,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -204,10 +208,10 @@ return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.pro
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  DateTime date,  String? reflection,  int? energyLevel,  int? productivityRating,  int? planningAccuracyRating,  List<String> wins,  List<String> improvements,  int? mood,  Map<String, String> taskReasons,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _DailyReview() when $default != null:
-return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.productivityRating,_that.planningAccuracyRating,_that.wins,_that.improvements,_that.mood,_that.taskReasons,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   return null;
 
 }
@@ -219,7 +223,7 @@ return $default(_that.id,_that.date,_that.reflection,_that.energyLevel,_that.pro
 @JsonSerializable()
 
 class _DailyReview implements DailyReview {
-  const _DailyReview({required this.id, required this.date, this.reflection, this.energyLevel, this.productivityRating, this.planningAccuracyRating, this.wins = const [], this.improvements = const [], required this.createdAt, required this.updatedAt, this.deletedAt});
+  const _DailyReview({required this.id, required this.date, this.reflection, this.energyLevel, this.productivityRating, this.planningAccuracyRating, this.wins = const [], this.improvements = const [], this.mood, this.taskReasons = const <String, String>{}, required this.createdAt, required this.updatedAt, this.deletedAt});
   factory _DailyReview.fromJson(Map<String, dynamic> json) => _$DailyReviewFromJson(json);
 
 @override final  String id;
@@ -230,6 +234,10 @@ class _DailyReview implements DailyReview {
 @override final  int? planningAccuracyRating;
 @override@JsonKey() final  List<String> wins;
 @override@JsonKey() final  List<String> improvements;
+/// 1 = Good … 4 = Legendary. Null when the review predates moods.
+@override final  int? mood;
+/// Reason per task ID for tasks not completed that day.
+@override@JsonKey() final  Map<String, String> taskReasons;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 @override final  DateTime? deletedAt;
@@ -247,16 +255,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DailyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.date, date) || other.date == date)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyRating, planningAccuracyRating) || other.planningAccuracyRating == planningAccuracyRating)&&const DeepCollectionEquality().equals(other.wins, wins)&&const DeepCollectionEquality().equals(other.improvements, improvements)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DailyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.date, date) || other.date == date)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyRating, planningAccuracyRating) || other.planningAccuracyRating == planningAccuracyRating)&&const DeepCollectionEquality().equals(other.wins, wins)&&const DeepCollectionEquality().equals(other.improvements, improvements)&&(identical(other.mood, mood) || other.mood == mood)&&const DeepCollectionEquality().equals(other.taskReasons, taskReasons)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,date,reflection,energyLevel,productivityRating,planningAccuracyRating,const DeepCollectionEquality().hash(wins),const DeepCollectionEquality().hash(improvements),createdAt,updatedAt,deletedAt);
+int get hashCode => Object.hash(runtimeType,id,date,reflection,energyLevel,productivityRating,planningAccuracyRating,const DeepCollectionEquality().hash(wins),const DeepCollectionEquality().hash(improvements),mood,const DeepCollectionEquality().hash(taskReasons),createdAt,updatedAt,deletedAt);
 
 @override
 String toString() {
-  return 'DailyReview(id: $id, date: $date, reflection: $reflection, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyRating: $planningAccuracyRating, wins: $wins, improvements: $improvements, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+  return 'DailyReview(id: $id, date: $date, reflection: $reflection, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyRating: $planningAccuracyRating, wins: $wins, improvements: $improvements, mood: $mood, taskReasons: $taskReasons, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
 }
 
 
@@ -267,7 +275,7 @@ abstract mixin class _$DailyReviewCopyWith<$Res> implements $DailyReviewCopyWith
   factory _$DailyReviewCopyWith(_DailyReview value, $Res Function(_DailyReview) _then) = __$DailyReviewCopyWithImpl;
 @override @useResult
 $Res call({
- String id, DateTime date, String? reflection, int? energyLevel, int? productivityRating, int? planningAccuracyRating, List<String> wins, List<String> improvements, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
+ String id, DateTime date, String? reflection, int? energyLevel, int? productivityRating, int? planningAccuracyRating, List<String> wins, List<String> improvements, int? mood, Map<String, String> taskReasons, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
 });
 
 
@@ -284,7 +292,7 @@ class __$DailyReviewCopyWithImpl<$Res>
 
 /// Create a copy of DailyReview
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? date = null,Object? reflection = freezed,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyRating = freezed,Object? wins = null,Object? improvements = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? date = null,Object? reflection = freezed,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyRating = freezed,Object? wins = null,Object? improvements = null,Object? mood = freezed,Object? taskReasons = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
   return _then(_DailyReview(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
@@ -294,7 +302,9 @@ as int?,productivityRating: freezed == productivityRating ? _self.productivityRa
 as int?,planningAccuracyRating: freezed == planningAccuracyRating ? _self.planningAccuracyRating : planningAccuracyRating // ignore: cast_nullable_to_non_nullable
 as int?,wins: null == wins ? _self.wins : wins // ignore: cast_nullable_to_non_nullable
 as List<String>,improvements: null == improvements ? _self.improvements : improvements // ignore: cast_nullable_to_non_nullable
-as List<String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>,mood: freezed == mood ? _self.mood : mood // ignore: cast_nullable_to_non_nullable
+as int?,taskReasons: null == taskReasons ? _self.taskReasons : taskReasons // ignore: cast_nullable_to_non_nullable
+as Map<String, String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,deletedAt: freezed == deletedAt ? _self.deletedAt : deletedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,

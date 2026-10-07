@@ -9,6 +9,7 @@ import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/acyclic_links.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
@@ -306,6 +307,7 @@ class TaskRepository {
     missedAt: row.missedAt,
     planTitleHistory: PlanTitleHistory.decodeJson(row.planTitleHistoryJson),
     displayPlanChangeId: row.displayPlanChangeId,
+    planChangeReasons: JsonMapUtils.decode(row.planChangeReasonsJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -337,6 +339,7 @@ class TaskRepository {
       PlanTitleHistory.encodeJson(t.planTitleHistory),
     ),
     displayPlanChangeId: Value(t.displayPlanChangeId),
+    planChangeReasonsJson: Value(JsonMapUtils.encode(t.planChangeReasons)),
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
     deletedAt: Value(t.deletedAt),
@@ -391,6 +394,11 @@ class TaskRepository {
       displayPlanChangeId: task.displayPlanChangeId,
       currentTitle: task.title,
     );
+    try {
+      JsonMapUtils.parseReasons(task.planChangeReasons);
+    } on FormatException catch (error) {
+      throw ArgumentError(error.message);
+    }
     if (task.endTime != null && task.startTime == null) {
       throw ArgumentError('endTime requires startTime');
     }
@@ -488,6 +496,7 @@ class TaskRepository {
         missedAt: t.missedAt,
         planTitleHistoryJson: PlanTitleHistory.encodeJson(t.planTitleHistory),
         displayPlanChangeId: t.displayPlanChangeId,
+        planChangeReasonsJson: JsonMapUtils.encode(t.planChangeReasons),
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
         deletedAt: t.deletedAt,

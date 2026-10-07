@@ -21,6 +21,12 @@ _DailyReview _$DailyReviewFromJson(Map<String, dynamic> json) => _DailyReview(
           ?.map((e) => e as String)
           .toList() ??
       const [],
+  mood: (json['mood'] as num?)?.toInt(),
+  taskReasons:
+      (json['taskReasons'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ) ??
+      const <String, String>{},
   createdAt: DateTime.parse(json['createdAt'] as String),
   updatedAt: DateTime.parse(json['updatedAt'] as String),
   deletedAt: json['deletedAt'] == null
@@ -38,6 +44,8 @@ Map<String, dynamic> _$DailyReviewToJson(_DailyReview instance) =>
       'planningAccuracyRating': instance.planningAccuracyRating,
       'wins': instance.wins,
       'improvements': instance.improvements,
+      'mood': instance.mood,
+      'taskReasons': instance.taskReasons,
       'createdAt': instance.createdAt.toIso8601String(),
       'updatedAt': instance.updatedAt.toIso8601String(),
       'deletedAt': instance.deletedAt?.toIso8601String(),

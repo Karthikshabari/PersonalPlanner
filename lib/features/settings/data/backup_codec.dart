@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/models/timer_session.dart';
 import '../../../core/utils/json_list_utils.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
@@ -230,6 +231,9 @@ class BackupCodec {
             raw.containsKey('display_plan_change_id')
             ? raw['display_plan_change_id']
             : null;
+        if (!raw.containsKey('plan_change_reasons')) {
+          raw['plan_change_reasons'] = <String, dynamic>{};
+        }
         final manualSet = raw['manual_actual_set'];
         final hasManualSet = manualSet == true || manualSet == false;
         final previousActual = raw['actual_duration_min'];
@@ -269,6 +273,16 @@ class BackupCodec {
         raw['estimated_duration_min'] = isInbox
             ? null
             : TaskTimeMetrics.plannedMinutes(start, end);
+      }
+    }
+    final reviewRows = result['daily_reviews'];
+    if (reviewRows is List) {
+      for (final raw in reviewRows) {
+        if (raw is! Map<String, dynamic>) continue;
+        if (!raw.containsKey('mood')) raw['mood'] = null;
+        if (!raw.containsKey('task_reasons')) {
+          raw['task_reasons'] = <String, dynamic>{};
+        }
       }
     }
     // Keep the parameter explicit so a future v3 adapter cannot accidentally
@@ -374,6 +388,7 @@ class BackupCodec {
         .map((event) => event.toJson())
         .toList(growable: false),
     'display_plan_change_id': row.displayPlanChangeId,
+    'plan_change_reasons': JsonMapUtils.decode(row.planChangeReasonsJson),
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),
     'deleted_at': _iso(row.deletedAt),
@@ -458,6 +473,8 @@ class BackupCodec {
     'planning_accuracy_rating': row.planningAccuracyRating,
     'wins': JsonListUtils.decode(row.winsJson),
     'improvements': JsonListUtils.decode(row.improvementsJson),
+    'mood': row.mood,
+    'task_reasons': JsonMapUtils.decode(row.taskReasonsJson),
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),
     'deleted_at': _iso(row.deletedAt),
