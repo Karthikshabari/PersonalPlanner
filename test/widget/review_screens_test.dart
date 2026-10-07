@@ -4,12 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/features/day_context/providers/day_context_providers.dart';
+import 'package:personal_planner/features/review/providers/review_draft_controller.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
+import 'package:personal_planner/features/timeline/data/task_repository.dart';
 
 import '../helpers/test_container.dart';
 
@@ -98,11 +101,193 @@ void main() {
       expect(find.byKey(const ValueKey('review-mini-timeline')), findsNothing);
       expect(find.text('Energy level'), findsNothing);
       expect(find.text('Planning accuracy'), findsNothing);
-      expect(find.text('What changed'), findsOneWidget);
+      expect(find.text('What changed'), findsNothing);
       expect(find.text('Added during the day'), findsNothing);
+      expect(find.text('Task outcomes'), findsOneWidget);
+      expect(find.text('Tomorrow'), findsNothing);
+      expect(find.text('Completed'), findsOneWidget);
+      expect(find.text('Not started'), findsOneWidget);
+      expect(find.text('1 without a reason'), findsOneWidget);
       await finish(tester, container);
     },
   );
+
+  Future<List<Task>> tasksOn(
+    WidgetTester tester,
+    ProviderContainer container,
+    DateTime date,
+  ) async {
+    final rows = await runDb(
+      tester,
+      () => container
+          .read(appDatabaseProvider)
+          .taskDao
+          .getTasksBetween(date, date.add(const Duration(days: 1))),
+    );
+    return rows.map(TaskRepository.fromRow).toList();
+  }
+
+  testWidgets('shows the plan-change block with the struck old title', (
+    tester,
+  ) async {
+    final container = await pumpReview(tester);
+    final date = today();
+    final repo = container.read(taskRepositoryProvider);
+    await runDb(
+      tester,
+      () => repo.insertTask(
+        Task(
+          id: '',
+          title: 'sample 6',
+          startTime: DateTime(date.year, date.month, date.day, 14),
+          endTime: DateTime(date.year, date.month, date.day, 15),
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      ),
+    );
+    final current = (await tasksOn(tester, container, date)).single;
+    final event = PlanTitleChange(
+      id: '00000000-0000-7000-8000-0000000003f1',
+      previousTitle: 'sample 6',
+      newTitle: 'sample 06',
+      changedAt: DateTime.now().toUtc(),
+    );
+    await runDb(
+      tester,
+      () => repo.updateTask(
+        current.copyWith(
+          title: 'sample 06',
+          planTitleHistory: [event],
+          displayPlanChangeId: event.id,
+        ),
+      ),
+    );
+    await showReviewForToday(tester, container);
+
+    expect(
+      find.byKey(ValueKey('review-plan-change-${current.id}')),
+      findsOneWidget,
+    );
+    expect(find.text('sample 6'), findsOneWidget);
+    expect(find.textContaining('PLAN CHANGED'), findsOneWidget);
+    expect(find.text('sample 06'), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('empty day keeps mood, note and save', (tester) async {
+    final container = await pumpReview(tester);
+
+    expect(find.text('No tasks were planned for this day.'), findsOneWidget);
+    expect(find.text('How was the day?'), findsOneWidget);
+    expect(find.byKey(const ValueKey('review-save')), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('mood defaults to Good and selecting another saves it', (
+    tester,
+  ) async {
+    final container = await pumpReview(tester);
+    final handle = tester.ensureSemantics();
+
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('review-mood-1'))),
+      isSemantics(label: 'Good', hasCheckedState: true, isChecked: true),
+    );
+    await tester.tap(find.byKey(const ValueKey('review-mood-3')));
+    await settle(tester);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('review-mood-3'))),
+      isSemantics(
+        label: 'Excellent',
+        hasCheckedState: true,
+        isChecked: true,
+      ),
+    );
+    expect(container.read(reviewDraftProvider(today())).dirty, isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('review-save')));
+    await settle(tester);
+
+    expect(find.text('Reviewed · Excellent'), findsOneWidget);
+    handle.dispose();
+    await finish(tester, container);
+  });
+
+  testWidgets('chip shows Not reviewed until saved', (tester) async {
+    final container = await pumpReview(tester);
+
+    expect(find.text('Not reviewed'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('review-save')));
+    await settle(tester);
+    expect(find.text('Reviewed · Good'), findsOneWidget);
+    expect(find.text('Not reviewed'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('review-next-day')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('review-status-chip')), findsNothing);
+    await finish(tester, container);
+  });
+
+  testWidgets('preset chip fills the reason and save-as-preset adds a preset', (
+    tester,
+  ) async {
+    final container = await pumpReview(tester);
+    await seedTwoTasks(tester, container, today());
+    await showReviewForToday(tester, container);
+    final notStarted = (await tasksOn(
+      tester,
+      container,
+      today(),
+    )).firstWhere((t) => t.title == 'Deep work');
+    final field = find.byKey(ValueKey('review-reason-${notStarted.id}'));
+
+    await tester.tap(find.widgetWithText(ActionChip, 'Blocked'));
+    await settle(tester);
+    expect(tester.widget<TextField>(field).controller!.text, 'Blocked');
+
+    await tester.enterText(field, 'Meeting ran long');
+    await settle(tester);
+    await tester.tap(
+      find.byKey(ValueKey('review-save-as-preset-${notStarted.id}')),
+    );
+    await settle(tester);
+
+    expect(find.text('Preset added'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, 'Meeting ran long'), findsOneWidget);
+    await finish(tester, container);
+  });
+
+  testWidgets('two columns at 1400 dp, one column at 390 dp', (tester) async {
+    final container = await pumpReview(tester);
+    expect(
+      tester.getTopLeft(find.text('How was the day?')).dx >
+          tester.getTopLeft(find.text('Task outcomes')).dx,
+      isTrue,
+    );
+
+    await pumpApp(tester, container, surface: const Size(390, 844));
+    await settle(tester);
+    expect(
+      tester.getTopLeft(find.text('How was the day?')).dy >
+          tester.getTopLeft(find.text('Task outcomes')).dy,
+      isTrue,
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('completed rows have no reason field', (tester) async {
+    final container = await pumpReview(tester);
+    await seedTwoTasks(tester, container, today());
+    await showReviewForToday(tester, container);
+    final tasks = await tasksOn(tester, container, today());
+    final completed = tasks.firstWhere((t) => t.title == 'Morning run');
+    final open = tasks.firstWhere((t) => t.title == 'Deep work');
+
+    expect(find.byKey(ValueKey('review-reason-${completed.id}')), findsNothing);
+    expect(find.byKey(ValueKey('review-reason-${open.id}')), findsOneWidget);
+    await finish(tester, container);
+  });
 
   testWidgets('daily review shows the saved day context badge only when set', (
     tester,
@@ -156,7 +341,7 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('review-save')));
       await settle(tester);
-      expect(find.text('Daily review saved'), findsOneWidget);
+      expect(find.text('Review saved'), findsOneWidget);
 
       final repo = container.read(reviewRepositoryProvider);
       final saved = await runDb(tester, () => repo.getReviewForDate(today()));
