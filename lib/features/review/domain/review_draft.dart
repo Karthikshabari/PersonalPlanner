@@ -21,6 +21,7 @@ class ReviewDraft {
     this.dirty = false,
     this.editVersion = 0,
     this.saveStatus = ReviewSaveStatus.idle,
+    this.completedTaskIds = const <String>{},
   });
 
   final DateTime date;
@@ -42,6 +43,10 @@ class ReviewDraft {
   final int editVersion;
   final ReviewSaveStatus saveStatus;
 
+  /// Tasks that are Completed right now. Their reason field is hidden and
+  /// Save drops their reasons, so they never count as unsaved edits.
+  final Set<String> completedTaskIds;
+
   ReviewDraft copyWith({
     bool? hydrated,
     int? hydrationVersion,
@@ -54,6 +59,7 @@ class ReviewDraft {
     bool? dirty,
     int? editVersion,
     ReviewSaveStatus? saveStatus,
+    Set<String>? completedTaskIds,
   }) => ReviewDraft(
     date: date,
     hydrated: hydrated ?? this.hydrated,
@@ -67,14 +73,28 @@ class ReviewDraft {
     dirty: dirty ?? this.dirty,
     editVersion: editVersion ?? this.editVersion,
     saveStatus: saveStatus ?? this.saveStatus,
+    completedTaskIds: completedTaskIds ?? this.completedTaskIds,
   );
 
-  /// True when mood, note or any non-blank reason differs from what is saved.
-  /// Notes and reasons compare trimmed, as the repository stores them.
+  /// True when mood, note or any non-blank reason of a task that can take one
+  /// differs from what is saved. Notes and reasons compare trimmed, as the
+  /// repository stores them; reasons of Completed tasks are ignored on both
+  /// sides because the form hides them and Save drops them.
   bool get differsFromSaved =>
       mood != savedMood ||
       note.trim() != savedNote ||
-      !mapEquals(_normalizedReasons(reasons), savedReasons);
+      !mapEquals(
+        _withoutCompleted(_normalizedReasons(reasons)),
+        _withoutCompleted(savedReasons),
+      );
+
+  Map<String, String> _withoutCompleted(Map<String, String> source) =>
+      completedTaskIds.isEmpty
+      ? source
+      : {
+          for (final entry in source.entries)
+            if (!completedTaskIds.contains(entry.key)) entry.key: entry.value,
+        };
 
   static Map<String, String> _normalizedReasons(Map<String, String> source) => {
     for (final entry in source.entries)

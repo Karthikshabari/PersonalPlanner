@@ -29,6 +29,7 @@ import '../widgets/review_save_button.dart';
 import '../widgets/review_snack_bar.dart';
 import '../widgets/review_sections.dart';
 import '../widgets/review_status_chip.dart';
+import '../widgets/review_unsaved_hint.dart';
 import '../widgets/task_outcomes_card.dart';
 
 class DailyReviewScreen extends ConsumerStatefulWidget {
@@ -70,86 +71,101 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       ),
       body: ColoredBox(
         color: tokens.canvas,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final listView = ListView(
-              controller: _scrollController,
-              padding: EdgeInsets.all(
-                constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
-              ),
-              children: [
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1000),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: ReviewModeSwitcher(
-                            weekly: false,
-                            onChanged: (mode) {
-                              if (mode == 'overview') {
-                                openReviewPath(context, '/review/overview');
-                                return;
-                              }
-                              if (mode != 'weekly') return;
-                              ref
-                                  .read(selectedWeekStartProvider.notifier)
-                                  .state = startOfWeek(
-                                date,
-                              );
-                              if (isDesktopWidth(
-                                MediaQuery.sizeOf(context).width,
-                              )) {
-                                context.go('/review/weekly');
-                              } else {
-                                context.push('/review/weekly');
-                              }
-                            },
-                          ),
+        child: Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final listView = ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.all(
+                    constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
+                  ),
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1000),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ReviewModeSwitcher(
+                                weekly: false,
+                                onChanged: (mode) {
+                                  if (mode == 'overview') {
+                                    openReviewPath(context, '/review/overview');
+                                    return;
+                                  }
+                                  if (mode != 'weekly') return;
+                                  ref
+                                      .read(selectedWeekStartProvider.notifier)
+                                      .state = startOfWeek(
+                                    date,
+                                  );
+                                  if (isDesktopWidth(
+                                    MediaQuery.sizeOf(context).width,
+                                  )) {
+                                    context.go('/review/weekly');
+                                  } else {
+                                    context.push('/review/weekly');
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            _buildDateNav(
+                              context,
+                              ref,
+                              date,
+                              dayContext?.displayLabel,
+                              reviewAsync,
+                              future,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            _buildBody(
+                              date: date,
+                              statsAsync: statsAsync,
+                              insightsAsync: insightsAsync,
+                              outcomesAsync: outcomesAsync,
+                              draft: draft,
+                              notifier: notifier,
+                              future: future,
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: AppSpacing.sm),
-                        _buildDateNav(
-                          context,
-                          ref,
-                          date,
-                          dayContext?.displayLabel,
-                          reviewAsync,
-                          future,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        _buildBody(
-                          date: date,
-                          statsAsync: statsAsync,
-                          insightsAsync: insightsAsync,
-                          outcomesAsync: outcomesAsync,
-                          draft: draft,
-                          notifier: notifier,
-                          future: future,
-                        ),
-                      ],
+                      ),
                     ),
+                  ],
+                );
+                return CallbackShortcuts(
+                  bindings: {
+                    const SingleActivator(
+                      LogicalKeyboardKey.enter,
+                      control: true,
+                    ): () =>
+                        _save(date),
+                    const SingleActivator(
+                      LogicalKeyboardKey.enter,
+                      meta: true,
+                    ): () =>
+                        _save(date),
+                  },
+                  child: Focus(autofocus: true, child: listView),
+                );
+              },
+            ),
+            if (draft.differsFromSaved)
+              const Positioned(
+                left: 0,
+                right: 0,
+                bottom: AppSpacing.md,
+                child: Center(
+                  child: ReviewUnsavedPill(
+                    key: ValueKey('review-unsaved-pinned'),
                   ),
                 ),
-              ],
-            );
-            return CallbackShortcuts(
-              bindings: {
-                const SingleActivator(
-                  LogicalKeyboardKey.enter,
-                  control: true,
-                ): () =>
-                    _save(date),
-                const SingleActivator(
-                  LogicalKeyboardKey.enter,
-                  meta: true,
-                ): () =>
-                    _save(date),
-              },
-              child: Focus(autofocus: true, child: listView),
-            );
-          },
+              ),
+          ],
         ),
       ),
     );
@@ -304,7 +320,8 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
   ) {
     return ReviewSaveButton(
       // "Saved" is only true while nothing differs from what is stored.
-      status: draft.dirty && draft.saveStatus == ReviewSaveStatus.saved
+      status:
+          draft.differsFromSaved && draft.saveStatus == ReviewSaveStatus.saved
           ? ReviewSaveStatus.idle
           : draft.saveStatus,
       enabled: draft.hydrated && outcomesAsync.hasValue,

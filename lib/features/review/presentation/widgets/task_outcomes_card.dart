@@ -179,10 +179,10 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
   );
   final _focus = FocusNode();
 
-  /// True once the user has left the field (or picked a preset) with a
-  /// non-empty reason. Reasons are persisted only by "Save review", so this
-  /// means "noted", never "saved".
-  bool _noted = false;
+  /// Whether the "Noted" check fades in. True only when it appears because
+  /// the user just left the field or tapped a preset chip; text that was
+  /// already there (restored draft, saved review) shows it at once.
+  bool _animateNoted = false;
 
   @override
   void initState() {
@@ -191,16 +191,10 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
   }
 
   void _onFocusChanged() {
-    if (_focus.hasFocus) {
-      if (_noted) setState(() => _noted = false);
-    } else {
-      _markNoted();
+    if (!_focus.hasFocus && _reason.text.trim().isNotEmpty) {
+      _animateNoted = true;
     }
-  }
-
-  void _markNoted() {
-    final noted = _reason.text.trim().isNotEmpty;
-    if (noted != _noted) setState(() => _noted = noted);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -209,7 +203,7 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
     if (oldWidget.hydrationVersion != widget.hydrationVersion &&
         _reason.text != widget.reason) {
       _reason.text = widget.reason;
-      _noted = false;
+      _animateNoted = false;
     }
   }
 
@@ -302,16 +296,17 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
                       decoration: InputDecoration(
                         isDense: true,
                         hintText: 'Why was this not done? (optional)',
+                        // "Noted" whenever the field is not being edited and holds
+                        // text. Nothing is persisted until "Save review".
                         suffixIcon: _NotedBadge(
-                          visible: _noted && _reason.text.trim().isNotEmpty,
+                          visible:
+                              !_focus.hasFocus &&
+                              _reason.text.trim().isNotEmpty,
+                          animate: _animateNoted,
                         ),
                         suffixIconConstraints: const BoxConstraints(),
                       ),
-                      onChanged: (text) {
-                        if (_noted) setState(() => _noted = false);
-                        widget.onReasonChanged(text);
-                      },
-                      onSubmitted: (_) => _markNoted(),
+                      onChanged: widget.onReasonChanged,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -337,7 +332,9 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
                                       ),
                                     );
                                     widget.onReasonChanged(p);
-                                    _markNoted();
+                                    _animateNoted = true;
+                                    _focus.unfocus();
+                                    setState(() {});
                                   }
                                 : null,
                           ),
@@ -366,13 +363,16 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
   }
 }
 
-/// Quiet "reason entered" confirmation at the end of the reason field. Fades
-/// and scales in (instantly with reduced motion); wording is "Noted" because
-/// nothing is persisted until "Save review".
+/// Quiet "reason entered" confirmation at the end of the reason field, shown
+/// while the field is not focused and has text. Fades and scales in when
+/// [animate] is set (instantly with reduced motion or for text that was
+/// already there); wording is "Noted" because nothing is persisted until
+/// "Save review".
 class _NotedBadge extends StatelessWidget {
   final bool visible;
+  final bool animate;
 
-  const _NotedBadge({required this.visible});
+  const _NotedBadge({required this.visible, required this.animate});
 
   @override
   Widget build(BuildContext context) {
@@ -384,9 +384,9 @@ class _NotedBadge extends StatelessWidget {
       child: TweenAnimationBuilder<double>(
         key: const ValueKey('review-reason-noted'),
         tween: Tween(begin: 0, end: 1),
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : const Duration(milliseconds: 180),
+        duration: animate && !MediaQuery.disableAnimationsOf(context)
+            ? const Duration(milliseconds: 180)
+            : Duration.zero,
         curve: Curves.easeOut,
         builder: (context, t, child) => Opacity(
           opacity: t,

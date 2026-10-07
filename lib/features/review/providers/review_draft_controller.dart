@@ -67,9 +67,37 @@ class ReviewDraftController extends Notifier<ReviewDraft> {
       state = state.rebase(next.value);
       if (!state.dirty) _keeper.release(date);
     });
+    ref.listen<AsyncValue<List<TaskOutcomeRow>>>(taskOutcomesProvider(date), (
+      _,
+      next,
+    ) {
+      final rows = next.value;
+      if (rows != null) _syncCompleted(rows);
+    });
     final current = ref.read(dailyReviewProvider(date));
-    final initial = ReviewDraft(date: date);
+    final completed = _completedIds(ref.read(taskOutcomesProvider(date)).value);
+    final initial = ReviewDraft(date: date, completedTaskIds: completed);
     return current.hasValue ? initial.hydrateFrom(current.value) : initial;
+  }
+
+  static Set<String> _completedIds(List<TaskOutcomeRow>? rows) => {
+    for (final row in rows ?? const <TaskOutcomeRow>[])
+      if (row.outcome == TaskOutcome.completed) row.taskId,
+  };
+
+  /// A task became (or stopped being) Completed: its reason no longer counts
+  /// as an unsaved edit (it cannot be saved), so re-evaluate [ReviewDraft.dirty].
+  void _syncCompleted(List<TaskOutcomeRow> rows) {
+    final ids = _completedIds(rows);
+    if (setEquals(ids, state.completedTaskIds)) return;
+    final next = state.copyWith(completedTaskIds: ids);
+    final dirty = next.differsFromSaved;
+    state = next.copyWith(dirty: dirty);
+    if (!dirty) {
+      _keeper.release(date);
+    } else if (!_keeper.holds(date)) {
+      _keeper.hold(date, ref.keepAlive());
+    }
   }
 
   void setMood(int mood) {

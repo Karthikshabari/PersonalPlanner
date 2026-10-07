@@ -137,7 +137,7 @@ void main() {
       expect(textOf(tester, noteField), 'Long day');
       expect(textOf(tester, reasonField(task)), 'Meeting ran over');
       expect(container.read(reviewDraftProvider(day)).mood, 3);
-      expect(find.text('Not saved yet'), findsOneWidget);
+      expect(hint, findsOneWidget);
       expect(find.text('Save review'), findsOneWidget);
       // Nothing was written: still "Not reviewed".
       expect(
