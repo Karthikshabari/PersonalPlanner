@@ -10,6 +10,9 @@ import '../../../core/utils/date_utils.dart';
 import '../data/review_repository.dart';
 import '../domain/daily_stats_service.dart';
 import '../domain/review_insights.dart';
+import '../domain/review_overview.dart';
+import '../domain/task_outcome.dart';
+import '../domain/task_outcome_service.dart';
 
 final reviewRepositoryProvider = Provider<ReviewRepository>((ref) {
   return ReviewRepository(ref.watch(appDatabaseProvider));
@@ -85,5 +88,35 @@ final weeklyReviewInsightsProvider = StreamProvider.autoDispose
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(reviewInsightsServiceProvider).forWeek(normalized),
+      );
+    });
+
+final taskOutcomeServiceProvider = Provider<TaskOutcomeService>((ref) {
+  return TaskOutcomeService(ref.watch(appDatabaseProvider));
+});
+
+/// One row per task starting on [date], ordered by start time.
+final taskOutcomesProvider = StreamProvider.autoDispose
+    .family<List<TaskOutcomeRow>, DateTime>((ref, date) {
+      final normalized = startOfDay(date);
+      return watchReactiveStats(
+        ref.read(appDatabaseProvider),
+        () => ref.read(taskOutcomeServiceProvider).forDay(normalized),
+      );
+    });
+
+final reviewOverviewServiceProvider = Provider<ReviewOverviewService>((ref) {
+  return ReviewOverviewService(ref.watch(appDatabaseProvider));
+});
+
+/// The last [dayCount] days ending today, newest first. Reacts to task,
+/// review and day-context writes.
+final reviewOverviewWindowProvider = StreamProvider.autoDispose
+    .family<List<ReviewOverviewDay>, int>((ref, dayCount) {
+      return watchReactiveStats(
+        ref.read(appDatabaseProvider),
+        () => ref
+            .read(reviewOverviewServiceProvider)
+            .window(today: DateTime.now(), dayCount: dayCount),
       );
     });
