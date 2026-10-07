@@ -68,8 +68,6 @@ class WeeklyReviewScreen extends ConsumerWidget {
               const SizedBox(height: AppSpacing.md),
               _buildChanges(insightsAsync, future),
               const SizedBox(height: AppSpacing.md),
-              _buildCarryover(insightsAsync),
-              const SizedBox(height: AppSpacing.md),
               _WeeklyReviewForm(
                 key: ValueKey('weekly-form-$weekStart'),
                 weekStart: weekStart,
@@ -148,14 +146,6 @@ class WeeklyReviewScreen extends ConsumerWidget {
       insights: insights.requireValue,
       future: future,
       heading: 'What changed this week',
-    );
-  }
-
-  Widget _buildCarryover(AsyncValue<ReviewInsights> insights) {
-    if (!insights.hasValue) return const SizedBox.shrink();
-    return ReviewCarryoverSection(
-      heading: 'Next week',
-      items: insights.requireValue.carryover,
     );
   }
 }

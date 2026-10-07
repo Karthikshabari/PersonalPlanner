@@ -157,6 +157,95 @@ void main() {
     );
   });
 
+  group('weekly changes', () {
+    late DateTime week;
+
+    DateTime at(int dayOffset, int hour) =>
+        addDays(week, dayOffset).add(Duration(hours: hour));
+
+    Future<void> seedSixTasks() async {
+      week = addDays(startOfWeek(DateTime.now()), -7);
+      const reportId = '00000000-0000-7000-8000-0000000003a1';
+      const gymId = '00000000-0000-7000-8000-0000000003a2';
+      const originalId = '00000000-0000-7000-8000-0000000003a3';
+      const successorId = '00000000-0000-7000-8000-0000000003a4';
+      const docsId = '00000000-0000-7000-8000-0000000003a5';
+      const sprintId = '00000000-0000-7000-8000-0000000003a6';
+      Task task(
+        String id,
+        String title,
+        int dayOffset, {
+        TaskStatus status = TaskStatus.planned,
+      }) => Task(
+        id: id,
+        title: title,
+        startTime: at(dayOffset, 9),
+        endTime: at(dayOffset, 10),
+        status: status,
+        createdAt: at(dayOffset, 1),
+        updatedAt: at(dayOffset, 1),
+      );
+
+      await tasks.insertTask(
+        task(reportId, 'Write report', 0, status: TaskStatus.completed),
+      );
+      await tasks.insertTask(
+        task(gymId, 'Gym session', 1, status: TaskStatus.skipped),
+      );
+      await tasks.insertTask(task(successorId, 'Refactor sync tests', 3));
+      final event = PlanTitleChange(
+        id: '00000000-0000-7000-8000-0000000003b1',
+        previousTitle: 'Refactor tests',
+        newTitle: 'Refactor sync tests',
+        changedAt: at(2, 2).toUtc(),
+      );
+      await tasks.insertTask(
+        task(
+          originalId,
+          'Refactor sync tests',
+          2,
+          status: TaskStatus.rescheduled,
+        ).copyWith(
+          rescheduledToId: successorId,
+          planTitleHistory: [event],
+          displayPlanChangeId: event.id,
+        ),
+      );
+      final successor = await db.taskDao.getTaskById(successorId);
+      await tasks.updateTask(
+        TaskRepository.fromRow(successor!)
+            .copyWith(rescheduledFromId: originalId),
+        allowRescheduledTransition: true,
+      );
+      await tasks.insertTask(task(docsId, 'Read docs', 4));
+      await tasks.insertTask(task(sprintId, 'Plan sprint', 5));
+    }
+
+    test('six tasks give one row per changed task, with the plan change and '
+        'no "Added during the week" (was 8 rows before the fix)', () async {
+      await seedSixTasks();
+
+      final insights = await ReviewInsightsService(db).forWeek(week);
+      final titles = insights.changes.map((c) => c.taskTitle).toList();
+
+      expect(insights.changes, hasLength(2));
+      expect(titles.toSet(), hasLength(titles.length));
+      expect(titles, ['Gym session', 'Refactor sync tests']);
+      expect(insights.changes.first.detail, 'Skipped');
+      final refactor = insights.changes.last;
+      expect(refactor.kind, ReviewChangeKind.moved);
+      expect(refactor.detail, startsWith('Moved → '));
+      expect(
+        refactor.detail,
+        endsWith(' · Plan changed from “Refactor tests”'),
+      );
+      expect(
+        insights.changes.map((c) => c.detail).join('\n'),
+        isNot(contains('Added during the week')),
+      );
+    });
+  });
+
   test('returns no changes for an unchanged empty day', () async {
     final insights = await ReviewInsightsService(db).forDay(day);
     expect(insights.changes, isEmpty);

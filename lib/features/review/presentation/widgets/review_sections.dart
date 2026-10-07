@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/duration_utils.dart';
-import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../domain/review_insights.dart';
 
@@ -147,53 +145,4 @@ class _ChangeRow extends StatelessWidget {
     ReviewChangeKind.duration => Icons.timer_outlined,
     ReviewChangeKind.planChanged => Icons.edit_note_rounded,
   };
-}
-
-class ReviewCarryoverSection extends StatelessWidget {
-  final List<ReviewCarryover> items;
-  final String heading;
-
-  const ReviewCarryoverSection({
-    super.key,
-    required this.items,
-    required this.heading,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(heading, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          if (items.isEmpty)
-            const Text('Nothing carried forward.')
-          else ...[
-            Text(
-              '${items.length} item${items.length == 1 ? '' : 's'} carried forward',
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            for (final item in items)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Row(
-                  children: [
-                    Expanded(child: Text(item.title)),
-                    Text(
-                      item.startTime == null
-                          ? 'Unscheduled'
-                          : DateFormat('h:mm a').format(
-                              PlannerTimeZone.toPlannerLocal(item.startTime!),
-                            ),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
 }

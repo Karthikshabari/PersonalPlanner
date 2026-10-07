@@ -198,11 +198,7 @@ void main() {
     await settle(tester);
     expect(
       tester.getSemantics(find.byKey(const ValueKey('review-mood-3'))),
-      isSemantics(
-        label: 'Excellent',
-        hasCheckedState: true,
-        isChecked: true,
-      ),
+      isSemantics(label: 'Excellent', hasCheckedState: true, isChecked: true),
     );
     expect(container.read(reviewDraftProvider(today())).dirty, isTrue);
 
@@ -441,6 +437,7 @@ void main() {
     expect(find.text('This week'), findsOneWidget);
     expect(find.text('1 / 2 completed'), findsOneWidget);
     expect(find.text('What changed this week'), findsOneWidget);
+    expect(find.text('Nothing carried forward.'), findsNothing);
 
     await tester.enterText(
       find.byKey(const ValueKey('weekly-note')),

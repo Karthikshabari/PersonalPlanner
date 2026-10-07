@@ -71,7 +71,7 @@ class ReviewInsightsService {
     final relevant = tasks.where((task) => _scheduledIn(task, day, end));
     final changes = <ReviewChange>[];
     for (final task in relevant) {
-      changes.addAll(_changesForTask(task, day, end, byId, singleDay: true));
+      changes.addAll(_changesForTask(task, day, end, byId));
     }
     return ReviewInsights(
       changes: changes,
@@ -85,6 +85,8 @@ class ReviewInsightsService {
     );
   }
 
+  /// One row per task: every change of a task is merged into one detail line
+  /// (`Moved → … · Plan changed from “…”`), so a task never shows twice.
   Future<ReviewInsights> forWeek(DateTime weekStart) async {
     final start = startOfWeek(weekStart);
     final end = addDays(start, 7);
@@ -92,19 +94,17 @@ class ReviewInsightsService {
     final tasks = await _loadTasks();
     final byId = {for (final task in tasks) task.id: task};
     final changes = <ReviewChange>[];
-    final seen = <String>{};
     for (final task in tasks) {
       if (!_scheduledIn(task, start, end)) continue;
-      for (final change in _changesForTask(
-        task,
-        start,
-        end,
-        byId,
-        singleDay: false,
-      )) {
-        final key = '${task.id}:${change.kind.name}:${change.detail}';
-        if (seen.add(key)) changes.add(change);
-      }
+      final perTask = _changesForTask(task, start, end, byId);
+      if (perTask.isEmpty) continue;
+      changes.add(
+        ReviewChange(
+          taskTitle: task.title,
+          detail: perTask.map((change) => change.detail).join(' · '),
+          kind: perTask.first.kind,
+        ),
+      );
     }
     return ReviewInsights(
       changes: changes,
@@ -133,9 +133,8 @@ class ReviewInsightsService {
     Task task,
     DateTime rangeStart,
     DateTime rangeEnd,
-    Map<String, Task> byId, {
-    required bool singleDay,
-  }) {
+    Map<String, Task> byId,
+  ) {
     final changes = <ReviewChange>[];
     final target = task.rescheduledToId == null
         ? null
@@ -150,19 +149,7 @@ class ReviewInsightsService {
       );
     }
 
-    if (!singleDay &&
-        task.createdAt.isAfter(rangeStart) &&
-        task.createdAt.isBefore(rangeEnd)) {
-      changes.add(
-        ReviewChange(
-          taskTitle: task.title,
-          detail: 'Added during the week',
-          kind: ReviewChangeKind.added,
-        ),
-      );
-    }
-
-    final planChange = singleDay ? ReviewPlanChange.forTask(task) : null;
+    final planChange = ReviewPlanChange.forTask(task);
     if (planChange != null) {
       changes.add(
         ReviewChange(
