@@ -26,6 +26,7 @@ CANONICAL_MIGRATIONS=(
   20260917000000_initial_sync_baseline
   20261004000000_db_audit_server_hardening
   20261004000100_sync_history_compaction
+  20261007000000_review_outcomes
 )
 
 # Secret shapes that must never be committed: Supabase secret/service-role

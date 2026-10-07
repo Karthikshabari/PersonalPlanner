@@ -34,6 +34,15 @@ const Set<String> _jsonTextKeys = {
   'goals_met_json',
   'goals_missed_json',
   'next_week_focus_json',
+  'task_reasons_json',
+  'plan_change_reasons_json',
+};
+
+/// Keys whose absence or NULL means "keep the stored value", never "clear".
+const Set<String> _preservedWhenNullKeys = {
+  'mood',
+  'task_reasons_json',
+  'plan_change_reasons_json',
 };
 
 /// True when [local] and [remote] describe the same state of one [table] row.
@@ -46,6 +55,10 @@ bool semanticallyEqualSnapshots(
   if (remote['deleted'] == true || local['deleted'] == true) return false;
   final keys = {...local.keys, ...remote.keys}..removeAll(nonSemanticSyncKeys);
   for (final key in keys) {
+    if (_preservedWhenNullKeys.contains(key) &&
+        (local[key] == null || remote[key] == null)) {
+      continue;
+    }
     if (!_sameValue(table, key, local[key], remote[key])) return false;
   }
   return true;

@@ -15,7 +15,7 @@ const CHECKS = Object.fromEntries([
   "protocol_v2_authenticated_execute", "capability_grants_correct",
   "f03_helper_private", "f03_validates_branch_before_union", "f03_wrappers_active",
   "initial_sync_fencing_present",
-  "recurrence_provenance_present", "relationships_owner_scoped",
+  "recurrence_provenance_present", "review_outcomes_present", "relationships_owner_scoped",
   "direct_authenticated_writes_revoked", "anon_access_revoked",
   "security_definer_helpers_private", "capability_payload_current",
 ].map(key => [key, true]));

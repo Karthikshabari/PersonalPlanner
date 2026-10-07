@@ -177,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump whenever a sync trigger body changes. Triggers are recreated only
   /// when the stored `schema.sync_trigger_version` differs or one is missing.
-  static const int syncTriggerVersion = 2;
+  static const int syncTriggerVersion = 3;
 
   /// 11 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
   static const int _expectedSyncTriggerCount = 34;
@@ -1808,10 +1808,10 @@ END;
       recordIdOld: 'OLD.id',
       // estimated_duration_min is a compatibility projection. Updating it
       // alone must not create a semantic sync operation.
-      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, created_at, updated_at, deleted_at',
+      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, plan_change_reasons_json, created_at, updated_at, deleted_at',
       // Rule-exclusion tombstones need their full payload on the server.
       deleteOperationWhen: 'NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL AND NEW.recurrence_removal_reason IS NULL',
-      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'plan_change_reasons_json', NEW.plan_change_reasons_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
@@ -1894,8 +1894,8 @@ END;
       primaryKeyOld: 'id = OLD.id',
       recordIdNew: 'NEW.id',
       recordIdOld: 'OLD.id',
-      updateColumns: 'id, date, reflection, energy_level, productivity_rating, planning_accuracy_rating, wins_json, improvements_json, created_at, updated_at, deleted_at',
-      jsonNew: "json_object('id', NEW.id, 'date', NEW.date, 'reflection', NEW.reflection, 'energy_level', NEW.energy_level, 'productivity_rating', NEW.productivity_rating, 'planning_accuracy_rating', NEW.planning_accuracy_rating, 'wins_json', NEW.wins_json, 'improvements_json', NEW.improvements_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      updateColumns: 'id, date, reflection, energy_level, productivity_rating, planning_accuracy_rating, wins_json, improvements_json, mood, task_reasons_json, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'date', NEW.date, 'reflection', NEW.reflection, 'energy_level', NEW.energy_level, 'productivity_rating', NEW.productivity_rating, 'planning_accuracy_rating', NEW.planning_accuracy_rating, 'wins_json', NEW.wins_json, 'improvements_json', NEW.improvements_json, 'mood', NEW.mood, 'task_reasons_json', NEW.task_reasons_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'date', OLD.date, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );

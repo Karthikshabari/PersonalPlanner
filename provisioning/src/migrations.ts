@@ -14,6 +14,7 @@ import titleHistoryConflictOrdering from "../../supabase/migrations/202609160000
 import initialSyncBaseline from "../../supabase/migrations/20260917000000_initial_sync_baseline.sql";
 import dbAuditServerHardening from "../../supabase/migrations/20261004000000_db_audit_server_hardening.sql";
 import syncHistoryCompaction from "../../supabase/migrations/20261004000100_sync_history_compaction.sql";
+import reviewOutcomes from "../../supabase/migrations/20261007000000_review_outcomes.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -56,6 +57,11 @@ export const MIGRATIONS = [
     name: "20261004000100_sync_history_compaction",
     query: syncHistoryCompaction,
     sha256: "219ef7c33b547c3372095bb54d83501257b23ef4f7582a3b2c965c85d9c7a1f0",
+  },
+  {
+    name: "20261007000000_review_outcomes",
+    query: reviewOutcomes,
+    sha256: "76126c5c635c40d2c1310ab83f8174ca30a823c6d366e7f4221846ea54526fe2",
   },
 ] as const;
 
@@ -183,6 +189,32 @@ select
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
     where k.conname = 'tasks_recurrence_removal_reason_valid'
   ) as recurrence_provenance_present,
+  exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'daily_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'mood' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'daily_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'task_reasons_json' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'plan_change_reasons_json' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class c on c.oid = t.tgrelid and c.relname = 'daily_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where t.tgname = 'planner_preserve_review_fields' and not t.tgisinternal
+  ) and exists (
+    select 1 from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class c on c.oid = t.tgrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where t.tgname = 'planner_preserve_plan_change_reasons' and not t.tgisinternal
+  ) as review_outcomes_present,
   not exists (
     select 1
     from pg_catalog.pg_constraint fk

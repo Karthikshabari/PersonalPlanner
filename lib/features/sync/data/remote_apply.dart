@@ -26,6 +26,7 @@ class SyncRemoteApplier {
   }) async {
     await _normalizeLegacyTaskPayload(change);
     await _normalizeLegacyTimerPayload(change);
+    await _normalizeReviewPayload(change);
     SyncPayloadValidator.validate(change);
     if (change.operation == 'delete') return;
     if (change.tableName == 'tasks') {
@@ -233,7 +234,17 @@ class SyncRemoteApplier {
                 column.jsonKey != 'manual_actual_set' &&
                 column.jsonKey != 'plan_title_history_json' &&
                 column.jsonKey != 'display_plan_change_id' &&
+                column.jsonKey != 'plan_change_reasons_json' &&
                 column.jsonKey != 'recurrence_removal_reason',
+          )
+          .every((column) => change.payload.containsKey(column.jsonKey));
+    }
+    if (change.tableName == 'daily_reviews') {
+      return definition.columns
+          .where(
+            (column) =>
+                column.jsonKey != 'mood' &&
+                column.jsonKey != 'task_reasons_json',
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
     }
@@ -283,6 +294,12 @@ class SyncRemoteApplier {
     if (!payload.containsKey('recurrence_removal_reason')) {
       payload['recurrence_removal_reason'] = current?.recurrenceRemovalReason;
     }
+    // Servers without the review migration, and older clients, omit this
+    // field or send NULL. Absence never clears local reasons.
+    if (payload['plan_change_reasons_json'] == null) {
+      payload['plan_change_reasons_json'] =
+          current?.planChangeReasonsJson ?? '{}';
+    }
   }
 
   Future<void> _normalizeLegacyTimerPayload(SyncRemoteChange change) async {
@@ -304,6 +321,21 @@ class SyncRemoteApplier {
       payload['work_intervals_json'] = current.workIntervalsJson;
       payload['owner_device_id'] = current.ownerDeviceId;
     }
+  }
+
+  /// Mood and task reasons are absent or NULL on payloads from older clients
+  /// and from servers without the review migration. Keep the local values.
+  Future<void> _normalizeReviewPayload(SyncRemoteChange change) async {
+    if (change.tableName != 'daily_reviews' || change.operation == 'delete') {
+      return;
+    }
+    final payload = change.payload;
+    if (payload['mood'] != null && payload['task_reasons_json'] != null) {
+      return;
+    }
+    final current = await _db.reviewDao.getDailyReviewById(change.recordId);
+    payload['mood'] ??= current?.mood;
+    payload['task_reasons_json'] ??= current?.taskReasonsJson ?? '{}';
   }
 
   Future<void> _applySnapshot(
@@ -508,6 +540,7 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('missed_at'),
       _SyncColumn('plan_title_history_json'),
       _SyncColumn('display_plan_change_id'),
+      _SyncColumn('plan_change_reasons_json'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),
@@ -615,6 +648,8 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('planning_accuracy_rating'),
       _SyncColumn('wins_json'),
       _SyncColumn('improvements_json'),
+      _SyncColumn('mood'),
+      _SyncColumn('task_reasons_json'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),

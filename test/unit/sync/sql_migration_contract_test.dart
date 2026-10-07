@@ -25,6 +25,7 @@ void main() {
         '20260917000000_initial_sync_baseline.sql',
         '20261004000000_db_audit_server_hardening.sql',
         '20261004000100_sync_history_compaction.sql',
+        '20261007000000_review_outcomes.sql',
       ]),
     );
   });
@@ -40,7 +41,7 @@ void main() {
       r'name: "([0-9a-z_]+)",\s*\n\s*query: [A-Za-z0-9]+,\s*\n\s*sha256: "([0-9a-f]{64})"',
     ).allMatches(manifest).toList();
 
-    expect(entries, hasLength(8));
+    expect(entries, hasLength(9));
     for (final entry in entries) {
       final name = entry.group(1)!;
       final expected = entry.group(2)!;
@@ -63,6 +64,7 @@ void main() {
         '20260917000000_initial_sync_baseline',
         '20261004000000_db_audit_server_hardening',
         '20261004000100_sync_history_compaction',
+        '20261007000000_review_outcomes',
       ]),
     );
   });

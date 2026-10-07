@@ -52,6 +52,7 @@ const verificationRow = Object.fromEntries(
     "f03_wrappers_active",
     "initial_sync_fencing_present",
     "recurrence_provenance_present",
+    "review_outcomes_present",
     "relationships_owner_scoped",
     "direct_authenticated_writes_revoked",
     "anon_access_revoked",
@@ -995,9 +996,9 @@ describe("migration and verification recovery", () => {
       return Response.json(history);
     };
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(8);
+    expect(posts).toHaveLength(9);
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(8);
+    expect(posts).toHaveLength(9);
     // Our own migrations appearing out of order remain a terminal failure.
     expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "20260910000000_real_use_v2" }]))).toEqual({ kind: "failed", code: "migration_history_mismatch" });
     // A history the Worker cannot advance through stays retryable, never terminal.
@@ -1057,7 +1058,7 @@ describe("migration and verification recovery", () => {
     };
 
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(8);
+    expect(posts).toHaveLength(9);
   });
 
   it("accepts version and short-name history rows and applies only what is missing", async () => {
@@ -1085,6 +1086,7 @@ describe("migration and verification recovery", () => {
       "20260917000000_initial_sync_baseline",
       "20261004000000_db_audit_server_hardening",
       "20261004000100_sync_history_compaction",
+      "20261007000000_review_outcomes",
     ]);
   });
 
@@ -1095,7 +1097,7 @@ describe("migration and verification recovery", () => {
   });
 
   it("distinguishes fixed verification assertion failure from a passed result", async () => {
-    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","relationships_owner_scoped","direct_authenticated_writes_revoked","anon_access_revoked","security_definer_helpers_private","capability_payload_current"];
+    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","review_outcomes_present","relationships_owner_scoped","direct_authenticated_writes_revoked","anon_access_revoked","security_definer_helpers_private","capability_payload_current"];
     const passed = Object.fromEntries(keys.map(key => [key, true]));
     expect(await runFixedVerification(ref, async () => Response.json([passed]))).toBe("passed");
     expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, rls_enabled: false }]))).toBe("assertion_failed");
@@ -3030,7 +3032,7 @@ describe("migration history validation", () => {
       ]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
-      expect(api.posts).toHaveLength(7);
+      expect(api.posts).toHaveLength(8);
       expect(api.posts[0]).toBe(canonicalTwo);
     });
 
@@ -3038,7 +3040,7 @@ describe("migration history validation", () => {
       const api = advancingMigrationApi([{ name: canonicalOne, version: "20260827000000" }]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
-      expect(api.posts).toHaveLength(7);
+      expect(api.posts).toHaveLength(8);
       expect(api.posts[0]).toBe(canonicalTwo);
     });
 

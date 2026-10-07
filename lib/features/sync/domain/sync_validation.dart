@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../../core/models/timer_session.dart';
 import '../../../core/models/enums/recurrence_removal_reason.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/missed_at.dart';
 import '../../recurring/domain/rrule_utils.dart';
@@ -104,6 +105,7 @@ abstract final class SyncPayloadValidator {
             throw SyncValidationException(error.message);
           }
         }
+        _reasonsIfPresent(p, 'plan_change_reasons_json');
         // estimated_duration_min is a compatibility projection. Validate the
         // source interval below; remote apply recomputes this field rather
         // than allowing a stale/legacy cache value to reject or override it.
@@ -220,6 +222,8 @@ abstract final class SyncPayloadValidator {
         _ratingIfPresent(p, 'energy_level');
         _ratingIfPresent(p, 'productivity_rating');
         _ratingIfPresent(p, 'planning_accuracy_rating');
+        _moodIfPresent(p, 'mood');
+        _reasonsIfPresent(p, 'task_reasons_json');
         _requiredDateTime(p, 'created_at');
         _requiredDateTime(p, 'updated_at');
         break;
@@ -624,5 +628,20 @@ abstract final class SyncPayloadValidator {
   static void _ratingIfPresent(Map<String, dynamic> p, String key) {
     final value = p[key];
     if (value != null) _intInRange(p, key, 1, 5);
+  }
+
+  static void _moodIfPresent(Map<String, dynamic> p, String key) {
+    if (p[key] != null) _intInRange(p, key, 1, 4);
+  }
+
+  static void _reasonsIfPresent(Map<String, dynamic> p, String key) {
+    final raw = p[key];
+    if (raw == null) return;
+    if (raw is! String) throw SyncValidationException('$key must be JSON text');
+    try {
+      JsonMapUtils.parseReasons(raw);
+    } on FormatException catch (error) {
+      throw SyncValidationException(error.message);
+    }
   }
 }

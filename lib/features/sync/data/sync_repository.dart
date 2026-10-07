@@ -8,6 +8,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/sync_dao.dart';
 import '../../../core/models/plan_title_change.dart';
 import '../../../core/utils/json_list_utils.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../../core/utils/uuid.dart';
 import '../../settings/data/backup_codec.dart';
@@ -1973,11 +1974,24 @@ class SyncRepository {
       result[syncKey] = jsonEncode(value is List ? value : const <dynamic>[]);
     }
 
+    void jsonMap(String backupKey, String syncKey) {
+      final value = result.remove(backupKey);
+      result[syncKey] = JsonMapUtils.encode(
+        value is Map
+            ? {
+                for (final entry in value.entries)
+                  '${entry.key}': '${entry.value}',
+              }
+            : const <String, String>{},
+      );
+    }
+
     switch (table) {
       case 'tasks':
         integerFlag('is_inbox');
         integerFlag('manual_actual_set');
         jsonList('plan_title_history', 'plan_title_history_json');
+        jsonMap('plan_change_reasons', 'plan_change_reasons_json');
       case 'categories':
         integerFlag('is_focus');
       case 'subtasks':
@@ -1991,6 +2005,7 @@ class SyncRepository {
       case 'daily_reviews':
         jsonList('wins', 'wins_json');
         jsonList('improvements', 'improvements_json');
+        jsonMap('task_reasons', 'task_reasons_json');
       case 'weekly_reviews':
         jsonList('goals_met', 'goals_met_json');
         jsonList('goals_missed', 'goals_missed_json');
