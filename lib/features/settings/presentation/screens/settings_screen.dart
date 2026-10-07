@@ -19,6 +19,7 @@ import '../../../analytics/providers/analytics_providers.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
+import '../../../review/presentation/widgets/review_preset_editor.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../providers/notification_settings_providers.dart';
 import '../../data/backup_service.dart';
@@ -118,6 +119,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 subtitle: const Text('Daily review reminder'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _openSecondary(context, '/settings/notifications'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              key: const ValueKey('settings-review-reasons'),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.rate_review_outlined),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'Review reasons',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    const ReviewPresetEditor(),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
