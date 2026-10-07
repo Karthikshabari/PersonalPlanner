@@ -5,6 +5,7 @@ import '../../features/categories/presentation/screens/categories_screen.dart';
 import '../../features/analytics/presentation/screens/analytics_screen.dart';
 import '../../features/inbox/presentation/screens/inbox_screen.dart';
 import '../../features/review/presentation/screens/daily_review_screen.dart';
+import '../../features/review/presentation/screens/review_overview_screen.dart';
 import '../../features/review/presentation/screens/weekly_review_screen.dart';
 import '../../features/settings/presentation/screens/notifications_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
@@ -50,6 +51,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/review/weekly',
           builder: (context, state) => const WeeklyReviewScreen(),
+        ),
+        GoRoute(
+          path: '/review/overview',
+          builder: (context, state) => const ReviewOverviewScreen(),
         ),
         GoRoute(
           path: '/review',

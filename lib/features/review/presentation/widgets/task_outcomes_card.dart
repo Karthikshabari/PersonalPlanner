@@ -177,6 +177,31 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
   late final TextEditingController _reason = TextEditingController(
     text: widget.reason,
   );
+  final _focus = FocusNode();
+
+  /// True once the user has left the field (or picked a preset) with a
+  /// non-empty reason. Reasons are persisted only by "Save review", so this
+  /// means "noted", never "saved".
+  bool _noted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (_focus.hasFocus) {
+      if (_noted) setState(() => _noted = false);
+    } else {
+      _markNoted();
+    }
+  }
+
+  void _markNoted() {
+    final noted = _reason.text.trim().isNotEmpty;
+    if (noted != _noted) setState(() => _noted = noted);
+  }
 
   @override
   void didUpdateWidget(TaskOutcomeRowView oldWidget) {
@@ -184,11 +209,13 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
     if (oldWidget.hydrationVersion != widget.hydrationVersion &&
         _reason.text != widget.reason) {
       _reason.text = widget.reason;
+      _noted = false;
     }
   }
 
   @override
   void dispose() {
+    _focus.dispose();
     _reason.dispose();
     super.dispose();
   }
@@ -266,16 +293,25 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
                     child: TextField(
                       key: ValueKey('review-reason-${row.taskId}'),
                       controller: _reason,
+                      focusNode: _focus,
                       enabled: widget.enabled,
                       maxLines: 1,
                       inputFormatters: [
                         LengthLimitingTextInputFormatter(maxReviewReasonLength),
                       ],
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         isDense: true,
                         hintText: 'Why was this not done? (optional)',
+                        suffixIcon: _NotedBadge(
+                          visible: _noted && _reason.text.trim().isNotEmpty,
+                        ),
+                        suffixIconConstraints: const BoxConstraints(),
                       ),
-                      onChanged: widget.onReasonChanged,
+                      onChanged: (text) {
+                        if (_noted) setState(() => _noted = false);
+                        widget.onReasonChanged(text);
+                      },
+                      onSubmitted: (_) => _markNoted(),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -301,6 +337,7 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
                                       ),
                                     );
                                     widget.onReasonChanged(p);
+                                    _markNoted();
                                   }
                                 : null,
                           ),
@@ -324,6 +361,52 @@ class _TaskOutcomeRowViewState extends State<TaskOutcomeRowView> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Quiet "reason entered" confirmation at the end of the reason field. Fades
+/// and scales in (instantly with reduced motion); wording is "Noted" because
+/// nothing is persisted until "Save review".
+class _NotedBadge extends StatelessWidget {
+  final bool visible;
+
+  const _NotedBadge({required this.visible});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!visible) return const SizedBox.shrink();
+    final teal = ReviewColors.of(context).success;
+    return Semantics(
+      label: 'Reason noted',
+      excludeSemantics: true,
+      child: TweenAnimationBuilder<double>(
+        key: const ValueKey('review-reason-noted'),
+        tween: Tween(begin: 0, end: 1),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        builder: (context, t, child) => Opacity(
+          opacity: t,
+          child: Transform.scale(scale: 0.9 + 0.1 * t, child: child),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(right: AppSpacing.sm),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_rounded, size: 16, color: teal),
+              const SizedBox(width: 4),
+              Text(
+                'Noted',
+                style: Theme.of(context).textTheme.labelMedium
+                    ?.copyWith(color: teal),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

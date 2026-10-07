@@ -47,6 +47,10 @@ class WeeklyReviewScreen extends ConsumerWidget {
               ReviewModeSwitcher(
                 weekly: true,
                 onChanged: (mode) {
+                  if (mode == 'overview') {
+                    openReviewPath(context, '/review/overview');
+                    return;
+                  }
                   if (mode != 'daily') return;
                   ref.read(selectedReviewDateProvider.notifier).state =
                       weekStart;

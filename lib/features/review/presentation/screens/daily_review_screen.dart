@@ -85,6 +85,10 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                         child: ReviewModeSwitcher(
                           weekly: false,
                           onChanged: (mode) {
+                            if (mode == 'overview') {
+                              openReviewPath(context, '/review/overview');
+                              return;
+                            }
                             if (mode != 'weekly') return;
                             ref.read(selectedWeekStartProvider.notifier).state =
                                 startOfWeek(date);
