@@ -8,13 +8,14 @@ import '../../../core/utils/duration_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../timeline/data/task_repository.dart';
+import 'review_plan_change.dart';
 
 /// A small, deterministic description of a final plan difference.
 ///
 /// Review deliberately derives these from the final task rows. It does not
 /// replay every intermediate edit, which keeps a move such as 10:00 → 10:15
 /// → 10:00 out of the review.
-enum ReviewChangeKind { moved, added, status, duration }
+enum ReviewChangeKind { moved, added, status, duration, planChanged }
 
 class ReviewChange {
   final String taskTitle;
@@ -70,7 +71,7 @@ class ReviewInsightsService {
     final relevant = tasks.where((task) => _scheduledIn(task, day, end));
     final changes = <ReviewChange>[];
     for (final task in relevant) {
-      changes.addAll(_changesForTask(task, day, end, byId));
+      changes.addAll(_changesForTask(task, day, end, byId, singleDay: true));
     }
     return ReviewInsights(
       changes: changes,
@@ -94,7 +95,13 @@ class ReviewInsightsService {
     final seen = <String>{};
     for (final task in tasks) {
       if (!_scheduledIn(task, start, end)) continue;
-      for (final change in _changesForTask(task, start, end, byId)) {
+      for (final change in _changesForTask(
+        task,
+        start,
+        end,
+        byId,
+        singleDay: false,
+      )) {
         final key = '${task.id}:${change.kind.name}:${change.detail}';
         if (seen.add(key)) changes.add(change);
       }
@@ -126,8 +133,9 @@ class ReviewInsightsService {
     Task task,
     DateTime rangeStart,
     DateTime rangeEnd,
-    Map<String, Task> byId,
-  ) {
+    Map<String, Task> byId, {
+    required bool singleDay,
+  }) {
     final changes = <ReviewChange>[];
     final target = task.rescheduledToId == null
         ? null
@@ -142,16 +150,25 @@ class ReviewInsightsService {
       );
     }
 
-    if (task.createdAt.isAfter(rangeStart) &&
+    if (!singleDay &&
+        task.createdAt.isAfter(rangeStart) &&
         task.createdAt.isBefore(rangeEnd)) {
-      final period = rangeEnd.difference(rangeStart).inDays > 1
-          ? 'week'
-          : 'day';
       changes.add(
         ReviewChange(
           taskTitle: task.title,
-          detail: 'Added during the $period',
+          detail: 'Added during the week',
           kind: ReviewChangeKind.added,
+        ),
+      );
+    }
+
+    final planChange = singleDay ? ReviewPlanChange.forTask(task) : null;
+    if (planChange != null) {
+      changes.add(
+        ReviewChange(
+          taskTitle: task.title,
+          detail: 'Plan changed from “${planChange.oldValue}”',
+          kind: ReviewChangeKind.planChanged,
         ),
       );
     }

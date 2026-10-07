@@ -99,7 +99,7 @@ void main() {
       expect(find.text('Energy level'), findsNothing);
       expect(find.text('Planning accuracy'), findsNothing);
       expect(find.text('What changed'), findsOneWidget);
-      expect(find.text('Added during the day'), findsAtLeastNWidgets(1));
+      expect(find.text('Added during the day'), findsNothing);
       await finish(tester, container);
     },
   );

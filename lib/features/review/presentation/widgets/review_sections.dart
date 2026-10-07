@@ -145,6 +145,7 @@ class _ChangeRow extends StatelessWidget {
     ReviewChangeKind.added => Icons.add_circle_outline,
     ReviewChangeKind.status => Icons.remove_circle_outline,
     ReviewChangeKind.duration => Icons.timer_outlined,
+    ReviewChangeKind.planChanged => Icons.edit_note_rounded,
   };
 }
 
