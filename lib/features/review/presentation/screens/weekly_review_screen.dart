@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -46,6 +50,10 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     ..addListener(_onTab);
   final _scrollController = ScrollController();
   final _saveFocusNode = FocusNode(debugLabel: 'weekly-save');
+  final _revealKey = GlobalKey();
+
+  /// Content is at least 760 dp wide (two columns, Ctrl + Enter hint).
+  bool _wide = true;
 
   void _onTab() {
     if (mounted) setState(() {});
@@ -95,85 +103,111 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       ),
       body: ColoredBox(
         color: tokens.canvas,
-        child: Column(
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) => ListView(
-                  controller: _scrollController,
-                  padding: EdgeInsets.all(
-                    constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = constraints.maxWidth < 600
+                ? AppSpacing.md
+                : AppSpacing.lg;
+            final wide =
+                math.min(constraints.maxWidth - 2 * padding, 1000.0) >= 760;
+            _wide = wide;
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  control: true,
+                ): () =>
+                    _save(weekStart),
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  meta: true,
+                ): () =>
+                    _save(weekStart),
+              },
+              child: Focus(
+                autofocus: true,
+                child: Column(
                   children: [
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1000),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ReviewModeSwitcher(
-                                weekly: true,
-                                onChanged: (mode) => _onMode(mode, weekStart),
-                              ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            _buildHeader(weekStart, reviewAsync, future),
-                            const SizedBox(height: AppSpacing.sm),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: TabBar(
-                                key: const ValueKey('weekly-subtabs'),
-                                controller: _tabs,
-                                isScrollable: true,
-                                tabAlignment: TabAlignment.start,
-                                tabs: const [
-                                  Tab(text: 'Review'),
-                                  Tab(text: 'Next week (optional)'),
+                    Expanded(
+                      child: ListView(
+                        controller: _scrollController,
+                        padding: EdgeInsets.all(padding),
+                        children: [
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1000),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: ReviewModeSwitcher(
+                                      weekly: true,
+                                      onChanged: (mode) =>
+                                          _onMode(mode, weekStart),
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  _buildHeader(weekStart, reviewAsync, future),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TabBar(
+                                      key: const ValueKey('weekly-subtabs'),
+                                      controller: _tabs,
+                                      isScrollable: true,
+                                      tabAlignment: TabAlignment.start,
+                                      tabs: const [
+                                        Tab(text: 'Review'),
+                                        Tab(text: 'Next week (optional)'),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.md),
+                                  if (_tabs.index == 0)
+                                    _buildReviewTab(
+                                      weekStart: weekStart,
+                                      daysAsync: daysAsync,
+                                      numbers: numbers,
+                                      history: history,
+                                      draft: draft,
+                                      future: future,
+                                      wide: wide,
+                                    )
+                                  else
+                                    WeeklyNextWeekTab(
+                                      key: ValueKey(
+                                        'weekly-next-week-${isoDateString(weekStart)}',
+                                      ),
+                                      draft: draft,
+                                      onChanged: ref
+                                          .read(
+                                            weeklyReviewDraftProvider(weekStart)
+                                                .notifier,
+                                          )
+                                          .setNote,
+                                      blockerLine:
+                                          numbers?.blockerLine ??
+                                          'No blockers recorded this week.',
+                                    ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: AppSpacing.md),
-                            if (_tabs.index == 0)
-                              _buildReviewTab(
-                                weekStart: weekStart,
-                                daysAsync: daysAsync,
-                                numbers: numbers,
-                                history: history,
-                                draft: draft,
-                                future: future,
-                              )
-                            else
-                              WeeklyNextWeekTab(
-                                key: ValueKey(
-                                  'weekly-next-week-${isoDateString(weekStart)}',
-                                ),
-                                draft: draft,
-                                onChanged: ref
-                                    .read(
-                                      weeklyReviewDraftProvider(weekStart)
-                                          .notifier,
-                                    )
-                                    .setNote,
-                                blockerLine:
-                                    numbers?.blockerLine ??
-                                    'No blockers recorded this week.',
-                              ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
+                    ),
+                    WeeklySaveBar(
+                      draft: draft,
+                      focusNode: _saveFocusNode,
+                      onSave: () => _save(weekStart),
+                      showShortcutHint: wide,
                     ),
                   ],
                 ),
               ),
-            ),
-            WeeklySaveBar(
-              draft: draft,
-              focusNode: _saveFocusNode,
-              onSave: () => _save(weekStart),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -232,6 +266,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     required List<WeeklyHistoryWeek> history,
     required WeeklyReviewDraft draft,
     required bool future,
+    required bool wide,
   }) {
     if (daysAsync.hasError) {
       return ErrorPanel(message: friendlyErrorMessage(daysAsync.error!));
@@ -257,70 +292,68 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       draft: draft,
       onChanged: notifier.setFeeling,
     );
-    final reveal = WeeklyRevealCard(
-      key: const ValueKey('weekly-reveal'),
-      dots: weeklyDots(history),
+    final reveal = KeyedSubtree(
+      key: _revealKey,
+      child: WeeklyRevealCard(
+        key: const ValueKey('weekly-reveal'),
+        dots: weeklyDots(history),
+      ),
     );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 760;
-        const gap = SizedBox(height: AppSpacing.md);
-        final top = <Widget>[
-          if (note != null) ...[
-            WeeklyNoteLine(
-              key: const ValueKey('weekly-from-last-week'),
-              heading: 'From last week',
-              note: note,
-            ),
-            gap,
-          ],
-          glance,
-          gap,
-        ];
-        if (wide) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    const gap = SizedBox(height: AppSpacing.md);
+    final top = <Widget>[
+      if (note != null) ...[
+        WeeklyNoteLine(
+          key: const ValueKey('weekly-from-last-week'),
+          heading: 'From last week',
+          note: note,
+        ),
+        gap,
+      ],
+      glance,
+      gap,
+    ];
+    if (wide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ...top,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ...top,
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 29,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [reasons, gap, outcomes],
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    flex: 20,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [mood, gap, feeling, gap, reveal],
-                    ),
-                  ),
-                ],
+              Expanded(
+                flex: 29,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [reasons, gap, outcomes],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                flex: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [mood, gap, feeling, gap, reveal],
+                ),
               ),
             ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ...top,
-            mood,
-            gap,
-            feeling,
-            gap,
-            reveal,
-            gap,
-            reasons,
-            gap,
-            outcomes,
-          ],
-        );
-      },
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ...top,
+        mood,
+        gap,
+        feeling,
+        gap,
+        reveal,
+        gap,
+        reasons,
+        gap,
+        outcomes,
+      ],
     );
   }
 
@@ -330,13 +363,49 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         .save();
     if (!mounted) return;
     if (!ok) {
+      // `save` also returns false for "already saving / not hydrated"; only a
+      // real write failure gets the error message.
       if (ref.read(weeklyReviewDraftProvider(weekStart)).saveStatus ==
           ReviewSaveStatus.failed) {
-        showReviewSnackBar(context, 'Couldn\'t save the review. Try again.');
+        showReviewSnackBar(
+          context,
+          'Couldn\'t save the review. Try again.',
+          liftBy: 72,
+        );
       }
       return;
     }
     ref.invalidate(weeklyReviewHistoryProvider);
-    showReviewSnackBar(context, 'Review saved');
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      HapticFeedback.lightImpact();
+    }
+    final firstReveal = ref.read(weeklyRevealPlayedProvider).add(weekStart);
+    if (_tabs.index != 0) _tabs.index = 0;
+    showReviewSnackBar(
+      context,
+      'Review saved',
+      actionLabel: 'See in Overview',
+      onAction: () {
+        if (mounted) openReviewPath(context, '/review/overview');
+      },
+      liftBy: 72,
+    );
+    if (firstReveal && !_wide) _scrollToReveal();
+  }
+
+  /// Centres "Your week" after the first save on a narrow layout, once the
+  /// Review tab is on screen; instant with reduced motion.
+  void _scrollToReveal() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = _revealKey.currentContext;
+      if (!mounted || target == null) return;
+      Scrollable.ensureVisible(
+        target,
+        alignment: 0.5,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 300),
+      );
+    });
   }
 }

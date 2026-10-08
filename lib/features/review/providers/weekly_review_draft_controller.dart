@@ -14,6 +14,13 @@ final weeklyReviewDraftKeeperProvider = Provider<ReviewDraftKeeper>(
   (ref) => ReviewDraftKeeper(),
 );
 
+/// Week starts whose "Your week" reveal already played in this app session
+/// (WD14). It lives as long as the provider container (the signed-in
+/// account); a new session starts empty.
+final weeklyRevealPlayedProvider = Provider<Set<DateTime>>(
+  (ref) => <DateTime>{},
+);
+
 /// Draft for one week. Callers must pass `startOfWeek(date)`. Unsaved edits
 /// keep the draft alive across tab and route switches, exactly like Daily.
 final weeklyReviewDraftProvider = NotifierProvider.autoDispose
