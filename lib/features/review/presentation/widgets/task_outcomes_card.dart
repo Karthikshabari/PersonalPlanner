@@ -415,7 +415,15 @@ class _NotedBadge extends StatelessWidget {
 class PlanChangeBlock extends StatelessWidget {
   final ReviewPlanChange change;
 
-  const PlanChangeBlock({super.key, required this.change});
+  /// Text between `PLAN CHANGED` and the reason: two spaces in Daily,
+  /// ` · ` in Weekly (WD29).
+  final String reasonSeparator;
+
+  const PlanChangeBlock({
+    super.key,
+    required this.change,
+    this.reasonSeparator = '  ',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -453,7 +461,7 @@ class PlanChangeBlock extends StatelessWidget {
                 ),
                 if (change.reason != null)
                   TextSpan(
-                    text: '  ${change.reason}',
+                    text: '$reasonSeparator${change.reason}',
                     style: textTheme.bodySmall?.copyWith(
                       color: tokens.textMuted,
                     ),
