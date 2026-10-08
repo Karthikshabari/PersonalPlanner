@@ -14,6 +14,8 @@ import '../domain/review_overview.dart';
 import '../domain/task_outcome.dart';
 import '../domain/task_outcome_service.dart';
 import '../domain/weekly_review_history.dart';
+import '../domain/weekly_review_numbers.dart';
+import '../domain/weekly_review_service.dart';
 
 final reviewRepositoryProvider = Provider<ReviewRepository>((ref) {
   return ReviewRepository(ref.watch(appDatabaseProvider));
@@ -136,4 +138,20 @@ final weeklyReviewHistoryProvider = FutureProvider.autoDispose
       return ref
           .watch(weeklyReviewHistoryServiceProvider)
           .load(startOfWeek(weekStart));
+    });
+
+final weeklyReviewServiceProvider = Provider<WeeklyReviewService>((ref) {
+  return WeeklyReviewService(ref.watch(appDatabaseProvider));
+});
+
+/// The seven days of the week starting at [weekStart] with their tasks,
+/// reasons, moods and day contexts. Recomputed only when a task, review or
+/// day-context row changes (no timers).
+final weeklyDaysProvider = StreamProvider.autoDispose
+    .family<List<WeeklyDayInput>, DateTime>((ref, weekStart) {
+      final normalized = startOfWeek(weekStart);
+      return watchReactiveStats(
+        ref.read(appDatabaseProvider),
+        () => ref.read(weeklyReviewServiceProvider).loadWeek(normalized),
+      );
     });
