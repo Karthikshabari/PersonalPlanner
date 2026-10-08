@@ -85,15 +85,6 @@ final dailyReviewInsightsProvider = StreamProvider.autoDispose
       );
     });
 
-final weeklyReviewInsightsProvider = StreamProvider.autoDispose
-    .family<ReviewInsights, DateTime>((ref, weekStart) {
-      final normalized = startOfWeek(weekStart);
-      return watchReactiveStats(
-        ref.read(appDatabaseProvider),
-        () => ref.read(reviewInsightsServiceProvider).forWeek(normalized),
-      );
-    });
-
 final taskOutcomeServiceProvider = Provider<TaskOutcomeService>((ref) {
   return TaskOutcomeService(ref.watch(appDatabaseProvider));
 });

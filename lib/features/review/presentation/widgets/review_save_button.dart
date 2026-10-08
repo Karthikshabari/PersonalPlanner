@@ -13,12 +13,17 @@ class ReviewSaveButton extends StatelessWidget {
     required this.enabled,
     required this.focusNode,
     required this.onPressed,
+    this.buttonKey = const ValueKey('review-save'),
   });
 
   final ReviewSaveStatus status;
   final bool enabled;
   final FocusNode focusNode;
   final VoidCallback onPressed;
+
+  /// Key of the button itself: `review-save` in Daily, `weekly-save` in
+  /// Weekly (WD30).
+  final Key buttonKey;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +36,7 @@ class ReviewSaveButton extends StatelessWidget {
         ? Colors.white
         : Colors.black;
     return FilledButton(
-      key: const ValueKey('review-save'),
+      key: buttonKey,
       focusNode: focusNode,
       onPressed: enabled && !saving ? onPressed : null,
       style: FilledButton.styleFrom(

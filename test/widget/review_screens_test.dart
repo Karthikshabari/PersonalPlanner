@@ -418,7 +418,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('weekly review shows aggregates and saves the review', (
+  testWidgets('weekly review shows the redesigned review and saves it', (
     tester,
   ) async {
     final container = await pumpReview(tester);
@@ -434,11 +434,13 @@ void main() {
     await settle(tester);
 
     expect(find.text('Weekly Review'), findsOneWidget);
-    expect(find.text('This week'), findsOneWidget);
-    expect(find.text('1 / 2 completed'), findsOneWidget);
-    expect(find.text('What changed this week'), findsOneWidget);
+    expect(find.text('Week at a glance'), findsOneWidget);
+    expect(find.text('50% completed'), findsOneWidget);
+    expect(find.text('What changed this week'), findsNothing);
     expect(find.text('Nothing carried forward.'), findsNothing);
 
+    await tester.tap(find.text('Next week (optional)'));
+    await settle(tester);
     await tester.enterText(
       find.byKey(const ValueKey('weekly-note')),
       'Good week overall',
@@ -447,7 +449,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('weekly-save')));
     await settle(tester);
-    expect(find.text('Weekly review saved'), findsOneWidget);
+    expect(find.text('Review saved'), findsOneWidget);
 
     final repo = container.read(reviewRepositoryProvider);
     final saved = await runDb(
@@ -455,6 +457,7 @@ void main() {
       () => repo.getWeeklyReviewForWeek(startOfWeek(DateTime.now())),
     );
     expect(saved!.reflection, 'Good week overall');
+    expect(saved.mood, 1);
     await finish(tester, container);
   });
 

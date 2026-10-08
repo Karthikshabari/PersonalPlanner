@@ -3,33 +3,90 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/models/daily_stats.dart';
-import '../../../../core/models/weekly_review.dart';
 import '../../../../core/layout/adaptive_layout.dart';
+import '../../../../core/models/weekly_review.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
-import '../../domain/review_insights.dart';
+import '../../domain/review_draft.dart';
+import '../../domain/weekly_review_draft.dart';
+import '../../domain/weekly_review_history.dart';
+import '../../domain/weekly_review_numbers.dart';
 import '../../providers/review_providers.dart';
+import '../../providers/weekly_review_draft_controller.dart';
 import '../widgets/review_mode_switcher.dart';
-import '../widgets/review_sections.dart';
+import '../widgets/review_snack_bar.dart';
+import '../widgets/review_status_chip.dart';
+import '../widgets/weekly_feeling_card.dart';
+import '../widgets/weekly_glance_card.dart';
+import '../widgets/weekly_mood_card.dart';
+import '../widgets/weekly_next_week_tab.dart';
+import '../widgets/weekly_note_line.dart';
+import '../widgets/weekly_outcomes_card.dart';
+import '../widgets/weekly_reasons_card.dart';
+import '../widgets/weekly_reveal_card.dart';
+import '../widgets/weekly_save_bar.dart';
 
-class WeeklyReviewScreen extends ConsumerWidget {
+/// Weekly review: a "Review" sub-tab and a "Next week (optional)" sub-tab
+/// sharing one Save bar (spec 3.1).
+class WeeklyReviewScreen extends ConsumerStatefulWidget {
   const WeeklyReviewScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final weekStart = ref.watch(selectedWeekStartProvider);
-    final statsAsync = ref.watch(weeklyStatsProvider(weekStart));
-    final insightsAsync = ref.watch(weeklyReviewInsightsProvider(weekStart));
+  ConsumerState<WeeklyReviewScreen> createState() => _WeeklyReviewScreenState();
+}
+
+class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 2, vsync: this)
+    ..addListener(_onTab);
+  final _scrollController = ScrollController();
+  final _saveFocusNode = FocusNode(debugLabel: 'weekly-save');
+
+  void _onTab() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _scrollController.dispose();
+    _saveFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onMode(String mode, DateTime weekStart) {
+    if (mode == 'overview') {
+      openReviewPath(context, '/review/overview');
+      return;
+    }
+    if (mode != 'daily') return;
+    ref.read(selectedReviewDateProvider.notifier).state = weekStart;
+    if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+      context.go('/review');
+    } else {
+      context.push('/review');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final weekStart = startOfWeek(ref.watch(selectedWeekStartProvider));
+    final daysAsync = ref.watch(weeklyDaysProvider(weekStart));
+    final history =
+        ref.watch(weeklyReviewHistoryProvider(weekStart)).value ??
+        const <WeeklyHistoryWeek>[];
+    final reviewAsync = ref.watch(weeklyReviewProvider(weekStart));
+    final draft = ref.watch(weeklyReviewDraftProvider(weekStart));
     final tokens = AppThemeTokens.of(context);
-    final currentWeek = startOfWeek(DateTime.now());
-    final future = weekStart.isAfter(currentWeek);
+    final future = weekStart.isAfter(startOfWeek(DateTime.now()));
+    final numbers = daysAsync.hasValue
+        ? computeWeeklyNumbers(daysAsync.requireValue)
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -38,51 +95,94 @@ class WeeklyReviewScreen extends ConsumerWidget {
       ),
       body: ColoredBox(
         color: tokens.canvas,
-        child: LayoutBuilder(
-          builder: (context, constraints) => ListView(
-            padding: EdgeInsets.all(
-              constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
+        child: Column(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) => ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.all(
+                    constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
+                  ),
+                  children: [
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1000),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ReviewModeSwitcher(
+                                weekly: true,
+                                onChanged: (mode) => _onMode(mode, weekStart),
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            _buildHeader(weekStart, reviewAsync, future),
+                            const SizedBox(height: AppSpacing.sm),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: TabBar(
+                                key: const ValueKey('weekly-subtabs'),
+                                controller: _tabs,
+                                isScrollable: true,
+                                tabAlignment: TabAlignment.start,
+                                tabs: const [
+                                  Tab(text: 'Review'),
+                                  Tab(text: 'Next week (optional)'),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            if (_tabs.index == 0)
+                              _buildReviewTab(
+                                weekStart: weekStart,
+                                daysAsync: daysAsync,
+                                numbers: numbers,
+                                history: history,
+                                draft: draft,
+                                future: future,
+                              )
+                            else
+                              WeeklyNextWeekTab(
+                                key: ValueKey(
+                                  'weekly-next-week-${isoDateString(weekStart)}',
+                                ),
+                                draft: draft,
+                                onChanged: ref
+                                    .read(
+                                      weeklyReviewDraftProvider(weekStart)
+                                          .notifier,
+                                    )
+                                    .setNote,
+                                blockerLine:
+                                    numbers?.blockerLine ??
+                                    'No blockers recorded this week.',
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            children: [
-              ReviewModeSwitcher(
-                weekly: true,
-                onChanged: (mode) {
-                  if (mode == 'overview') {
-                    openReviewPath(context, '/review/overview');
-                    return;
-                  }
-                  if (mode != 'daily') return;
-                  ref.read(selectedReviewDateProvider.notifier).state =
-                      weekStart;
-                  if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
-                    context.go('/review');
-                  } else {
-                    context.push('/review');
-                  }
-                },
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _buildWeekNav(context, ref, weekStart),
-              const SizedBox(height: AppSpacing.md),
-              _buildSummary(statsAsync, insightsAsync, future),
-              const SizedBox(height: AppSpacing.md),
-              _buildChanges(insightsAsync, future),
-              const SizedBox(height: AppSpacing.md),
-              _WeeklyReviewForm(
-                key: ValueKey('weekly-form-$weekStart'),
-                weekStart: weekStart,
-              ),
-            ],
-          ),
+            WeeklySaveBar(
+              draft: draft,
+              focusNode: _saveFocusNode,
+              onSave: () => _save(weekStart),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildWeekNav(
-    BuildContext context,
-    WidgetRef ref,
+  Widget _buildHeader(
     DateTime weekStart,
+    AsyncValue<WeeklyReview?> reviewAsync,
+    bool future,
   ) {
     final notifier = ref.read(selectedWeekStartProvider.notifier);
     final weekEnd = addDays(weekStart, 6);
@@ -98,7 +198,8 @@ class WeeklyReviewScreen extends ConsumerWidget {
           onPressed: () => notifier.state = addDays(weekStart, -7),
         ),
         Text(
-          '${DateFormat('MMM d').format(weekStart)} – ${DateFormat('MMM d, yyyy').format(weekEnd)}',
+          '${DateFormat('MMM d').format(weekStart)} – '
+          '${DateFormat('MMM d, yyyy').format(weekEnd)}',
           style: Theme.of(context).textTheme.titleLarge,
         ),
         IconButton(
@@ -113,188 +214,129 @@ class WeeklyReviewScreen extends ConsumerWidget {
           onPressed: () => notifier.state = startOfWeek(DateTime.now()),
           child: const Text('This Week'),
         ),
+        if (!future && reviewAsync.hasValue)
+          ReviewStatusChip(
+            key: const ValueKey('weekly-status-chip'),
+            reviewed: reviewAsync.value != null,
+            mood: reviewAsync.value?.mood,
+            onPressed: _saveFocusNode.requestFocus,
+          ),
       ],
     );
   }
 
-  Widget _buildSummary(
-    AsyncValue<DailyStats> stats,
-    AsyncValue<ReviewInsights> insights,
-    bool future,
-  ) {
-    if (stats.hasError) {
-      return ErrorPanel(message: friendlyErrorMessage(stats.error!));
+  Widget _buildReviewTab({
+    required DateTime weekStart,
+    required AsyncValue<List<WeeklyDayInput>> daysAsync,
+    required WeeklyNumbers? numbers,
+    required List<WeeklyHistoryWeek> history,
+    required WeeklyReviewDraft draft,
+    required bool future,
+  }) {
+    if (daysAsync.hasError) {
+      return ErrorPanel(message: friendlyErrorMessage(daysAsync.error!));
     }
-    if (insights.hasError) {
-      return ErrorPanel(message: friendlyErrorMessage(insights.error!));
-    }
-    if (!stats.hasValue || !insights.hasValue) {
+    if (numbers == null) {
       return const AppSurface(child: LinearProgressIndicator());
     }
-    return ReviewSummarySection(
-      stats: stats.requireValue,
-      insights: insights.requireValue,
-      future: future,
-      heading: 'This week',
-      emptyLabel: 'No planned items for this week.',
+    final notifier = ref.read(weeklyReviewDraftProvider(weekStart).notifier);
+    final note = fromLastWeekNote(history);
+    final glance = WeeklyGlanceCard(numbers: numbers, future: future);
+    final reasons = WeeklyReasonsCard(numbers: numbers);
+    final outcomes = WeeklyOutcomesCard(rows: numbers.outcomeRows);
+    final mood = WeeklyMoodCard(
+      selected: draft.mood,
+      enabled: draft.hydrated,
+      onChanged: notifier.setMood,
+      lastWeekHint: lastWeekMoodHint(history),
     );
-  }
-
-  Widget _buildChanges(AsyncValue<ReviewInsights> insights, bool future) {
-    if (!insights.hasValue) return const SizedBox.shrink();
-    return ReviewChangesSection(
-      insights: insights.requireValue,
-      future: future,
-      heading: 'What changed this week',
+    final feeling = WeeklyFeelingCard(
+      // One text controller per week: a draft restored for week A must not
+      // be shown through the field state of week B.
+      key: ValueKey('weekly-feeling-card-${isoDateString(weekStart)}'),
+      draft: draft,
+      onChanged: notifier.setFeeling,
     );
-  }
-}
-
-class _WeeklyReviewForm extends ConsumerStatefulWidget {
-  final DateTime weekStart;
-
-  const _WeeklyReviewForm({super.key, required this.weekStart});
-
-  @override
-  ConsumerState<_WeeklyReviewForm> createState() => _WeeklyReviewFormState();
-}
-
-class _WeeklyReviewFormState extends ConsumerState<_WeeklyReviewForm> {
-  final _noteController = TextEditingController();
-  WeeklyReview? _existing;
-  bool _saving = false;
-  bool _hydrated = false;
-  bool _hydrating = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _hydrate();
-  }
-
-  @override
-  void dispose() {
-    _noteController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _hydrate() async {
-    if (mounted) {
-      setState(() {
-        _hydrating = true;
-        _error = null;
-      });
-    }
-    try {
-      final existing = await ref
-          .read(reviewRepositoryProvider)
-          .getWeeklyReviewForWeek(widget.weekStart);
-      if (!mounted) return;
-      setState(() {
-        _existing = existing;
-        _noteController.text = existing?.reflection ?? '';
-        _hydrated = true;
-        _hydrating = false;
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _hydrating = false;
-          _hydrated = false;
-          _error = friendlyErrorMessage(error);
-        });
-      }
-    }
-  }
-
-  Future<void> _save() async {
-    if (_saving || !_hydrated) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final old = _existing;
-      await ref
-          .read(reviewRepositoryProvider)
-          .saveWeeklyReview(
-            WeeklyReview(
-              id: old?.id ?? '',
-              weekStartDate: widget.weekStart,
-              reflection: _noteController.text.trim().isEmpty
-                  ? null
-                  : _noteController.text.trim(),
-              // Keep legacy weekly fields intact while the simplified UI is used.
-              overallRating: old?.overallRating,
-              goalsMet: old?.goalsMet ?? const [],
-              goalsMissed: old?.goalsMissed ?? const [],
-              nextWeekFocus: old?.nextWeekFocus ?? const [],
-              createdAt: old?.createdAt ?? DateTime.now(),
-              updatedAt: DateTime.now(),
+    final reveal = WeeklyRevealCard(
+      key: const ValueKey('weekly-reveal'),
+      dots: weeklyDots(history),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 760;
+        const gap = SizedBox(height: AppSpacing.md);
+        final top = <Widget>[
+          if (note != null) ...[
+            WeeklyNoteLine(
+              key: const ValueKey('weekly-from-last-week'),
+              heading: 'From last week',
+              note: note,
             ),
-          );
-      if (!mounted) return;
-      setState(() => _saving = false);
-      showAppToast(context, 'Weekly review saved');
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = friendlyErrorMessage(error);
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Anything worth remembering?',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            'Anything from this week that would help you plan the next one?',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (_hydrating) const LinearProgressIndicator(),
-          if (_error != null)
-            ErrorPanel(message: _error!, onRetry: _hydrate, compact: true),
-          AbsorbPointer(
-            absorbing: !_hydrated || _saving,
-            child: Column(
-              children: [
-                TextField(
-                  key: const ValueKey('weekly-note'),
-                  controller: _noteController,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    hintText: 'Anything from this week that would help you plan the next one?',
+            gap,
+          ],
+          glance,
+          gap,
+        ];
+        if (wide) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...top,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 29,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [reasons, gap, outcomes],
+                    ),
                   ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                FilledButton(
-                  key: const ValueKey('weekly-save'),
-                  onPressed: _save,
-                  child: _saving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Save review'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    flex: 20,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [mood, gap, feeling, gap, reveal],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ...top,
+            mood,
+            gap,
+            feeling,
+            gap,
+            reveal,
+            gap,
+            reasons,
+            gap,
+            outcomes,
+          ],
+        );
+      },
     );
+  }
+
+  Future<void> _save(DateTime weekStart) async {
+    final ok = await ref
+        .read(weeklyReviewDraftProvider(weekStart).notifier)
+        .save();
+    if (!mounted) return;
+    if (!ok) {
+      if (ref.read(weeklyReviewDraftProvider(weekStart)).saveStatus ==
+          ReviewSaveStatus.failed) {
+        showReviewSnackBar(context, 'Couldn\'t save the review. Try again.');
+      }
+      return;
+    }
+    ref.invalidate(weeklyReviewHistoryProvider);
+    showReviewSnackBar(context, 'Review saved');
   }
 }
