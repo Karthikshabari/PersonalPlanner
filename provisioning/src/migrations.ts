@@ -15,6 +15,7 @@ import initialSyncBaseline from "../../supabase/migrations/20260917000000_initia
 import dbAuditServerHardening from "../../supabase/migrations/20261004000000_db_audit_server_hardening.sql";
 import syncHistoryCompaction from "../../supabase/migrations/20261004000100_sync_history_compaction.sql";
 import reviewOutcomes from "../../supabase/migrations/20261007000000_review_outcomes.sql";
+import weeklyReviewMoodFeeling from "../../supabase/migrations/20261008000000_weekly_review_mood_feeling.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -62,6 +63,11 @@ export const MIGRATIONS = [
     name: "20261007000000_review_outcomes",
     query: reviewOutcomes,
     sha256: "76126c5c635c40d2c1310ab83f8174ca30a823c6d366e7f4221846ea54526fe2",
+  },
+  {
+    name: "20261008000000_weekly_review_mood_feeling",
+    query: weeklyReviewMoodFeeling,
+    sha256: "8e4d7f374cd4960afb815e1bb593e5d7bef18c7701ddd86244369bc4696d767d",
   },
 ] as const;
 
@@ -215,6 +221,22 @@ select
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
     where t.tgname = 'planner_preserve_plan_change_reasons' and not t.tgisinternal
   ) as review_outcomes_present,
+  exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'weekly_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'mood' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'weekly_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'feeling' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_trigger t
+    join pg_catalog.pg_class c on c.oid = t.tgrelid and c.relname = 'weekly_reviews'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where t.tgname = 'planner_preserve_weekly_review_fields' and not t.tgisinternal
+  ) as weekly_review_mood_present,
   not exists (
     select 1
     from pg_catalog.pg_constraint fk

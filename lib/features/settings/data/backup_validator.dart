@@ -6,6 +6,7 @@ import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dar
 import 'package:personal_planner/core/utils/json_map_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
+import 'package:personal_planner/features/review/domain/weekly_review_text.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 
 /// Validates the complete portable payload before a write transaction starts.
@@ -152,6 +153,8 @@ class BackupValidator {
       'goals_met',
       'goals_missed',
       'next_week_focus',
+      'mood',
+      'feeling',
       'created_at',
       'updated_at',
       'deleted_at',
@@ -200,6 +203,8 @@ class BackupValidator {
         });
       } else if (table == 'daily_reviews') {
         expected.removeAll(const {'mood', 'task_reasons'});
+      } else if (table == 'weekly_reviews') {
+        expected.removeAll(const {'mood', 'feeling'});
       } else if (table == 'timer_sessions') {
         expected.removeAll(const {
           'state',
@@ -422,6 +427,14 @@ class BackupValidator {
     return value;
   }
 
+  static String? feeling(Map<String, dynamic> row, String field) {
+    final value = nullableString(row, field);
+    if (value != null && value.runes.length > maxWeeklyFeelingLength) {
+      throw BackupValidationException('$field is too long.');
+    }
+    return value;
+  }
+
   static Map<String, String> reasonMap(Map<String, dynamic> row, String field) {
     try {
       return JsonMapUtils.parseReasons(row[field]);
@@ -616,6 +629,8 @@ class BackupValidator {
         stringList(row, 'goals_met');
         stringList(row, 'goals_missed');
         stringList(row, 'next_week_focus');
+        mood(row, 'mood');
+        feeling(row, 'feeling');
         _validateAuditDates(row);
       case 'timer_sessions':
         id(row, 'id');

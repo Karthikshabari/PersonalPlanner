@@ -104,6 +104,23 @@ class ReviewDao extends DatabaseAccessor<AppDatabase> with _$ReviewDaoMixin {
             ..limit(1))
           .getSingleOrNull();
 
+  /// Active weekly reviews whose week starts in [startIsoInclusive,
+  /// endIsoExclusive), oldest first.
+  Future<List<WeeklyReviewRow>> getWeeklyReviewsBetween(
+    String startIsoInclusive,
+    String endIsoExclusive,
+  ) {
+    return (select(weeklyReviews)
+          ..where(
+            (r) =>
+                r.weekStartDate.isBiggerOrEqualValue(startIsoInclusive) &
+                r.weekStartDate.isSmallerThanValue(endIsoExclusive) &
+                r.deletedAt.isNull(),
+          )
+          ..orderBy([(r) => OrderingTerm.asc(r.weekStartDate)]))
+        .get();
+  }
+
   Future<WeeklyReviewRow?> getWeeklyReviewById(String id) =>
       (select(weeklyReviews)..where((r) => r.id.equals(id))).getSingleOrNull();
 

@@ -248,6 +248,13 @@ class SyncRemoteApplier {
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
     }
+    if (change.tableName == 'weekly_reviews') {
+      return definition.columns
+          .where(
+            (column) => column.jsonKey != 'mood' && column.jsonKey != 'feeling',
+          )
+          .every((column) => change.payload.containsKey(column.jsonKey));
+    }
     return false;
   }
 
@@ -323,12 +330,20 @@ class SyncRemoteApplier {
     }
   }
 
-  /// Mood and task reasons are absent or NULL on payloads from older clients
-  /// and from servers without the review migration. Keep the local values.
+  /// Mood, task reasons and weekly feeling are absent or NULL on payloads
+  /// from older clients and from servers without the review migrations. Keep
+  /// the local values.
   Future<void> _normalizeReviewPayload(SyncRemoteChange change) async {
-    if (change.tableName != 'daily_reviews' || change.operation == 'delete') {
+    if (change.operation == 'delete') return;
+    if (change.tableName == 'weekly_reviews') {
+      final payload = change.payload;
+      if (payload['mood'] != null && payload['feeling'] != null) return;
+      final current = await _db.reviewDao.getWeeklyReviewById(change.recordId);
+      payload['mood'] ??= current?.mood;
+      payload['feeling'] ??= current?.feeling;
       return;
     }
+    if (change.tableName != 'daily_reviews') return;
     final payload = change.payload;
     if (payload['mood'] != null && payload['task_reasons_json'] != null) {
       return;
@@ -666,6 +681,8 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('goals_met_json'),
       _SyncColumn('goals_missed_json'),
       _SyncColumn('next_week_focus_json'),
+      _SyncColumn('mood'),
+      _SyncColumn('feeling'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),

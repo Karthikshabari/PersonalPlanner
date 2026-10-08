@@ -27,6 +27,8 @@ _WeeklyReview _$WeeklyReviewFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      mood: (json['mood'] as num?)?.toInt(),
+      feeling: json['feeling'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       deletedAt: json['deletedAt'] == null
@@ -43,6 +45,8 @@ Map<String, dynamic> _$WeeklyReviewToJson(_WeeklyReview instance) =>
       'goalsMet': instance.goalsMet,
       'goalsMissed': instance.goalsMissed,
       'nextWeekFocus': instance.nextWeekFocus,
+      'mood': instance.mood,
+      'feeling': instance.feeling,
       'createdAt': instance.createdAt.toIso8601String(),
       'updatedAt': instance.updatedAt.toIso8601String(),
       'deletedAt': instance.deletedAt?.toIso8601String(),

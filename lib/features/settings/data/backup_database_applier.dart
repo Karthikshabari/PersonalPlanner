@@ -396,6 +396,8 @@ class BackupDatabaseApplier {
                 nextWeekFocusJson: Value(
                   _stringListJson(row, 'next_week_focus'),
                 ),
+                mood: Value(BackupValidator.mood(row, 'mood')),
+                feeling: Value(BackupValidator.feeling(row, 'feeling')),
                 createdAt: BackupValidator.dateTime(row, 'created_at'),
                 updatedAt: BackupValidator.dateTime(row, 'updated_at'),
                 deletedAt: Value(

@@ -285,6 +285,15 @@ class BackupCodec {
         }
       }
     }
+    // Backups before v5 carry no weekly mood or feeling: both import as NULL.
+    final weeklyRows = result['weekly_reviews'];
+    if (weeklyRows is List) {
+      for (final raw in weeklyRows) {
+        if (raw is! Map<String, dynamic>) continue;
+        if (!raw.containsKey('mood')) raw['mood'] = null;
+        if (!raw.containsKey('feeling')) raw['feeling'] = null;
+      }
+    }
     // Keep the parameter explicit so a future v3 adapter cannot accidentally
     // be treated as a v1 document by this path.
     if (version < 1 || version > plannerBackupSchemaVersion) {
@@ -488,6 +497,8 @@ class BackupCodec {
     'goals_met': JsonListUtils.decode(row.goalsMetJson),
     'goals_missed': JsonListUtils.decode(row.goalsMissedJson),
     'next_week_focus': JsonListUtils.decode(row.nextWeekFocusJson),
+    'mood': row.mood,
+    'feeling': row.feeling,
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),
     'deleted_at': _iso(row.deletedAt),

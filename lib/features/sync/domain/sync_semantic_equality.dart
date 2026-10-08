@@ -41,6 +41,7 @@ const Set<String> _jsonTextKeys = {
 /// Keys whose absence or NULL means "keep the stored value", never "clear".
 const Set<String> _preservedWhenNullKeys = {
   'mood',
+  'feeling',
   'task_reasons_json',
   'plan_change_reasons_json',
 };

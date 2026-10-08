@@ -15,7 +15,10 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$WeeklyReview {
 
- String get id; DateTime get weekStartDate; String? get reflection; int? get overallRating; List<String> get goalsMet; List<String> get goalsMissed; List<String> get nextWeekFocus; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
+ String get id; DateTime get weekStartDate; String? get reflection; int? get overallRating; List<String> get goalsMet; List<String> get goalsMissed; List<String> get nextWeekFocus;/// 1 = Good … 4 = Legendary. Null when the review predates weekly moods.
+ int? get mood;/// "How did the week feel?" text. Null when the review predates it; an
+/// empty answer is ''.
+ String? get feeling; DateTime get createdAt; DateTime get updatedAt; DateTime? get deletedAt;
 /// Create a copy of WeeklyReview
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +31,16 @@ $WeeklyReviewCopyWith<WeeklyReview> get copyWith => _$WeeklyReviewCopyWithImpl<W
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is WeeklyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.weekStartDate, weekStartDate) || other.weekStartDate == weekStartDate)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.overallRating, overallRating) || other.overallRating == overallRating)&&const DeepCollectionEquality().equals(other.goalsMet, goalsMet)&&const DeepCollectionEquality().equals(other.goalsMissed, goalsMissed)&&const DeepCollectionEquality().equals(other.nextWeekFocus, nextWeekFocus)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is WeeklyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.weekStartDate, weekStartDate) || other.weekStartDate == weekStartDate)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.overallRating, overallRating) || other.overallRating == overallRating)&&const DeepCollectionEquality().equals(other.goalsMet, goalsMet)&&const DeepCollectionEquality().equals(other.goalsMissed, goalsMissed)&&const DeepCollectionEquality().equals(other.nextWeekFocus, nextWeekFocus)&&(identical(other.mood, mood) || other.mood == mood)&&(identical(other.feeling, feeling) || other.feeling == feeling)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,weekStartDate,reflection,overallRating,const DeepCollectionEquality().hash(goalsMet),const DeepCollectionEquality().hash(goalsMissed),const DeepCollectionEquality().hash(nextWeekFocus),createdAt,updatedAt,deletedAt);
+int get hashCode => Object.hash(runtimeType,id,weekStartDate,reflection,overallRating,const DeepCollectionEquality().hash(goalsMet),const DeepCollectionEquality().hash(goalsMissed),const DeepCollectionEquality().hash(nextWeekFocus),mood,feeling,createdAt,updatedAt,deletedAt);
 
 @override
 String toString() {
-  return 'WeeklyReview(id: $id, weekStartDate: $weekStartDate, reflection: $reflection, overallRating: $overallRating, goalsMet: $goalsMet, goalsMissed: $goalsMissed, nextWeekFocus: $nextWeekFocus, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+  return 'WeeklyReview(id: $id, weekStartDate: $weekStartDate, reflection: $reflection, overallRating: $overallRating, goalsMet: $goalsMet, goalsMissed: $goalsMissed, nextWeekFocus: $nextWeekFocus, mood: $mood, feeling: $feeling, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
 }
 
 
@@ -48,7 +51,7 @@ abstract mixin class $WeeklyReviewCopyWith<$Res>  {
   factory $WeeklyReviewCopyWith(WeeklyReview value, $Res Function(WeeklyReview) _then) = _$WeeklyReviewCopyWithImpl;
 @useResult
 $Res call({
- String id, DateTime weekStartDate, String? reflection, int? overallRating, List<String> goalsMet, List<String> goalsMissed, List<String> nextWeekFocus, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
+ String id, DateTime weekStartDate, String? reflection, int? overallRating, List<String> goalsMet, List<String> goalsMissed, List<String> nextWeekFocus, int? mood, String? feeling, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
 });
 
 
@@ -65,7 +68,7 @@ class _$WeeklyReviewCopyWithImpl<$Res>
 
 /// Create a copy of WeeklyReview
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? weekStartDate = null,Object? reflection = freezed,Object? overallRating = freezed,Object? goalsMet = null,Object? goalsMissed = null,Object? nextWeekFocus = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? weekStartDate = null,Object? reflection = freezed,Object? overallRating = freezed,Object? goalsMet = null,Object? goalsMissed = null,Object? nextWeekFocus = null,Object? mood = freezed,Object? feeling = freezed,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,weekStartDate: null == weekStartDate ? _self.weekStartDate : weekStartDate // ignore: cast_nullable_to_non_nullable
@@ -74,7 +77,9 @@ as String?,overallRating: freezed == overallRating ? _self.overallRating : overa
 as int?,goalsMet: null == goalsMet ? _self.goalsMet : goalsMet // ignore: cast_nullable_to_non_nullable
 as List<String>,goalsMissed: null == goalsMissed ? _self.goalsMissed : goalsMissed // ignore: cast_nullable_to_non_nullable
 as List<String>,nextWeekFocus: null == nextWeekFocus ? _self.nextWeekFocus : nextWeekFocus // ignore: cast_nullable_to_non_nullable
-as List<String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>,mood: freezed == mood ? _self.mood : mood // ignore: cast_nullable_to_non_nullable
+as int?,feeling: freezed == feeling ? _self.feeling : feeling // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,deletedAt: freezed == deletedAt ? _self.deletedAt : deletedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -162,10 +167,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  int? mood,  String? feeling,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _WeeklyReview() when $default != null:
-return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.mood,_that.feeling,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   return orElse();
 
 }
@@ -183,10 +188,10 @@ return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRatin
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  int? mood,  String? feeling,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)  $default,) {final _that = this;
 switch (_that) {
 case _WeeklyReview():
-return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.mood,_that.feeling,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -203,10 +208,10 @@ return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRatin
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  DateTime weekStartDate,  String? reflection,  int? overallRating,  List<String> goalsMet,  List<String> goalsMissed,  List<String> nextWeekFocus,  int? mood,  String? feeling,  DateTime createdAt,  DateTime updatedAt,  DateTime? deletedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _WeeklyReview() when $default != null:
-return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
+return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRating,_that.goalsMet,_that.goalsMissed,_that.nextWeekFocus,_that.mood,_that.feeling,_that.createdAt,_that.updatedAt,_that.deletedAt);case _:
   return null;
 
 }
@@ -218,7 +223,7 @@ return $default(_that.id,_that.weekStartDate,_that.reflection,_that.overallRatin
 @JsonSerializable()
 
 class _WeeklyReview implements WeeklyReview {
-  const _WeeklyReview({required this.id, required this.weekStartDate, this.reflection, this.overallRating, this.goalsMet = const [], this.goalsMissed = const [], this.nextWeekFocus = const [], required this.createdAt, required this.updatedAt, this.deletedAt});
+  const _WeeklyReview({required this.id, required this.weekStartDate, this.reflection, this.overallRating, this.goalsMet = const [], this.goalsMissed = const [], this.nextWeekFocus = const [], this.mood, this.feeling, required this.createdAt, required this.updatedAt, this.deletedAt});
   factory _WeeklyReview.fromJson(Map<String, dynamic> json) => _$WeeklyReviewFromJson(json);
 
 @override final  String id;
@@ -228,6 +233,11 @@ class _WeeklyReview implements WeeklyReview {
 @override@JsonKey() final  List<String> goalsMet;
 @override@JsonKey() final  List<String> goalsMissed;
 @override@JsonKey() final  List<String> nextWeekFocus;
+/// 1 = Good … 4 = Legendary. Null when the review predates weekly moods.
+@override final  int? mood;
+/// "How did the week feel?" text. Null when the review predates it; an
+/// empty answer is ''.
+@override final  String? feeling;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 @override final  DateTime? deletedAt;
@@ -245,16 +255,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _WeeklyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.weekStartDate, weekStartDate) || other.weekStartDate == weekStartDate)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.overallRating, overallRating) || other.overallRating == overallRating)&&const DeepCollectionEquality().equals(other.goalsMet, goalsMet)&&const DeepCollectionEquality().equals(other.goalsMissed, goalsMissed)&&const DeepCollectionEquality().equals(other.nextWeekFocus, nextWeekFocus)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _WeeklyReview&&(identical(other.id, id) || other.id == id)&&(identical(other.weekStartDate, weekStartDate) || other.weekStartDate == weekStartDate)&&(identical(other.reflection, reflection) || other.reflection == reflection)&&(identical(other.overallRating, overallRating) || other.overallRating == overallRating)&&const DeepCollectionEquality().equals(other.goalsMet, goalsMet)&&const DeepCollectionEquality().equals(other.goalsMissed, goalsMissed)&&const DeepCollectionEquality().equals(other.nextWeekFocus, nextWeekFocus)&&(identical(other.mood, mood) || other.mood == mood)&&(identical(other.feeling, feeling) || other.feeling == feeling)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.deletedAt, deletedAt) || other.deletedAt == deletedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,weekStartDate,reflection,overallRating,const DeepCollectionEquality().hash(goalsMet),const DeepCollectionEquality().hash(goalsMissed),const DeepCollectionEquality().hash(nextWeekFocus),createdAt,updatedAt,deletedAt);
+int get hashCode => Object.hash(runtimeType,id,weekStartDate,reflection,overallRating,const DeepCollectionEquality().hash(goalsMet),const DeepCollectionEquality().hash(goalsMissed),const DeepCollectionEquality().hash(nextWeekFocus),mood,feeling,createdAt,updatedAt,deletedAt);
 
 @override
 String toString() {
-  return 'WeeklyReview(id: $id, weekStartDate: $weekStartDate, reflection: $reflection, overallRating: $overallRating, goalsMet: $goalsMet, goalsMissed: $goalsMissed, nextWeekFocus: $nextWeekFocus, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
+  return 'WeeklyReview(id: $id, weekStartDate: $weekStartDate, reflection: $reflection, overallRating: $overallRating, goalsMet: $goalsMet, goalsMissed: $goalsMissed, nextWeekFocus: $nextWeekFocus, mood: $mood, feeling: $feeling, createdAt: $createdAt, updatedAt: $updatedAt, deletedAt: $deletedAt)';
 }
 
 
@@ -265,7 +275,7 @@ abstract mixin class _$WeeklyReviewCopyWith<$Res> implements $WeeklyReviewCopyWi
   factory _$WeeklyReviewCopyWith(_WeeklyReview value, $Res Function(_WeeklyReview) _then) = __$WeeklyReviewCopyWithImpl;
 @override @useResult
 $Res call({
- String id, DateTime weekStartDate, String? reflection, int? overallRating, List<String> goalsMet, List<String> goalsMissed, List<String> nextWeekFocus, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
+ String id, DateTime weekStartDate, String? reflection, int? overallRating, List<String> goalsMet, List<String> goalsMissed, List<String> nextWeekFocus, int? mood, String? feeling, DateTime createdAt, DateTime updatedAt, DateTime? deletedAt
 });
 
 
@@ -282,7 +292,7 @@ class __$WeeklyReviewCopyWithImpl<$Res>
 
 /// Create a copy of WeeklyReview
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? weekStartDate = null,Object? reflection = freezed,Object? overallRating = freezed,Object? goalsMet = null,Object? goalsMissed = null,Object? nextWeekFocus = null,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? weekStartDate = null,Object? reflection = freezed,Object? overallRating = freezed,Object? goalsMet = null,Object? goalsMissed = null,Object? nextWeekFocus = null,Object? mood = freezed,Object? feeling = freezed,Object? createdAt = null,Object? updatedAt = null,Object? deletedAt = freezed,}) {
   return _then(_WeeklyReview(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,weekStartDate: null == weekStartDate ? _self.weekStartDate : weekStartDate // ignore: cast_nullable_to_non_nullable
@@ -291,7 +301,9 @@ as String?,overallRating: freezed == overallRating ? _self.overallRating : overa
 as int?,goalsMet: null == goalsMet ? _self.goalsMet : goalsMet // ignore: cast_nullable_to_non_nullable
 as List<String>,goalsMissed: null == goalsMissed ? _self.goalsMissed : goalsMissed // ignore: cast_nullable_to_non_nullable
 as List<String>,nextWeekFocus: null == nextWeekFocus ? _self.nextWeekFocus : nextWeekFocus // ignore: cast_nullable_to_non_nullable
-as List<String>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<String>,mood: freezed == mood ? _self.mood : mood // ignore: cast_nullable_to_non_nullable
+as int?,feeling: freezed == feeling ? _self.feeling : feeling // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,deletedAt: freezed == deletedAt ? _self.deletedAt : deletedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,

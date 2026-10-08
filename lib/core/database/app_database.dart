@@ -177,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump whenever a sync trigger body changes. Triggers are recreated only
   /// when the stored `schema.sync_trigger_version` differs or one is missing.
-  static const int syncTriggerVersion = 3;
+  static const int syncTriggerVersion = 4;
 
   /// 11 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
   static const int _expectedSyncTriggerCount = 34;
@@ -200,7 +200,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -254,6 +254,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 11) {
         await _migrateToV11(m);
+      }
+      if (from < 12) {
+        await _migrateToV12(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -668,7 +671,11 @@ class AppDatabase extends _$AppDatabase {
       await m.alterTable(
         TableMigration(
           weeklyReviews,
-          newColumns: [weeklyReviews.serverVersion],
+          newColumns: [
+            weeklyReviews.serverVersion,
+            weeklyReviews.mood,
+            weeklyReviews.feeling,
+          ],
         ),
       );
       await m.alterTable(
@@ -961,6 +968,23 @@ class AppDatabase extends _$AppDatabase {
       dailyReviews.taskReasonsJson,
     );
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.planChangeReasonsJson);
+  }
+
+  /// Schema-v12 adds the weekly review redesign fields. Both are nullable, so
+  /// every existing weekly review stays valid with no mood and no feeling.
+  Future<void> _migrateToV12(Migrator m) async {
+    await _addColumnIfMissing(
+      m,
+      'weekly_reviews',
+      weeklyReviews,
+      weeklyReviews.mood,
+    );
+    await _addColumnIfMissing(
+      m,
+      'weekly_reviews',
+      weeklyReviews,
+      weeklyReviews.feeling,
+    );
   }
 
   /// Re-populates `tasks_fts` with exactly the rows its installed triggers
@@ -1906,8 +1930,8 @@ END;
       primaryKeyOld: 'id = OLD.id',
       recordIdNew: 'NEW.id',
       recordIdOld: 'OLD.id',
-      updateColumns: 'id, week_start_date, reflection, overall_rating, goals_met_json, goals_missed_json, next_week_focus_json, created_at, updated_at, deleted_at',
-      jsonNew: "json_object('id', NEW.id, 'week_start_date', NEW.week_start_date, 'reflection', NEW.reflection, 'overall_rating', NEW.overall_rating, 'goals_met_json', NEW.goals_met_json, 'goals_missed_json', NEW.goals_missed_json, 'next_week_focus_json', NEW.next_week_focus_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      updateColumns: 'id, week_start_date, reflection, overall_rating, goals_met_json, goals_missed_json, next_week_focus_json, mood, feeling, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'week_start_date', NEW.week_start_date, 'reflection', NEW.reflection, 'overall_rating', NEW.overall_rating, 'goals_met_json', NEW.goals_met_json, 'goals_missed_json', NEW.goals_missed_json, 'next_week_focus_json', NEW.next_week_focus_json, 'mood', NEW.mood, 'feeling', NEW.feeling, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'week_start_date', OLD.week_start_date, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );

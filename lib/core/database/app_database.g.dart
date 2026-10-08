@@ -7843,6 +7843,28 @@ class $WeeklyReviewsTable extends WeeklyReviews
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _moodMeta = const VerificationMeta('mood');
+  @override
+  late final GeneratedColumn<int> mood = GeneratedColumn<int>(
+    'mood',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    $customConstraints: 'CHECK (mood IS NULL OR mood BETWEEN 1 AND 4)',
+  );
+  static const VerificationMeta _feelingMeta = const VerificationMeta(
+    'feeling',
+  );
+  @override
+  late final GeneratedColumn<String> feeling = GeneratedColumn<String>(
+    'feeling',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints: 'CHECK (feeling IS NULL OR length(feeling) <= 200)',
+  );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -7914,6 +7936,8 @@ class $WeeklyReviewsTable extends WeeklyReviews
     goalsMetJson,
     goalsMissedJson,
     nextWeekFocusJson,
+    mood,
+    feeling,
     createdAt,
     updatedAt,
     deletedAt,
@@ -7991,6 +8015,18 @@ class $WeeklyReviewsTable extends WeeklyReviews
         ),
       );
     }
+    if (data.containsKey('mood')) {
+      context.handle(
+        _moodMeta,
+        mood.isAcceptableOrUnknown(data['mood']!, _moodMeta),
+      );
+    }
+    if (data.containsKey('feeling')) {
+      context.handle(
+        _feelingMeta,
+        feeling.isAcceptableOrUnknown(data['feeling']!, _feelingMeta),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -8049,6 +8085,14 @@ class $WeeklyReviewsTable extends WeeklyReviews
         DriftSqlType.string,
         data['${effectivePrefix}next_week_focus_json'],
       ),
+      mood: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}mood'],
+      ),
+      feeling: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}feeling'],
+      ),
       createdAt: $WeeklyReviewsTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -8106,6 +8150,14 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
   final String? goalsMetJson;
   final String? goalsMissedJson;
   final String? nextWeekFocusJson;
+
+  /// Mood of the week, 1 = Good … 4 = Legendary. Null for reviews saved
+  /// before the weekly review redesign.
+  final int? mood;
+
+  /// "How did the week feel?" text, at most 200 characters (code points).
+  /// Null for reviews saved before the redesign; an empty answer is ''.
+  final String? feeling;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -8120,6 +8172,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     this.goalsMetJson,
     this.goalsMissedJson,
     this.nextWeekFocusJson,
+    this.mood,
+    this.feeling,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -8146,6 +8200,12 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     }
     if (!nullToAbsent || nextWeekFocusJson != null) {
       map['next_week_focus_json'] = Variable<String>(nextWeekFocusJson);
+    }
+    if (!nullToAbsent || mood != null) {
+      map['mood'] = Variable<int>(mood);
+    }
+    if (!nullToAbsent || feeling != null) {
+      map['feeling'] = Variable<String>(feeling);
     }
     {
       map['created_at'] = Variable<String>(
@@ -8189,6 +8249,10 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       nextWeekFocusJson: nextWeekFocusJson == null && nullToAbsent
           ? const Value.absent()
           : Value(nextWeekFocusJson),
+      mood: mood == null && nullToAbsent ? const Value.absent() : Value(mood),
+      feeling: feeling == null && nullToAbsent
+          ? const Value.absent()
+          : Value(feeling),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -8217,6 +8281,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       nextWeekFocusJson: serializer.fromJson<String?>(
         json['nextWeekFocusJson'],
       ),
+      mood: serializer.fromJson<int?>(json['mood']),
+      feeling: serializer.fromJson<String?>(json['feeling']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -8236,6 +8302,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       'goalsMetJson': serializer.toJson<String?>(goalsMetJson),
       'goalsMissedJson': serializer.toJson<String?>(goalsMissedJson),
       'nextWeekFocusJson': serializer.toJson<String?>(nextWeekFocusJson),
+      'mood': serializer.toJson<int?>(mood),
+      'feeling': serializer.toJson<String?>(feeling),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -8253,6 +8321,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     Value<String?> goalsMetJson = const Value.absent(),
     Value<String?> goalsMissedJson = const Value.absent(),
     Value<String?> nextWeekFocusJson = const Value.absent(),
+    Value<int?> mood = const Value.absent(),
+    Value<String?> feeling = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -8273,6 +8343,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     nextWeekFocusJson: nextWeekFocusJson.present
         ? nextWeekFocusJson.value
         : this.nextWeekFocusJson,
+    mood: mood.present ? mood.value : this.mood,
+    feeling: feeling.present ? feeling.value : this.feeling,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -8303,6 +8375,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
       nextWeekFocusJson: data.nextWeekFocusJson.present
           ? data.nextWeekFocusJson.value
           : this.nextWeekFocusJson,
+      mood: data.mood.present ? data.mood.value : this.mood,
+      feeling: data.feeling.present ? data.feeling.value : this.feeling,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -8326,6 +8400,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           ..write('goalsMetJson: $goalsMetJson, ')
           ..write('goalsMissedJson: $goalsMissedJson, ')
           ..write('nextWeekFocusJson: $nextWeekFocusJson, ')
+          ..write('mood: $mood, ')
+          ..write('feeling: $feeling, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -8345,6 +8421,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
     goalsMetJson,
     goalsMissedJson,
     nextWeekFocusJson,
+    mood,
+    feeling,
     createdAt,
     updatedAt,
     deletedAt,
@@ -8363,6 +8441,8 @@ class WeeklyReviewRow extends DataClass implements Insertable<WeeklyReviewRow> {
           other.goalsMetJson == this.goalsMetJson &&
           other.goalsMissedJson == this.goalsMissedJson &&
           other.nextWeekFocusJson == this.nextWeekFocusJson &&
+          other.mood == this.mood &&
+          other.feeling == this.feeling &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -8379,6 +8459,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
   final Value<String?> goalsMetJson;
   final Value<String?> goalsMissedJson;
   final Value<String?> nextWeekFocusJson;
+  final Value<int?> mood;
+  final Value<String?> feeling;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -8394,6 +8476,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     this.goalsMetJson = const Value.absent(),
     this.goalsMissedJson = const Value.absent(),
     this.nextWeekFocusJson = const Value.absent(),
+    this.mood = const Value.absent(),
+    this.feeling = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -8410,6 +8494,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     this.goalsMetJson = const Value.absent(),
     this.goalsMissedJson = const Value.absent(),
     this.nextWeekFocusJson = const Value.absent(),
+    this.mood = const Value.absent(),
+    this.feeling = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -8429,6 +8515,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     Expression<String>? goalsMetJson,
     Expression<String>? goalsMissedJson,
     Expression<String>? nextWeekFocusJson,
+    Expression<int>? mood,
+    Expression<String>? feeling,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -8445,6 +8533,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
       if (goalsMetJson != null) 'goals_met_json': goalsMetJson,
       if (goalsMissedJson != null) 'goals_missed_json': goalsMissedJson,
       if (nextWeekFocusJson != null) 'next_week_focus_json': nextWeekFocusJson,
+      if (mood != null) 'mood': mood,
+      if (feeling != null) 'feeling': feeling,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -8463,6 +8553,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     Value<String?>? goalsMetJson,
     Value<String?>? goalsMissedJson,
     Value<String?>? nextWeekFocusJson,
+    Value<int?>? mood,
+    Value<String?>? feeling,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -8479,6 +8571,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
       goalsMetJson: goalsMetJson ?? this.goalsMetJson,
       goalsMissedJson: goalsMissedJson ?? this.goalsMissedJson,
       nextWeekFocusJson: nextWeekFocusJson ?? this.nextWeekFocusJson,
+      mood: mood ?? this.mood,
+      feeling: feeling ?? this.feeling,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -8512,6 +8606,12 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
     }
     if (nextWeekFocusJson.present) {
       map['next_week_focus_json'] = Variable<String>(nextWeekFocusJson.value);
+    }
+    if (mood.present) {
+      map['mood'] = Variable<int>(mood.value);
+    }
+    if (feeling.present) {
+      map['feeling'] = Variable<String>(feeling.value);
     }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
@@ -8553,6 +8653,8 @@ class WeeklyReviewsCompanion extends UpdateCompanion<WeeklyReviewRow> {
           ..write('goalsMetJson: $goalsMetJson, ')
           ..write('goalsMissedJson: $goalsMissedJson, ')
           ..write('nextWeekFocusJson: $nextWeekFocusJson, ')
+          ..write('mood: $mood, ')
+          ..write('feeling: $feeling, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -17527,6 +17629,8 @@ typedef $$WeeklyReviewsTableCreateCompanionBuilder =
       Value<String?> goalsMetJson,
       Value<String?> goalsMissedJson,
       Value<String?> nextWeekFocusJson,
+      Value<int?> mood,
+      Value<String?> feeling,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -17544,6 +17648,8 @@ typedef $$WeeklyReviewsTableUpdateCompanionBuilder =
       Value<String?> goalsMetJson,
       Value<String?> goalsMissedJson,
       Value<String?> nextWeekFocusJson,
+      Value<int?> mood,
+      Value<String?> feeling,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -17594,6 +17700,16 @@ class $$WeeklyReviewsTableFilterComposer
 
   ColumnFilters<String> get nextWeekFocusJson => $composableBuilder(
     column: $table.nextWeekFocusJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get mood => $composableBuilder(
+    column: $table.mood,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get feeling => $composableBuilder(
+    column: $table.feeling,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -17675,6 +17791,16 @@ class $$WeeklyReviewsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get mood => $composableBuilder(
+    column: $table.mood,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get feeling => $composableBuilder(
+    column: $table.feeling,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -17748,6 +17874,12 @@ class $$WeeklyReviewsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get mood =>
+      $composableBuilder(column: $table.mood, builder: (column) => column);
+
+  GeneratedColumn<String> get feeling =>
+      $composableBuilder(column: $table.feeling, builder: (column) => column);
+
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -17809,6 +17941,8 @@ class $$WeeklyReviewsTableTableManager
                 Value<String?> goalsMetJson = const Value.absent(),
                 Value<String?> goalsMissedJson = const Value.absent(),
                 Value<String?> nextWeekFocusJson = const Value.absent(),
+                Value<int?> mood = const Value.absent(),
+                Value<String?> feeling = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -17824,6 +17958,8 @@ class $$WeeklyReviewsTableTableManager
                 goalsMetJson: goalsMetJson,
                 goalsMissedJson: goalsMissedJson,
                 nextWeekFocusJson: nextWeekFocusJson,
+                mood: mood,
+                feeling: feeling,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -17841,6 +17977,8 @@ class $$WeeklyReviewsTableTableManager
                 Value<String?> goalsMetJson = const Value.absent(),
                 Value<String?> goalsMissedJson = const Value.absent(),
                 Value<String?> nextWeekFocusJson = const Value.absent(),
+                Value<int?> mood = const Value.absent(),
+                Value<String?> feeling = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -17856,6 +17994,8 @@ class $$WeeklyReviewsTableTableManager
                 goalsMetJson: goalsMetJson,
                 goalsMissedJson: goalsMissedJson,
                 nextWeekFocusJson: nextWeekFocusJson,
+                mood: mood,
+                feeling: feeling,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,

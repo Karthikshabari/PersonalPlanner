@@ -27,7 +27,7 @@ void main() {
             expect(
               (await db.customSelect('PRAGMA user_version').getSingle())
                   .read<int>('user_version'),
-              11,
+              12,
               reason: 'v$version did not reach schema v9',
             );
             expect(

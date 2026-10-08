@@ -6,6 +6,7 @@ import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/missed_at.dart';
 import '../../recurring/domain/rrule_utils.dart';
+import '../../review/domain/weekly_review_text.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import 'sync_models.dart';
 
@@ -233,6 +234,8 @@ abstract final class SyncPayloadValidator {
         _jsonStringListIfPresent(p, 'goals_missed_json');
         _jsonStringListIfPresent(p, 'next_week_focus_json');
         _ratingIfPresent(p, 'overall_rating');
+        _moodIfPresent(p, 'mood');
+        _feelingIfPresent(p, 'feeling');
         _requiredDateTime(p, 'created_at');
         _requiredDateTime(p, 'updated_at');
         break;
@@ -632,6 +635,17 @@ abstract final class SyncPayloadValidator {
 
   static void _moodIfPresent(Map<String, dynamic> p, String key) {
     if (p[key] != null) _intInRange(p, key, 1, 4);
+  }
+
+  static void _feelingIfPresent(Map<String, dynamic> p, String key) {
+    final raw = p[key];
+    if (raw == null) return;
+    if (raw is! String) throw SyncValidationException('$key must be text');
+    if (raw.runes.length > maxWeeklyFeelingLength) {
+      throw SyncValidationException(
+        '$key is longer than $maxWeeklyFeelingLength characters',
+      );
+    }
   }
 
   static void _reasonsIfPresent(Map<String, dynamic> p, String key) {

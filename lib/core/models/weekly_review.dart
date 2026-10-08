@@ -15,6 +15,13 @@ abstract class WeeklyReview with _$WeeklyReview {
     @Default([]) List<String> goalsMet,
     @Default([]) List<String> goalsMissed,
     @Default([]) List<String> nextWeekFocus,
+
+    /// 1 = Good … 4 = Legendary. Null when the review predates weekly moods.
+    int? mood,
+
+    /// "How did the week feel?" text. Null when the review predates it; an
+    /// empty answer is ''.
+    String? feeling,
     required DateTime createdAt,
     required DateTime updatedAt,
     DateTime? deletedAt,

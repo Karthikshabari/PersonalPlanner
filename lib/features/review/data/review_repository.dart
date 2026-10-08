@@ -8,6 +8,7 @@ import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/json_list_utils.dart';
 import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
+import '../domain/weekly_review_text.dart';
 
 /// CRUD for daily and weekly reviews (planner.md Chunk 5 #4).
 class ReviewRepository {
@@ -136,6 +137,8 @@ class ReviewRepository {
               : review.id),
       weekStartDate: startOfWeek(review.weekStartDate),
       overallRating: _clampRating(review.overallRating),
+      mood: review.mood?.clamp(1, 4),
+      feeling: normalizeWeeklyFeeling(review.feeling),
       updatedAt: now,
       createdAt: existing?.createdAt ?? now,
       deletedAt: null,
@@ -148,6 +151,48 @@ class ReviewRepository {
       );
     }
     return effective;
+  }
+
+  /// Saves the redesigned weekly form in one row write: mood, feeling and the
+  /// note for next week (stored in `reflection`). Legacy rating and list
+  /// fields of an existing review are preserved. An empty feeling is stored
+  /// as '' (WD6); an empty note as NULL, as before.
+  Future<WeeklyReview> saveWeeklyReviewDraft({
+    required DateTime weekStart,
+    required int mood,
+    required String feeling,
+    required String note,
+  }) async {
+    final existing = await getWeeklyReviewForWeek(weekStart);
+    final trimmedNote = note.trim();
+    final now = DateTime.now();
+    return saveWeeklyReview(
+      WeeklyReview(
+        id: existing?.id ?? '',
+        weekStartDate: startOfWeek(weekStart),
+        reflection: trimmedNote.isEmpty ? null : trimmedNote,
+        overallRating: existing?.overallRating,
+        goalsMet: existing?.goalsMet ?? const [],
+        goalsMissed: existing?.goalsMissed ?? const [],
+        nextWeekFocus: existing?.nextWeekFocus ?? const [],
+        mood: mood,
+        feeling: feeling,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      ),
+    );
+  }
+
+  /// Active weekly reviews for weeks starting in [start, end), oldest first.
+  Future<List<WeeklyReview>> getWeeklyReviewsBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final rows = await _dao.getWeeklyReviewsBetween(
+      isoDateString(startOfWeek(start)),
+      isoDateString(startOfWeek(end)),
+    );
+    return rows.map(ReviewRepository.fromWeeklyRow).toList(growable: false);
   }
 
   Stream<WeeklyReview?> watchWeeklyReviewForWeek(DateTime weekStart) => _dao
@@ -242,6 +287,8 @@ class ReviewRepository {
     goalsMet: JsonListUtils.decode(row.goalsMetJson),
     goalsMissed: JsonListUtils.decode(row.goalsMissedJson),
     nextWeekFocus: JsonListUtils.decode(row.nextWeekFocusJson),
+    mood: row.mood,
+    feeling: row.feeling,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -264,6 +311,8 @@ class ReviewRepository {
               ? null
               : JsonListUtils.encode(r.nextWeekFocus),
         ),
+        mood: Value(r.mood),
+        feeling: Value(r.feeling),
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
         deletedAt: Value(r.deletedAt),
@@ -287,6 +336,8 @@ class ReviewRepository {
     nextWeekFocusJson: r.nextWeekFocus.isEmpty
         ? null
         : JsonListUtils.encode(r.nextWeekFocus),
+    mood: r.mood,
+    feeling: r.feeling,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     deletedAt: r.deletedAt,

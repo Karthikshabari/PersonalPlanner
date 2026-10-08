@@ -1082,63 +1082,68 @@ void main() {
     );
     expect(await target.select(target.tags).get(), isEmpty);
   });
-  test('v4 backup round trips mood, task reasons and plan-change reasons',
-      () async {
-    const eventId = '00000000-0000-7000-8000-0000000000e1';
-    final task = await TaskRepository(database).insertTask(
-      Task(
-        id: '00000000-0000-7000-8000-0000000000e2',
-        title: 'Renamed',
-        startTime: _time,
-        endTime: _time.add(const Duration(hours: 1)),
-        planTitleHistory: [
-          PlanTitleChange(
-            id: eventId,
-            previousTitle: 'Original',
-            newTitle: 'Renamed',
-            changedAt: _time,
-          ),
-        ],
-        displayPlanChangeId: eventId,
-        planChangeReasons: const {eventId: 'Matches the ticket'},
-        createdAt: _time,
-        updatedAt: _time,
-      ),
-    );
-    await ReviewRepository(database).saveReviewDraft(
-      date: DateTime(2026, 8, 30),
-      mood: 3,
-      note: 'Good day',
-      taskReasons: {task.id: 'Blocked'},
-    );
+  test(
+    'v4 backup round trips mood, task reasons and plan-change reasons',
+    () async {
+      const eventId = '00000000-0000-7000-8000-0000000000e1';
+      final task = await TaskRepository(database).insertTask(
+        Task(
+          id: '00000000-0000-7000-8000-0000000000e2',
+          title: 'Renamed',
+          startTime: _time,
+          endTime: _time.add(const Duration(hours: 1)),
+          planTitleHistory: [
+            PlanTitleChange(
+              id: eventId,
+              previousTitle: 'Original',
+              newTitle: 'Renamed',
+              changedAt: _time,
+            ),
+          ],
+          displayPlanChangeId: eventId,
+          planChangeReasons: const {eventId: 'Matches the ticket'},
+          createdAt: _time,
+          updatedAt: _time,
+        ),
+      );
+      await ReviewRepository(database).saveReviewDraft(
+        date: DateTime(2026, 8, 30),
+        mood: 3,
+        note: 'Good day',
+        taskReasons: {task.id: 'Blocked'},
+      );
 
-    final source = await BackupService(database).exportJson();
-    final data =
-        ((jsonDecode(source) as Map<String, dynamic>)['content']
-                as Map<String, dynamic>)['data']
-            as Map<String, dynamic>;
-    final exportedTask = (data['tasks'] as List).cast<Map>().singleWhere(
-      (row) => row['id'] == task.id,
-    );
-    expect(exportedTask['plan_change_reasons'], {eventId: 'Matches the ticket'});
-    final exportedReview = (data['daily_reviews'] as List).cast<Map>().singleWhere(
-      (row) => row['date'] == '2026-08-30',
-    );
-    expect(exportedReview['mood'], 3);
-    expect(exportedReview['task_reasons'], {task.id: 'Blocked'});
+      final source = await BackupService(database).exportJson();
+      final data =
+          ((jsonDecode(source) as Map<String, dynamic>)['content']
+                  as Map<String, dynamic>)['data']
+              as Map<String, dynamic>;
+      final exportedTask = (data['tasks'] as List).cast<Map>().singleWhere(
+        (row) => row['id'] == task.id,
+      );
+      expect(exportedTask['plan_change_reasons'], {
+        eventId: 'Matches the ticket',
+      });
+      final exportedReview = (data['daily_reviews'] as List)
+          .cast<Map>()
+          .singleWhere((row) => row['date'] == '2026-08-30');
+      expect(exportedReview['mood'], 3);
+      expect(exportedReview['task_reasons'], {task.id: 'Blocked'});
 
-    final restored = AppDatabase(NativeDatabase.memory());
-    addTearDown(restored.close);
-    await BackupService(restored).importJson(source, ownershipConfirmed: true);
+      final restored = AppDatabase(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await BackupService(restored)
+          .importJson(source, ownershipConfirmed: true);
 
-    final restoredTask = (await TaskRepository(restored).getTaskById(task.id))!;
-    expect(restoredTask.planChangeReasons, {eventId: 'Matches the ticket'});
-    final restoredReview = (await ReviewRepository(
-      restored,
-    ).getReviewForDate(DateTime(2026, 8, 30)))!;
-    expect(restoredReview.mood, 3);
-    expect(restoredReview.taskReasons, {task.id: 'Blocked'});
-  });
+      final restoredTask = (await TaskRepository(restored)
+          .getTaskById(task.id))!;
+      expect(restoredTask.planChangeReasons, {eventId: 'Matches the ticket'});
+      final restoredReview = (await ReviewRepository(restored)
+          .getReviewForDate(DateTime(2026, 8, 30)))!;
+      expect(restoredReview.mood, 3);
+      expect(restoredReview.taskReasons, {task.id: 'Blocked'});
+    },
+  );
 
   test('v3 backup imports with no mood and empty reasons', () async {
     await _seedDatabase(database);
@@ -1148,9 +1153,9 @@ void main() {
       note: 'x',
       taskReasons: const {'t1': 'Blocked'},
     );
-    final document =
-        jsonDecode(await BackupService(database).exportJson())
-            as Map<String, dynamic>;
+    final document = jsonDecode(
+      await BackupService(database).exportJson(),
+    ) as Map<String, dynamic>;
     final content = document['content'] as Map<String, dynamic>;
     final data = content['data'] as Map<String, dynamic>;
     for (final raw in data['tasks'] as List) {
@@ -1167,9 +1172,8 @@ void main() {
 
     final restored = AppDatabase(NativeDatabase.memory());
     addTearDown(restored.close);
-    await BackupService(
-      restored,
-    ).importJson(jsonEncode(document), ownershipConfirmed: true);
+    await BackupService(restored)
+        .importJson(jsonEncode(document), ownershipConfirmed: true);
 
     final reviews = await restored.select(restored.dailyReviews).get();
     expect(reviews, isNotEmpty);
@@ -1180,6 +1184,90 @@ void main() {
     for (final row in await restored.select(restored.tasks).get()) {
       expect(row.planChangeReasonsJson, '{}');
     }
+  });
+
+  test('v5 backup round trips weekly mood and feeling', () async {
+    await ReviewRepository(database).saveWeeklyReviewDraft(
+      weekStart: DateTime(2026, 9, 28),
+      mood: 4,
+      feeling: 'Proud of the sync work',
+      note: 'Keep doing reviews',
+    );
+
+    final source = await BackupService(database).exportJson();
+    final document = jsonDecode(source) as Map<String, dynamic>;
+    expect(document['schema_version'], 5);
+    final data =
+        (document['content'] as Map<String, dynamic>)['data']
+            as Map<String, dynamic>;
+    final exported = (data['weekly_reviews'] as List).cast<Map>().singleWhere(
+      (row) => row['week_start_date'] == '2026-09-28',
+    );
+    expect(exported['mood'], 4);
+    expect(exported['feeling'], 'Proud of the sync work');
+
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+    await BackupService(restored).importJson(source, ownershipConfirmed: true);
+
+    final weekly = (await ReviewRepository(restored)
+        .getWeeklyReviewForWeek(DateTime(2026, 9, 28)))!;
+    expect(weekly.mood, 4);
+    expect(weekly.feeling, 'Proud of the sync work');
+    expect(weekly.reflection, 'Keep doing reviews');
+  });
+
+  test(
+    'v4 backup imports weekly reviews with no mood and no feeling',
+    () async {
+      await _seedDatabase(database);
+      final document = jsonDecode(
+        await BackupService(database).exportJson(),
+      ) as Map<String, dynamic>;
+      final content = document['content'] as Map<String, dynamic>;
+      final data = content['data'] as Map<String, dynamic>;
+      for (final raw in data['weekly_reviews'] as List) {
+        (raw as Map<String, dynamic>)
+          ..remove('mood')
+          ..remove('feeling');
+      }
+      document['schema_version'] = 4;
+      content['schema_version'] = 4;
+      document['content_checksum'] = BackupCodec.checksum(content);
+
+      final restored = AppDatabase(NativeDatabase.memory());
+      addTearDown(restored.close);
+      await BackupService(restored)
+          .importJson(jsonEncode(document), ownershipConfirmed: true);
+
+      final weekly = await restored.select(restored.weeklyReviews).get();
+      expect(weekly, isNotEmpty);
+      for (final row in weekly) {
+        expect(row.mood, isNull);
+        expect(row.feeling, isNull);
+      }
+    },
+  );
+
+  test('a weekly feeling longer than 200 characters is rejected', () async {
+    await _seedDatabase(database);
+    final document = jsonDecode(
+      await BackupService(database).exportJson(),
+    ) as Map<String, dynamic>;
+    final content = document['content'] as Map<String, dynamic>;
+    final data = content['data'] as Map<String, dynamic>;
+    ((data['weekly_reviews'] as List).first
+            as Map<String, dynamic>)['feeling'] =
+        'x' * 201;
+    document['content_checksum'] = BackupCodec.checksum(content);
+
+    final restored = AppDatabase(NativeDatabase.memory());
+    addTearDown(restored.close);
+    await expectLater(
+      BackupService(restored)
+          .importJson(jsonEncode(document), ownershipConfirmed: true),
+      throwsA(isA<BackupValidationException>()),
+    );
   });
 }
 
@@ -1200,6 +1288,11 @@ void _convertEnvelopeToV1(Map<String, dynamic> document) {
     final row = raw as Map<String, dynamic>;
     row.remove('mood');
     row.remove('task_reasons');
+  }
+  for (final raw in data['weekly_reviews'] as List) {
+    final row = raw as Map<String, dynamic>;
+    row.remove('mood');
+    row.remove('feeling');
   }
   for (final raw in data['timer_sessions'] as List) {
     final row = raw as Map<String, dynamic>;

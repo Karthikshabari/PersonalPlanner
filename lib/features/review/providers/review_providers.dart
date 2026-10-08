@@ -13,6 +13,7 @@ import '../domain/review_insights.dart';
 import '../domain/review_overview.dart';
 import '../domain/task_outcome.dart';
 import '../domain/task_outcome_service.dart';
+import '../domain/weekly_review_history.dart';
 
 final reviewRepositoryProvider = Provider<ReviewRepository>((ref) {
   return ReviewRepository(ref.watch(appDatabaseProvider));
@@ -119,4 +120,20 @@ final reviewOverviewWindowProvider = StreamProvider.autoDispose
             .read(reviewOverviewServiceProvider)
             .window(today: DateTime.now(), dayCount: dayCount),
       );
+    });
+
+final weeklyReviewHistoryServiceProvider = Provider<WeeklyReviewHistoryService>(
+  (ref) {
+    return WeeklyReviewHistoryService(ref.watch(appDatabaseProvider));
+  },
+);
+
+/// The 52 weeks before [weekStart], oldest first: saved mood, feeling, note
+/// and completion. A one-off read (no stream); the Weekly screen invalidates
+/// it after every save (WD13).
+final weeklyReviewHistoryProvider = FutureProvider.autoDispose
+    .family<List<WeeklyHistoryWeek>, DateTime>((ref, weekStart) {
+      return ref
+          .watch(weeklyReviewHistoryServiceProvider)
+          .load(startOfWeek(weekStart));
     });
