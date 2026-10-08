@@ -55,6 +55,9 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
   /// Content is at least 760 dp wide (two columns, Ctrl + Enter hint).
   bool _wide = true;
 
+  /// Bumped on the first save of a week in this session: plays the reveal.
+  int _revealToken = 0;
+
   void _onTab() {
     if (mounted) setState(() {});
   }
@@ -173,6 +176,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
                                       draft: draft,
                                       future: future,
                                       wide: wide,
+                                      reviewAsync: reviewAsync,
                                     )
                                   else
                                     WeeklyNextWeekTab(
@@ -267,6 +271,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     required WeeklyReviewDraft draft,
     required bool future,
     required bool wide,
+    required AsyncValue<WeeklyReview?> reviewAsync,
   }) {
     if (daysAsync.hasError) {
       return ErrorPanel(message: friendlyErrorMessage(daysAsync.error!));
@@ -294,9 +299,27 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     );
     final reveal = KeyedSubtree(
       key: _revealKey,
-      child: WeeklyRevealCard(
+      child: KeyedSubtree(
         key: const ValueKey('weekly-reveal'),
-        dots: weeklyDots(history),
+        child: WeeklyRevealCard(
+          // A new state per week: a week opens in its final state and never
+          // replays another week's animation.
+          key: ValueKey('weekly-reveal-${isoDateString(weekStart)}'),
+          revealed:
+              draft.hydrated &&
+              (reviewAsync.value?.mood != null ||
+                  draft.saveStatus == ReviewSaveStatus.saved),
+          mood: draft.savedMood,
+          percent: numbers.percent,
+          deltaText: weeklyDeltaText(
+            percent: numbers.percent,
+            previous: history,
+          ),
+          highlights: numbers.highlights,
+          feeling: draft.savedFeeling,
+          dots: weeklyDots(history),
+          playToken: _revealToken,
+        ),
       ),
     );
     const gap = SizedBox(height: AppSpacing.md);
@@ -380,6 +403,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       HapticFeedback.lightImpact();
     }
     final firstReveal = ref.read(weeklyRevealPlayedProvider).add(weekStart);
+    if (firstReveal) setState(() => _revealToken++);
     if (_tabs.index != 0) _tabs.index = 0;
     showReviewSnackBar(
       context,
