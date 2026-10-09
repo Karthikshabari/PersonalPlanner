@@ -203,6 +203,30 @@ class AuthRepository implements AuthSessionRepository {
 bool _isUnusableStoredSessionValue(Object error) =>
     error is FormatException || error is TypeError || error is AuthException;
 
+/// Shown on the Planner account form when the project cannot be reached.
+const String plannerAuthNetworkMessage =
+    'Network unavailable. Your local data is still safe.';
+
+/// Shown on the Planner account form for a 429 or an Auth rate-limit code.
+const String plannerAuthRateLimitedMessage =
+    'Too many sign-in attempts or emails in a short time. Wait a few minutes, '
+    'then try again.';
+
+/// Shown on the Planner account form when the project has sign-ups disabled.
+const String plannerAuthSignupDisabledMessage =
+    'This cloud project is not accepting new accounts. Log in with an '
+    'existing account instead.';
+
+/// Shown on the Planner account form when Auth answers 401 or 403.
+const String plannerAuthProjectRejectedMessage =
+    "This cloud project did not accept Personal Planner's request. In Cloud "
+    'storage, open Supabase connection and press Verify with Supabase.';
+
+/// Shown on the Planner account form when Auth answers with a 5xx status.
+const String plannerAuthServerUnavailableMessage =
+    'Your cloud project is not answering right now. Try again in a few '
+    'minutes. Your local data is still safe.';
+
 /// Converts known auth failures to safe UI text without exposing access or
 /// refresh tokens, PKCE values, passwords, or raw request payloads.
 String safeAuthError(Object error) {
@@ -229,7 +253,30 @@ String safeAuthError(Object error) {
       message.contains('socket') ||
       message.contains('timeout') ||
       message.contains('connection')) {
-    return 'Network unavailable. Your local data is still safe.';
+    return plannerAuthNetworkMessage;
+  }
+  // Answers the checks above do not recognise: name the cause instead of the
+  // generic text. Placed last so every earlier mapping keeps its message (R8).
+  if (error is AuthException) {
+    final status = int.tryParse(error.statusCode ?? '');
+    final code = error.code;
+    if (code == 'over_request_rate_limit' ||
+        code == 'over_email_send_rate_limit' ||
+        status == 429) {
+      return plannerAuthRateLimitedMessage;
+    }
+    if (code == 'signup_disabled') return plannerAuthSignupDisabledMessage;
+    if (error is AuthRetryableFetchException) {
+      return status == null
+          ? plannerAuthNetworkMessage
+          : plannerAuthServerUnavailableMessage;
+    }
+    if (status == 401 || status == 403) {
+      return plannerAuthProjectRejectedMessage;
+    }
+    if (status != null && status >= 500) {
+      return plannerAuthServerUnavailableMessage;
+    }
   }
   return 'Authentication failed. Check your details and try again.';
 }
