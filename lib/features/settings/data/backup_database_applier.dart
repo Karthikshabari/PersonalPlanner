@@ -180,6 +180,7 @@ class BackupDatabaseApplier {
                 categoryId: Value(
                   BackupValidator.nullableId(row, 'category_id'),
                 ),
+                tagId: Value(BackupValidator.nullableId(row, 'tag_id')),
                 priority: Value(BackupValidator.priority(row, 'priority')),
                 status: Value(BackupValidator.status(row, 'status')),
                 notes: Value(BackupValidator.nullableString(row, 'notes')),
@@ -457,6 +458,65 @@ class BackupDatabaseApplier {
                 ),
               ),
             );
+      case 'experiments':
+        await _db
+            .into(_db.experiments)
+            .insert(
+              ExperimentsCompanion.insert(
+                id: BackupValidator.id(row, 'id'),
+                tagId: BackupValidator.id(row, 'tag_id'),
+                purpose: Value(BackupValidator.nullableString(row, 'purpose')),
+                startDate: BackupValidator.dateOnly(row, 'start_date'),
+                endDate: BackupValidator.dateOnly(row, 'end_date'),
+                weekdayTargetMin: BackupValidator.integer(
+                  row,
+                  'weekday_target_min',
+                ),
+                weekendTargetMin: BackupValidator.integer(
+                  row,
+                  'weekend_target_min',
+                ),
+                checkInEveryDays: BackupValidator.integer(
+                  row,
+                  'check_in_every_days',
+                ),
+                status: Value(BackupValidator.string(row['status'], 'status')),
+                extensionsJson: Value(
+                  BackupValidator.string(
+                    row['extensions_json'],
+                    'extensions_json',
+                  ),
+                ),
+                outcome: Value(BackupValidator.nullableString(row, 'outcome')),
+                conclusionNote: Value(
+                  BackupValidator.nullableString(row, 'conclusion_note'),
+                ),
+                concludedOn: Value(
+                  BackupValidator.nullableDateOnly(row, 'concluded_on'),
+                ),
+                createdAt: BackupValidator.dateTime(row, 'created_at'),
+                updatedAt: BackupValidator.dateTime(row, 'updated_at'),
+                deletedAt: Value(
+                  BackupValidator.nullableDateTime(row, 'deleted_at'),
+                ),
+              ),
+            );
+      case 'experiment_check_ins':
+        await _db
+            .into(_db.experimentCheckIns)
+            .insert(
+              ExperimentCheckInsCompanion.insert(
+                id: BackupValidator.id(row, 'id'),
+                experimentId: BackupValidator.id(row, 'experiment_id'),
+                slotDate: BackupValidator.dateOnly(row, 'slot_date'),
+                note: BackupValidator.string(row['note'], 'note'),
+                createdAt: BackupValidator.dateTime(row, 'created_at'),
+                updatedAt: BackupValidator.dateTime(row, 'updated_at'),
+                deletedAt: Value(
+                  BackupValidator.nullableDateTime(row, 'deleted_at'),
+                ),
+              ),
+            );
       default:
         throw BackupValidationException('Unsupported backup table: $table');
     }
@@ -496,6 +556,8 @@ class BackupDatabaseApplier {
 
   Future<void> _deleteUserRows() async {
     await _db.delete(_db.timerSessions).go();
+    await _db.delete(_db.experimentCheckIns).go();
+    await _db.delete(_db.experiments).go();
     await _db.delete(_db.dayContexts).go();
     await _db.delete(_db.taskTags).go();
     await _db.delete(_db.subtasks).go();
@@ -552,6 +614,8 @@ class BackupDatabaseApplier {
     'tags',
     'recurring_rules',
     'tasks',
+    'experiments',
+    'experiment_check_ins',
     'task_templates',
     'daily_reviews',
     'weekly_reviews',

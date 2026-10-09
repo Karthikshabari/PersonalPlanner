@@ -25,6 +25,8 @@ class BackupValidator {
     'weekly_reviews',
     'timer_sessions',
     'day_contexts',
+    'experiments',
+    'experiment_check_ins',
   ];
 
   static const dataKeys = {...tableNames, 'settings'};
@@ -54,6 +56,7 @@ class BackupValidator {
       'manual_duration_adjustment_min',
       'manual_actual_set',
       'category_id',
+      'tag_id',
       'priority',
       'status',
       'notes',
@@ -182,6 +185,33 @@ class BackupValidator {
       'updated_at',
       'deleted_at',
     },
+    'experiments': {
+      'id',
+      'tag_id',
+      'purpose',
+      'start_date',
+      'end_date',
+      'weekday_target_min',
+      'weekend_target_min',
+      'check_in_every_days',
+      'status',
+      'extensions_json',
+      'outcome',
+      'conclusion_note',
+      'concluded_on',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+    },
+    'experiment_check_ins': {
+      'id',
+      'experiment_id',
+      'slot_date',
+      'note',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+    },
   };
 
   /// Verifies the historical v1 topology before any compatibility field is
@@ -195,6 +225,7 @@ class BackupValidator {
       if (table == 'tasks') {
         expected.removeAll(const {
           'manual_actual_set',
+          'tag_id',
           'inbox_content_version',
           'due_date',
           'plan_title_history',
@@ -515,6 +546,7 @@ class BackupValidator {
         integer(row, 'manual_duration_adjustment_min');
         boolean(row, 'manual_actual_set');
         nullableId(row, 'category_id');
+        nullableId(row, 'tag_id');
         priority(row, 'priority');
         status(row, 'status');
         nullableString(row, 'notes');
@@ -726,6 +758,135 @@ class BackupValidator {
           );
         }
         _validateAuditDates(row);
+      case 'experiments':
+        _validateExperiment(row);
+        _validateAuditDates(row);
+      case 'experiment_check_ins':
+        final idValue = id(row, 'id');
+        final experimentId = id(row, 'experiment_id');
+        final slotDate = dateOnly(row, 'slot_date');
+        if (idValue !=
+            generateDeterministicUuid(
+              'experiment-check-in:$experimentId:$slotDate',
+            )) {
+          throw const BackupValidationException(
+            'Check-in ID does not match its experiment and date.',
+          );
+        }
+        final note = _string(row['note'], 'note');
+        if (note.trim().isEmpty || note.runes.length > 4000) {
+          throw const BackupValidationException(
+            'Check-in note must be 1–4000 characters.',
+          );
+        }
+        _validateAuditDates(row);
+    }
+  }
+
+  /// The rules of the local table constraints and of the sync validator, so a
+  /// backup can never carry an experiment that sync would refuse.
+  void _validateExperiment(Map<String, dynamic> row) {
+    final idValue = id(row, 'id');
+    final tagId = id(row, 'tag_id');
+    if (idValue != generateDeterministicUuid('experiment:$tagId')) {
+      throw const BackupValidationException(
+        'Experiment ID does not match its tag.',
+      );
+    }
+    final start = dateOnly(row, 'start_date');
+    final end = dateOnly(row, 'end_date');
+    if (end.compareTo(start) < 0) {
+      throw const BackupValidationException(
+        'Experiment end date precedes its start date.',
+      );
+    }
+    for (final field in const ['weekday_target_min', 'weekend_target_min']) {
+      final value = integer(row, field);
+      if (value < 0 || value > 9999) {
+        throw BackupValidationException('$field is out of range.');
+      }
+    }
+    if (!const {1, 3, 7, 10, 15}.contains(row['check_in_every_days'])) {
+      throw const BackupValidationException(
+        'check_in_every_days has an unsupported value.',
+      );
+    }
+    final status = _string(row['status'], 'status');
+    if (!const {'running', 'concluded'}.contains(status)) {
+      throw const BackupValidationException('Experiment status is invalid.');
+    }
+    final purpose = nullableString(row, 'purpose');
+    if (purpose != null && purpose.runes.length > 1000) {
+      throw const BackupValidationException('purpose is too long.');
+    }
+    final note = nullableString(row, 'conclusion_note');
+    if (note != null && note.runes.length > 4000) {
+      throw const BackupValidationException('conclusion_note is too long.');
+    }
+    final outcome = nullableString(row, 'outcome');
+    if (outcome != null &&
+        !const {'continue_habit', 'drop'}.contains(outcome)) {
+      throw const BackupValidationException('Experiment outcome is invalid.');
+    }
+    final concludedOn = nullableDateOnly(row, 'concluded_on');
+    if (status == 'running') {
+      if (outcome != null || note != null || concludedOn != null) {
+        throw const BackupValidationException(
+          'A running experiment cannot have an outcome, note or conclusion date.',
+        );
+      }
+    } else if (outcome == null || concludedOn == null) {
+      throw const BackupValidationException(
+        'A concluded experiment needs an outcome and a conclusion date.',
+      );
+    }
+    _validateExperimentExtensions(row);
+  }
+
+  void _validateExperimentExtensions(Map<String, dynamic> row) {
+    final raw = row['extensions_json'];
+    if (raw is! String) {
+      throw const BackupValidationException(
+        'extensions_json must be JSON text.',
+      );
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const BackupValidationException(
+        'extensions_json must be valid JSON.',
+      );
+    }
+    if (decoded is! List) {
+      throw const BackupValidationException(
+        'extensions_json must be an array.',
+      );
+    }
+    const keys = {'reason', 'previous_end_date', 'new_end_date', 'made_on'};
+    for (final item in decoded) {
+      if (item is! Map ||
+          item.length != keys.length ||
+          !item.keys.every(keys.contains)) {
+        throw const BackupValidationException('Invalid experiment extension.');
+      }
+      final entry = Map<String, dynamic>.from(item);
+      final reason = entry['reason'];
+      if (reason is! String ||
+          reason.trim().isEmpty ||
+          reason.runes.length > 500) {
+        throw const BackupValidationException(
+          'Experiment extension reason must be 1–500 characters.',
+        );
+      }
+      final previousEnd = dateOnly(entry, 'previous_end_date');
+      final newEnd = dateOnly(entry, 'new_end_date');
+      dateOnly(entry, 'made_on');
+      if (newEnd.compareTo(previousEnd) <= 0) {
+        throw const BackupValidationException(
+          'Experiment extension must move the end date later.',
+        );
+      }
     }
   }
 
@@ -739,6 +900,7 @@ class BackupValidator {
       final row = _map(raw, 'task');
       for (final field in const [
         'category_id',
+        'tag_id',
         'recurring_rule_id',
         'rescheduled_from_id',
         'rescheduled_to_id',
@@ -746,6 +908,8 @@ class BackupValidator {
         final value = nullableId(row, field);
         final table = field == 'category_id'
             ? 'categories'
+            : field == 'tag_id'
+            ? 'tags'
             : field == 'recurring_rule_id'
             ? 'recurring_rules'
             : 'tasks';
@@ -791,6 +955,26 @@ class BackupValidator {
       if (!exists('tasks', id(_map(raw, 'timer session'), 'task_id'))) {
         throw const BackupValidationException(
           'Timer session references a missing task.',
+        );
+      }
+    }
+    for (final raw in _list(data['experiments'], 'experiments')) {
+      if (!exists('tags', id(_map(raw, 'experiment'), 'tag_id'))) {
+        throw const BackupValidationException(
+          'Experiment references a missing tag.',
+        );
+      }
+    }
+    for (final raw in _list(
+      data['experiment_check_ins'],
+      'experiment_check_ins',
+    )) {
+      if (!exists(
+        'experiments',
+        id(_map(raw, 'experiment check-in'), 'experiment_id'),
+      )) {
+        throw const BackupValidationException(
+          'Check-in references a missing experiment.',
         );
       }
     }

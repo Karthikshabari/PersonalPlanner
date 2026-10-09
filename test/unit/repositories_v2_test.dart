@@ -7,6 +7,7 @@ import 'package:personal_planner/core/models/subtask.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/features/categories/data/category_repository.dart';
+import 'package:personal_planner/features/experiments/data/experiment_repository.dart';
 import 'package:personal_planner/features/inbox/data/inbox_repository.dart';
 import 'package:personal_planner/features/task_editor/data/subtask_repository.dart';
 import 'package:personal_planner/features/task_editor/data/tag_repository.dart';
@@ -158,6 +159,164 @@ void main() {
         unorderedEquals(['office', 'work']),
       );
     });
+
+    test('normalizeTagKey trims, collapses inner spaces and lower-cases', () {
+      expect(TagRepository.normalizeTagKey('  Learn  \t C  '), 'learn c');
+      expect(TagRepository.normalizeTagKey('LEARN C'), 'learn c');
+      expect(TagRepository.normalizeTagKey('   '), '');
+    });
+
+    test('findByNameIgnoringCase finds active tags only', () async {
+      final learn = await tags.getOrCreateByName('Learn C');
+      expect((await tags.findByNameIgnoringCase('learn c'))?.id, learn.id);
+      expect((await tags.findByNameIgnoringCase('  LEARN   C '))?.id, learn.id);
+      expect(await tags.findByNameIgnoringCase('learn'), isNull);
+      expect(await tags.findByNameIgnoringCase('   '), isNull);
+      await tags.deleteTag(learn.id);
+      expect(await tags.findByNameIgnoringCase('learn c'), isNull);
+    });
+
+    test('findByNameIgnoringCase prefers the tag created first', () async {
+      final first = await tags.getOrCreateByName('Learn C');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final second = await tags.getOrCreateByName('learn c');
+      expect(second.id, isNot(first.id));
+      expect((await tags.findByNameIgnoringCase('LEARN C'))?.id, first.id);
+    });
+
+    test('getOrCreateForName returns the existing tag for a case or space '
+        'variant', () async {
+      final existing = await tags.getOrCreateByName('Learn C');
+      for (final variant in ['learn c', '  Learn C  ', 'Learn  C', 'LEARN C']) {
+        final found = await tags.getOrCreateForName(variant);
+        expect(found.id, existing.id, reason: variant);
+        expect(found.name, 'Learn C');
+      }
+      expect(await tags.watchAllTags().first, hasLength(1));
+    });
+
+    test(
+      'getOrCreateForName keeps the deterministic id for a new name',
+      () async {
+        final created = await tags.getOrCreateForName('  Sketching  ');
+        expect(created.name, 'Sketching');
+        expect(created.id, generateDeterministicUuid('tag:Sketching'));
+      },
+    );
+
+    test('getOrCreateForName rejects a blank name', () async {
+      await expectLater(tags.getOrCreateForName('   '), throwsArgumentError);
+      await expectLater(tags.getOrCreateForName(''), throwsArgumentError);
+    });
+
+    test(
+      'getUsage counts live, non-Inbox blocks and finds the first date',
+      () async {
+        final tag = await tags.getOrCreateByName('Learn C');
+        expect((await tags.getUsage(tag.id)).blockCount, 0);
+        expect((await tags.getUsage(tag.id)).firstBlockDate, isNull);
+
+        Future<Task> block(String title, DateTime start, {String? tagId}) =>
+            tasks.insertTask(
+              Task(
+                id: '',
+                title: title,
+                startTime: start,
+                endTime: start.add(const Duration(hours: 1)),
+                tagId: tagId,
+                createdAt: DateTime(2026, 1, 1),
+                updatedAt: DateTime(2026, 1, 1),
+              ),
+            );
+
+        // 23:30 planner time (Asia/Kolkata) is still the 6th, not the UTC date.
+        await block('late', DateTime(2026, 10, 6, 23, 30), tagId: tag.id);
+        await block('later', DateTime(2026, 10, 9, 8), tagId: tag.id);
+        final deleted = await block(
+          'deleted',
+          DateTime(2026, 10, 2, 8),
+          tagId: tag.id,
+        );
+        await tasks.deleteTask(deleted.id);
+        await block('untagged', DateTime(2026, 10, 1, 8));
+
+        final usage = await tags.getUsage(tag.id);
+        expect(usage.blockCount, 2);
+        expect(usage.firstBlockDate, '2026-10-06');
+      },
+    );
+
+    test('deleteTag refuses a tag that belongs to an experiment', () async {
+      final experiment = await ExperimentRepository(db).createExperiment(
+        name: 'Learn C',
+        startDate: '2026-10-01',
+        endDate: '2026-10-30',
+        weekdayTargetMin: 60,
+        weekendTargetMin: 90,
+        checkInEveryDays: 7,
+      );
+      await expectLater(
+        tags.deleteTag(experiment.tagId),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'Tag ${experiment.tagId} belongs to an experiment and cannot be '
+                'removed',
+          ),
+        ),
+      );
+      await expectLater(
+        db.tagDao.softDeleteTag(experiment.tagId, DateTime.now()),
+        throwsStateError,
+      );
+      expect((await tags.findByNameIgnoringCase('learn c')), isNotNull);
+    });
+
+    test('deleteTag still works for a plain tag', () async {
+      final plain = await tags.getOrCreateByName('plain');
+      await tags.deleteTag(plain.id);
+      expect(await tags.findByNameIgnoringCase('plain'), isNull);
+    });
+
+    test('watchTagOptions flags tags that have an experiment', () async {
+      await tags.getOrCreateByName('plain');
+      final experiment = await ExperimentRepository(db).createExperiment(
+        name: 'Learn C',
+        startDate: '2026-10-01',
+        endDate: '2026-10-30',
+        weekdayTargetMin: 60,
+        weekendTargetMin: 90,
+        checkInEveryDays: 7,
+      );
+      final options = await db.tagDao.watchTagOptions().first;
+      expect(
+        {for (final o in options) o.name: o.hasExperiment},
+        {'Learn C': true, 'plain': false},
+      );
+      expect(options.firstWhere((o) => o.hasExperiment).id, experiment.tagId);
+    });
+
+    test(
+      'a task keeps its tag when the tag is cleared from other blocks',
+      () async {
+        final tag = await tags.getOrCreateByName('Learn C');
+        final task = await tasks.insertTask(
+          Task(
+            id: '',
+            title: 'B',
+            startTime: DateTime(2026, 10, 6, 9),
+            endTime: DateTime(2026, 10, 6, 10),
+            tagId: tag.id,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        );
+        await tasks.updateTask(task.copyWith(tagId: null));
+        expect((await tasks.getTaskById(task.id))!.tagId, isNull);
+        expect(await tags.findByNameIgnoringCase('Learn C'), isNotNull);
+      },
+    );
 
     test(
       'attach/detach tags on a task; watchTagsForTask streams them',

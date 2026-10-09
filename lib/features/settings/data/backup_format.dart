@@ -1,7 +1,7 @@
 // Portable backup format constants and result types.
 
 /// The version of the portable Personal Planner backup document.
-const int plannerBackupSchemaVersion = 5;
+const int plannerBackupSchemaVersion = 6;
 
 /// Inputs larger than this are rejected before JSON parsing. This keeps the
 /// Settings workflow responsive and prevents an accidental giant file from

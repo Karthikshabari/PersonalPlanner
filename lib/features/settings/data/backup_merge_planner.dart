@@ -206,6 +206,8 @@ class BackupMergePlanner {
       case 'tasks':
         final category = nullable('category_id');
         if (category != null) yield key('categories', category);
+        final tag = nullable('tag_id');
+        if (tag != null) yield key('tags', tag);
         final rule = nullable('recurring_rule_id');
         if (rule != null) yield key('recurring_rules', rule);
         for (final field in const [
@@ -224,6 +226,12 @@ class BackupMergePlanner {
         final tag = nullable('tag_id');
         if (task != null) yield key('tasks', task);
         if (tag != null) yield key('tags', tag);
+      case 'experiments':
+        final tag = nullable('tag_id');
+        if (tag != null) yield key('tags', tag);
+      case 'experiment_check_ins':
+        final experiment = nullable('experiment_id');
+        if (experiment != null) yield key('experiments', experiment);
     }
   }
 }

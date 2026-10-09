@@ -111,4 +111,65 @@ void main() {
     expect(local.conflictingFields(base, remote), ['Due date']);
     expect(local.mergeOnto(base, base).dueDate, '2026-09-12');
   });
+
+  TaskEditorDraft tagDraft(String? tagId) => TaskEditorDraft(
+    title: base.title,
+    description: base.description,
+    notes: base.notes,
+    categoryId: base.categoryId,
+    tagId: tagId,
+    status: base.status,
+    startTime: base.startTime,
+    endTime: base.endTime,
+    actualDurationMin: base.actualDurationMin,
+    actualDurationDirty: false,
+  );
+
+  group('tag', () {
+    test('a local tag change applies and keeps unrelated remote edits', () {
+      final merged = tagDraft('tag-a').mergeOnto(
+        base,
+        base.copyWith(notes: 'Remote notes'),
+      );
+      expect(merged.tagId, 'tag-a');
+      expect(merged.notes, 'Remote notes');
+    });
+
+    test('an untouched tag keeps a remote tag change', () {
+      final latest = base.copyWith(tagId: 'tag-remote');
+      final draft = tagDraft(null);
+      expect(draft.conflictingFields(base, latest), isEmpty);
+      expect(draft.mergeOnto(base, latest).tagId, 'tag-remote');
+    });
+
+    test('clearing the tag locally clears it on the merged task', () {
+      final tagged = base.copyWith(tagId: 'tag-a');
+      final merged = tagDraft(null).mergeOnto(tagged, tagged);
+      expect(merged.tagId, isNull);
+    });
+
+    test('different tags on both sides conflict, labelled Tag', () {
+      final tagged = base.copyWith(tagId: 'tag-a');
+      final latest = tagged.copyWith(tagId: 'tag-remote');
+      expect(tagDraft('tag-local').conflictingFields(tagged, latest), ['Tag']);
+    });
+
+    test('the same tag chosen on both sides is not a conflict', () {
+      final latest = base.copyWith(tagId: 'tag-a');
+      expect(tagDraft('tag-a').conflictingFields(base, latest), isEmpty);
+    });
+
+    test('a remote clear against an unchanged local tag is not a conflict', () {
+      final tagged = base.copyWith(tagId: 'tag-a');
+      final latest = base.copyWith(tagId: null);
+      expect(tagDraft('tag-a').conflictingFields(tagged, latest), isEmpty);
+      expect(tagDraft('tag-a').mergeOnto(tagged, latest).tagId, isNull);
+    });
+
+    test('baseline sees a tag difference', () {
+      final baseline = TaskEditorBaseline(task: base);
+      expect(baseline.hasSameTaskValues(base.copyWith(tagId: 'tag-a')), isFalse);
+      expect(baseline.hasSameTaskValues(base), isTrue);
+    });
+  });
 }

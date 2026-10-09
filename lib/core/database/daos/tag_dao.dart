@@ -5,6 +5,40 @@ import '../tables/tags_table.dart';
 
 part 'tag_dao.g.dart';
 
+/// An active tag as offered by the editor's tag field.
+class TagOptionRow {
+  const TagOptionRow({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.hasExperiment,
+  });
+
+  final String id;
+  final String name;
+
+  /// Creation instant as stored (UTC ISO text); only used to order tags that
+  /// share a name key.
+  final String createdAt;
+
+  /// True when an experiment is linked to this tag.
+  final bool hasExperiment;
+}
+
+/// How many blocks carry a tag, and when the earliest one starts.
+class TagUsageRow {
+  const TagUsageRow({required this.blockCount, required this.firstStart});
+
+  final int blockCount;
+
+  /// Start instant of the earliest block, or null when there is none.
+  final DateTime? firstStart;
+}
+
+/// ED18: the message shared by every deletion path.
+String experimentTagRemovalMessage(String tagId) =>
+    'Tag $tagId belongs to an experiment and cannot be removed';
+
 @DriftAccessor(tables: [Tags, TaskTags])
 class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
   TagDao(super.db);
@@ -15,6 +49,16 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
           ..orderBy([(t) => OrderingTerm.asc(t.name)]))
         .watch();
   }
+
+  /// Active tags, earliest created first, then smallest id.
+  Future<List<TagRow>> getActiveTags() =>
+      (select(tags)
+            ..where((t) => t.deletedAt.isNull())
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.createdAt),
+              (t) => OrderingTerm.asc(t.id),
+            ]))
+          .get();
 
   Future<TagRow?> getTagById(String id) =>
       (select(tags)..where((t) => t.id.equals(id))).getSingleOrNull();
@@ -37,11 +81,62 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
     return count > 0;
   }
 
+  /// Active tags with a flag telling whether an experiment uses them,
+  /// ordered by name. Reads `experiments` too, so the stream fires when an
+  /// experiment is created.
+  Stream<List<TagOptionRow>> watchTagOptions() {
+    return customSelect(
+      'SELECT t.id AS id, t.name AS name, t.created_at AS created_at, '
+      'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id) '
+      'AS has_experiment '
+      'FROM tags t WHERE t.deleted_at IS NULL ORDER BY t.name',
+      readsFrom: {tags, attachedDatabase.experiments},
+    ).watch().map(
+      (rows) => [
+        for (final row in rows)
+          TagOptionRow(
+            id: row.read<String>('id'),
+            name: row.read<String>('name'),
+            createdAt: row.read<String>('created_at'),
+            hasExperiment: row.read<int>('has_experiment') != 0,
+          ),
+      ],
+    );
+  }
+
+  /// One aggregate over the non-deleted, non-Inbox tasks that carry [tagId].
+  Future<TagUsageRow> getTagUsage(String tagId) async {
+    final row = await customSelect(
+      'SELECT COUNT(*) AS block_count, MIN(start_time) AS first_start '
+      'FROM tasks WHERE tag_id = ? AND deleted_at IS NULL AND is_inbox = 0',
+      variables: [Variable<String>(tagId)],
+      readsFrom: {attachedDatabase.tasks},
+    ).getSingle();
+    final first = row.readNullable<String>('first_start');
+    return TagUsageRow(
+      blockCount: row.read<int>('block_count'),
+      firstStart: first == null ? null : DateTime.parse(first),
+    );
+  }
+
+  /// True when any experiment row references [tagId].
+  Future<bool> tagBelongsToExperiment(String tagId) async {
+    final row = await customSelect(
+      'SELECT EXISTS (SELECT 1 FROM experiments WHERE tag_id = ?) AS used',
+      variables: [Variable<String>(tagId)],
+      readsFrom: {attachedDatabase.experiments},
+    ).getSingle();
+    return row.read<int>('used') != 0;
+  }
+
   Future<void> softDeleteTag(String id, DateTime deletedAt) {
     final now = deletedAt.toUtc();
     return transaction(() async {
       final current = await getTagById(id);
       if (current == null || current.deletedAt != null) return;
+      if (await tagBelongsToExperiment(id)) {
+        throw StateError(experimentTagRemovalMessage(id));
+      }
       await updateTag(
         current.copyWith(
           deletedAt: Value(now),

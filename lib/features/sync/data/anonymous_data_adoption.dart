@@ -72,6 +72,8 @@ class AnonymousDataAdoptionService {
     'subtasks',
     'task_tags',
     'timer_sessions',
+    'experiments',
+    'experiment_check_ins',
   ];
 
   Future<AnonymousDataSummary> inspect() async {

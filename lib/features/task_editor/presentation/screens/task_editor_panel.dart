@@ -32,6 +32,7 @@ import '../../../timeline/domain/conflict_resolver.dart';
 import '../../../timeline/domain/scheduling_conflict_service.dart';
 import '../../../timeline/presentation/widgets/conflict_resolution_dialog.dart';
 import '../../../../core/models/task_template.dart';
+import '../../providers/tag_providers.dart';
 import '../../providers/task_editor_action_provider.dart';
 import '../../domain/task_editor_save_command.dart';
 import '../../domain/task_editor_draft.dart';
@@ -41,6 +42,7 @@ import '../../../timer/providers/timer_providers.dart';
 import '../widgets/category_dropdown.dart';
 import '../widgets/recurrence_picker.dart';
 import '../widgets/save_as_template_dialog.dart';
+import '../widgets/tag_field.dart';
 import '../widgets/subtask_editor.dart';
 import '../widgets/use_template_dropdown.dart';
 import '../widgets/plan_change_dialog.dart';
@@ -132,6 +134,11 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   String? _dueDate;
   bool _scheduleDirty = false;
   String? _categoryId;
+  String? _tagId;
+
+  /// A tag name typed in the Tag field that matches no tag yet; the tag is
+  /// created when the block is saved (ED16).
+  String? _pendingTagName;
   TaskStatus _status = TaskStatus.planned;
   bool _saving = false;
   String? _errorMessage;
@@ -206,6 +213,8 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       _actualController.text.trim() !=
           (baseline.actualDurationMin?.toString() ?? '') ||
       _categoryId != baseline.categoryId ||
+      _tagId != baseline.tagId ||
+      _pendingTagName != null ||
       _status != baseline.status ||
       _dueDate != baseline.dueDate ||
       _scheduleInputsChanged;
@@ -226,6 +235,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         _actualController.text.trim() !=
         (previous.actualDurationMin?.toString() ?? '');
     final categoryDirty = _categoryId != previous.categoryId;
+    final tagDirty = _tagId != previous.tagId || _pendingTagName != null;
     final statusDirty = _status != previous.status;
     final dueDateDirty = _dueDate != previous.dueDate;
     final scheduleDirty = _scheduleInputsChanged;
@@ -244,6 +254,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       );
     }
     if (!categoryDirty) _categoryId = latest.categoryId;
+    if (!tagDirty) _tagId = latest.tagId;
     if (!statusDirty) _status = latest.status;
     if (!dueDateDirty) _dueDate = latest.dueDate;
     if (!scheduleDirty) {
@@ -265,6 +276,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       categoryId: categoryDirty
           ? conflictBaseline.categoryId
           : latest.categoryId,
+      tagId: tagDirty ? conflictBaseline.tagId : latest.tagId,
       status: statusDirty ? conflictBaseline.status : latest.status,
       startTime: scheduleDirty ? conflictBaseline.startTime : latest.startTime,
       endTime: scheduleDirty ? conflictBaseline.endTime : latest.endTime,
@@ -305,6 +317,8 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       task?.actualDurationMin?.toString() ?? '',
     );
     _categoryId = task?.categoryId;
+    _tagId = task?.tagId;
+    _pendingTagName = null;
     _status = task?.status ?? TaskStatus.planned;
     final start = task?.startTime;
     final end = task?.endTime;
@@ -680,6 +694,11 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       description: normalizedDescription.isEmpty ? null : normalizedDescription,
       notes: normalizedNotes.isEmpty ? null : normalizedNotes,
       categoryId: _categoryId,
+      // A pending name stands for the tag the save will create: the id the
+      // repository gives a new tag of that name (ED4, ED16).
+      tagId: _pendingTagName == null
+          ? _tagId
+          : generateDeterministicUuid('tag:${_pendingTagName!.trim()}'),
       status: _status,
       startTime: start,
       endTime: end,
@@ -832,6 +851,17 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       throw StateError(
         'Cannot change ${latest.status.label} to ${editedTask.status.label}',
       );
+    }
+
+    // ED16: a typed tag name becomes a tag only now, after every save dialog
+    // has been answered. Every persistence branch below writes the tag with
+    // the edited block only, whatever the recurrence scope (ED13).
+    final pendingTagName = _pendingTagName;
+    if (pendingTagName != null) {
+      final tag = await ref
+          .read(tagRepositoryProvider)
+          .getOrCreateForName(pendingTagName);
+      editedTask = editedTask.copyWith(tagId: tag.id);
     }
 
     final wantsDetach = _repeat == RepeatPreset.never;
@@ -1346,6 +1376,18 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   value: _categoryId,
                   onChanged: (c) => setState(() => _categoryId = c),
                 ),
+                if (!task.isInbox) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  TagField(
+                    selectedTagId: _tagId,
+                    pendingName: _pendingTagName,
+                    enabled: !_saving,
+                    onChanged: (tagId, pendingName) => setState(() {
+                      _tagId = tagId;
+                      _pendingTagName = pendingName;
+                    }),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.md),
                 DropdownButtonFormField<TaskStatus>(
                   initialValue: _status,

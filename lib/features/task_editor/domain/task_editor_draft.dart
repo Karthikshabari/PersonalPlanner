@@ -42,6 +42,7 @@ class TaskEditorBaseline {
         leftDescription == rightDescription &&
         normalizeNotes(task.notes ?? '') == normalizeNotes(other.notes ?? '') &&
         task.categoryId == other.categoryId &&
+        task.tagId == other.tagId &&
         task.status == other.status &&
         task.startTime == other.startTime &&
         task.endTime == other.endTime &&
@@ -61,6 +62,7 @@ class TaskEditorDraft {
   final String? description;
   final String? notes;
   final String? categoryId;
+  final String? tagId;
   final TaskStatus status;
   final DateTime? startTime;
   final DateTime? endTime;
@@ -74,6 +76,7 @@ class TaskEditorDraft {
     required this.description,
     required this.notes,
     required this.categoryId,
+    this.tagId,
     required this.status,
     required this.startTime,
     required this.endTime,
@@ -103,6 +106,7 @@ class TaskEditorDraft {
     check('Description', description, baseline.description, latest.description);
     check('Notes', notes, baseline.notes, latest.notes);
     check('Category', categoryId, baseline.categoryId, latest.categoryId);
+    check('Tag', tagId, baseline.tagId, latest.tagId);
     check('Status', status, baseline.status, latest.status);
     check('Start time', startTime, baseline.startTime, latest.startTime);
     check('End time', endTime, baseline.endTime, latest.endTime);
@@ -138,6 +142,7 @@ class TaskEditorDraft {
       ),
       notes: choose(notes, baseline.notes, latest.notes),
       categoryId: choose(categoryId, baseline.categoryId, latest.categoryId),
+      tagId: choose(tagId, baseline.tagId, latest.tagId),
       status: choose(status, baseline.status, latest.status),
       startTime: choose(startTime, baseline.startTime, latest.startTime),
       endTime: choose(endTime, baseline.endTime, latest.endTime),

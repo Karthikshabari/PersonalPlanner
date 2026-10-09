@@ -352,6 +352,7 @@ class RecurrenceAggregateSnapshot {
       ) &&
       _owned(c.manualActualSet, b.manualActualSet, a.manualActualSet) &&
       _owned(c.categoryId, b.categoryId, a.categoryId) &&
+      _owned(c.tagId, b.tagId, a.tagId) &&
       _owned(c.priority, b.priority, a.priority) &&
       _owned(c.status, b.status, a.status) &&
       _owned(c.notes, b.notes, a.notes) &&
@@ -390,6 +391,7 @@ class RecurrenceAggregateSnapshot {
       c.manualDurationAdjustmentMin == a.manualDurationAdjustmentMin &&
       c.manualActualSet == a.manualActualSet &&
       c.categoryId == a.categoryId &&
+      c.tagId == a.tagId &&
       c.priority == a.priority &&
       c.status == a.status &&
       c.notes == a.notes &&
@@ -443,6 +445,7 @@ class RecurrenceAggregateSnapshot {
         a.manualActualSet,
       ),
       categoryId: Value(_undoValue(c.categoryId, b.categoryId, a.categoryId)),
+      tagId: Value(_undoValue(c.tagId, b.tagId, a.tagId)),
       priority: _undoValue(c.priority, b.priority, a.priority),
       status: _undoValue(c.status, b.status, a.status),
       notes: Value(_undoValue(c.notes, b.notes, a.notes)),

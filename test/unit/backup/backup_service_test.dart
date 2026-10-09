@@ -1186,7 +1186,7 @@ void main() {
     }
   });
 
-  test('v5 backup round trips weekly mood and feeling', () async {
+  test('v6 backup round trips weekly mood and feeling', () async {
     await ReviewRepository(database).saveWeeklyReviewDraft(
       weekStart: DateTime(2026, 9, 28),
       mood: 4,
@@ -1196,7 +1196,7 @@ void main() {
 
     final source = await BackupService(database).exportJson();
     final document = jsonDecode(source) as Map<String, dynamic>;
-    expect(document['schema_version'], 5);
+    expect(document['schema_version'], 6);
     final data =
         (document['content'] as Map<String, dynamic>)['data']
             as Map<String, dynamic>;
@@ -1275,8 +1275,11 @@ void _convertEnvelopeToV1(Map<String, dynamic> document) {
   final content = document['content'] as Map<String, dynamic>;
   final data = content['data'] as Map<String, dynamic>;
   data.remove('day_contexts');
+  data.remove('experiments');
+  data.remove('experiment_check_ins');
   for (final raw in data['tasks'] as List) {
     final row = raw as Map<String, dynamic>;
+    row.remove('tag_id');
     row.remove('manual_actual_set');
     row.remove('inbox_content_version');
     row.remove('due_date');

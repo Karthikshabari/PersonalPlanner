@@ -11,8 +11,10 @@ import 'package:personal_planner/features/recurring/domain/recurrence_aggregate_
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/features/recurring/data/recurring_repository.dart';
 import 'package:personal_planner/features/recurring/domain/recurrence_service.dart';
+import 'package:personal_planner/features/task_editor/data/tag_repository.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 import 'package:personal_planner/features/timer/domain/task_actual_duration_service.dart';
+import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/undo_stack_provider.dart';
 
 import '../../helpers/sqlite_setup.dart';
@@ -747,5 +749,169 @@ void main() {
     } finally {
       await db.close();
     }
+  });
+
+  group('block tag (ED46)', () {
+    final start = DateTime.utc(2026, 9, 14, 9);
+
+    Future<void> withRecurringBlock(
+      Future<void> Function(
+        AppDatabase db,
+        ProviderContainer container,
+        RecurrenceAggregateCommand Function(Future<void> Function() mutation)
+        commandFor,
+      )
+      body, {
+      String? initialTagId,
+    }) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWithValue(db)],
+      );
+      try {
+        await db
+            .into(db.recurringRules)
+            .insert(
+              RecurringRulesCompanion.insert(
+                id: 'rule-tag',
+                rrule: 'FREQ=DAILY',
+                taskTitle: 'Plan',
+                durationMin: 30,
+                startTimeOfDay: '09:00',
+                startDate: '2026-09-14',
+                createdAt: start,
+                updatedAt: start,
+              ),
+            );
+        await TagRepository(db).getOrCreateByName('Old tag');
+        await db
+            .into(db.tasks)
+            .insert(
+              TasksCompanion.insert(
+                id: 'task-tag',
+                title: 'Plan',
+                startTime: Value(start),
+                endTime: Value(start.add(const Duration(minutes: 30))),
+                recurringRuleId: const Value('rule-tag'),
+                tagId: Value(initialTagId),
+                createdAt: start,
+                updatedAt: start,
+              ),
+            );
+        await body(
+          db,
+          container,
+          (mutation) => RecurrenceAggregateCommand(
+            database: db,
+            ruleId: 'rule-tag',
+            description: 'Update recurring occurrence',
+            mutation: mutation,
+          ),
+        );
+      } finally {
+        container.dispose();
+        await db.close();
+      }
+    }
+
+    Future<String?> tagOf(AppDatabase db) async =>
+        (await db.taskDao.getTaskById('task-tag'))!.tagId;
+
+    test('a tag-only change is undone and redone', () async {
+      final oldId = generateDeterministicUuid('tag:Old tag');
+      await withRecurringBlock(initialTagId: oldId, (db, container, commandFor) async {
+        final newTag = await TagRepository(db).getOrCreateByName('New tag');
+        final repo = TaskRepository(db);
+        final notifier = container.read(undoStackProvider.notifier);
+        await notifier.execute(
+          commandFor(() async {
+            final task = (await repo.getTaskById('task-tag'))!;
+            await repo.updateTask(task.copyWith(tagId: newTag.id));
+          }),
+        );
+        expect(await tagOf(db), newTag.id);
+
+        await notifier.undo();
+        expect(await tagOf(db), oldId);
+        await notifier.redo();
+        expect(await tagOf(db), newTag.id);
+      });
+    });
+
+    test('a tag set on an untagged block is undone to none', () async {
+      await withRecurringBlock((db, container, commandFor) async {
+        final newTag = await TagRepository(db).getOrCreateByName('New tag');
+        final repo = TaskRepository(db);
+        final notifier = container.read(undoStackProvider.notifier);
+        await notifier.execute(
+          commandFor(() async {
+            final task = (await repo.getTaskById('task-tag'))!;
+            await repo.updateTask(task.copyWith(tagId: newTag.id));
+          }),
+        );
+        await notifier.undo();
+        expect(await tagOf(db), isNull);
+        await notifier.redo();
+        expect(await tagOf(db), newTag.id);
+      });
+    });
+
+    test('a tag created just before the command survives undo and is reused '
+        'by redo', () async {
+      final oldId = generateDeterministicUuid('tag:Old tag');
+      await withRecurringBlock(initialTagId: oldId, (db, container, commandFor) async {
+        final tags = TagRepository(db);
+        final repo = TaskRepository(db);
+        // Created before the command runs, as the editor does (ED16).
+        final created = await tags.getOrCreateForName('Brand new');
+        final notifier = container.read(undoStackProvider.notifier);
+        await notifier.execute(
+          commandFor(() async {
+            final task = (await repo.getTaskById('task-tag'))!;
+            await repo.updateTask(task.copyWith(tagId: created.id));
+          }),
+        );
+        await notifier.undo();
+        expect(await tagOf(db), oldId);
+        expect(
+          (await tags.findByNameIgnoringCase('brand new'))?.id,
+          created.id,
+        );
+        await notifier.redo();
+        expect(await tagOf(db), created.id);
+      });
+    });
+
+    test('undo is refused when the tag changed again afterwards', () async {
+      final oldId = generateDeterministicUuid('tag:Old tag');
+      await withRecurringBlock(initialTagId: oldId, (db, container, commandFor) async {
+        final tags = TagRepository(db);
+        final repo = TaskRepository(db);
+        final first = await tags.getOrCreateByName('First');
+        final later = await tags.getOrCreateByName('Later');
+        final notifier = container.read(undoStackProvider.notifier);
+        await notifier.execute(
+          commandFor(() async {
+            final task = (await repo.getTaskById('task-tag'))!;
+            await repo.updateTask(task.copyWith(tagId: first.id));
+          }),
+        );
+        final task = (await repo.getTaskById('task-tag'))!;
+        await repo.updateTask(task.copyWith(tagId: later.id));
+
+        await expectLater(
+          notifier.undo(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('newer user edits'),
+            ),
+          ),
+        );
+        expect(await tagOf(db), later.id);
+        expect(container.read(undoStackProvider).canUndo, isTrue);
+      });
+    });
   });
 }

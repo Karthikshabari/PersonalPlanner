@@ -3,18 +3,65 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/tag_dao.dart';
 import '../../../core/models/tag.dart';
+import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/uuid.dart';
 
-@Deprecated(
-  'UAT F-010: tags have no UI; retired at the code level. Legacy links are '
-  'carried by TagDao, recurrence, duplicate, sync and backup code.',
-)
+/// How many blocks carry a tag and the planner-local date (`yyyy-MM-dd`) of
+/// the earliest one, or null when there is none.
+class TagUsage {
+  const TagUsage({required this.blockCount, required this.firstBlockDate});
+
+  final int blockCount;
+  final String? firstBlockDate;
+}
+
+/// Tags label blocks (one per block, `tasks.tag_id`) and back experiments.
+/// The legacy `task_tags` helpers stay for sync, recurrence and backup code.
 class TagRepository {
   final AppDatabase _db;
 
   TagRepository(this._db);
 
   TagDao get _dao => _db.tagDao;
+
+  /// The key used to FIND an existing tag (ED5): trimmed, every run of inner
+  /// whitespace collapsed to one space, lower-cased. Never use it as a name
+  /// or pass it to [getOrCreateByName], which keeps the deterministic id
+  /// formula `tag:<trimmed name as typed>`.
+  static String normalizeTagKey(String name) =>
+      name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+  /// The active tag whose [normalizeTagKey] equals the input's, or null.
+  /// When several active tags share the key (ED4) the one created first wins,
+  /// then the smallest id.
+  Future<Tag?> findByNameIgnoringCase(String name) async {
+    final key = normalizeTagKey(name);
+    if (key.isEmpty) return null;
+    for (final row in await _dao.getActiveTags()) {
+      if (normalizeTagKey(row.name) == key) return _fromRow(row);
+    }
+    return null;
+  }
+
+  /// Finds the tag [name] refers to, ignoring case and spacing, or creates it
+  /// with the trimmed text as typed.
+  Future<Tag> getOrCreateForName(String name) async {
+    if (name.trim().isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be blank');
+    }
+    return await findByNameIgnoringCase(name) ?? await getOrCreateByName(name);
+  }
+
+  /// Number of non-deleted, non-Inbox blocks that carry [tagId] and the
+  /// planner-local date of the earliest one.
+  Future<TagUsage> getUsage(String tagId) async {
+    final usage = await _dao.getTagUsage(tagId);
+    final first = usage.firstStart;
+    return TagUsage(
+      blockCount: usage.blockCount,
+      firstBlockDate: first == null ? null : isoDateString(first),
+    );
+  }
 
   Future<Tag> insertTag(Tag tag) async {
     final now = DateTime.now();
@@ -125,7 +172,13 @@ class TagRepository {
     );
   }
 
-  Future<void> deleteTag(String id) => _dao.softDeleteTag(id, DateTime.now());
+  /// Refuses (StateError) while an experiment uses the tag (ED18).
+  Future<void> deleteTag(String id) async {
+    if (await _dao.tagBelongsToExperiment(id)) {
+      throw StateError(experimentTagRemovalMessage(id));
+    }
+    await _dao.softDeleteTag(id, DateTime.now());
+  }
 
   Future<Tag> updateTag(Tag tag) async {
     final row = await _dao.getTagById(tag.id);

@@ -51,6 +51,12 @@ class BackupCodec {
         'day_contexts': (await db.select(db.dayContexts).get())
             .map(_dayContextToJson)
             .toList(),
+        'experiments': (await db.select(db.experiments).get())
+            .map(_experimentToJson)
+            .toList(),
+        'experiment_check_ins': (await db.select(db.experimentCheckIns).get())
+            .map(_experimentCheckInToJson)
+            .toList(),
         'settings': await _exportSettings(db),
       };
       return _sortedData(data);
@@ -171,6 +177,9 @@ class BackupCodec {
     // Backups produced before R3 have no context table. They remain valid and
     // import with an empty context collection after checksum verification.
     result['day_contexts'] ??= <dynamic>[];
+    // Backups before v6 carry no experiments and no block tags.
+    result['experiments'] ??= <dynamic>[];
+    result['experiment_check_ins'] ??= <dynamic>[];
     final timerRows = result['timer_sessions'];
     if (timerRows is List) {
       for (final raw in timerRows) {
@@ -193,6 +202,7 @@ class BackupCodec {
     if (tasks is List) {
       for (final raw in tasks) {
         if (raw is! Map<String, dynamic>) continue;
+        if (!raw.containsKey('tag_id')) raw['tag_id'] = null;
         final isInbox =
             raw['is_inbox'] == true ||
             raw['is_inbox'] == 1 ||
@@ -382,6 +392,7 @@ class BackupCodec {
     'manual_duration_adjustment_min': row.manualDurationAdjustmentMin,
     'manual_actual_set': row.manualActualSet,
     'category_id': row.categoryId,
+    'tag_id': row.tagId,
     'priority': row.priority,
     'status': row.status,
     'notes': row.notes,
@@ -558,6 +569,37 @@ class BackupCodec {
     'date': row.date,
     'kind': row.kind,
     'custom_label': row.customLabel,
+    'created_at': _iso(row.createdAt),
+    'updated_at': _iso(row.updatedAt),
+    'deleted_at': _iso(row.deletedAt),
+  };
+
+  static Map<String, dynamic> _experimentToJson(ExperimentRow row) => {
+    'id': row.id,
+    'tag_id': row.tagId,
+    'purpose': row.purpose,
+    'start_date': row.startDate,
+    'end_date': row.endDate,
+    'weekday_target_min': row.weekdayTargetMin,
+    'weekend_target_min': row.weekendTargetMin,
+    'check_in_every_days': row.checkInEveryDays,
+    'status': row.status,
+    'extensions_json': row.extensionsJson,
+    'outcome': row.outcome,
+    'conclusion_note': row.conclusionNote,
+    'concluded_on': row.concludedOn,
+    'created_at': _iso(row.createdAt),
+    'updated_at': _iso(row.updatedAt),
+    'deleted_at': _iso(row.deletedAt),
+  };
+
+  static Map<String, dynamic> _experimentCheckInToJson(
+    ExperimentCheckInRow row,
+  ) => {
+    'id': row.id,
+    'experiment_id': row.experimentId,
+    'slot_date': row.slotDate,
+    'note': row.note,
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),
     'deleted_at': _iso(row.deletedAt),
