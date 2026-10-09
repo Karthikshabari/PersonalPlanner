@@ -235,6 +235,7 @@ class SyncRemoteApplier {
                 column.jsonKey != 'plan_title_history_json' &&
                 column.jsonKey != 'display_plan_change_id' &&
                 column.jsonKey != 'plan_change_reasons_json' &&
+                column.jsonKey != 'tag_id' &&
                 column.jsonKey != 'recurrence_removal_reason',
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
@@ -300,6 +301,11 @@ class SyncRemoteApplier {
     }
     if (!payload.containsKey('recurrence_removal_reason')) {
       payload['recurrence_removal_reason'] = current?.recurrenceRemovalReason;
+    }
+    // Older clients and servers without the experiments migration omit the
+    // key. Absence keeps the local tag; only an explicit null clears it.
+    if (!payload.containsKey('tag_id')) {
+      payload['tag_id'] = current?.tagId;
     }
     // Servers without the review migration, and older clients, omit this
     // field or send NULL. Absence never clears local reasons.
@@ -434,6 +440,8 @@ ON CONFLICT(${definition.primaryKey}) DO UPDATE SET $updates
         'deleted_at',
       },
       'day_contexts': {'created_at', 'updated_at', 'deleted_at'},
+      'experiments': {'created_at', 'updated_at', 'deleted_at'},
+      'experiment_check_ins': {'created_at', 'updated_at', 'deleted_at'},
     };
     final result = Map<String, dynamic>.from(source);
     for (final field in fields[table] ?? const <String>{}) {
@@ -556,6 +564,7 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('plan_title_history_json'),
       _SyncColumn('display_plan_change_id'),
       _SyncColumn('plan_change_reasons_json'),
+      _SyncColumn('tag_id'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),
@@ -714,6 +723,41 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('date'),
       _SyncColumn('kind'),
       _SyncColumn('custom_label'),
+      _SyncColumn('created_at'),
+      _SyncColumn('updated_at'),
+      _SyncColumn('deleted_at'),
+    ],
+  ),
+  'experiments': _SyncTableDefinition(
+    tableName: 'experiments',
+    primaryKey: 'id',
+    columns: [
+      _SyncColumn('id'),
+      _SyncColumn('tag_id'),
+      _SyncColumn('purpose'),
+      _SyncColumn('start_date'),
+      _SyncColumn('end_date'),
+      _SyncColumn('weekday_target_min'),
+      _SyncColumn('weekend_target_min'),
+      _SyncColumn('check_in_every_days'),
+      _SyncColumn('status'),
+      _SyncColumn('extensions_json'),
+      _SyncColumn('outcome'),
+      _SyncColumn('conclusion_note'),
+      _SyncColumn('concluded_on'),
+      _SyncColumn('created_at'),
+      _SyncColumn('updated_at'),
+      _SyncColumn('deleted_at'),
+    ],
+  ),
+  'experiment_check_ins': _SyncTableDefinition(
+    tableName: 'experiment_check_ins',
+    primaryKey: 'id',
+    columns: [
+      _SyncColumn('id'),
+      _SyncColumn('experiment_id'),
+      _SyncColumn('slot_date'),
+      _SyncColumn('note'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),

@@ -55,6 +55,10 @@ class Tasks extends Table {
   /// JSON object `{plan_change_id: reason}`; keys are PlanTitleChange IDs.
   TextColumn get planChangeReasonsJson =>
       text().withDefault(const Constant('{}'))();
+
+  /// The block's optional tag (an id in `tags`). No foreign-key clause: see
+  /// the experiments plan, ED40.
+  TextColumn get tagId => text().nullable()();
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
   TextColumn get deletedAt =>

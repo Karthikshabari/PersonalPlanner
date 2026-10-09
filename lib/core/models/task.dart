@@ -24,6 +24,9 @@ abstract class Task with _$Task {
     @Default(false) bool manualActualSet,
     String? categoryId,
 
+    /// The block's optional tag (an id in `tags`), separate from Category.
+    String? tagId,
+
     /// Legacy (UAT F-010): no UI reads or sets it; kept so stored, synced
     /// and backed-up values round-trip unchanged.
     @Default(Priority.none) Priority priority,

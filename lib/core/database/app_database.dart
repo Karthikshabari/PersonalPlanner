@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart' show Database;
 
 import 'daos/category_dao.dart';
+import 'daos/experiment_dao.dart';
 import 'daos/recurring_rule_dao.dart';
 import 'daos/review_dao.dart';
 import 'daos/stats_dao.dart';
@@ -31,6 +32,7 @@ import 'tables/categories_table.dart';
 import 'tables/day_contexts_table.dart';
 import 'tables/daily_reviews_table.dart';
 import 'tables/daily_stats_cache_table.dart';
+import 'tables/experiments_table.dart';
 import 'tables/recurring_rules_table.dart';
 import 'tables/subtasks_table.dart';
 import 'tables/tags_table.dart';
@@ -51,6 +53,8 @@ part 'app_database.g.dart';
     Subtasks,
     Tags,
     TaskTags,
+    Experiments,
+    ExperimentCheckIns,
     RecurringRules,
     TaskTemplates,
     DailyReviews,
@@ -66,6 +70,7 @@ part 'app_database.g.dart';
     CategoryDao,
     SubtaskDao,
     TagDao,
+    ExperimentDao,
     RecurringRuleDao,
     TemplateDao,
     ReviewDao,
@@ -98,6 +103,8 @@ class AppDatabase extends _$AppDatabase {
       'daily_reviews',
       'weekly_reviews',
       'timer_sessions',
+      'experiments',
+      'experiment_check_ins',
     ])
       WritePropagation(
         on: TableUpdateQuery.onTableName(table),
@@ -177,10 +184,10 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump whenever a sync trigger body changes. Triggers are recreated only
   /// when the stored `schema.sync_trigger_version` differs or one is missing.
-  static const int syncTriggerVersion = 4;
+  static const int syncTriggerVersion = 5;
 
-  /// 11 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
-  static const int _expectedSyncTriggerCount = 34;
+  /// 13 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
+  static const int _expectedSyncTriggerCount = 40;
 
   /// Takes the write lock with the first statement of a transaction. The
   /// reserved `db.write_lock` key is never read.
@@ -200,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -257,6 +264,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 12) {
         await _migrateToV12(m);
+      }
+      if (from < 13) {
+        await _migrateToV13(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -404,6 +414,16 @@ class AppDatabase extends _$AppDatabase {
         'deleted_at': 'instant',
       },
       'day_contexts': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'experiments': {
+        'created_at': 'instant',
+        'updated_at': 'instant',
+        'deleted_at': 'instant',
+      },
+      'experiment_check_ins': {
         'created_at': 'instant',
         'updated_at': 'instant',
         'deleted_at': 'instant',
@@ -617,6 +637,7 @@ class AppDatabase extends _$AppDatabase {
           tasks.displayPlanChangeId,
           tasks.planChangeReasonsJson,
           tasks.recurrenceRemovalReason,
+          tasks.tagId,
           tasks.serverVersion,
         ],
       ),
@@ -913,6 +934,7 @@ class AppDatabase extends _$AppDatabase {
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.planTitleHistoryJson);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.planChangeReasonsJson);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.tagId);
     await _addColumnIfMissing(
       m,
       'timer_sessions',
@@ -985,6 +1007,22 @@ class AppDatabase extends _$AppDatabase {
       weeklyReviews,
       weeklyReviews.feeling,
     );
+  }
+
+  /// Schema-v13 adds the experiment tables and the optional block tag. It is
+  /// additive: every existing row stays valid, and `tasks.tag_id` starts empty.
+  Future<void> _migrateToV13(Migrator m) async {
+    for (final entry in <String, TableInfo>{
+      'experiments': experiments,
+      'experiment_check_ins': experimentCheckIns,
+    }.entries) {
+      final existing = await customSelect(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        variables: [Variable<String>(entry.key)],
+      ).getSingleOrNull();
+      if (existing == null) await m.createTable(entry.value);
+    }
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.tagId);
   }
 
   /// Re-populates `tasks_fts` with exactly the rows its installed triggers
@@ -1320,6 +1358,8 @@ class AppDatabase extends _$AppDatabase {
       'weekly_reviews',
       'timer_sessions',
       'day_contexts',
+      'experiments',
+      'experiment_check_ins',
     ];
     for (final table in tables) {
       await customStatement('DROP TRIGGER IF EXISTS sync_${table}_insert');
@@ -1623,6 +1663,15 @@ class AppDatabase extends _$AppDatabase {
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_day_contexts_date ON day_contexts (date)',
     );
     await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_experiments_tag ON experiments (tag_id)',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_experiment_check_ins_slot ON experiment_check_ins (experiment_id, slot_date)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_tag_date ON tasks (tag_id, start_time) WHERE deleted_at IS NULL AND is_inbox = 0 AND tag_id IS NOT NULL',
+    );
+    await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_task_tags_task_active ON task_tags (task_id, tag_id) WHERE deleted_at IS NULL',
     );
     await customStatement('DROP INDEX IF EXISTS idx_timer_one_active');
@@ -1832,10 +1881,10 @@ END;
       recordIdOld: 'OLD.id',
       // estimated_duration_min is a compatibility projection. Updating it
       // alone must not create a semantic sync operation.
-      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, plan_change_reasons_json, created_at, updated_at, deleted_at',
+      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, plan_change_reasons_json, tag_id, created_at, updated_at, deleted_at',
       // Rule-exclusion tombstones need their full payload on the server.
       deleteOperationWhen: 'NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL AND NEW.recurrence_removal_reason IS NULL',
-      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'plan_change_reasons_json', NEW.plan_change_reasons_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'plan_change_reasons_json', NEW.plan_change_reasons_json, 'tag_id', NEW.tag_id, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
@@ -1959,6 +2008,30 @@ END;
       jsonNew: "json_object('id', NEW.id, 'date', NEW.date, 'kind', NEW.kind, 'custom_label', NEW.custom_label, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'date', OLD.date, 'kind', OLD.kind, 'custom_label', OLD.custom_label, 'created_at', OLD.created_at, 'updated_at', OLD.updated_at, 'deleted_at', $now, 'server_version', OLD.server_version)",
+    );
+    await createForTable(
+      table: 'experiments',
+      tableName: 'experiments',
+      primaryKeyNew: 'id = NEW.id',
+      primaryKeyOld: 'id = OLD.id',
+      recordIdNew: 'NEW.id',
+      recordIdOld: 'OLD.id',
+      updateColumns: 'id, tag_id, purpose, start_date, end_date, weekday_target_min, weekend_target_min, check_in_every_days, status, extensions_json, outcome, conclusion_note, concluded_on, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'tag_id', NEW.tag_id, 'purpose', NEW.purpose, 'start_date', NEW.start_date, 'end_date', NEW.end_date, 'weekday_target_min', NEW.weekday_target_min, 'weekend_target_min', NEW.weekend_target_min, 'check_in_every_days', NEW.check_in_every_days, 'status', NEW.status, 'extensions_json', NEW.extensions_json, 'outcome', NEW.outcome, 'conclusion_note', NEW.conclusion_note, 'concluded_on', NEW.concluded_on, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonOld:
+          "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
+    );
+    await createForTable(
+      table: 'experiment_check_ins',
+      tableName: 'experiment_check_ins',
+      primaryKeyNew: 'id = NEW.id',
+      primaryKeyOld: 'id = OLD.id',
+      recordIdNew: 'NEW.id',
+      recordIdOld: 'OLD.id',
+      updateColumns: 'id, experiment_id, slot_date, note, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'experiment_id', NEW.experiment_id, 'slot_date', NEW.slot_date, 'note', NEW.note, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonOld:
+          "json_object('id', OLD.id, 'experiment_id', OLD.experiment_id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );
     // Outbox order: domain triggers, Drift inserts and raw inserts all get the
     // next local sequence number, independent of created_at precision.

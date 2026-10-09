@@ -2048,6 +2048,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         requiredDuringInsert: false,
         defaultValue: const Constant('{}'),
       );
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
+    'tag_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -2136,6 +2145,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     planTitleHistoryJson,
     displayPlanChangeId,
     planChangeReasonsJson,
+    tagId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2327,6 +2337,12 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         ),
       );
     }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+        _tagIdMeta,
+        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -2457,6 +2473,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.string,
         data['${effectivePrefix}plan_change_reasons_json'],
       )!,
+      tagId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_id'],
+      ),
       createdAt: $TasksTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -2538,6 +2558,10 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
 
   /// JSON object `{plan_change_id: reason}`; keys are PlanTitleChange IDs.
   final String planChangeReasonsJson;
+
+  /// The block's optional tag (an id in `tags`). No foreign-key clause: see
+  /// the experiments plan, ED40.
+  final String? tagId;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -2571,6 +2595,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     required this.planTitleHistoryJson,
     this.displayPlanChangeId,
     required this.planChangeReasonsJson,
+    this.tagId,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -2641,6 +2666,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       map['display_plan_change_id'] = Variable<String>(displayPlanChangeId);
     }
     map['plan_change_reasons_json'] = Variable<String>(planChangeReasonsJson);
+    if (!nullToAbsent || tagId != null) {
+      map['tag_id'] = Variable<String>(tagId);
+    }
     {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt),
@@ -2718,6 +2746,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? const Value.absent()
           : Value(displayPlanChangeId),
       planChangeReasonsJson: Value(planChangeReasonsJson),
+      tagId: tagId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -2777,6 +2808,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       planChangeReasonsJson: serializer.fromJson<String>(
         json['planChangeReasonsJson'],
       ),
+      tagId: serializer.fromJson<String?>(json['tagId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -2817,6 +2849,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'planTitleHistoryJson': serializer.toJson<String>(planTitleHistoryJson),
       'displayPlanChangeId': serializer.toJson<String?>(displayPlanChangeId),
       'planChangeReasonsJson': serializer.toJson<String>(planChangeReasonsJson),
+      'tagId': serializer.toJson<String?>(tagId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -2851,6 +2884,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     String? planTitleHistoryJson,
     Value<String?> displayPlanChangeId = const Value.absent(),
     String? planChangeReasonsJson,
+    Value<String?> tagId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -2897,6 +2931,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         ? displayPlanChangeId.value
         : this.displayPlanChangeId,
     planChangeReasonsJson: planChangeReasonsJson ?? this.planChangeReasonsJson,
+    tagId: tagId.present ? tagId.value : this.tagId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -2960,6 +2995,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       planChangeReasonsJson: data.planChangeReasonsJson.present
           ? data.planChangeReasonsJson.value
           : this.planChangeReasonsJson,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -3000,6 +3036,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
           ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
+          ..write('tagId: $tagId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -3036,6 +3073,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     planTitleHistoryJson,
     displayPlanChangeId,
     planChangeReasonsJson,
+    tagId,
     createdAt,
     updatedAt,
     deletedAt,
@@ -3072,6 +3110,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.planTitleHistoryJson == this.planTitleHistoryJson &&
           other.displayPlanChangeId == this.displayPlanChangeId &&
           other.planChangeReasonsJson == this.planChangeReasonsJson &&
+          other.tagId == this.tagId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -3105,6 +3144,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<String> planTitleHistoryJson;
   final Value<String?> displayPlanChangeId;
   final Value<String> planChangeReasonsJson;
+  final Value<String?> tagId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -3137,6 +3177,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.planTitleHistoryJson = const Value.absent(),
     this.displayPlanChangeId = const Value.absent(),
     this.planChangeReasonsJson = const Value.absent(),
+    this.tagId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3170,6 +3211,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.planTitleHistoryJson = const Value.absent(),
     this.displayPlanChangeId = const Value.absent(),
     this.planChangeReasonsJson = const Value.absent(),
+    this.tagId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -3206,6 +3248,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? planTitleHistoryJson,
     Expression<String>? displayPlanChangeId,
     Expression<String>? planChangeReasonsJson,
+    Expression<String>? tagId,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -3246,6 +3289,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         'display_plan_change_id': displayPlanChangeId,
       if (planChangeReasonsJson != null)
         'plan_change_reasons_json': planChangeReasonsJson,
+      if (tagId != null) 'tag_id': tagId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -3281,6 +3325,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<String>? planTitleHistoryJson,
     Value<String?>? displayPlanChangeId,
     Value<String>? planChangeReasonsJson,
+    Value<String?>? tagId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -3317,6 +3362,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       displayPlanChangeId: displayPlanChangeId ?? this.displayPlanChangeId,
       planChangeReasonsJson:
           planChangeReasonsJson ?? this.planChangeReasonsJson,
+      tagId: tagId ?? this.tagId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -3416,6 +3462,9 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         planChangeReasonsJson.value,
       );
     }
+    if (tagId.present) {
+      map['tag_id'] = Variable<String>(tagId.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt.value),
@@ -3473,6 +3522,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('planTitleHistoryJson: $planTitleHistoryJson, ')
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
           ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
+          ..write('tagId: $tagId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -6022,6 +6072,1711 @@ class TaskTagsCompanion extends UpdateCompanion<TaskTagRow> {
     return (StringBuffer('TaskTagsCompanion(')
           ..write('taskId: $taskId, ')
           ..write('tagId: $tagId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ExperimentsTable extends Experiments
+    with TableInfo<$ExperimentsTable, ExperimentRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExperimentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
+    'tag_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tags (id)',
+    ),
+  );
+  static const VerificationMeta _purposeMeta = const VerificationMeta(
+    'purpose',
+  );
+  @override
+  late final GeneratedColumn<String> purpose = GeneratedColumn<String>(
+    'purpose',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _startDateMeta = const VerificationMeta(
+    'startDate',
+  );
+  @override
+  late final GeneratedColumn<String> startDate = GeneratedColumn<String>(
+    'start_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endDateMeta = const VerificationMeta(
+    'endDate',
+  );
+  @override
+  late final GeneratedColumn<String> endDate = GeneratedColumn<String>(
+    'end_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _weekdayTargetMinMeta = const VerificationMeta(
+    'weekdayTargetMin',
+  );
+  @override
+  late final GeneratedColumn<int> weekdayTargetMin = GeneratedColumn<int>(
+    'weekday_target_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _weekendTargetMinMeta = const VerificationMeta(
+    'weekendTargetMin',
+  );
+  @override
+  late final GeneratedColumn<int> weekendTargetMin = GeneratedColumn<int>(
+    'weekend_target_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _checkInEveryDaysMeta = const VerificationMeta(
+    'checkInEveryDays',
+  );
+  @override
+  late final GeneratedColumn<int> checkInEveryDays = GeneratedColumn<int>(
+    'check_in_every_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('running'),
+  );
+  static const VerificationMeta _extensionsJsonMeta = const VerificationMeta(
+    'extensionsJson',
+  );
+  @override
+  late final GeneratedColumn<String> extensionsJson = GeneratedColumn<String>(
+    'extensions_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _outcomeMeta = const VerificationMeta(
+    'outcome',
+  );
+  @override
+  late final GeneratedColumn<String> outcome = GeneratedColumn<String>(
+    'outcome',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _conclusionNoteMeta = const VerificationMeta(
+    'conclusionNote',
+  );
+  @override
+  late final GeneratedColumn<String> conclusionNote = GeneratedColumn<String>(
+    'conclusion_note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _concludedOnMeta = const VerificationMeta(
+    'concludedOn',
+  );
+  @override
+  late final GeneratedColumn<String> concludedOn = GeneratedColumn<String>(
+    'concluded_on',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($ExperimentsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($ExperimentsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($ExperimentsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    tagId,
+    purpose,
+    startDate,
+    endDate,
+    weekdayTargetMin,
+    weekendTargetMin,
+    checkInEveryDays,
+    status,
+    extensionsJson,
+    outcome,
+    conclusionNote,
+    concludedOn,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'experiments';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExperimentRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+        _tagIdMeta,
+        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tagIdMeta);
+    }
+    if (data.containsKey('purpose')) {
+      context.handle(
+        _purposeMeta,
+        purpose.isAcceptableOrUnknown(data['purpose']!, _purposeMeta),
+      );
+    }
+    if (data.containsKey('start_date')) {
+      context.handle(
+        _startDateMeta,
+        startDate.isAcceptableOrUnknown(data['start_date']!, _startDateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startDateMeta);
+    }
+    if (data.containsKey('end_date')) {
+      context.handle(
+        _endDateMeta,
+        endDate.isAcceptableOrUnknown(data['end_date']!, _endDateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endDateMeta);
+    }
+    if (data.containsKey('weekday_target_min')) {
+      context.handle(
+        _weekdayTargetMinMeta,
+        weekdayTargetMin.isAcceptableOrUnknown(
+          data['weekday_target_min']!,
+          _weekdayTargetMinMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_weekdayTargetMinMeta);
+    }
+    if (data.containsKey('weekend_target_min')) {
+      context.handle(
+        _weekendTargetMinMeta,
+        weekendTargetMin.isAcceptableOrUnknown(
+          data['weekend_target_min']!,
+          _weekendTargetMinMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_weekendTargetMinMeta);
+    }
+    if (data.containsKey('check_in_every_days')) {
+      context.handle(
+        _checkInEveryDaysMeta,
+        checkInEveryDays.isAcceptableOrUnknown(
+          data['check_in_every_days']!,
+          _checkInEveryDaysMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_checkInEveryDaysMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('extensions_json')) {
+      context.handle(
+        _extensionsJsonMeta,
+        extensionsJson.isAcceptableOrUnknown(
+          data['extensions_json']!,
+          _extensionsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('outcome')) {
+      context.handle(
+        _outcomeMeta,
+        outcome.isAcceptableOrUnknown(data['outcome']!, _outcomeMeta),
+      );
+    }
+    if (data.containsKey('conclusion_note')) {
+      context.handle(
+        _conclusionNoteMeta,
+        conclusionNote.isAcceptableOrUnknown(
+          data['conclusion_note']!,
+          _conclusionNoteMeta,
+        ),
+      );
+    }
+    if (data.containsKey('concluded_on')) {
+      context.handle(
+        _concludedOnMeta,
+        concludedOn.isAcceptableOrUnknown(
+          data['concluded_on']!,
+          _concludedOnMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ExperimentRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExperimentRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      tagId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_id'],
+      )!,
+      purpose: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}purpose'],
+      ),
+      startDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}start_date'],
+      )!,
+      endDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}end_date'],
+      )!,
+      weekdayTargetMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}weekday_target_min'],
+      )!,
+      weekendTargetMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}weekend_target_min'],
+      )!,
+      checkInEveryDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}check_in_every_days'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      extensionsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}extensions_json'],
+      )!,
+      outcome: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}outcome'],
+      ),
+      conclusionNote: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}conclusion_note'],
+      ),
+      concludedOn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}concluded_on'],
+      ),
+      createdAt: $ExperimentsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $ExperimentsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $ExperimentsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
+    );
+  }
+
+  @override
+  $ExperimentsTable createAlias(String alias) {
+    return $ExperimentsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
+  final String id;
+  final String tagId;
+  final String? purpose;
+  final String startDate;
+  final String endDate;
+  final int weekdayTargetMin;
+  final int weekendTargetMin;
+  final int checkInEveryDays;
+  final String status;
+
+  /// JSON array of `{reason, previous_end_date, new_end_date, made_on}`.
+  final String extensionsJson;
+  final String? outcome;
+  final String? conclusionNote;
+  final String? concludedOn;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  final int? serverVersion;
+  const ExperimentRow({
+    required this.id,
+    required this.tagId,
+    this.purpose,
+    required this.startDate,
+    required this.endDate,
+    required this.weekdayTargetMin,
+    required this.weekendTargetMin,
+    required this.checkInEveryDays,
+    required this.status,
+    required this.extensionsJson,
+    this.outcome,
+    this.conclusionNote,
+    this.concludedOn,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+    this.serverVersion,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['tag_id'] = Variable<String>(tagId);
+    if (!nullToAbsent || purpose != null) {
+      map['purpose'] = Variable<String>(purpose);
+    }
+    map['start_date'] = Variable<String>(startDate);
+    map['end_date'] = Variable<String>(endDate);
+    map['weekday_target_min'] = Variable<int>(weekdayTargetMin);
+    map['weekend_target_min'] = Variable<int>(weekendTargetMin);
+    map['check_in_every_days'] = Variable<int>(checkInEveryDays);
+    map['status'] = Variable<String>(status);
+    map['extensions_json'] = Variable<String>(extensionsJson);
+    if (!nullToAbsent || outcome != null) {
+      map['outcome'] = Variable<String>(outcome);
+    }
+    if (!nullToAbsent || conclusionNote != null) {
+      map['conclusion_note'] = Variable<String>(conclusionNote);
+    }
+    if (!nullToAbsent || concludedOn != null) {
+      map['concluded_on'] = Variable<String>(concludedOn);
+    }
+    {
+      map['created_at'] = Variable<String>(
+        $ExperimentsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $ExperimentsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $ExperimentsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
+    return map;
+  }
+
+  ExperimentsCompanion toCompanion(bool nullToAbsent) {
+    return ExperimentsCompanion(
+      id: Value(id),
+      tagId: Value(tagId),
+      purpose: purpose == null && nullToAbsent
+          ? const Value.absent()
+          : Value(purpose),
+      startDate: Value(startDate),
+      endDate: Value(endDate),
+      weekdayTargetMin: Value(weekdayTargetMin),
+      weekendTargetMin: Value(weekendTargetMin),
+      checkInEveryDays: Value(checkInEveryDays),
+      status: Value(status),
+      extensionsJson: Value(extensionsJson),
+      outcome: outcome == null && nullToAbsent
+          ? const Value.absent()
+          : Value(outcome),
+      conclusionNote: conclusionNote == null && nullToAbsent
+          ? const Value.absent()
+          : Value(conclusionNote),
+      concludedOn: concludedOn == null && nullToAbsent
+          ? const Value.absent()
+          : Value(concludedOn),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
+    );
+  }
+
+  factory ExperimentRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExperimentRow(
+      id: serializer.fromJson<String>(json['id']),
+      tagId: serializer.fromJson<String>(json['tagId']),
+      purpose: serializer.fromJson<String?>(json['purpose']),
+      startDate: serializer.fromJson<String>(json['startDate']),
+      endDate: serializer.fromJson<String>(json['endDate']),
+      weekdayTargetMin: serializer.fromJson<int>(json['weekdayTargetMin']),
+      weekendTargetMin: serializer.fromJson<int>(json['weekendTargetMin']),
+      checkInEveryDays: serializer.fromJson<int>(json['checkInEveryDays']),
+      status: serializer.fromJson<String>(json['status']),
+      extensionsJson: serializer.fromJson<String>(json['extensionsJson']),
+      outcome: serializer.fromJson<String?>(json['outcome']),
+      conclusionNote: serializer.fromJson<String?>(json['conclusionNote']),
+      concludedOn: serializer.fromJson<String?>(json['concludedOn']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'tagId': serializer.toJson<String>(tagId),
+      'purpose': serializer.toJson<String?>(purpose),
+      'startDate': serializer.toJson<String>(startDate),
+      'endDate': serializer.toJson<String>(endDate),
+      'weekdayTargetMin': serializer.toJson<int>(weekdayTargetMin),
+      'weekendTargetMin': serializer.toJson<int>(weekendTargetMin),
+      'checkInEveryDays': serializer.toJson<int>(checkInEveryDays),
+      'status': serializer.toJson<String>(status),
+      'extensionsJson': serializer.toJson<String>(extensionsJson),
+      'outcome': serializer.toJson<String?>(outcome),
+      'conclusionNote': serializer.toJson<String?>(conclusionNote),
+      'concludedOn': serializer.toJson<String?>(concludedOn),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
+    };
+  }
+
+  ExperimentRow copyWith({
+    String? id,
+    String? tagId,
+    Value<String?> purpose = const Value.absent(),
+    String? startDate,
+    String? endDate,
+    int? weekdayTargetMin,
+    int? weekendTargetMin,
+    int? checkInEveryDays,
+    String? status,
+    String? extensionsJson,
+    Value<String?> outcome = const Value.absent(),
+    Value<String?> conclusionNote = const Value.absent(),
+    Value<String?> concludedOn = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+    Value<int?> serverVersion = const Value.absent(),
+  }) => ExperimentRow(
+    id: id ?? this.id,
+    tagId: tagId ?? this.tagId,
+    purpose: purpose.present ? purpose.value : this.purpose,
+    startDate: startDate ?? this.startDate,
+    endDate: endDate ?? this.endDate,
+    weekdayTargetMin: weekdayTargetMin ?? this.weekdayTargetMin,
+    weekendTargetMin: weekendTargetMin ?? this.weekendTargetMin,
+    checkInEveryDays: checkInEveryDays ?? this.checkInEveryDays,
+    status: status ?? this.status,
+    extensionsJson: extensionsJson ?? this.extensionsJson,
+    outcome: outcome.present ? outcome.value : this.outcome,
+    conclusionNote: conclusionNote.present
+        ? conclusionNote.value
+        : this.conclusionNote,
+    concludedOn: concludedOn.present ? concludedOn.value : this.concludedOn,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
+  );
+  ExperimentRow copyWithCompanion(ExperimentsCompanion data) {
+    return ExperimentRow(
+      id: data.id.present ? data.id.value : this.id,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      purpose: data.purpose.present ? data.purpose.value : this.purpose,
+      startDate: data.startDate.present ? data.startDate.value : this.startDate,
+      endDate: data.endDate.present ? data.endDate.value : this.endDate,
+      weekdayTargetMin: data.weekdayTargetMin.present
+          ? data.weekdayTargetMin.value
+          : this.weekdayTargetMin,
+      weekendTargetMin: data.weekendTargetMin.present
+          ? data.weekendTargetMin.value
+          : this.weekendTargetMin,
+      checkInEveryDays: data.checkInEveryDays.present
+          ? data.checkInEveryDays.value
+          : this.checkInEveryDays,
+      status: data.status.present ? data.status.value : this.status,
+      extensionsJson: data.extensionsJson.present
+          ? data.extensionsJson.value
+          : this.extensionsJson,
+      outcome: data.outcome.present ? data.outcome.value : this.outcome,
+      conclusionNote: data.conclusionNote.present
+          ? data.conclusionNote.value
+          : this.conclusionNote,
+      concludedOn: data.concludedOn.present
+          ? data.concludedOn.value
+          : this.concludedOn,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExperimentRow(')
+          ..write('id: $id, ')
+          ..write('tagId: $tagId, ')
+          ..write('purpose: $purpose, ')
+          ..write('startDate: $startDate, ')
+          ..write('endDate: $endDate, ')
+          ..write('weekdayTargetMin: $weekdayTargetMin, ')
+          ..write('weekendTargetMin: $weekendTargetMin, ')
+          ..write('checkInEveryDays: $checkInEveryDays, ')
+          ..write('status: $status, ')
+          ..write('extensionsJson: $extensionsJson, ')
+          ..write('outcome: $outcome, ')
+          ..write('conclusionNote: $conclusionNote, ')
+          ..write('concludedOn: $concludedOn, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    tagId,
+    purpose,
+    startDate,
+    endDate,
+    weekdayTargetMin,
+    weekendTargetMin,
+    checkInEveryDays,
+    status,
+    extensionsJson,
+    outcome,
+    conclusionNote,
+    concludedOn,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExperimentRow &&
+          other.id == this.id &&
+          other.tagId == this.tagId &&
+          other.purpose == this.purpose &&
+          other.startDate == this.startDate &&
+          other.endDate == this.endDate &&
+          other.weekdayTargetMin == this.weekdayTargetMin &&
+          other.weekendTargetMin == this.weekendTargetMin &&
+          other.checkInEveryDays == this.checkInEveryDays &&
+          other.status == this.status &&
+          other.extensionsJson == this.extensionsJson &&
+          other.outcome == this.outcome &&
+          other.conclusionNote == this.conclusionNote &&
+          other.concludedOn == this.concludedOn &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
+}
+
+class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
+  final Value<String> id;
+  final Value<String> tagId;
+  final Value<String?> purpose;
+  final Value<String> startDate;
+  final Value<String> endDate;
+  final Value<int> weekdayTargetMin;
+  final Value<int> weekendTargetMin;
+  final Value<int> checkInEveryDays;
+  final Value<String> status;
+  final Value<String> extensionsJson;
+  final Value<String?> outcome;
+  final Value<String?> conclusionNote;
+  final Value<String?> concludedOn;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int?> serverVersion;
+  final Value<int> rowid;
+  const ExperimentsCompanion({
+    this.id = const Value.absent(),
+    this.tagId = const Value.absent(),
+    this.purpose = const Value.absent(),
+    this.startDate = const Value.absent(),
+    this.endDate = const Value.absent(),
+    this.weekdayTargetMin = const Value.absent(),
+    this.weekendTargetMin = const Value.absent(),
+    this.checkInEveryDays = const Value.absent(),
+    this.status = const Value.absent(),
+    this.extensionsJson = const Value.absent(),
+    this.outcome = const Value.absent(),
+    this.conclusionNote = const Value.absent(),
+    this.concludedOn = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ExperimentsCompanion.insert({
+    required String id,
+    required String tagId,
+    this.purpose = const Value.absent(),
+    required String startDate,
+    required String endDate,
+    required int weekdayTargetMin,
+    required int weekendTargetMin,
+    required int checkInEveryDays,
+    this.status = const Value.absent(),
+    this.extensionsJson = const Value.absent(),
+    this.outcome = const Value.absent(),
+    this.conclusionNote = const Value.absent(),
+    this.concludedOn = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       tagId = Value(tagId),
+       startDate = Value(startDate),
+       endDate = Value(endDate),
+       weekdayTargetMin = Value(weekdayTargetMin),
+       weekendTargetMin = Value(weekendTargetMin),
+       checkInEveryDays = Value(checkInEveryDays),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<ExperimentRow> custom({
+    Expression<String>? id,
+    Expression<String>? tagId,
+    Expression<String>? purpose,
+    Expression<String>? startDate,
+    Expression<String>? endDate,
+    Expression<int>? weekdayTargetMin,
+    Expression<int>? weekendTargetMin,
+    Expression<int>? checkInEveryDays,
+    Expression<String>? status,
+    Expression<String>? extensionsJson,
+    Expression<String>? outcome,
+    Expression<String>? conclusionNote,
+    Expression<String>? concludedOn,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? serverVersion,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (tagId != null) 'tag_id': tagId,
+      if (purpose != null) 'purpose': purpose,
+      if (startDate != null) 'start_date': startDate,
+      if (endDate != null) 'end_date': endDate,
+      if (weekdayTargetMin != null) 'weekday_target_min': weekdayTargetMin,
+      if (weekendTargetMin != null) 'weekend_target_min': weekendTargetMin,
+      if (checkInEveryDays != null) 'check_in_every_days': checkInEveryDays,
+      if (status != null) 'status': status,
+      if (extensionsJson != null) 'extensions_json': extensionsJson,
+      if (outcome != null) 'outcome': outcome,
+      if (conclusionNote != null) 'conclusion_note': conclusionNote,
+      if (concludedOn != null) 'concluded_on': concludedOn,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ExperimentsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? tagId,
+    Value<String?>? purpose,
+    Value<String>? startDate,
+    Value<String>? endDate,
+    Value<int>? weekdayTargetMin,
+    Value<int>? weekendTargetMin,
+    Value<int>? checkInEveryDays,
+    Value<String>? status,
+    Value<String>? extensionsJson,
+    Value<String?>? outcome,
+    Value<String?>? conclusionNote,
+    Value<String?>? concludedOn,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int?>? serverVersion,
+    Value<int>? rowid,
+  }) {
+    return ExperimentsCompanion(
+      id: id ?? this.id,
+      tagId: tagId ?? this.tagId,
+      purpose: purpose ?? this.purpose,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      weekdayTargetMin: weekdayTargetMin ?? this.weekdayTargetMin,
+      weekendTargetMin: weekendTargetMin ?? this.weekendTargetMin,
+      checkInEveryDays: checkInEveryDays ?? this.checkInEveryDays,
+      status: status ?? this.status,
+      extensionsJson: extensionsJson ?? this.extensionsJson,
+      outcome: outcome ?? this.outcome,
+      conclusionNote: conclusionNote ?? this.conclusionNote,
+      concludedOn: concludedOn ?? this.concludedOn,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<String>(tagId.value);
+    }
+    if (purpose.present) {
+      map['purpose'] = Variable<String>(purpose.value);
+    }
+    if (startDate.present) {
+      map['start_date'] = Variable<String>(startDate.value);
+    }
+    if (endDate.present) {
+      map['end_date'] = Variable<String>(endDate.value);
+    }
+    if (weekdayTargetMin.present) {
+      map['weekday_target_min'] = Variable<int>(weekdayTargetMin.value);
+    }
+    if (weekendTargetMin.present) {
+      map['weekend_target_min'] = Variable<int>(weekendTargetMin.value);
+    }
+    if (checkInEveryDays.present) {
+      map['check_in_every_days'] = Variable<int>(checkInEveryDays.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (extensionsJson.present) {
+      map['extensions_json'] = Variable<String>(extensionsJson.value);
+    }
+    if (outcome.present) {
+      map['outcome'] = Variable<String>(outcome.value);
+    }
+    if (conclusionNote.present) {
+      map['conclusion_note'] = Variable<String>(conclusionNote.value);
+    }
+    if (concludedOn.present) {
+      map['concluded_on'] = Variable<String>(concludedOn.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $ExperimentsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $ExperimentsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $ExperimentsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExperimentsCompanion(')
+          ..write('id: $id, ')
+          ..write('tagId: $tagId, ')
+          ..write('purpose: $purpose, ')
+          ..write('startDate: $startDate, ')
+          ..write('endDate: $endDate, ')
+          ..write('weekdayTargetMin: $weekdayTargetMin, ')
+          ..write('weekendTargetMin: $weekendTargetMin, ')
+          ..write('checkInEveryDays: $checkInEveryDays, ')
+          ..write('status: $status, ')
+          ..write('extensionsJson: $extensionsJson, ')
+          ..write('outcome: $outcome, ')
+          ..write('conclusionNote: $conclusionNote, ')
+          ..write('concludedOn: $concludedOn, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ExperimentCheckInsTable extends ExperimentCheckIns
+    with TableInfo<$ExperimentCheckInsTable, ExperimentCheckInRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExperimentCheckInsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _experimentIdMeta = const VerificationMeta(
+    'experimentId',
+  );
+  @override
+  late final GeneratedColumn<String> experimentId = GeneratedColumn<String>(
+    'experiment_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES experiments (id)',
+    ),
+  );
+  static const VerificationMeta _slotDateMeta = const VerificationMeta(
+    'slotDate',
+  );
+  @override
+  late final GeneratedColumn<String> slotDate = GeneratedColumn<String>(
+    'slot_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
+      GeneratedColumn<String>(
+        'created_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($ExperimentCheckInsTable.$convertercreatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime, String> updatedAt =
+      GeneratedColumn<String>(
+        'updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($ExperimentCheckInsTable.$converterupdatedAt);
+  @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> deletedAt =
+      GeneratedColumn<String>(
+        'deleted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($ExperimentCheckInsTable.$converterdeletedAt);
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<int> syncStatus = GeneratedColumn<int>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _serverVersionMeta = const VerificationMeta(
+    'serverVersion',
+  );
+  @override
+  late final GeneratedColumn<int> serverVersion = GeneratedColumn<int>(
+    'server_version',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    experimentId,
+    slotDate,
+    note,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'experiment_check_ins';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExperimentCheckInRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('experiment_id')) {
+      context.handle(
+        _experimentIdMeta,
+        experimentId.isAcceptableOrUnknown(
+          data['experiment_id']!,
+          _experimentIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_experimentIdMeta);
+    }
+    if (data.containsKey('slot_date')) {
+      context.handle(
+        _slotDateMeta,
+        slotDate.isAcceptableOrUnknown(data['slot_date']!, _slotDateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_slotDateMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_noteMeta);
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
+    }
+    if (data.containsKey('server_version')) {
+      context.handle(
+        _serverVersionMeta,
+        serverVersion.isAcceptableOrUnknown(
+          data['server_version']!,
+          _serverVersionMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ExperimentCheckInRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExperimentCheckInRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      experimentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}experiment_id'],
+      )!,
+      slotDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}slot_date'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      )!,
+      createdAt: $ExperimentCheckInsTable.$convertercreatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}created_at'],
+        )!,
+      ),
+      updatedAt: $ExperimentCheckInsTable.$converterupdatedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}updated_at'],
+        )!,
+      ),
+      deletedAt: $ExperimentCheckInsTable.$converterdeletedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}deleted_at'],
+        ),
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sync_status'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
+      )!,
+      serverVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_version'],
+      ),
+    );
+  }
+
+  @override
+  $ExperimentCheckInsTable createAlias(String alias) {
+    return $ExperimentCheckInsTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<DateTime, String> $convertercreatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime, String> $converterupdatedAt =
+      const DateTimeUtcConverter();
+  static TypeConverter<DateTime?, String?> $converterdeletedAt =
+      const NullableDateTimeUtcConverter();
+}
+
+class ExperimentCheckInRow extends DataClass
+    implements Insertable<ExperimentCheckInRow> {
+  final String id;
+  final String experimentId;
+  final String slotDate;
+  final String note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final int syncStatus;
+  final int revision;
+  final int? serverVersion;
+  const ExperimentCheckInRow({
+    required this.id,
+    required this.experimentId,
+    required this.slotDate,
+    required this.note,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.syncStatus,
+    required this.revision,
+    this.serverVersion,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['experiment_id'] = Variable<String>(experimentId);
+    map['slot_date'] = Variable<String>(slotDate);
+    map['note'] = Variable<String>(note);
+    {
+      map['created_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$convertercreatedAt.toSql(createdAt),
+      );
+    }
+    {
+      map['updated_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$converterupdatedAt.toSql(updatedAt),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$converterdeletedAt.toSql(deletedAt),
+      );
+    }
+    map['sync_status'] = Variable<int>(syncStatus);
+    map['revision'] = Variable<int>(revision);
+    if (!nullToAbsent || serverVersion != null) {
+      map['server_version'] = Variable<int>(serverVersion);
+    }
+    return map;
+  }
+
+  ExperimentCheckInsCompanion toCompanion(bool nullToAbsent) {
+    return ExperimentCheckInsCompanion(
+      id: Value(id),
+      experimentId: Value(experimentId),
+      slotDate: Value(slotDate),
+      note: Value(note),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      syncStatus: Value(syncStatus),
+      revision: Value(revision),
+      serverVersion: serverVersion == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverVersion),
+    );
+  }
+
+  factory ExperimentCheckInRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExperimentCheckInRow(
+      id: serializer.fromJson<String>(json['id']),
+      experimentId: serializer.fromJson<String>(json['experimentId']),
+      slotDate: serializer.fromJson<String>(json['slotDate']),
+      note: serializer.fromJson<String>(json['note']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      syncStatus: serializer.fromJson<int>(json['syncStatus']),
+      revision: serializer.fromJson<int>(json['revision']),
+      serverVersion: serializer.fromJson<int?>(json['serverVersion']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'experimentId': serializer.toJson<String>(experimentId),
+      'slotDate': serializer.toJson<String>(slotDate),
+      'note': serializer.toJson<String>(note),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'syncStatus': serializer.toJson<int>(syncStatus),
+      'revision': serializer.toJson<int>(revision),
+      'serverVersion': serializer.toJson<int?>(serverVersion),
+    };
+  }
+
+  ExperimentCheckInRow copyWith({
+    String? id,
+    String? experimentId,
+    String? slotDate,
+    String? note,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    int? syncStatus,
+    int? revision,
+    Value<int?> serverVersion = const Value.absent(),
+  }) => ExperimentCheckInRow(
+    id: id ?? this.id,
+    experimentId: experimentId ?? this.experimentId,
+    slotDate: slotDate ?? this.slotDate,
+    note: note ?? this.note,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+    revision: revision ?? this.revision,
+    serverVersion: serverVersion.present
+        ? serverVersion.value
+        : this.serverVersion,
+  );
+  ExperimentCheckInRow copyWithCompanion(ExperimentCheckInsCompanion data) {
+    return ExperimentCheckInRow(
+      id: data.id.present ? data.id.value : this.id,
+      experimentId: data.experimentId.present
+          ? data.experimentId.value
+          : this.experimentId,
+      slotDate: data.slotDate.present ? data.slotDate.value : this.slotDate,
+      note: data.note.present ? data.note.value : this.note,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      revision: data.revision.present ? data.revision.value : this.revision,
+      serverVersion: data.serverVersion.present
+          ? data.serverVersion.value
+          : this.serverVersion,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExperimentCheckInRow(')
+          ..write('id: $id, ')
+          ..write('experimentId: $experimentId, ')
+          ..write('slotDate: $slotDate, ')
+          ..write('note: $note, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('revision: $revision, ')
+          ..write('serverVersion: $serverVersion')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    experimentId,
+    slotDate,
+    note,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncStatus,
+    revision,
+    serverVersion,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExperimentCheckInRow &&
+          other.id == this.id &&
+          other.experimentId == this.experimentId &&
+          other.slotDate == this.slotDate &&
+          other.note == this.note &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.syncStatus == this.syncStatus &&
+          other.revision == this.revision &&
+          other.serverVersion == this.serverVersion);
+}
+
+class ExperimentCheckInsCompanion
+    extends UpdateCompanion<ExperimentCheckInRow> {
+  final Value<String> id;
+  final Value<String> experimentId;
+  final Value<String> slotDate;
+  final Value<String> note;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> syncStatus;
+  final Value<int> revision;
+  final Value<int?> serverVersion;
+  final Value<int> rowid;
+  const ExperimentCheckInsCompanion({
+    this.id = const Value.absent(),
+    this.experimentId = const Value.absent(),
+    this.slotDate = const Value.absent(),
+    this.note = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ExperimentCheckInsCompanion.insert({
+    required String id,
+    required String experimentId,
+    required String slotDate,
+    required String note,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.revision = const Value.absent(),
+    this.serverVersion = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       experimentId = Value(experimentId),
+       slotDate = Value(slotDate),
+       note = Value(note),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<ExperimentCheckInRow> custom({
+    Expression<String>? id,
+    Expression<String>? experimentId,
+    Expression<String>? slotDate,
+    Expression<String>? note,
+    Expression<String>? createdAt,
+    Expression<String>? updatedAt,
+    Expression<String>? deletedAt,
+    Expression<int>? syncStatus,
+    Expression<int>? revision,
+    Expression<int>? serverVersion,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (experimentId != null) 'experiment_id': experimentId,
+      if (slotDate != null) 'slot_date': slotDate,
+      if (note != null) 'note': note,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (revision != null) 'revision': revision,
+      if (serverVersion != null) 'server_version': serverVersion,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ExperimentCheckInsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? experimentId,
+    Value<String>? slotDate,
+    Value<String>? note,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? syncStatus,
+    Value<int>? revision,
+    Value<int?>? serverVersion,
+    Value<int>? rowid,
+  }) {
+    return ExperimentCheckInsCompanion(
+      id: id ?? this.id,
+      experimentId: experimentId ?? this.experimentId,
+      slotDate: slotDate ?? this.slotDate,
+      note: note ?? this.note,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      revision: revision ?? this.revision,
+      serverVersion: serverVersion ?? this.serverVersion,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (experimentId.present) {
+      map['experiment_id'] = Variable<String>(experimentId.value);
+    }
+    if (slotDate.present) {
+      map['slot_date'] = Variable<String>(slotDate.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$convertercreatedAt.toSql(createdAt.value),
+      );
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$converterupdatedAt.toSql(updatedAt.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(
+        $ExperimentCheckInsTable.$converterdeletedAt.toSql(deletedAt.value),
+      );
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(syncStatus.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
+    }
+    if (serverVersion.present) {
+      map['server_version'] = Variable<int>(serverVersion.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExperimentCheckInsCompanion(')
+          ..write('id: $id, ')
+          ..write('experimentId: $experimentId, ')
+          ..write('slotDate: $slotDate, ')
+          ..write('note: $note, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -12173,6 +13928,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $SubtasksTable subtasks = $SubtasksTable(this);
   late final $TagsTable tags = $TagsTable(this);
   late final $TaskTagsTable taskTags = $TaskTagsTable(this);
+  late final $ExperimentsTable experiments = $ExperimentsTable(this);
+  late final $ExperimentCheckInsTable experimentCheckIns =
+      $ExperimentCheckInsTable(this);
   late final $TaskTemplatesTable taskTemplates = $TaskTemplatesTable(this);
   late final $DailyReviewsTable dailyReviews = $DailyReviewsTable(this);
   late final $WeeklyReviewsTable weeklyReviews = $WeeklyReviewsTable(this);
@@ -12187,6 +13945,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final CategoryDao categoryDao = CategoryDao(this as AppDatabase);
   late final SubtaskDao subtaskDao = SubtaskDao(this as AppDatabase);
   late final TagDao tagDao = TagDao(this as AppDatabase);
+  late final ExperimentDao experimentDao = ExperimentDao(this as AppDatabase);
   late final RecurringRuleDao recurringRuleDao = RecurringRuleDao(
     this as AppDatabase,
   );
@@ -12208,6 +13967,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     subtasks,
     tags,
     taskTags,
+    experiments,
+    experimentCheckIns,
     taskTemplates,
     dailyReviews,
     weeklyReviews,
@@ -13648,6 +15409,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<String> planTitleHistoryJson,
       Value<String?> displayPlanChangeId,
       Value<String> planChangeReasonsJson,
+      Value<String?> tagId,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -13682,6 +15444,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<String> planTitleHistoryJson,
       Value<String?> displayPlanChangeId,
       Value<String> planChangeReasonsJson,
+      Value<String?> tagId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -13929,6 +15692,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
 
   ColumnFilters<String> get planChangeReasonsJson => $composableBuilder(
     column: $table.planChangeReasonsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tagId => $composableBuilder(
+    column: $table.tagId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -14242,6 +16010,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get tagId => $composableBuilder(
+    column: $table.tagId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -14453,6 +16226,9 @@ class $$TasksTableAnnotationComposer
     column: $table.planChangeReasonsJson,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get tagId =>
+      $composableBuilder(column: $table.tagId, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -14704,6 +16480,7 @@ class $$TasksTableTableManager
                 Value<String> planTitleHistoryJson = const Value.absent(),
                 Value<String?> displayPlanChangeId = const Value.absent(),
                 Value<String> planChangeReasonsJson = const Value.absent(),
+                Value<String?> tagId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14736,6 +16513,7 @@ class $$TasksTableTableManager
                 planTitleHistoryJson: planTitleHistoryJson,
                 displayPlanChangeId: displayPlanChangeId,
                 planChangeReasonsJson: planChangeReasonsJson,
+                tagId: tagId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -14770,6 +16548,7 @@ class $$TasksTableTableManager
                 Value<String> planTitleHistoryJson = const Value.absent(),
                 Value<String?> displayPlanChangeId = const Value.absent(),
                 Value<String> planChangeReasonsJson = const Value.absent(),
+                Value<String?> tagId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -14802,6 +16581,7 @@ class $$TasksTableTableManager
                 planTitleHistoryJson: planTitleHistoryJson,
                 displayPlanChangeId: displayPlanChangeId,
                 planChangeReasonsJson: planChangeReasonsJson,
+                tagId: tagId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -15929,6 +17709,24 @@ final class $$TagsTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$ExperimentsTable, List<ExperimentRow>>
+  _experimentsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.experiments,
+    aliasName: $_aliasNameGenerator(db.tags.id, db.experiments.tagId),
+  );
+
+  $$ExperimentsTableProcessedTableManager get experimentsRefs {
+    final manager = $$ExperimentsTableTableManager(
+      $_db,
+      $_db.experiments,
+    ).filter((f) => f.tagId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_experimentsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
@@ -15998,6 +17796,31 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
           }) => $$TaskTagsTableFilterComposer(
             $db: $db,
             $table: $db.taskTags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> experimentsRefs(
+    Expression<bool> Function($$ExperimentsTableFilterComposer f) f,
+  ) {
+    final $$ExperimentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.experiments,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentsTableFilterComposer(
+            $db: $db,
+            $table: $db.experiments,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -16118,6 +17941,31 @@ class $$TagsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> experimentsRefs<T extends Object>(
+    Expression<T> Function($$ExperimentsTableAnnotationComposer a) f,
+  ) {
+    final $$ExperimentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.experiments,
+      getReferencedColumn: (t) => t.tagId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.experiments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TagsTableTableManager
@@ -16133,7 +17981,7 @@ class $$TagsTableTableManager
           $$TagsTableUpdateCompanionBuilder,
           (TagRow, $$TagsTableReferences),
           TagRow,
-          PrefetchHooks Function({bool taskTagsRefs})
+          PrefetchHooks Function({bool taskTagsRefs, bool experimentsRefs})
         > {
   $$TagsTableTableManager(_$AppDatabase db, $TagsTable table)
     : super(
@@ -16196,29 +18044,58 @@ class $$TagsTableTableManager
                     (e.readTable(table), $$TagsTableReferences(db, table, e)),
               )
               .toList(),
-          prefetchHooksCallback: ({taskTagsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (taskTagsRefs) db.taskTags],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (taskTagsRefs)
-                    await $_getPrefetchedData<TagRow, $TagsTable, TaskTagRow>(
-                      currentTable: table,
-                      referencedTable: $$TagsTableReferences._taskTagsRefsTable(
-                        db,
-                      ),
-                      managerFromTypedResult: (p0) =>
-                          $$TagsTableReferences(db, table, p0).taskTagsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.tagId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({taskTagsRefs = false, experimentsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (taskTagsRefs) db.taskTags,
+                    if (experimentsRefs) db.experiments,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (taskTagsRefs)
+                        await $_getPrefetchedData<
+                          TagRow,
+                          $TagsTable,
+                          TaskTagRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TagsTableReferences
+                              ._taskTagsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TagsTableReferences(db, table, p0).taskTagsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.tagId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (experimentsRefs)
+                        await $_getPrefetchedData<
+                          TagRow,
+                          $TagsTable,
+                          ExperimentRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TagsTableReferences
+                              ._experimentsRefsTable(db),
+                          managerFromTypedResult: (p0) => $$TagsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).experimentsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.tagId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -16235,7 +18112,7 @@ typedef $$TagsTableProcessedTableManager =
       $$TagsTableUpdateCompanionBuilder,
       (TagRow, $$TagsTableReferences),
       TagRow,
-      PrefetchHooks Function({bool taskTagsRefs})
+      PrefetchHooks Function({bool taskTagsRefs, bool experimentsRefs})
     >;
 typedef $$TaskTagsTableCreateCompanionBuilder =
     TaskTagsCompanion Function({
@@ -16704,6 +18581,1154 @@ typedef $$TaskTagsTableProcessedTableManager =
       (TaskTagRow, $$TaskTagsTableReferences),
       TaskTagRow,
       PrefetchHooks Function({bool taskId, bool tagId})
+    >;
+typedef $$ExperimentsTableCreateCompanionBuilder =
+    ExperimentsCompanion Function({
+      required String id,
+      required String tagId,
+      Value<String?> purpose,
+      required String startDate,
+      required String endDate,
+      required int weekdayTargetMin,
+      required int weekendTargetMin,
+      required int checkInEveryDays,
+      Value<String> status,
+      Value<String> extensionsJson,
+      Value<String?> outcome,
+      Value<String?> conclusionNote,
+      Value<String?> concludedOn,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+typedef $$ExperimentsTableUpdateCompanionBuilder =
+    ExperimentsCompanion Function({
+      Value<String> id,
+      Value<String> tagId,
+      Value<String?> purpose,
+      Value<String> startDate,
+      Value<String> endDate,
+      Value<int> weekdayTargetMin,
+      Value<int> weekendTargetMin,
+      Value<int> checkInEveryDays,
+      Value<String> status,
+      Value<String> extensionsJson,
+      Value<String?> outcome,
+      Value<String?> conclusionNote,
+      Value<String?> concludedOn,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+
+final class $$ExperimentsTableReferences
+    extends BaseReferences<_$AppDatabase, $ExperimentsTable, ExperimentRow> {
+  $$ExperimentsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $TagsTable _tagIdTable(_$AppDatabase db) => db.tags.createAlias(
+    $_aliasNameGenerator(db.experiments.tagId, db.tags.id),
+  );
+
+  $$TagsTableProcessedTableManager get tagId {
+    final $_column = $_itemColumn<String>('tag_id')!;
+
+    final manager = $$TagsTableTableManager(
+      $_db,
+      $_db.tags,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<
+    $ExperimentCheckInsTable,
+    List<ExperimentCheckInRow>
+  >
+  _experimentCheckInsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.experimentCheckIns,
+        aliasName: $_aliasNameGenerator(
+          db.experiments.id,
+          db.experimentCheckIns.experimentId,
+        ),
+      );
+
+  $$ExperimentCheckInsTableProcessedTableManager get experimentCheckInsRefs {
+    final manager = $$ExperimentCheckInsTableTableManager(
+      $_db,
+      $_db.experimentCheckIns,
+    ).filter((f) => f.experimentId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _experimentCheckInsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$ExperimentsTableFilterComposer
+    extends Composer<_$AppDatabase, $ExperimentsTable> {
+  $$ExperimentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get purpose => $composableBuilder(
+    column: $table.purpose,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get startDate => $composableBuilder(
+    column: $table.startDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get weekdayTargetMin => $composableBuilder(
+    column: $table.weekdayTargetMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get weekendTargetMin => $composableBuilder(
+    column: $table.weekendTargetMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get checkInEveryDays => $composableBuilder(
+    column: $table.checkInEveryDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get extensionsJson => $composableBuilder(
+    column: $table.extensionsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get outcome => $composableBuilder(
+    column: $table.outcome,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get conclusionNote => $composableBuilder(
+    column: $table.conclusionNote,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get concludedOn => $composableBuilder(
+    column: $table.concludedOn,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$TagsTableFilterComposer get tagId {
+    final $$TagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableFilterComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> experimentCheckInsRefs(
+    Expression<bool> Function($$ExperimentCheckInsTableFilterComposer f) f,
+  ) {
+    final $$ExperimentCheckInsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.experimentCheckIns,
+      getReferencedColumn: (t) => t.experimentId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentCheckInsTableFilterComposer(
+            $db: $db,
+            $table: $db.experimentCheckIns,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$ExperimentsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExperimentsTable> {
+  $$ExperimentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get purpose => $composableBuilder(
+    column: $table.purpose,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get startDate => $composableBuilder(
+    column: $table.startDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get weekdayTargetMin => $composableBuilder(
+    column: $table.weekdayTargetMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get weekendTargetMin => $composableBuilder(
+    column: $table.weekendTargetMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get checkInEveryDays => $composableBuilder(
+    column: $table.checkInEveryDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get extensionsJson => $composableBuilder(
+    column: $table.extensionsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get outcome => $composableBuilder(
+    column: $table.outcome,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get conclusionNote => $composableBuilder(
+    column: $table.conclusionNote,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get concludedOn => $composableBuilder(
+    column: $table.concludedOn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$TagsTableOrderingComposer get tagId {
+    final $$TagsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableOrderingComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExperimentsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExperimentsTable> {
+  $$ExperimentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get purpose =>
+      $composableBuilder(column: $table.purpose, builder: (column) => column);
+
+  GeneratedColumn<String> get startDate =>
+      $composableBuilder(column: $table.startDate, builder: (column) => column);
+
+  GeneratedColumn<String> get endDate =>
+      $composableBuilder(column: $table.endDate, builder: (column) => column);
+
+  GeneratedColumn<int> get weekdayTargetMin => $composableBuilder(
+    column: $table.weekdayTargetMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get weekendTargetMin => $composableBuilder(
+    column: $table.weekendTargetMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get checkInEveryDays => $composableBuilder(
+    column: $table.checkInEveryDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get extensionsJson => $composableBuilder(
+    column: $table.extensionsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get outcome =>
+      $composableBuilder(column: $table.outcome, builder: (column) => column);
+
+  GeneratedColumn<String> get conclusionNote => $composableBuilder(
+    column: $table.conclusionNote,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get concludedOn => $composableBuilder(
+    column: $table.concludedOn,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
+  $$TagsTableAnnotationComposer get tagId {
+    final $$TagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> experimentCheckInsRefs<T extends Object>(
+    Expression<T> Function($$ExperimentCheckInsTableAnnotationComposer a) f,
+  ) {
+    final $$ExperimentCheckInsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.experimentCheckIns,
+          getReferencedColumn: (t) => t.experimentId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$ExperimentCheckInsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.experimentCheckIns,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+}
+
+class $$ExperimentsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExperimentsTable,
+          ExperimentRow,
+          $$ExperimentsTableFilterComposer,
+          $$ExperimentsTableOrderingComposer,
+          $$ExperimentsTableAnnotationComposer,
+          $$ExperimentsTableCreateCompanionBuilder,
+          $$ExperimentsTableUpdateCompanionBuilder,
+          (ExperimentRow, $$ExperimentsTableReferences),
+          ExperimentRow,
+          PrefetchHooks Function({bool tagId, bool experimentCheckInsRefs})
+        > {
+  $$ExperimentsTableTableManager(_$AppDatabase db, $ExperimentsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExperimentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExperimentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExperimentsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> tagId = const Value.absent(),
+                Value<String?> purpose = const Value.absent(),
+                Value<String> startDate = const Value.absent(),
+                Value<String> endDate = const Value.absent(),
+                Value<int> weekdayTargetMin = const Value.absent(),
+                Value<int> weekendTargetMin = const Value.absent(),
+                Value<int> checkInEveryDays = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String> extensionsJson = const Value.absent(),
+                Value<String?> outcome = const Value.absent(),
+                Value<String?> conclusionNote = const Value.absent(),
+                Value<String?> concludedOn = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ExperimentsCompanion(
+                id: id,
+                tagId: tagId,
+                purpose: purpose,
+                startDate: startDate,
+                endDate: endDate,
+                weekdayTargetMin: weekdayTargetMin,
+                weekendTargetMin: weekendTargetMin,
+                checkInEveryDays: checkInEveryDays,
+                status: status,
+                extensionsJson: extensionsJson,
+                outcome: outcome,
+                conclusionNote: conclusionNote,
+                concludedOn: concludedOn,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String tagId,
+                Value<String?> purpose = const Value.absent(),
+                required String startDate,
+                required String endDate,
+                required int weekdayTargetMin,
+                required int weekendTargetMin,
+                required int checkInEveryDays,
+                Value<String> status = const Value.absent(),
+                Value<String> extensionsJson = const Value.absent(),
+                Value<String?> outcome = const Value.absent(),
+                Value<String?> conclusionNote = const Value.absent(),
+                Value<String?> concludedOn = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ExperimentsCompanion.insert(
+                id: id,
+                tagId: tagId,
+                purpose: purpose,
+                startDate: startDate,
+                endDate: endDate,
+                weekdayTargetMin: weekdayTargetMin,
+                weekendTargetMin: weekendTargetMin,
+                checkInEveryDays: checkInEveryDays,
+                status: status,
+                extensionsJson: extensionsJson,
+                outcome: outcome,
+                conclusionNote: conclusionNote,
+                concludedOn: concludedOn,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ExperimentsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({tagId = false, experimentCheckInsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (experimentCheckInsRefs) db.experimentCheckIns,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (tagId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.tagId,
+                                    referencedTable:
+                                        $$ExperimentsTableReferences
+                                            ._tagIdTable(db),
+                                    referencedColumn:
+                                        $$ExperimentsTableReferences
+                                            ._tagIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (experimentCheckInsRefs)
+                        await $_getPrefetchedData<
+                          ExperimentRow,
+                          $ExperimentsTable,
+                          ExperimentCheckInRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ExperimentsTableReferences
+                              ._experimentCheckInsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ExperimentsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).experimentCheckInsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.experimentId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$ExperimentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExperimentsTable,
+      ExperimentRow,
+      $$ExperimentsTableFilterComposer,
+      $$ExperimentsTableOrderingComposer,
+      $$ExperimentsTableAnnotationComposer,
+      $$ExperimentsTableCreateCompanionBuilder,
+      $$ExperimentsTableUpdateCompanionBuilder,
+      (ExperimentRow, $$ExperimentsTableReferences),
+      ExperimentRow,
+      PrefetchHooks Function({bool tagId, bool experimentCheckInsRefs})
+    >;
+typedef $$ExperimentCheckInsTableCreateCompanionBuilder =
+    ExperimentCheckInsCompanion Function({
+      required String id,
+      required String experimentId,
+      required String slotDate,
+      required String note,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+typedef $$ExperimentCheckInsTableUpdateCompanionBuilder =
+    ExperimentCheckInsCompanion Function({
+      Value<String> id,
+      Value<String> experimentId,
+      Value<String> slotDate,
+      Value<String> note,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> syncStatus,
+      Value<int> revision,
+      Value<int?> serverVersion,
+      Value<int> rowid,
+    });
+
+final class $$ExperimentCheckInsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $ExperimentCheckInsTable,
+          ExperimentCheckInRow
+        > {
+  $$ExperimentCheckInsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $ExperimentsTable _experimentIdTable(_$AppDatabase db) =>
+      db.experiments.createAlias(
+        $_aliasNameGenerator(
+          db.experimentCheckIns.experimentId,
+          db.experiments.id,
+        ),
+      );
+
+  $$ExperimentsTableProcessedTableManager get experimentId {
+    final $_column = $_itemColumn<String>('experiment_id')!;
+
+    final manager = $$ExperimentsTableTableManager(
+      $_db,
+      $_db.experiments,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_experimentIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ExperimentCheckInsTableFilterComposer
+    extends Composer<_$AppDatabase, $ExperimentCheckInsTable> {
+  $$ExperimentCheckInsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get slotDate => $composableBuilder(
+    column: $table.slotDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
+      $composableBuilder(
+        column: $table.createdAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime, DateTime, String> get updatedAt =>
+      $composableBuilder(
+        column: $table.updatedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get deletedAt =>
+      $composableBuilder(
+        column: $table.deletedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ExperimentsTableFilterComposer get experimentId {
+    final $$ExperimentsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.experimentId,
+      referencedTable: $db.experiments,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentsTableFilterComposer(
+            $db: $db,
+            $table: $db.experiments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExperimentCheckInsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExperimentCheckInsTable> {
+  $$ExperimentCheckInsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get slotDate => $composableBuilder(
+    column: $table.slotDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ExperimentsTableOrderingComposer get experimentId {
+    final $$ExperimentsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.experimentId,
+      referencedTable: $db.experiments,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentsTableOrderingComposer(
+            $db: $db,
+            $table: $db.experiments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExperimentCheckInsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExperimentCheckInsTable> {
+  $$ExperimentCheckInsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get slotDate =>
+      $composableBuilder(column: $table.slotDate, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime, String> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
+
+  GeneratedColumn<int> get serverVersion => $composableBuilder(
+    column: $table.serverVersion,
+    builder: (column) => column,
+  );
+
+  $$ExperimentsTableAnnotationComposer get experimentId {
+    final $$ExperimentsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.experimentId,
+      referencedTable: $db.experiments,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExperimentsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.experiments,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExperimentCheckInsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExperimentCheckInsTable,
+          ExperimentCheckInRow,
+          $$ExperimentCheckInsTableFilterComposer,
+          $$ExperimentCheckInsTableOrderingComposer,
+          $$ExperimentCheckInsTableAnnotationComposer,
+          $$ExperimentCheckInsTableCreateCompanionBuilder,
+          $$ExperimentCheckInsTableUpdateCompanionBuilder,
+          (ExperimentCheckInRow, $$ExperimentCheckInsTableReferences),
+          ExperimentCheckInRow,
+          PrefetchHooks Function({bool experimentId})
+        > {
+  $$ExperimentCheckInsTableTableManager(
+    _$AppDatabase db,
+    $ExperimentCheckInsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExperimentCheckInsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExperimentCheckInsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExperimentCheckInsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> experimentId = const Value.absent(),
+                Value<String> slotDate = const Value.absent(),
+                Value<String> note = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ExperimentCheckInsCompanion(
+                id: id,
+                experimentId: experimentId,
+                slotDate: slotDate,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String experimentId,
+                required String slotDate,
+                required String note,
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> syncStatus = const Value.absent(),
+                Value<int> revision = const Value.absent(),
+                Value<int?> serverVersion = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ExperimentCheckInsCompanion.insert(
+                id: id,
+                experimentId: experimentId,
+                slotDate: slotDate,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                syncStatus: syncStatus,
+                revision: revision,
+                serverVersion: serverVersion,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ExperimentCheckInsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({experimentId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (experimentId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.experimentId,
+                                referencedTable:
+                                    $$ExperimentCheckInsTableReferences
+                                        ._experimentIdTable(db),
+                                referencedColumn:
+                                    $$ExperimentCheckInsTableReferences
+                                        ._experimentIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ExperimentCheckInsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExperimentCheckInsTable,
+      ExperimentCheckInRow,
+      $$ExperimentCheckInsTableFilterComposer,
+      $$ExperimentCheckInsTableOrderingComposer,
+      $$ExperimentCheckInsTableAnnotationComposer,
+      $$ExperimentCheckInsTableCreateCompanionBuilder,
+      $$ExperimentCheckInsTableUpdateCompanionBuilder,
+      (ExperimentCheckInRow, $$ExperimentCheckInsTableReferences),
+      ExperimentCheckInRow,
+      PrefetchHooks Function({bool experimentId})
     >;
 typedef $$TaskTemplatesTableCreateCompanionBuilder =
     TaskTemplatesCompanion Function({
@@ -19848,6 +22873,10 @@ class $AppDatabaseManager {
   $$TagsTableTableManager get tags => $$TagsTableTableManager(_db, _db.tags);
   $$TaskTagsTableTableManager get taskTags =>
       $$TaskTagsTableTableManager(_db, _db.taskTags);
+  $$ExperimentsTableTableManager get experiments =>
+      $$ExperimentsTableTableManager(_db, _db.experiments);
+  $$ExperimentCheckInsTableTableManager get experimentCheckIns =>
+      $$ExperimentCheckInsTableTableManager(_db, _db.experimentCheckIns);
   $$TaskTemplatesTableTableManager get taskTemplates =>
       $$TaskTemplatesTableTableManager(_db, _db.taskTemplates);
   $$DailyReviewsTableTableManager get dailyReviews =>

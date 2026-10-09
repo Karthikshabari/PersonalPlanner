@@ -36,6 +36,7 @@ const Set<String> _jsonTextKeys = {
   'next_week_focus_json',
   'task_reasons_json',
   'plan_change_reasons_json',
+  'extensions_json',
 };
 
 /// Keys whose absence or NULL means "keep the stored value", never "clear".

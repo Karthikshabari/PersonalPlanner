@@ -35,6 +35,8 @@ abstract final class SyncPayloadValidator {
     'weekly_reviews',
     'timer_sessions',
     'day_contexts',
+    'experiments',
+    'experiment_check_ins',
   };
 
   static void validate(SyncRemoteChange change) {
@@ -114,6 +116,9 @@ abstract final class SyncPayloadValidator {
         _integerIfPresent(p, 'manual_duration_adjustment_min');
         _intInRange(p, 'manual_actual_set', 0, 1);
         _nullableId(p, 'category_id');
+        // Older builds send no tag_id key; the applier then keeps the local
+        // value. An explicit null is valid and clears the tag.
+        if (p.containsKey('tag_id')) _nullableId(p, 'tag_id');
         _nullableId(p, 'recurring_rule_id');
         final removalReason = p['recurrence_removal_reason'];
         if (removalReason != null &&
@@ -320,6 +325,147 @@ abstract final class SyncPayloadValidator {
         _requiredDateTime(p, 'created_at');
         _requiredDateTime(p, 'updated_at');
         break;
+      case 'experiments':
+        _validateExperiment(change);
+        break;
+      case 'experiment_check_ins':
+        _validateExperimentCheckIn(change);
+        break;
+    }
+  }
+
+  static const _experimentFrequencies = {1, 3, 7, 10, 15};
+  static const _experimentOutcomes = {'continue_habit', 'drop'};
+  static const _experimentExtensionKeys = {
+    'reason',
+    'previous_end_date',
+    'new_end_date',
+    'made_on',
+  };
+
+  static void _validateExperiment(SyncRemoteChange change) {
+    final p = change.payload;
+    _requiredId(p, 'tag_id');
+    if (generateDeterministicUuid('experiment:${p['tag_id']}') !=
+        change.recordId) {
+      throw const SyncValidationException(
+        'Experiment ID does not match its tag',
+      );
+    }
+    final start = _requiredDateOnly(p, 'start_date');
+    final end = _requiredDateOnly(p, 'end_date');
+    if (end.isBefore(start)) {
+      throw const SyncValidationException(
+        'Experiment end_date must not precede start_date',
+      );
+    }
+    _intInRange(p, 'weekday_target_min', 0, 9999);
+    _intInRange(p, 'weekend_target_min', 0, 9999);
+    if (!_experimentFrequencies.contains(_int(p['check_in_every_days']))) {
+      throw const SyncValidationException(
+        'check_in_every_days has an unsupported value',
+      );
+    }
+    _requiredEnum(p, 'status', const {'running', 'concluded'});
+    _codePointLimitIfPresent(p, 'purpose', 1000);
+    _codePointLimitIfPresent(p, 'conclusion_note', 4000);
+    final outcome = p['outcome'];
+    if (outcome != null &&
+        (outcome is! String || !_experimentOutcomes.contains(outcome))) {
+      throw const SyncValidationException('Invalid experiment outcome');
+    }
+    final concludedOn = _dateOnlyIfPresent(p, 'concluded_on');
+    if (p['status'] == 'running') {
+      if (outcome != null ||
+          p['conclusion_note'] != null ||
+          concludedOn != null) {
+        throw const SyncValidationException(
+          'A running experiment cannot have an outcome, note or conclusion date',
+        );
+      }
+    } else if (outcome == null || concludedOn == null) {
+      throw const SyncValidationException(
+        'A concluded experiment needs an outcome and a conclusion date',
+      );
+    }
+    _validateExperimentExtensions(p);
+    _requiredDateTime(p, 'created_at');
+    _requiredDateTime(p, 'updated_at');
+  }
+
+  static void _validateExperimentExtensions(Map<String, dynamic> p) {
+    final raw = p['extensions_json'];
+    if (raw is! String) {
+      throw const SyncValidationException('extensions_json must be JSON text');
+    }
+    late final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const SyncValidationException('extensions_json must be valid JSON');
+    }
+    if (decoded is! List) {
+      throw const SyncValidationException('extensions_json must be an array');
+    }
+    for (final item in decoded) {
+      if (item is! Map ||
+          item.length != _experimentExtensionKeys.length ||
+          !item.keys.every(_experimentExtensionKeys.contains)) {
+        throw const SyncValidationException('Invalid experiment extension');
+      }
+      final entry = Map<String, dynamic>.from(item);
+      final reason = entry['reason'];
+      if (reason is! String ||
+          reason.trim().isEmpty ||
+          reason.runes.length > 500) {
+        throw const SyncValidationException(
+          'Experiment extension reason must be 1–500 characters',
+        );
+      }
+      final previousEnd = _requiredDateOnly(entry, 'previous_end_date');
+      final newEnd = _requiredDateOnly(entry, 'new_end_date');
+      _requiredDateOnly(entry, 'made_on');
+      if (!newEnd.isAfter(previousEnd)) {
+        throw const SyncValidationException(
+          'Experiment extension must move the end date later',
+        );
+      }
+    }
+  }
+
+  static void _validateExperimentCheckIn(SyncRemoteChange change) {
+    final p = change.payload;
+    _requiredId(p, 'experiment_id');
+    _requiredDateOnly(p, 'slot_date');
+    if (generateDeterministicUuid(
+          'experiment-check-in:${p['experiment_id']}:${p['slot_date']}',
+        ) !=
+        change.recordId) {
+      throw const SyncValidationException(
+        'Check-in ID does not match its experiment and date',
+      );
+    }
+    final note = p['note'];
+    if (note is! String || note.trim().isEmpty || note.runes.length > 4000) {
+      throw const SyncValidationException(
+        'Check-in note must be 1–4000 characters',
+      );
+    }
+    _requiredDateTime(p, 'created_at');
+    _requiredDateTime(p, 'updated_at');
+  }
+
+  /// Optional text bounded in code points (ED9), as SQL `length()` counts.
+  static void _codePointLimitIfPresent(
+    Map<String, dynamic> p,
+    String key,
+    int max,
+  ) {
+    final value = p[key];
+    if (value == null) return;
+    if (value is! String) throw SyncValidationException('$key must be text');
+    if (value.runes.length > max) {
+      throw SyncValidationException('$key is longer than $max characters');
     }
   }
 

@@ -87,7 +87,7 @@ void main() {
     await db2.close();
 
     expect(second, first);
-    expect(triggers.read<int>('c'), 34);
+    expect(triggers.read<int>('c'), 40);
     expect(stamp, '${AppDatabase.syncTriggerVersion}');
   });
 

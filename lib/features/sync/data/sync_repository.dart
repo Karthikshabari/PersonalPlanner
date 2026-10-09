@@ -68,6 +68,13 @@ class SyncRepository {
   static const _legacyTitleHistoryTransitionDiagnostic =
       'Existing plan title events cannot be removed or changed';
 
+  /// What the server's apply function raises (SQLSTATE 22023) for a table it
+  /// does not know yet, and what an older app build records when it
+  /// quarantines a pulled row of a table it does not know.
+  static const _unsupportedSyncTableMessage = 'Unsupported sync table';
+  static const _unsupportedRemoteTableDiagnostic =
+      'Unsupported remote sync table';
+
   void _assertAccountScope() {
     final current = _currentAccountId?.call();
     if (_currentAccountId != null && current != _accountId) {
@@ -141,6 +148,10 @@ class SyncRepository {
     // every batch, and only rows that are actually attempted use the budget.
     var budget = _pushBatchSize;
     var held = 0;
+    // Set once the server answers "Unsupported sync table" for an experiment
+    // table: its migration has not been applied yet, so every other operation
+    // of those two tables waits for a later push (ED19).
+    var experimentTablesHeld = false;
     while (budget > 0) {
       late final List<SyncLogRow> page;
       late final List<SyncLogRow> operations;
@@ -179,6 +190,11 @@ class SyncRepository {
           // Leave the row exactly as queued (no attempt, no state change, same
           // operation ID) until what it depends on has been acknowledged.
           if (await _isHeldBehindPredecessor(operation)) {
+            held++;
+            continue;
+          }
+          if (experimentTablesHeld &&
+              _isExperimentTable(operation.entityTableName)) {
             held++;
             continue;
           }
@@ -235,6 +251,22 @@ class SyncRepository {
           // and stop the batch; the next cycle checks capabilities again.
           return classifySyncFailure(error);
         } catch (error) {
+          // A server without the experiments migration rejects the two new
+          // tables with "Unsupported sync table". Nothing is wrong with the
+          // payload, so the operation stays queued exactly as it was (no
+          // attempt counted, not parked), the rest of those two tables waits
+          // for the next push, and every other table keeps syncing. It is not
+          // reported as a failure: the sync status shows pending work.
+          if (_isExperimentTable(operation.entityTableName) &&
+              '$error'.contains(_unsupportedSyncTableMessage)) {
+            await _db.syncDao.releaseInFlight(
+              operation.operationId,
+              DateTime.now().toUtc(),
+            );
+            experimentTablesHeld = true;
+            held++;
+            continue;
+          }
           final failure = classifySyncFailure(error);
           // An expired or revoked session says nothing about this payload, and
           // every later operation would be refused the same way. Return the
@@ -279,6 +311,9 @@ class SyncRepository {
     }
     return firstFailure;
   }
+
+  static bool _isExperimentTable(String table) =>
+      table == 'experiments' || table == 'experiment_check_ins';
 
   /// Requeues only permanent task operations whose retained diagnostic is the
   /// former server-side F03 transition error. The original operation ID,
@@ -514,6 +549,7 @@ class SyncRepository {
     try {
       _assertAccountScope();
       await _repairTitleHistoryQuarantine();
+      await _repairExperimentQuarantine();
     } on _SyncAccountScopeChanged {
       return _scopeFailure;
     }
@@ -1205,6 +1241,103 @@ class SyncRepository {
       }
     }
     _notifyDomainStreams(changedTables);
+  }
+
+  /// An older build quarantines pulled rows of the two experiment tables with
+  /// "Unsupported remote sync table". Once this build knows the tables it
+  /// re-applies those retained records (ED21), parents first and lower change
+  /// ids first. A record is skipped while its parent row is missing, while a
+  /// local operation is active for it, or when the local row is already at
+  /// least as new. Errors leave the record in place; the cursor is untouched.
+  Future<void> _repairExperimentQuarantine() async {
+    final retained = await _db.syncDao.getQuarantinedChanges(_accountId);
+    final candidates = <({String settingKey, SyncRemoteChange change})>[];
+    for (final setting in retained) {
+      try {
+        final decoded = jsonDecode(setting.value);
+        if (decoded is! Map) continue;
+        final record = Map<String, dynamic>.from(decoded);
+        if (record['account_id']?.toString() != _accountId ||
+            !record['diagnostic'].toString().contains(
+              _unsupportedRemoteTableDiagnostic,
+            )) {
+          continue;
+        }
+        final raw = record['raw_change'];
+        if (raw is! Map) continue;
+        final change = SyncRemoteChange.fromJson(raw);
+        if (!_isExperimentTable(change.tableName)) continue;
+        candidates.add((settingKey: setting.key, change: change));
+      } on Object {
+        // Unreadable records stay available for explicit review.
+      }
+    }
+    if (candidates.isEmpty) return;
+    candidates.sort((a, b) {
+      final table = (a.change.tableName == 'experiments' ? 0 : 1).compareTo(
+        b.change.tableName == 'experiments' ? 0 : 1,
+      );
+      return table != 0
+          ? table
+          : a.change.changeId.compareTo(b.change.changeId);
+    });
+    final changedTables = <String>{};
+    for (final candidate in candidates) {
+      _assertAccountScope();
+      final change = candidate.change;
+      try {
+        final localVersion = await _localServerVersion(change);
+        if (localVersion != null && localVersion >= change.serverVersion) {
+          continue;
+        }
+        final active = await _db.syncDao.getActiveOperationsForRecord(
+          change.tableName,
+          change.recordId,
+        );
+        if (active.isNotEmpty) continue;
+        var parentsPresent = true;
+        for (final parent in _changeDependencies(change)) {
+          if (!await _parentExists(parent)) parentsPresent = false;
+        }
+        if (!parentsPresent) continue;
+        await _applier.validate(
+          change,
+          checkMaterializedState: false,
+          checkHistoryLinks: false,
+        );
+        var repaired = false;
+        await _db.syncDao.runWithoutOutbound(() async {
+          _assertAccountScope();
+          if (await _db.syncDao.getSetting(candidate.settingKey) == null) {
+            return;
+          }
+          final stillActive = await _db.syncDao.getActiveOperationsForRecord(
+            change.tableName,
+            change.recordId,
+          );
+          if (stillActive.isNotEmpty) return;
+          await _applyPulledChange(change);
+          await _db.syncDao.deleteSetting(candidate.settingKey);
+          repaired = true;
+        });
+        if (repaired) changedTables.add(change.tableName);
+      } on _SyncAccountScopeChanged {
+        rethrow;
+      } on Object {
+        // The retained record stays for a later pull or explicit review.
+      }
+    }
+    _notifyDomainStreams(changedTables);
+  }
+
+  Future<int?> _localServerVersion(SyncRemoteChange change) async {
+    final row = await _db
+        .customSelect(
+          'SELECT server_version FROM ${change.tableName} WHERE id = ?',
+          variables: [Variable<String>(change.recordId)],
+        )
+        .getSingleOrNull();
+    return row?.readNullable<int>('server_version');
   }
 
   Future<void> _acknowledgePulledOperation(SyncRemoteChange change) async {
@@ -2033,6 +2166,8 @@ class SyncRepository {
       'weekly_reviews': _db.weeklyReviews,
       'timer_sessions': _db.timerSessions,
       'day_contexts': _db.dayContexts,
+      'experiments': _db.experiments,
+      'experiment_check_ins': _db.experimentCheckIns,
     };
     final changed = <TableInfo>[
       for (final name in tableNames)
@@ -2070,6 +2205,8 @@ class SyncRepository {
       'weekly_reviews',
       'timer_sessions',
       'day_contexts',
+      'experiments',
+      'experiment_check_ins',
     };
     if (!tables.contains(table)) throw StateError('Unsupported sync table');
     await _db.customStatement(
@@ -2259,6 +2396,10 @@ class SyncRepository {
         if (categoryId != null && categoryId.isNotEmpty) {
           yield key('categories', categoryId);
         }
+        final taskTagId = value('tag_id');
+        if (taskTagId != null && taskTagId.isNotEmpty) {
+          yield key('tags', taskTagId);
+        }
         final ruleId = value('recurring_rule_id');
         if (ruleId != null && ruleId.isNotEmpty) {
           yield key('recurring_rules', ruleId);
@@ -2286,6 +2427,16 @@ class SyncRepository {
         }
         if (tagId != null && tagId.isNotEmpty) {
           yield key('tags', tagId);
+        }
+      case 'experiments':
+        final tagId = value('tag_id');
+        if (tagId != null && tagId.isNotEmpty) {
+          yield key('tags', tagId);
+        }
+      case 'experiment_check_ins':
+        final experimentId = value('experiment_id');
+        if (experimentId != null && experimentId.isNotEmpty) {
+          yield key('experiments', experimentId);
         }
     }
   }
@@ -2508,6 +2659,7 @@ class SyncRepository {
       'recurring_rule_id': 'recurring_rules',
       'task_id': 'tasks',
       'tag_id': 'tags',
+      'experiment_id': 'experiments',
     };
     final references = <({String table, String? id})>[
       for (final entry in fields.entries)
@@ -2542,11 +2694,15 @@ class SyncRepository {
     'subtasks': 7,
     'task_tags': 8,
     'timer_sessions': 9,
+    'experiments': 10,
+    'experiment_check_ins': 11,
   };
 
   static const _deleteOrder = {
     'day_contexts': 0,
     'task_tags': 0,
+    'experiment_check_ins': 0,
+    'experiments': 1,
     'timer_sessions': 1,
     'subtasks': 2,
     'daily_reviews': 3,

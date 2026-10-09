@@ -62,6 +62,7 @@ class TaskRepository {
     _validate(effective);
     await _db.transaction(() async {
       await _validateHistoryLinks(effective);
+      await _validateTagExists(effective);
       await _dao.insertTask(_toCompanion(effective));
       await TaskActualDurationService(_db)
           .recomputeTaskInTransaction(effective.id);
@@ -120,6 +121,7 @@ class TaskRepository {
         );
       }
       await _validateHistoryLinks(canonical, previous: row);
+      await _validateTagExists(canonical);
       if (ownerDeviceId != null) {
         await TimerService(_db)
             .stopOwnedTaskInTransaction(canonical.id, ownerDeviceId, now);
@@ -294,6 +296,7 @@ class TaskRepository {
     manualDurationAdjustmentMin: row.manualDurationAdjustmentMin,
     manualActualSet: row.manualActualSet,
     categoryId: row.categoryId,
+    tagId: row.tagId,
     priority: Priority.fromDb(row.priority),
     status: TaskStatus.fromDb(row.status),
     notes: row.notes,
@@ -324,6 +327,7 @@ class TaskRepository {
     manualDurationAdjustmentMin: Value(t.manualDurationAdjustmentMin),
     manualActualSet: Value(t.manualActualSet),
     categoryId: Value(t.categoryId),
+    tagId: Value(t.tagId),
     priority: Value(t.priority.dbValue),
     status: Value(t.status.dbValue),
     notes: Value(t.notes),
@@ -430,6 +434,17 @@ class TaskRepository {
     return task.copyWith(estimatedDurationMin: null);
   }
 
+  /// `tasks.tag_id` has no foreign-key clause (ED40), so the repository is
+  /// what keeps a block from pointing at a tag that does not exist.
+  Future<void> _validateTagExists(Task proposed) async {
+    final tagId = proposed.tagId;
+    if (tagId == null || tagId.isEmpty) return;
+    final tag = await (_db.select(
+      _db.tags,
+    )..where((t) => t.id.equals(tagId))).getSingleOrNull();
+    if (tag == null) throw StateError('Tag $tagId not found');
+  }
+
   /// History links form a single directed successor chain. Check the
   /// complete proposed graph in the same SQLite transaction so self-links,
   /// direct cycles, and longer remote/local cycles cannot be committed.
@@ -483,6 +498,7 @@ class TaskRepository {
         manualDurationAdjustmentMin: t.manualDurationAdjustmentMin,
         manualActualSet: t.manualActualSet,
         categoryId: t.categoryId,
+        tagId: t.tagId,
         priority: t.priority.dbValue,
         status: t.status.dbValue,
         notes: t.notes,

@@ -22,6 +22,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
       (json['manualDurationAdjustmentMin'] as num?)?.toInt() ?? 0,
   manualActualSet: json['manualActualSet'] as bool? ?? false,
   categoryId: json['categoryId'] as String?,
+  tagId: json['tagId'] as String?,
   priority:
       $enumDecodeNullable(_$PriorityEnumMap, json['priority']) ?? Priority.none,
   status:
@@ -65,6 +66,7 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'manualDurationAdjustmentMin': instance.manualDurationAdjustmentMin,
   'manualActualSet': instance.manualActualSet,
   'categoryId': instance.categoryId,
+  'tagId': instance.tagId,
   'priority': _$PriorityEnumMap[instance.priority]!,
   'status': _$TaskStatusEnumMap[instance.status]!,
   'notes': instance.notes,

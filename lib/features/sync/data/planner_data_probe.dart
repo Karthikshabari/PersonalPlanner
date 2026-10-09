@@ -18,6 +18,8 @@ class PlannerDataProbe {
     'day_contexts',
     'categories',
     'tags',
+    'experiments',
+    'experiment_check_ins',
     'recurring_rules',
     'tasks',
     'task_templates',
