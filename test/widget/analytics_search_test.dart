@@ -25,18 +25,8 @@ void main() {
 
     expect(find.text('Insights'), findsWidgets);
     expect(find.byKey(const ValueKey('consistency-section')), findsOneWidget);
-    expect(find.byKey(const ValueKey('this-week-section')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('this-week-desktop-layout')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('planned-actual-summary')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('category-time-summary')), findsOneWidget);
-    expect(find.byKey(const ValueKey('notable-summary')), findsNothing);
-    expect(find.text('No tracked time for this week yet.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('experiments-section')), findsOneWidget);
+    expect(find.byKey(const ValueKey('this-week-section')), findsNothing);
     expect(
       find.byKey(
         ValueKey(
@@ -65,49 +55,6 @@ void main() {
       ),
     );
     expect(consistencyCells, hasLength(weekCount * 7));
-
-    final next = tester.widget<IconButton>(
-      find.byKey(const ValueKey('insights-next-week')),
-    );
-    expect(next.onPressed, isNull);
-
-    await teardownApp(tester, container);
-  });
-
-  testWidgets('phone layout stacks summaries and enforces week boundary', (
-    tester,
-  ) async {
-    final container = await buildTestContainer(tester);
-    appRouter.go('/analytics');
-    await pumpApp(tester, container, surface: const Size(390, 844));
-
-    expect(
-      find.byKey(const ValueKey('this-week-mobile-layout')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('this-week-desktop-layout')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('consistency-grid-scroll')),
-      findsOneWidget,
-    );
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('insights-next-week')))
-          .onPressed,
-      isNull,
-    );
-    await tester.tap(find.byKey(const ValueKey('insights-previous-week')));
-    await settle(tester);
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('insights-next-week')))
-          .onPressed,
-      isNotNull,
-    );
-    expect(tester.takeException(), isNull);
 
     await teardownApp(tester, container);
   });
@@ -138,8 +85,6 @@ void main() {
     appRouter.go('/analytics');
     await pumpApp(tester, container, surface: const Size(1200, 900));
 
-    expect(find.text('100% follow-through'), findsOneWidget);
-    expect(find.text('Uncategorized'), findsOneWidget);
     final dayCell = find.byKey(
       ValueKey('consistency-day-${isoDateString(today)}'),
     );
@@ -324,60 +269,6 @@ void main() {
           )
           .normalizedFraction,
       0.0,
-    );
-  });
-
-  testWidgets('a single category receives the full category bar', (
-    tester,
-  ) async {
-    const category = CategoryTime(
-      id: 'uncategorized',
-      name: 'Uncategorized',
-      colorHex: '#9AA0A6',
-      actualMinutes: 30,
-    );
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: SizedBox(
-          width: 240,
-          child: CategoryTimeRow(category: category, maxMinutes: 30),
-        ),
-      ),
-    );
-    expect(
-      tester
-          .widget<InsightsProgressBar>(
-            find.byKey(const ValueKey('category-bar-uncategorized')),
-          )
-          .normalizedFraction,
-      1.0,
-    );
-  });
-
-  testWidgets('category bars normalize smaller values to the largest', (
-    tester,
-  ) async {
-    const category = CategoryTime(
-      id: 'learning',
-      name: 'Learning',
-      colorHex: '#4285F4',
-      actualMinutes: 30,
-    );
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: SizedBox(
-          width: 240,
-          child: CategoryTimeRow(category: category, maxMinutes: 120),
-        ),
-      ),
-    );
-    expect(
-      tester
-          .widget<InsightsProgressBar>(
-            find.byKey(const ValueKey('category-bar-learning')),
-          )
-          .normalizedFraction,
-      closeTo(0.25, 0.0001),
     );
   });
 

@@ -32,12 +32,6 @@ void main() {
     final selected = container.read(selectedInsightsWeekProvider.notifier);
     selected.state = currentWeek;
     await tester.pump();
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('insights-next-week')))
-          .onPressed,
-      isNull,
-    );
 
     now = PlannerTimeZone.calendarDate(2026, 9, 21, second: 1);
     await tester.pump(const Duration(seconds: 2));
@@ -47,12 +41,6 @@ void main() {
       container.read(selectedInsightsWeekProvider),
       currentWeek,
       reason: 'midnight must not reset the selected week',
-    );
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('insights-next-week')))
-          .onPressed,
-      isNotNull,
     );
 
     final historical = addDays(currentWeek, -14);
@@ -68,12 +56,6 @@ void main() {
       container.read(selectedInsightsWeekProvider),
       historical,
       reason: 'resume must preserve deliberate historical navigation',
-    );
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('insights-next-week')))
-          .onPressed,
-      isNotNull,
     );
 
     await teardownApp(tester, container);

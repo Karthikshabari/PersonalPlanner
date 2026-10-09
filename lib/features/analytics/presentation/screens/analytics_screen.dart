@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
-import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/global_search_action.dart';
+import '../../../experiments/presentation/widgets/experiments_card.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/analytics_models.dart';
 import '../../providers/analytics_providers.dart';
@@ -18,9 +18,6 @@ class AnalyticsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selectedWeek = ref.watch(selectedInsightsWeekProvider);
-    final now = ref.watch(insightsNowProvider);
-    final currentWeek = startOfWeek(now);
     final snapshot = ref.watch(insightsSnapshotProvider);
     final tokens = AppThemeTokens.of(context);
 
@@ -43,22 +40,8 @@ class AnalyticsScreen extends ConsumerWidget {
                     loading: () => const _InsightsLoading(),
                     error: (error, _) =>
                         ErrorPanel(message: friendlyErrorMessage(error)),
-                    data: (value) => _InsightsContent(
-                      snapshot: value,
-                      compact: compact,
-                      desktopWeekLayout: constraints.maxWidth >= 980,
-                      selectedWeek: selectedWeek,
-                      canGoForward: selectedWeek.isBefore(currentWeek),
-                      onPrevious: () {
-                        ref.read(selectedInsightsWeekProvider.notifier).state =
-                            addDays(selectedWeek, -7);
-                      },
-                      onNext: () {
-                        if (!selectedWeek.isBefore(currentWeek)) return;
-                        ref.read(selectedInsightsWeekProvider.notifier).state =
-                            addDays(selectedWeek, 7);
-                      },
-                    ),
+                    data: (value) =>
+                        _InsightsContent(snapshot: value, compact: compact),
                   ),
                 ),
               ),
@@ -71,23 +54,10 @@ class AnalyticsScreen extends ConsumerWidget {
 }
 
 class _InsightsContent extends StatelessWidget {
-  const _InsightsContent({
-    required this.snapshot,
-    required this.compact,
-    required this.desktopWeekLayout,
-    required this.selectedWeek,
-    required this.canGoForward,
-    required this.onPrevious,
-    required this.onNext,
-  });
+  const _InsightsContent({required this.snapshot, required this.compact});
 
   final InsightsSnapshot snapshot;
   final bool compact;
-  final bool desktopWeekLayout;
-  final DateTime selectedWeek;
-  final bool canGoForward;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -112,18 +82,7 @@ class _InsightsContent extends StatelessWidget {
         ),
       ),
       const SizedBox(height: AppSpacing.lg),
-      InsightsSectionCard(
-        key: const ValueKey('this-week-section'),
-        title: 'This Week',
-        stackHeader: compact,
-        headerTrailing: WeekNavigator(
-          start: selectedWeek,
-          canGoForward: canGoForward,
-          onPrevious: onPrevious,
-          onNext: onNext,
-        ),
-        child: ThisWeekSummary(snapshot: snapshot, desktop: desktopWeekLayout),
-      ),
+      ExperimentsCard(compact: compact),
     ],
   );
 }
