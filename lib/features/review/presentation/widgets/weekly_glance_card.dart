@@ -12,6 +12,7 @@ import '../../domain/weekly_review_numbers.dart';
 import 'dashed_outline.dart';
 import 'mood_face.dart';
 import 'review_theme.dart';
+import 'weekly_review_style.dart';
 
 /// "Week at a glance": the big completion line, the counts line and the
 /// seven-day strip (spec 3.2). Planned hours are never shown.
@@ -20,9 +21,13 @@ class WeeklyGlanceCard extends StatelessWidget {
     super.key,
     required this.numbers,
     required this.future,
+    this.today,
   });
 
   final WeeklyNumbers numbers;
+
+  /// "Today" for the highlight; the device date when null. Injectable for tests.
+  final DateTime? today;
 
   /// The week starts after the current week (WD25).
   final bool future;
@@ -60,7 +65,7 @@ class WeeklyGlanceCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          WeeklyDayStrip(days: numbers.days),
+          WeeklyDayStrip(days: numbers.days, today: today ?? DateTime.now()),
         ],
       ),
     );
@@ -70,9 +75,21 @@ class WeeklyGlanceCard extends StatelessWidget {
 /// Seven day cards. They share the width when there is room for seven 94 dp
 /// cards; otherwise the strip scrolls sideways (about 3.5 cards on a phone).
 class WeeklyDayStrip extends StatelessWidget {
-  const WeeklyDayStrip({super.key, required this.days});
+  const WeeklyDayStrip({super.key, required this.days, this.today});
 
   final List<WeeklyDayStats> days;
+  final DateTime? today;
+
+  /// Today's date when the strip's week contains it, else null.
+  DateTime? get _todayInWeek {
+    final now = today;
+    if (now == null) return null;
+    final day = DateTime(now.year, now.month, now.day);
+    for (final d in days) {
+      if (DateTime(d.date.year, d.date.month, d.date.day) == day) return day;
+    }
+    return null;
+  }
 
   static const double gap = 8;
 
@@ -95,6 +112,7 @@ class WeeklyDayStrip extends StatelessWidget {
                     child: WeeklyDayCard(
                       key: ValueKey('weekly-day-$i'),
                       day: days[i],
+                      today: _todayInWeek,
                     ),
                   ),
                 ],
@@ -124,6 +142,7 @@ class WeeklyDayStrip extends StatelessWidget {
                     child: WeeklyDayCard(
                       key: ValueKey('weekly-day-$i'),
                       day: days[i],
+                      today: _todayInWeek,
                     ),
                   ),
                 ],
@@ -155,9 +174,13 @@ String weeklyDayCardLabel(WeeklyDayStats day) {
 
 /// One day of the strip, in the style of the Overview day cards.
 class WeeklyDayCard extends StatelessWidget {
-  const WeeklyDayCard({super.key, required this.day});
+  const WeeklyDayCard({super.key, required this.day, this.today});
 
   final WeeklyDayStats day;
+
+  /// Set only when the viewed week contains today: that day gets the accent
+  /// border and weekday, and the days after it are dimmed.
+  final DateTime? today;
 
   static const double width = 94;
   static const double horizontalPadding = 6;
@@ -174,7 +197,7 @@ class WeeklyDayCard extends StatelessWidget {
 
   static TextStyle? _smallStyle(BuildContext context) =>
       Theme.of(context).textTheme.labelSmall
-          ?.copyWith(color: AppThemeTokens.of(context).textMuted);
+          ?.copyWith(color: AppThemeTokens.of(context).textMuted, fontSize: 12);
 
   static TextStyle _percentStyle(BuildContext context) =>
       reviewMonoStyle(context, fontSize: 13).copyWith(
@@ -236,15 +259,26 @@ class WeeklyDayCard extends StatelessWidget {
     final mood = day.mood;
     final status = _status(day);
     const gapBox = SizedBox(height: gap);
+    final now = today;
+    final dayOnly = DateTime(day.date.year, day.date.month, day.date.day);
+    final isToday = now != null && dayOnly == now;
+    // Days after today are dimmed through the colours themselves (no Opacity
+    // widget, so no offscreen layer).
+    final fadeBy = now != null && dayOnly.isAfter(now) ? 0.6 : 1.0;
+    Color fade(Color c) =>
+        fadeBy == 1.0 ? c : c.withValues(alpha: c.a * fadeBy);
+    final accent = Theme.of(context).colorScheme.primary;
+    final small = _smallStyle(context)?.copyWith(color: fade(tokens.textMuted));
     return Semantics(
       container: true,
       label: weeklyDayCardLabel(day),
       excludeSemantics: true,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: tokens.surface,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: tokens.outline),
+          // A tonal tile on the card; only today carries a border.
+          color: fade(WeeklyStyle.inset(context)),
+          borderRadius: BorderRadius.circular(WeeklyStyle.insetRadius(context)),
+          border: Border.all(color: isToday ? accent : Colors.transparent),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(
@@ -255,31 +289,39 @@ class WeeklyDayCard extends StatelessWidget {
             children: [
               Text(
                 DateFormat('EEE').format(day.date),
-                style: _weekdayStyle(context),
+                style: _weekdayStyle(
+                  context,
+                )?.copyWith(color: isToday ? accent : fade(tokens.textPrimary)),
               ),
               gapBox,
               Text(
                 DateFormat('MMM d').format(day.date),
                 textAlign: TextAlign.center,
-                style: _smallStyle(context),
+                style: small,
               ),
               gapBox,
               if (mood != null)
                 DecoratedBox(
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: ReviewColors.of(context)
-                        .mood(mood)
-                        .withValues(alpha: 0.16),
+                    color: fade(
+                      ReviewColors.of(context)
+                          .mood(mood)
+                          .withValues(alpha: 0.16),
+                    ),
                   ),
-                  child: MoodFace(level: mood, size: faceSize),
+                  child: MoodFace(
+                    level: mood,
+                    size: faceSize,
+                    color: fade(ReviewColors.of(context).mood(mood)),
+                  ),
                 )
               else
                 SizedBox.square(
                   dimension: faceSize,
                   child: CustomPaint(
                     painter: DashedOutlinePainter(
-                      color: tokens.textMuted,
+                      color: fade(tokens.textMuted),
                       strokeWidth: 1.5,
                       circle: true,
                     ),
@@ -287,17 +329,21 @@ class WeeklyDayCard extends StatelessWidget {
                 ),
               gapBox,
               if (day.total == 0)
-                Text('No tasks', style: _smallStyle(context))
+                Text('No tasks', style: small)
               else ...[
-                Text('${day.percent}%', style: _percentStyle(context)),
+                Text(
+                  '${day.percent}%',
+                  style: _percentStyle(context)
+                      .copyWith(color: fade(tokens.textPrimary)),
+                ),
                 gapBox,
                 ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
                     value: day.percent! / 100,
                     minHeight: barHeight,
-                    color: ReviewColors.of(context).success,
-                    backgroundColor: tokens.outline,
+                    color: fade(ReviewColors.of(context).success),
+                    backgroundColor: fade(tokens.outline),
                   ),
                 ),
                 if (status != null) ...[
@@ -310,22 +356,20 @@ class WeeklyDayCard extends StatelessWidget {
                         vertical: 1,
                       ),
                       decoration: BoxDecoration(
-                        border: Border.all(color: tokens.outline),
-                        borderRadius: BorderRadius.circular(6),
+                        color: fade(tokens.surface),
+                        borderRadius: BorderRadius.circular(
+                          WeeklyStyle.pillRadius,
+                        ),
                       ),
                       child: Text(
                         status,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _smallStyle(context),
+                        style: small,
                       ),
                     )
                   else
-                    Text(
-                      status,
-                      textAlign: TextAlign.center,
-                      style: _smallStyle(context),
-                    ),
+                    Text(status, textAlign: TextAlign.center, style: small),
                 ],
               ],
             ],

@@ -100,3 +100,9 @@ TextStyle reviewMonoStyle(BuildContext context, {double fontSize = 11}) =>
       color: AppThemeTokens.of(context).textMuted,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
+
+/// The one caption style for Weekly Review sub-labels (counts, hints, week
+/// dots): 12 px monospace in the muted token. [AppThemeTokens.textMuted] is
+/// at least 6:1 on the card surface in both themes.
+TextStyle weeklyCaptionStyle(BuildContext context) =>
+    reviewMonoStyle(context, fontSize: 12);

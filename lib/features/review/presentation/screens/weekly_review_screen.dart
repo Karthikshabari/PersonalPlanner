@@ -17,11 +17,11 @@ import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_draft.dart';
-import '../../domain/weekly_review_draft.dart';
 import '../../domain/weekly_review_history.dart';
 import '../../domain/weekly_review_numbers.dart';
 import '../../providers/review_providers.dart';
 import '../../providers/weekly_review_draft_controller.dart';
+import '../widgets/review_equal_row.dart';
 import '../widgets/review_mode_switcher.dart';
 import '../widgets/review_snack_bar.dart';
 import '../widgets/review_status_chip.dart';
@@ -92,7 +92,6 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         ref.watch(weeklyReviewHistoryProvider(weekStart)).value ??
         const <WeeklyHistoryWeek>[];
     final reviewAsync = ref.watch(weeklyReviewProvider(weekStart));
-    final draft = ref.watch(weeklyReviewDraftProvider(weekStart));
     final tokens = AppThemeTokens.of(context);
     final future = weekStart.isAfter(startOfWeek(DateTime.now()));
     final numbers = daysAsync.hasValue
@@ -173,26 +172,33 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
                                       daysAsync: daysAsync,
                                       numbers: numbers,
                                       history: history,
-                                      draft: draft,
                                       future: future,
                                       wide: wide,
                                       reviewAsync: reviewAsync,
                                     )
                                   else
-                                    WeeklyNextWeekTab(
-                                      key: ValueKey(
-                                        'weekly-next-week-${isoDateString(weekStart)}',
-                                      ),
-                                      draft: draft,
-                                      onChanged: ref
-                                          .read(
-                                            weeklyReviewDraftProvider(weekStart)
-                                                .notifier,
-                                          )
-                                          .setNote,
-                                      blockerLine:
-                                          numbers?.blockerLine ??
-                                          'No blockers recorded this week.',
+                                    // Only this tab follows every edit of the draft
+                                    // (its preview shows the note as typed).
+                                    Consumer(
+                                      builder: (context, ref, _) =>
+                                          WeeklyNextWeekTab(
+                                            key: ValueKey(
+                                              'weekly-next-week-${isoDateString(weekStart)}',
+                                            ),
+                                            draft: ref.watch(
+                                              weeklyReviewDraftProvider(
+                                                weekStart,
+                                              ),
+                                            ),
+                                            onChanged: ref
+                                                .read(
+                                                  weeklyReviewDraftProvider(
+                                                    weekStart,
+                                                  ).notifier,
+                                                )
+                                                .setNote,
+                                            blockerLine: numbers?.blockerLine ?? 'No blockers recorded this week.',
+                                          ),
                                     ),
                                 ],
                               ),
@@ -201,11 +207,24 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
                         ],
                       ),
                     ),
-                    WeeklySaveBar(
-                      draft: draft,
-                      focusNode: _saveFocusNode,
-                      onSave: () => _save(weekStart),
-                      showShortcutHint: wide,
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final provider = weeklyReviewDraftProvider(weekStart);
+                        // The bar shows only these three facts, so a
+                        // keystroke that changes none of them skips it.
+                        ref.watch(
+                          provider.select(
+                            (d) =>
+                                (d.hydrated, d.saveStatus, d.differsFromSaved),
+                          ),
+                        );
+                        return WeeklySaveBar(
+                          draft: ref.read(provider),
+                          focusNode: _saveFocusNode,
+                          onSave: () => _save(weekStart),
+                          showShortcutHint: wide,
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -268,7 +287,6 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     required AsyncValue<List<WeeklyDayInput>> daysAsync,
     required WeeklyNumbers? numbers,
     required List<WeeklyHistoryWeek> history,
-    required WeeklyReviewDraft draft,
     required bool future,
     required bool wide,
     required AsyncValue<WeeklyReview?> reviewAsync,
@@ -279,46 +297,72 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
     if (numbers == null) {
       return const AppSurface(child: LinearProgressIndicator());
     }
-    final notifier = ref.read(weeklyReviewDraftProvider(weekStart).notifier);
+    final provider = weeklyReviewDraftProvider(weekStart);
+    final notifier = ref.read(provider.notifier);
     final note = fromLastWeekNote(history);
     final glance = WeeklyGlanceCard(numbers: numbers, future: future);
     final reasons = WeeklyReasonsCard(numbers: numbers);
     final outcomes = WeeklyOutcomesCard(rows: numbers.outcomeRows);
-    final mood = WeeklyMoodCard(
-      selected: draft.mood,
-      enabled: draft.hydrated,
-      onChanged: notifier.setMood,
-      lastWeekHint: lastWeekMoodHint(history),
+    final lastWeekHint = lastWeekMoodHint(history);
+    // Each card listens only to the draft fields it shows (`select`), so an
+    // edit rebuilds the card it belongs to and nothing else.
+    final mood = Consumer(
+      builder: (context, ref, _) => WeeklyMoodCard(
+        selected: ref.watch(provider.select((d) => d.mood)),
+        enabled: ref.watch(provider.select((d) => d.hydrated)),
+        onChanged: notifier.setMood,
+        lastWeekHint: lastWeekHint,
+      ),
     );
-    final feeling = WeeklyFeelingCard(
-      // One text controller per week: a draft restored for week A must not
-      // be shown through the field state of week B.
-      key: ValueKey('weekly-feeling-card-${isoDateString(weekStart)}'),
-      draft: draft,
-      onChanged: notifier.setFeeling,
+    final feeling = Consumer(
+      builder: (context, ref, _) {
+        // Only a re-hydration reloads the text field; typing does not.
+        ref.watch(provider.select((d) => (d.hydrated, d.hydrationVersion)));
+        return WeeklyFeelingCard(
+          // One text controller per week: a draft restored for week A must
+          // not be shown through the field state of week B.
+          key: ValueKey('weekly-feeling-card-${isoDateString(weekStart)}'),
+          draft: ref.read(provider),
+          onChanged: notifier.setFeeling,
+        );
+      },
     );
+    final deltaText = weeklyDeltaText(
+      percent: numbers.percent,
+      previous: history,
+    );
+    final dots = weeklyDots(history);
     final reveal = KeyedSubtree(
       key: _revealKey,
       child: KeyedSubtree(
         key: const ValueKey('weekly-reveal'),
-        child: WeeklyRevealCard(
-          // A new state per week: a week opens in its final state and never
-          // replays another week's animation.
-          key: ValueKey('weekly-reveal-${isoDateString(weekStart)}'),
-          revealed:
-              draft.hydrated &&
-              (reviewAsync.value?.mood != null ||
-                  draft.saveStatus == ReviewSaveStatus.saved),
-          mood: draft.savedMood,
-          percent: numbers.percent,
-          deltaText: weeklyDeltaText(
-            percent: numbers.percent,
-            previous: history,
-          ),
-          highlights: numbers.highlights,
-          feeling: draft.savedFeeling,
-          dots: weeklyDots(history),
-          playToken: _revealToken,
+        child: Consumer(
+          builder: (context, ref, _) {
+            final saved = ref.watch(
+              provider.select(
+                (d) => (
+                  d.hydrated,
+                  d.saveStatus == ReviewSaveStatus.saved,
+                  d.savedMood,
+                  d.savedFeeling,
+                ),
+              ),
+            );
+            return WeeklyRevealCard(
+              // A new state per week: a week opens in its final state and
+              // never replays another week's animation.
+              key: ValueKey('weekly-reveal-${isoDateString(weekStart)}'),
+              revealed:
+                  saved.$1 && (reviewAsync.value?.mood != null || saved.$2),
+              mood: saved.$3,
+              percent: numbers.percent,
+              deltaText: deltaText,
+              highlights: numbers.highlights,
+              feeling: saved.$4,
+              dots: dots,
+              playToken: _revealToken,
+            );
+          },
         ),
       ),
     );
@@ -340,26 +384,11 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ...top,
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 29,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [reasons, gap, outcomes],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                flex: 20,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [mood, gap, feeling, gap, reveal],
-                ),
-              ),
-            ],
-          ),
+          ReviewEqualRow(spacing: AppSpacing.md, children: [reasons, mood]),
+          gap,
+          ReviewEqualRow(spacing: AppSpacing.md, children: [outcomes, reveal]),
+          gap,
+          feeling,
         ],
       );
     }
@@ -367,15 +396,15 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ...top,
-        mood,
-        gap,
-        feeling,
-        gap,
-        reveal,
-        gap,
         reasons,
         gap,
         outcomes,
+        gap,
+        mood,
+        gap,
+        reveal,
+        gap,
+        feeling,
       ],
     );
   }

@@ -173,6 +173,9 @@ void main() {
       await _pumpAt(tester, WeeklyOutcomesCard(rows: numbers.outcomeRows));
 
       expect(find.text('Skipped or rescheduled · 5'), findsOneWidget);
+      // Five rows: the first four show, the rest sit behind "Show all 5".
+      await tester.tap(find.text('Show all 5'));
+      await tester.pump();
       expect(find.text('Refactor tests'), findsOneWidget);
       expect(
         find.textContaining('PLAN CHANGED · Scope grew', findRichText: true),

@@ -90,6 +90,8 @@ void main() {
     expect(find.text('Saved'), findsOneWidget);
     expect(find.byKey(const ValueKey('review-save-check')), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Calm'));
+    await settle(tester);
     await tester.tap(find.text('Calm'));
     await settle(tester);
     expect(find.text('Save review'), findsOneWidget);
@@ -117,6 +119,9 @@ void main() {
   testWidgets('Ctrl + Enter and Cmd + Enter save; hint only when wide', (
     tester,
   ) async {
+    // Android is touch-only and hides the hint; the shortcut is a desktop one.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final container = await pumpWeekly(tester);
     expect(find.text('Ctrl + Enter'), findsOneWidget);
 
@@ -188,6 +193,8 @@ void main() {
     });
     await pumpWeekly(tester, container: container);
 
+    await tester.ensureVisible(find.text('Tired'));
+    await settle(tester);
     await tester.tap(find.text('Tired'));
     await settle(tester);
     await tapSave(tester);

@@ -7,6 +7,9 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../domain/review_mood.dart';
 import 'mood_face.dart';
+import 'review_equal_grid.dart';
+import 'review_header_body.dart';
+import 'weekly_review_style.dart';
 import 'review_theme.dart';
 
 /// "How was the week?": four faces the user picks from (never detected).
@@ -28,43 +31,63 @@ class WeeklyMoodCard extends StatelessWidget {
   /// `Last week: Great`, or null.
   final String? lastWeekHint;
 
+  /// Room one tile needs for the longest label (semibold, as when selected)
+  /// plus the tile's own padding and border.
+  static double _minTileWidth(BuildContext context) =>
+      measureWidestText(
+        context,
+        reviewMoodLabels,
+        Theme.of(context).textTheme.labelMedium
+            ?.copyWith(fontWeight: FontWeight.w600),
+      ) +
+      2 * 2 + // tile horizontal padding
+      2; // border
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return AppSurface(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('How was the week?', style: textTheme.titleMedium),
-          const SizedBox(height: AppSpacing.sm),
-          Semantics(
-            label: 'Mood of the week',
-            container: true,
-            child: Row(
-              children: [
-                for (var level = 1; level <= 4; level++)
-                  Expanded(
-                    child: _WeeklyMoodOption(
+      child: ReviewHeaderBody(
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('How was the week?', style: textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        ),
+        // Centred in whatever height the row gives this card.
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              label: 'Mood of the week',
+              container: true,
+              child: ReviewEqualGrid(
+                minCellWidth: _minTileWidth(context),
+                spacing: WeeklyStyle.space2,
+                children: [
+                  for (var level = 1; level <= 4; level++)
+                    _WeeklyMoodOption(
                       level: level,
                       selected: selected == level,
                       enabled: enabled,
                       onChanged: onChanged,
                     ),
-                  ),
-              ],
-            ),
-          ),
-          if (lastWeekHint != null) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              lastWeekHint!,
-              key: const ValueKey('weekly-last-mood'),
-              style: textTheme.bodySmall?.copyWith(
-                color: AppThemeTokens.of(context).textMuted,
+                ],
               ),
             ),
+            if (lastWeekHint != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                lastWeekHint!,
+                key: const ValueKey('weekly-last-mood'),
+                style: textTheme.bodySmall?.copyWith(
+                  color: AppThemeTokens.of(context).textMuted,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -101,7 +124,7 @@ class _WeeklyMoodOptionState extends State<_WeeklyMoodOption> {
     if (widget.selected) return;
     if (!MediaQuery.disableAnimationsOf(context)) setState(() => _pops++);
     if (defaultTargetPlatform == TargetPlatform.android) {
-      HapticFeedback.lightImpact();
+      HapticFeedback.selectionClick();
     }
     widget.onChanged(widget.level);
   }
@@ -112,6 +135,7 @@ class _WeeklyMoodOptionState extends State<_WeeklyMoodOption> {
     final level = widget.level;
     final selected = widget.selected;
     final moodColor = ReviewColors.of(context).mood(level);
+    final radius = BorderRadius.circular(WeeklyStyle.insetRadius(context));
     Widget face = DecoratedBox(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
@@ -138,49 +162,80 @@ class _WeeklyMoodOptionState extends State<_WeeklyMoodOption> {
       button: true,
       label: reviewMoodLabel(level),
       excludeSemantics: true,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            key: ValueKey('weekly-mood-$level'),
-            borderRadius: BorderRadius.circular(10),
-            onTap: widget.enabled ? _pick : null,
-            onFocusChange: (value) => setState(() => _focused = value),
-            child: AnimatedContainer(
-              duration: MediaQuery.disableAnimationsOf(context)
-                  ? Duration.zero
-                  : const Duration(milliseconds: 150),
-              padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                color: selected
-                    ? moodColor.withValues(alpha: 0.14)
-                    : Colors.transparent,
-                border: Border.all(
-                  color: _focused
-                      ? tokens.focus
-                      : selected
-                      ? moodColor
-                      : Colors.transparent,
-                  width: _focused ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  face,
-                  const SizedBox(height: 4),
-                  Text(
-                    reviewMoodLabel(level),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: selected ? tokens.textPrimary : tokens.textMuted,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    ),
+      child: WeeklyPressScale(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              key: ValueKey('weekly-mood-$level'),
+              borderRadius: radius,
+              // Hover and pressed feedback for the unselected tiles.
+              hoverColor: moodColor.withValues(alpha: 0.08),
+              splashColor: moodColor.withValues(alpha: 0.16),
+              highlightColor: moodColor.withValues(alpha: 0.12),
+              onTap: widget.enabled ? _pick : null,
+              onFocusChange: (value) => setState(() => _focused = value),
+              child: AnimatedContainer(
+                duration: WeeklyStyle.quickFor(context),
+                curve: WeeklyStyle.curve,
+                padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
+                decoration: BoxDecoration(
+                  borderRadius: radius,
+                  // Unselected tiles are a tonal inset (no border); the tier
+                  // colour appears only when selected.
+                  color: selected
+                      ? moodColor.withValues(alpha: 0.14)
+                      : WeeklyStyle.inset(context),
+                  border: Border.all(
+                    color: _focused
+                        ? tokens.focus
+                        : selected
+                        ? moodColor
+                        : Colors.transparent,
+                    width: _focused ? 2 : 1,
                   ),
-                ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        face,
+                        const SizedBox(height: 4),
+                        Text(
+                          reviewMoodLabel(level),
+                          maxLines: 1,
+                          softWrap: false,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: selected
+                                    ? tokens.textPrimary
+                                    : tokens.textMuted,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                      ],
+                    ),
+                    // Selection does not rely on colour alone: a check fades in.
+                    Positioned(
+                      top: 0,
+                      right: 2,
+                      child: AnimatedOpacity(
+                        opacity: selected ? 1 : 0,
+                        duration: WeeklyStyle.quickFor(context),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          size: 14,
+                          color: moodColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

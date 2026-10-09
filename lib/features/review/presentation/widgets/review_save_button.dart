@@ -14,6 +14,7 @@ class ReviewSaveButton extends StatelessWidget {
     required this.focusNode,
     required this.onPressed,
     this.buttonKey = const ValueKey('review-save'),
+    this.crossFadeLabel = false,
   });
 
   final ReviewSaveStatus status;
@@ -24,6 +25,9 @@ class ReviewSaveButton extends StatelessWidget {
   /// Key of the button itself: `review-save` in Daily, `weekly-save` in
   /// Weekly (WD30).
   final Key buttonKey;
+
+  /// Cross-fades "Save review" and "Saved" (Weekly). Off keeps the old look.
+  final bool crossFadeLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +68,16 @@ class ReviewSaveButton extends StatelessWidget {
             ),
             const SizedBox(width: 8),
           ],
-          Text(saved ? 'Saved' : 'Save review'),
+          if (crossFadeLabel && !reduceMotion)
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: Text(
+                saved ? 'Saved' : 'Save review',
+                key: ValueKey(saved),
+              ),
+            )
+          else
+            Text(saved ? 'Saved' : 'Save review'),
         ],
       ),
     );

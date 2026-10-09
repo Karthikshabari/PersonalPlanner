@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/theme/app_theme.dart';
+import 'package:personal_planner/features/review/domain/weekly_feeling_presets.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_draft.dart';
+import 'package:personal_planner/features/review/providers/weekly_feeling_presets_provider.dart';
 import 'package:personal_planner/features/review/presentation/widgets/weekly_feeling_card.dart';
 import 'package:personal_planner/features/review/presentation/widgets/weekly_mood_card.dart';
 
@@ -22,18 +25,31 @@ Future<void> _pump(
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   }
   await tester.pumpWidget(
-    MaterialApp(
-      theme: AppTheme.darkTheme,
-      home: MediaQuery(
-        data: MediaQueryData.fromView(tester.view)
-            .copyWith(disableAnimations: reduceMotion),
-        child: Scaffold(
-          body: ListView(padding: const EdgeInsets.all(12), children: [child]),
+    ProviderScope(
+      overrides: [
+        weeklyFeelingPresetsProvider.overrideWith(_DefaultPresetsNotifier.new),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: MediaQuery(
+          data: MediaQueryData.fromView(tester.view)
+              .copyWith(disableAnimations: reduceMotion),
+          child: Scaffold(
+            body: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [child],
+            ),
+          ),
         ),
       ),
     ),
   );
   await tester.pump();
+}
+
+class _DefaultPresetsNotifier extends WeeklyFeelingPresetsNotifier {
+  @override
+  Future<List<String>> build() async => defaultWeeklyFeelingPresets;
 }
 
 Widget _moodHost({String? hint, ValueChanged<int>? onPicked}) {
@@ -53,18 +69,19 @@ Widget _moodHost({String? hint, ValueChanged<int>? onPicked}) {
 
 void main() {
   group('WeeklyMoodCard', () {
-    testWidgets('four faces in one row at 360 dp and text scale 1.3', (
+    testWidgets('four faces, 4 in a row or 2 x 2, at 360 dp and scale 1.3', (
       tester,
     ) async {
       await _pump(tester, _moodHost(), textScale: 1.3);
 
       expect(find.text('How was the week?'), findsOneWidget);
-      final firstTop = tester.getTopLeft(
-        find.byKey(const ValueKey('weekly-mood-1')),
-      );
+      final rows = {
+        for (var level = 1; level <= 4; level++)
+          tester.getTopLeft(find.byKey(ValueKey('weekly-mood-$level'))).dy,
+      };
+      expect(rows.length, anyOf(1, 2));
       for (var level = 1; level <= 4; level++) {
         final option = find.byKey(ValueKey('weekly-mood-$level'));
-        expect(tester.getTopLeft(option).dy, firstTop.dy);
         expect(tester.getSize(option).width, greaterThanOrEqualTo(44));
         expect(tester.getSize(option).height, greaterThanOrEqualTo(44));
       }
@@ -132,7 +149,7 @@ void main() {
       expect(find.byKey(const ValueKey('weekly-mood-pop-2-1')), findsNothing);
     });
 
-    testWidgets('light haptic on Android only', (tester) async {
+    testWidgets('selection haptic on Android only', (tester) async {
       final calls = <MethodCall>[];
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -162,7 +179,7 @@ void main() {
         calls
             .where((c) => c.method == 'HapticFeedback.vibrate')
             .map((c) => c.arguments),
-        ['HapticFeedbackType.lightImpact'],
+        ['HapticFeedbackType.selectionClick'],
       );
       await tester.pump(const Duration(milliseconds: 300));
     });
@@ -195,14 +212,7 @@ void main() {
         find.text('A line or two about how this week felt.'),
         findsOneWidget,
       );
-      for (final word in [
-        'Focused',
-        'Calm',
-        'Energised',
-        'Busy',
-        'Tired',
-        'Proud',
-      ]) {
+      for (final word in defaultWeeklyFeelingPresets) {
         expect(find.text(word), findsOneWidget);
       }
       expect(find.text('0 / 200'), findsOneWidget);
@@ -232,7 +242,7 @@ void main() {
       final changes = <String>[];
       await _pump(tester, feelingHost(changes, initial: 'x' * 195));
 
-      await tester.tap(find.text('Energised'));
+      await tester.tap(find.text('Proud'));
       await tester.pump();
       expect(text(tester), 'x' * 195);
       expect(changes, isEmpty);

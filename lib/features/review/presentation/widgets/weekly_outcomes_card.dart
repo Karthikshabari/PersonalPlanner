@@ -6,20 +6,35 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../domain/weekly_review_numbers.dart';
 import 'review_theme.dart';
+import 'weekly_review_style.dart';
 import 'task_outcome_visuals.dart';
 import 'task_outcomes_card.dart';
 
 /// "Task outcomes": only Skipped and Rescheduled tasks, one row per task with
 /// its plan change inside the row (spec 3.3).
-class WeeklyOutcomesCard extends StatelessWidget {
+class WeeklyOutcomesCard extends StatefulWidget {
   const WeeklyOutcomesCard({super.key, required this.rows});
 
   final List<WeeklyOutcomeRow> rows;
 
   @override
+  State<WeeklyOutcomesCard> createState() => _WeeklyOutcomesCardState();
+}
+
+class _WeeklyOutcomesCardState extends State<WeeklyOutcomesCard> {
+  /// Local UI state only: the first rows show, "Show all N" expands in place.
+  bool _expanded = false;
+  static const int _collapsedRows = 4;
+
+  @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final textTheme = Theme.of(context).textTheme;
+    final rows = widget.rows;
+    final collapsible = rows.length > _collapsedRows;
+    final shown = collapsible && !_expanded
+        ? rows.take(_collapsedRows).toList()
+        : rows;
     return AppSurface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -29,7 +44,7 @@ class WeeklyOutcomesCard extends StatelessWidget {
           Text(
             'Skipped or rescheduled · ${rows.length}',
             key: const ValueKey('weekly-outcomes-count'),
-            style: reviewMonoStyle(context),
+            style: weeklyCaptionStyle(context),
           ),
           const SizedBox(height: AppSpacing.sm),
           if (rows.isEmpty)
@@ -37,13 +52,21 @@ class WeeklyOutcomesCard extends StatelessWidget {
               'Nothing skipped or rescheduled this week.',
               style: textTheme.bodyMedium?.copyWith(color: tokens.textMuted),
             )
-          else
-            for (var i = 0; i < rows.length; i++)
+          else ...[
+            for (var i = 0; i < shown.length; i++)
               _WeeklyOutcomeRowView(
-                key: ValueKey('weekly-outcome-${rows[i].taskId}'),
-                row: rows[i],
+                key: ValueKey('weekly-outcome-${shown[i].taskId}'),
+                row: shown[i],
                 showDivider: i > 0,
               ),
+            if (collapsible)
+              WeeklyShowAllButton(
+                key: const ValueKey('weekly-outcomes-show-all'),
+                expanded: _expanded,
+                total: rows.length,
+                onPressed: () => setState(() => _expanded = !_expanded),
+              ),
+          ],
         ],
       ),
     );

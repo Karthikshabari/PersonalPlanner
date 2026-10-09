@@ -109,11 +109,11 @@ void main() {
 
     final order = [
       top(tester, 'weekly-glance-headline'),
-      top(tester, 'weekly-mood-1'),
-      top(tester, 'weekly-feeling'),
-      top(tester, 'weekly-reveal'),
       tester.getTopLeft(find.text('What got in the way')).dy,
       top(tester, 'weekly-outcomes-count'),
+      top(tester, 'weekly-mood-1'),
+      top(tester, 'weekly-reveal'),
+      top(tester, 'weekly-feeling'),
     ];
     expect(order, orderedEquals([...order]..sort()));
     expect(tester.getTopLeft(find.text('How was the week?')).dx, lessThan(40));
@@ -239,7 +239,11 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('weekly-mood-3')));
     await settle(tester);
+    await tester.ensureVisible(find.text('Focused'));
+    await settle(tester);
     await tester.tap(find.text('Focused'));
+    await settle(tester);
+    await tester.ensureVisible(find.text('Next week (optional)'));
     await settle(tester);
     await tester.tap(find.text('Next week (optional)'));
     await settle(tester);

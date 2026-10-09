@@ -104,6 +104,8 @@ void main() {
     final container = await pumpWeekly(tester);
     await tester.tap(find.byKey(const ValueKey('weekly-mood-3')));
     await settle(tester);
+    await tester.ensureVisible(find.text('Calm'));
+    await settle(tester);
     await tester.tap(find.text('Calm'));
     await settle(tester);
 
@@ -127,6 +129,8 @@ void main() {
     expect(ring(tester).glow, isTrue);
 
     // A later save updates the card statically.
+    await tester.ensureVisible(find.text('Proud'));
+    await settle(tester);
     await tester.tap(find.text('Proud'));
     await settle(tester);
     await tester.tap(save);
@@ -151,7 +155,9 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('Busy'));
+    await tester.ensureVisible(find.text('Tired'));
+    await settle(tester);
+    await tester.tap(find.text('Tired'));
     await settle(tester);
     await tester.tap(save);
     await settle(tester);

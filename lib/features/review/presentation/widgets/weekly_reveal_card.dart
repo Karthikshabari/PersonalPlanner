@@ -10,7 +10,9 @@ import '../../domain/review_mood.dart';
 import '../../domain/weekly_review_numbers.dart';
 import 'dashed_outline.dart';
 import 'mood_face.dart';
+import 'review_header_body.dart';
 import 'review_theme.dart';
+import 'weekly_review_style.dart';
 
 /// Milliseconds on the reveal timeline, measured from the first save
 /// (spec 3.7). One [AnimationController] of [total] ms drives all of it.
@@ -73,8 +75,21 @@ class WeeklyRevealCard extends StatefulWidget {
   State<WeeklyRevealCard> createState() => _WeeklyRevealCardState();
 }
 
+/// How "Your week" is arranged, chosen from the card's own inner width.
+enum _RevealLayout {
+  /// Ring on the left, text on the right, the eight-week dots along the
+  /// bottom.
+  compact,
+
+  /// Everything stacked and centred.
+  stacked,
+}
+
 class _WeeklyRevealCardState extends State<WeeklyRevealCard>
     with SingleTickerProviderStateMixin {
+  /// Inner width from which the ring sits beside the text.
+  static const double _compactWidth = 360;
+
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: WeeklyRevealTimeline.total),
@@ -111,21 +126,45 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return RepaintBoundary(
-      child: AppSurface(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Your week', style: textTheme.titleMedium),
-            const SizedBox(height: AppSpacing.md),
-            if (widget.revealed)
-              AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) => _after(context, _controller.value),
-              )
-            else
-              _before(context),
-          ],
+    final tokens = AppThemeTokens.of(context);
+    // Once revealed the card carries a very faint, static tint of its tier
+    // colour (6 % alpha); the tint cross-fades with the tier.
+    final tint = widget.revealed
+        ? Color.alphaBlend(
+            ReviewColors.of(context)
+                .mood(widget.mood.clamp(1, 4))
+                .withValues(alpha: 0.06),
+            tokens.surface,
+          )
+        : tokens.surface;
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(end: tint),
+      duration: WeeklyStyle.contentFor(context),
+      builder: (context, color, _) => AppSurface(
+        color: color,
+        child: ReviewHeaderBody(
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Your week', style: textTheme.titleMedium),
+              const SizedBox(height: WeeklyStyle.titleGap),
+            ],
+          ),
+          // Centred in the height the row gives this card.
+          body: widget.revealed
+              ? LayoutBuilder(
+                  builder: (context, constraints) {
+                    final layout = constraints.maxWidth >= _compactWidth
+                        ? _RevealLayout.compact
+                        : _RevealLayout.stacked;
+                    return AnimatedBuilder(
+                      animation: _controller,
+                      builder: (context, _) =>
+                          _after(context, _controller.value, layout),
+                    );
+                  },
+                )
+              : _before(context),
         ),
       ),
     );
@@ -136,15 +175,20 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Center(
-          child: SizedBox.square(
-            key: const ValueKey('weekly-reveal-placeholder'),
-            dimension: 72,
-            child: CustomPaint(
-              painter: DashedOutlinePainter(
-                color: tokens.textMuted,
-                strokeWidth: 1.5,
-                circle: true,
+        // The same height as the ring area, so the card does not jump when
+        // the ring replaces the placeholder.
+        SizedBox(
+          height: WeeklyRingPainter.size + 2 * AppSpacing.sm,
+          child: Center(
+            child: SizedBox.square(
+              key: const ValueKey('weekly-reveal-placeholder'),
+              dimension: 72,
+              child: CustomPaint(
+                painter: DashedOutlinePainter(
+                  color: tokens.textMuted,
+                  strokeWidth: 1.5,
+                  circle: true,
+                ),
               ),
             ),
           ),
@@ -170,11 +214,29 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
   }
 
   /// [t] is the controller value (0..1 over 1500 ms).
-  Widget _after(BuildContext context, double t) {
+  /// The tier colour cross-fades over 200 ms when the rating changes (not
+  /// with reduced motion); the first build shows the final colour at once.
+  Widget _after(BuildContext context, double t, _RevealLayout layout) {
+    final target = ReviewColors.of(context).mood(widget.mood.clamp(1, 4));
+    return TweenAnimationBuilder<Color?>(
+      tween: ColorTween(end: target),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 200),
+      builder: (context, color, _) =>
+          _afterContent(context, t, layout, color ?? target),
+    );
+  }
+
+  Widget _afterContent(
+    BuildContext context,
+    double t,
+    _RevealLayout layout,
+    Color moodColor,
+  ) {
     final tokens = AppThemeTokens.of(context);
     final textTheme = Theme.of(context).textTheme;
     final mood = widget.mood.clamp(1, 4);
-    final moodColor = ReviewColors.of(context).mood(mood);
     final percent = widget.percent;
     const total = WeeklyRevealTimeline.total;
 
@@ -218,77 +280,107 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
     };
     final feeling = widget.feeling.trim();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Center(
-          child: Semantics(
-            container: true,
-            label: percent == null
-                ? '${reviewMoodLabel(mood)} week, no tasks'
-                : '$percent percent completed, ${reviewMoodLabel(mood)} week',
-            excludeSemantics: true,
-            child: SizedBox.square(
-              dimension: WeeklyRingPainter.size,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      key: const ValueKey('weekly-ring'),
-                      painter: WeeklyRingPainter(
-                        fraction: (percent ?? 0) / 100 * ring,
-                        track: tokens.outline,
-                        color: moodColor,
-                        glow: glow,
-                        badge: mood == 1,
-                        badgeProgress: faceOpacity,
-                        badgeInk: tokens.surface,
+    final stacked = layout == _RevealLayout.stacked;
+    final textAlign = stacked ? TextAlign.center : TextAlign.start;
+    final wrapAlignment = stacked ? WrapAlignment.center : WrapAlignment.start;
+    final blockAlignment = stacked ? Alignment.center : Alignment.centerLeft;
+
+    final ringWidget = RepaintBoundary(
+      child: Padding(
+        // The sparkles overhang the ring by up to 6 dp; this padding keeps them
+        // inside the ring's own box instead of on the card's padding edge.
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: SizedBox(
+          width: stacked ? null : WeeklyRingPainter.size,
+          child: Center(
+            child: Semantics(
+              container: true,
+              label: percent == null
+                  ? '${reviewMoodLabel(mood)} week, no tasks'
+                  : '$percent percent completed, ${reviewMoodLabel(mood)} week',
+              excludeSemantics: true,
+              child: SizedBox.square(
+                dimension: WeeklyRingPainter.size,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(
+                      child: CustomPaint(
+                        key: const ValueKey('weekly-ring'),
+                        painter: WeeklyRingPainter(
+                          fraction: (percent ?? 0) / 100 * ring,
+                          track: tokens.outline,
+                          color: moodColor,
+                          glow: glow,
+                          badge: mood == 1,
+                          badgeProgress: faceOpacity,
+                          badgeInk: tokens.surface,
+                        ),
                       ),
                     ),
-                  ),
-                  Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Opacity(
-                          opacity: faceOpacity,
-                          child: Transform.scale(
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Fades in through the colour's alpha (no Opacity layer).
+                          Transform.scale(
                             scale: 0.5 + 0.5 * faceScale,
-                            child: MoodFace(level: mood, size: 36),
+                            child: MoodFace(
+                              level: mood,
+                              size: 36,
+                              color: moodColor.withValues(alpha: faceOpacity),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          countText,
-                          key: const ValueKey('weekly-reveal-count'),
-                          style: reviewMonoStyle(context, fontSize: 13),
-                        ),
-                      ],
+                          const SizedBox(height: 2),
+                          Text(
+                            countText,
+                            key: const ValueKey('weekly-reveal-count'),
+                            style: reviewMonoStyle(context, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  for (var i = 0; i < sparkles; i++)
-                    _Sparkle(
-                      key: ValueKey('weekly-sparkle-$i'),
-                      index: i,
-                      progress: sparkle,
-                      color: moodColor,
-                    ),
-                ],
+                    for (var i = 0; i < sparkles; i++)
+                      _Sparkle(
+                        key: ValueKey('weekly-sparkle-$i'),
+                        index: i,
+                        progress: sparkle,
+                        color: moodColor,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
+      ),
+    );
+    final text = Column(
+      crossAxisAlignment: stacked
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (stacked) const SizedBox(height: AppSpacing.sm),
         _Step(
           key: const ValueKey('weekly-step-mood'),
           progress: step(WeeklyRevealTimeline.moodWord),
-          child: Text(
-            '${reviewMoodLabel(mood)} week',
-            textAlign: TextAlign.center,
-            style: textTheme.titleLarge?.copyWith(
-              color: moodColor,
-              fontWeight: FontWeight.w700,
+          child: AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 200),
+            layoutBuilder: (current, previous) => Stack(
+              alignment: blockAlignment,
+              children: [...previous, ?current],
+            ),
+            child: Text(
+              '${reviewMoodLabel(mood)} week',
+              key: ValueKey('weekly-tier-$mood'),
+              textAlign: textAlign,
+              style: textTheme.titleLarge?.copyWith(
+                color: moodColor,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -298,7 +390,7 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
           progress: step(WeeklyRevealTimeline.message),
           child: Text(
             weeklyMoodMessage(mood),
-            textAlign: TextAlign.center,
+            textAlign: textAlign,
             style: textTheme.bodyMedium,
           ),
         ),
@@ -309,7 +401,7 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
             progress: step(WeeklyRevealTimeline.delta),
             child: Text(
               widget.deltaText!,
-              textAlign: TextAlign.center,
+              textAlign: textAlign,
               style: textTheme.bodySmall?.copyWith(color: tokens.textMuted),
             ),
           ),
@@ -317,7 +409,7 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
         if (widget.highlights.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
           Wrap(
-            alignment: WrapAlignment.center,
+            alignment: wrapAlignment,
             spacing: 6,
             runSpacing: 6,
             children: [
@@ -334,9 +426,10 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: tokens.surface,
-                      border: Border.all(color: tokens.outline),
-                      borderRadius: BorderRadius.circular(6),
+                      color: WeeklyStyle.inset(context),
+                      borderRadius: BorderRadius.circular(
+                        WeeklyStyle.pillRadius,
+                      ),
                     ),
                     child: Text(
                       widget.highlights[i],
@@ -352,12 +445,13 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
           _Step(
             key: const ValueKey('weekly-step-signoff'),
             progress: step(WeeklyRevealTimeline.signOff),
-            child: Center(
+            child: Align(
+              alignment: blockAlignment,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 280),
                 child: Text(
                   '“$feeling”',
-                  textAlign: TextAlign.center,
+                  textAlign: textAlign,
                   style: textTheme.bodySmall?.copyWith(
                     color: tokens.textMuted,
                     fontStyle: FontStyle.italic,
@@ -367,17 +461,50 @@ class _WeeklyRevealCardState extends State<WeeklyRevealCard>
             ),
           ),
         ],
-        const SizedBox(height: AppSpacing.md),
-        WeeklyDotsRow(
-          dots: widget.dots,
-          currentFill: dotFill,
-          reviewedCount: weeklyReviewedDotCount(
-            widget.dots,
-            currentSaved: t * total >= WeeklyRevealTimeline.dot,
-          ),
-        ),
       ],
     );
+    final dots = WeeklyDotsRow(
+      dots: widget.dots,
+      currentFill: dotFill,
+      reviewedCount: weeklyReviewedDotCount(
+        widget.dots,
+        currentSaved: t * total >= WeeklyRevealTimeline.dot,
+      ),
+      alignment: stacked ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+    );
+
+    switch (layout) {
+      case _RevealLayout.stacked:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ringWidget,
+            text,
+            const SizedBox(height: AppSpacing.md),
+            dots,
+          ],
+        );
+      case _RevealLayout.compact:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ringWidget,
+                const SizedBox(width: AppSpacing.lg),
+                Expanded(child: text),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            // Same left axis as the ring (which has its own padding).
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              child: dots,
+            ),
+          ],
+        );
+    }
   }
 }
 
@@ -584,7 +711,11 @@ class WeeklyDotsRow extends StatelessWidget {
     required this.dots,
     required this.currentFill,
     required this.reviewedCount,
+    this.alignment = CrossAxisAlignment.center,
   });
+
+  /// Where the dots and their caption sit; centred unless a layout asks.
+  final CrossAxisAlignment alignment;
 
   final List<WeeklyDot> dots;
 
@@ -634,13 +765,10 @@ class WeeklyDotsRow extends StatelessWidget {
                   ),
                 ),
               if (currentFill > 0)
-                Opacity(
-                  opacity: currentFill,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: accent,
-                    ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent.withValues(alpha: currentFill),
                   ),
                 ),
             ],
@@ -649,6 +777,7 @@ class WeeklyDotsRow extends StatelessWidget {
     }
 
     return Column(
+      crossAxisAlignment: alignment,
       children: [
         ExcludeSemantics(
           child: Row(
@@ -670,8 +799,7 @@ class WeeklyDotsRow extends StatelessWidget {
         Text(
           weeksReviewedLabel(reviewedCount),
           key: const ValueKey('weekly-dots-text'),
-          style: Theme.of(context).textTheme.bodySmall
-              ?.copyWith(color: tokens.textMuted),
+          style: weeklyCaptionStyle(context),
         ),
       ],
     );

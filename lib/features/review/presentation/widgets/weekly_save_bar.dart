@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -25,6 +26,12 @@ class WeeklySaveBar extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onSave;
   final bool showShortcutHint;
+
+  /// Phones and tablets have no hardware keyboard shortcut to advertise.
+  static bool get _touchOnly =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS ||
+      defaultTargetPlatform == TargetPlatform.fuchsia;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +69,7 @@ class WeeklySaveBar extends StatelessWidget {
                       enabled: draft.hydrated,
                       focusNode: focusNode,
                       onPressed: onSave,
+                      crossFadeLabel: true,
                     ),
                     if (draft.differsFromSaved)
                       Semantics(
@@ -70,8 +78,8 @@ class WeeklySaveBar extends StatelessWidget {
                         container: true,
                         child: const ReviewUnsavedPill(),
                       ),
-                    if (showShortcutHint)
-                      Text('Ctrl + Enter', style: reviewMonoStyle(context)),
+                    if (showShortcutHint && !_touchOnly)
+                      Text('Ctrl + Enter', style: weeklyCaptionStyle(context)),
                   ],
                 ),
               ),

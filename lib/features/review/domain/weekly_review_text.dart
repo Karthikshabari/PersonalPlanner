@@ -16,16 +16,6 @@ String? normalizeWeeklyFeeling(String? raw) {
   return String.fromCharCodes(runes.take(maxWeeklyFeelingLength)).trimRight();
 }
 
-/// Words offered under "How did the week feel?".
-const List<String> weeklyFeelingWords = [
-  'Focused',
-  'Calm',
-  'Energised',
-  'Busy',
-  'Tired',
-  'Proud',
-];
-
 /// The feeling text after tapping [word], or null when the tap is ignored
 /// because the result would exceed [maxWeeklyFeelingLength] (spec 3.6).
 ///
