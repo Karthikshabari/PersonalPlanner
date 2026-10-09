@@ -131,6 +131,15 @@ final weeklyReviewHistoryProvider = FutureProvider.autoDispose
           .load(startOfWeek(weekStart));
     });
 
+/// Overview › Weekly: the last [weekCount] weeks ending with this week,
+/// newest first. A one-off read, invalidated after every weekly save.
+final reviewOverviewWeekWindowProvider = FutureProvider.autoDispose
+    .family<List<WeeklyHistoryWeek>, int>((ref, weekCount) {
+      return ref
+          .watch(weeklyReviewHistoryServiceProvider)
+          .window(today: DateTime.now(), weekCount: weekCount);
+    });
+
 final weeklyReviewServiceProvider = Provider<WeeklyReviewService>((ref) {
   return WeeklyReviewService(ref.watch(appDatabaseProvider));
 });

@@ -78,4 +78,15 @@ class WeeklyReviewHistoryService {
         }(),
     ];
   }
+
+  /// The Overview window: [weekCount] weeks ending with the week of [today],
+  /// newest first (index 0 is this week).
+  Future<List<WeeklyHistoryWeek>> window({
+    required DateTime today,
+    required int weekCount,
+  }) async {
+    final next = addDays(startOfWeek(today), 7);
+    final weeks = await load(next, weekCount: weekCount);
+    return weeks.reversed.toList(growable: false);
+  }
 }

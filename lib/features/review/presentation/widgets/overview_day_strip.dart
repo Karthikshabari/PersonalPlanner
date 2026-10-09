@@ -206,12 +206,12 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
           child: Stack(
             children: [
               list,
-              _EdgeFade(
+              ReviewStripEdgeFade(
                 key: const ValueKey('overview-fade-older'),
                 alignment: Alignment.centerLeft,
                 visible: _canScrollOlder,
               ),
-              _EdgeFade(
+              ReviewStripEdgeFade(
                 key: const ValueKey('overview-fade-newer'),
                 alignment: Alignment.centerRight,
                 visible: _canScrollNewer,
@@ -222,7 +222,7 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
         if (!showArrows) return strip;
         return Row(
           children: [
-            _ArrowButton(
+            ReviewStripArrowButton(
               key: const ValueKey('overview-older'),
               icon: Icons.chevron_left_rounded,
               tooltip: 'Earlier days',
@@ -231,7 +231,7 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
             const SizedBox(width: AppSpacing.sm),
             Expanded(child: strip),
             const SizedBox(width: AppSpacing.sm),
-            _ArrowButton(
+            ReviewStripArrowButton(
               key: const ValueKey('overview-newer'),
               icon: Icons.chevron_right_rounded,
               tooltip: 'Later days',
@@ -294,8 +294,12 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
 /// Gradient from the surface colour to transparent over the first pixels of a
 /// scrolling edge. It uses the surface token, so it follows light and dark
 /// themes, ignores pointers, and cross-fades only when animations are on.
-class _EdgeFade extends StatelessWidget {
-  const _EdgeFade({super.key, required this.alignment, required this.visible});
+class ReviewStripEdgeFade extends StatelessWidget {
+  const ReviewStripEdgeFade({
+    super.key,
+    required this.alignment,
+    required this.visible,
+  });
 
   static const double width = 28;
 
@@ -333,8 +337,8 @@ class _EdgeFade extends StatelessWidget {
   }
 }
 
-class _ArrowButton extends StatelessWidget {
-  const _ArrowButton({
+class ReviewStripArrowButton extends StatelessWidget {
+  const ReviewStripArrowButton({
     super.key,
     required this.icon,
     required this.tooltip,

@@ -130,7 +130,7 @@ void main() {
     },
   );
 
-  testWidgets('weekly sub-tab shows only the placeholder', (tester) async {
+  testWidgets('weekly sub-tab shows the week strip', (tester) async {
     final container = await pumpAt(tester, '/review/overview');
 
     await tester.tap(
@@ -143,8 +143,9 @@ void main() {
 
     expect(
       find.text('Weekly overview comes in the weekly round.'),
-      findsOneWidget,
+      findsNothing,
     );
+    expect(find.byKey(const ValueKey('overview-week-strip')), findsOneWidget);
     expect(strip, findsNothing);
     await drainDisposedStreams(tester);
     await finish(tester, container);

@@ -11,10 +11,14 @@ import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../providers/review_providers.dart';
 import '../widgets/overview_day_strip.dart';
+import '../widgets/overview_week_strip.dart';
 import '../widgets/review_mode_switcher.dart';
 
 class ReviewOverviewScreen extends ConsumerStatefulWidget {
-  const ReviewOverviewScreen({super.key});
+  const ReviewOverviewScreen({super.key, this.initialWeekly = false});
+
+  /// Opens with the Weekly sub-tab selected (`/review/overview?tab=weekly`).
+  final bool initialWeekly;
 
   @override
   ConsumerState<ReviewOverviewScreen> createState() =>
@@ -22,7 +26,15 @@ class ReviewOverviewScreen extends ConsumerStatefulWidget {
 }
 
 class _ReviewOverviewScreenState extends ConsumerState<ReviewOverviewScreen> {
-  bool _weekly = false;
+  late bool _weekly = widget.initialWeekly;
+
+  @override
+  void didUpdateWidget(ReviewOverviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialWeekly != widget.initialWeekly) {
+      _weekly = widget.initialWeekly;
+    }
+  }
 
   void _onMode(String mode) {
     if (mode == 'daily') {
@@ -44,7 +56,6 @@ class _ReviewOverviewScreenState extends ConsumerState<ReviewOverviewScreen> {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Overview'),
@@ -99,22 +110,7 @@ class _ReviewOverviewScreenState extends ConsumerState<ReviewOverviewScreen> {
                             ),
                             const SizedBox(height: AppSpacing.md),
                             if (_weekly)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 26,
-                                  horizontal: 8,
-                                ),
-                                child: Text(
-                                  'Weekly overview comes in the weekly round.',
-                                  key: const ValueKey(
-                                    'overview-weekly-placeholder',
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: tokens.textMuted,
-                                  ),
-                                ),
-                              )
+                              const OverviewWeekStrip()
                             else
                               const OverviewDayStrip(),
                           ],

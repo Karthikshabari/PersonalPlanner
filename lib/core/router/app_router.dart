@@ -54,7 +54,9 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/review/overview',
-          builder: (context, state) => const ReviewOverviewScreen(),
+          builder: (context, state) => ReviewOverviewScreen(
+            initialWeekly: state.uri.queryParameters['tab'] == 'weekly',
+          ),
         ),
         GoRoute(
           path: '/review',

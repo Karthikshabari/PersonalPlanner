@@ -165,6 +165,38 @@ void main() {
     await finish(tester, container);
   });
 
+  for (final (name, surface) in [
+    ('360 dp', const Size(360, 800)),
+    ('760 dp (two columns)', const Size(760, 900)),
+  ]) {
+    testWidgets('weekly tab has no overflow at $name and text scale 1.3', (
+      tester,
+    ) async {
+      final container = await pumpAt(
+        tester,
+        '/review/weekly',
+        surface,
+        textScale: 1.3,
+      );
+      expect(find.text('Week at a glance'), findsOneWidget);
+      await scrollThrough(tester);
+
+      // Back to the top, where the sub-tabs are.
+      await tester.drag(find.byType(ListView).first, const Offset(0, 4000));
+      await tester.pump(const Duration(milliseconds: 400));
+      // The wide test font makes this tab wider than the phone; tap its start.
+      await tester.tapAt(
+        tester.getTopLeft(find.text('Next week (optional)')) +
+            const Offset(8, 8),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tester.takeException(), isNull);
+      expect(find.text('A note for next week'), findsOneWidget);
+      await drainDisposedStreams(tester);
+      await finish(tester, container);
+    });
+  }
+
   testWidgets('mood options expose radio semantics and are at least 44x44', (
     tester,
   ) async {

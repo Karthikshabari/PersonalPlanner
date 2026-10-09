@@ -72,7 +72,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
 
   void _onMode(String mode, DateTime weekStart) {
     if (mode == 'overview') {
-      openReviewPath(context, '/review/overview');
+      openReviewPath(context, '/review/overview?tab=weekly');
       return;
     }
     if (mode != 'daily') return;
@@ -399,6 +399,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       return;
     }
     ref.invalidate(weeklyReviewHistoryProvider);
+    ref.invalidate(reviewOverviewWeekWindowProvider);
     if (defaultTargetPlatform == TargetPlatform.android) {
       HapticFeedback.lightImpact();
     }
@@ -410,7 +411,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
       'Review saved',
       actionLabel: 'See in Overview',
       onAction: () {
-        if (mounted) openReviewPath(context, '/review/overview');
+        if (mounted) openReviewPath(context, '/review/overview?tab=weekly');
       },
       liftBy: 72,
     );
