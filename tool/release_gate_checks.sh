@@ -28,6 +28,7 @@ CANONICAL_MIGRATIONS=(
   20261004000100_sync_history_compaction
   20261007000000_review_outcomes
   20261008000000_weekly_review_mood_feeling
+  20261009000000_experiments
 )
 
 # Secret shapes that must never be committed: Supabase secret/service-role

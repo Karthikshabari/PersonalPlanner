@@ -328,7 +328,7 @@ staging_checks() {
     [[ "$alpha_create_code" == 200 ]] && \
       jq -e '\''.status == "applied"'\'' "$temp_dir/alpha-create.json" >/dev/null
 
-    for table in tasks categories subtasks tags task_tags recurring_rules task_templates daily_reviews weekly_reviews timer_sessions day_contexts; do
+    for table in tasks categories subtasks tags task_tags recurring_rules task_templates daily_reviews weekly_reviews timer_sessions day_contexts experiments experiment_check_ins; do
       select_columns="$(staging_select_columns "$table")"
       code="$(request "$temp_dir/beta-${table}.json" \
         "$base/rest/v1/$table?user_id=eq.$alpha_id&select=${select_columns}&limit=1" \

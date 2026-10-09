@@ -16,6 +16,7 @@ import dbAuditServerHardening from "../../supabase/migrations/20261004000000_db_
 import syncHistoryCompaction from "../../supabase/migrations/20261004000100_sync_history_compaction.sql";
 import reviewOutcomes from "../../supabase/migrations/20261007000000_review_outcomes.sql";
 import weeklyReviewMoodFeeling from "../../supabase/migrations/20261008000000_weekly_review_mood_feeling.sql";
+import experiments from "../../supabase/migrations/20261009000000_experiments.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -69,6 +70,11 @@ export const MIGRATIONS = [
     query: weeklyReviewMoodFeeling,
     sha256: "8e4d7f374cd4960afb815e1bb593e5d7bef18c7701ddd86244369bc4696d767d",
   },
+  {
+    name: "20261009000000_experiments",
+    query: experiments,
+    sha256: "98c84b8bf0dce82e24709b4c970284b2aed404facdb7a67059a5a74d1a14d2a9",
+  },
 ] as const;
 
 /** Inspect the canonical static capability body without invoking the RPC. */
@@ -85,6 +91,7 @@ with expected_tables(table_name) as (
     ('categories'), ('tags'), ('recurring_rules'), ('tasks'),
     ('task_templates'), ('subtasks'), ('task_tags'), ('daily_reviews'),
     ('weekly_reviews'), ('timer_sessions'), ('day_contexts'),
+    ('experiments'), ('experiment_check_ins'),
     ('planner_v8_migration_recovery')
 ), expected_functions(function_name, argument_types) as (
   values
@@ -118,7 +125,7 @@ with expected_tables(table_name) as (
     'planner_title_history_conflict_payload',
     'apply_sync_operation', 'apply_sync_operation_v1_prebaseline_base',
     'apply_sync_operation_v2', 'apply_sync_operation_v2_prebaseline_base',
-    'apply_sync_operation_v3'
+    'apply_sync_operation_v3', 'planner_apply_sync_operation_internal'
   )
   and (
     (proname = 'planner_title_history_conflict_payload'
@@ -129,6 +136,8 @@ with expected_tables(table_name) as (
       and argument_types = array['uuid','text','text','text','int8','jsonb','int4'])
     or (proname = 'apply_sync_operation_v3'
       and argument_types = array['uuid','text','text','text','int8','jsonb','int4','uuid'])
+    or (proname = 'planner_apply_sync_operation_internal'
+      and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4'])
   )
 ), planner_tables as (
   select e.table_name, c.oid, c.relrowsecurity
@@ -137,8 +146,8 @@ with expected_tables(table_name) as (
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
 )
 select
-  (select pg_catalog.count(*) = 16 from planner_tables) as required_tables_exist,
-  coalesce((select pg_catalog.count(*) = 16 and pg_catalog.bool_and(relrowsecurity) from planner_tables), false) as rls_enabled,
+  (select pg_catalog.count(*) = 18 from planner_tables) as required_tables_exist,
+  coalesce((select pg_catalog.count(*) = 18 and pg_catalog.bool_and(relrowsecurity) from planner_tables), false) as rls_enabled,
   (select pg_catalog.count(*) = 10 from expected_functions e
     join planner_functions p on p.proname = e.function_name and p.argument_types = e.argument_types) as required_rpcs_exist,
   coalesce((select pg_catalog.has_function_privilege('authenticated', oid, 'EXECUTE')
@@ -237,6 +246,20 @@ select
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
     where t.tgname = 'planner_preserve_weekly_review_fields' and not t.tgisinternal
   ) as weekly_review_mood_present,
+  exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'tag_id' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_constraint k
+    join pg_catalog.pg_class c on c.oid = k.conrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where k.conname = 'tasks_tag_fk'
+  ) and coalesce((select pg_catalog.strpos(definition, 'experiment_check_ins') > 0
+      and pg_catalog.strpos(definition, 'planner_apply_sync_operation_internal_pre_experiments') > 0
+    from function_definitions where proname = 'planner_apply_sync_operation_internal'
+      and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4']), false) as experiments_present,
   not exists (
     select 1
     from pg_catalog.pg_constraint fk
@@ -249,16 +272,16 @@ select
       and parent_ns.nspname = 'public'
       and child.relname in (
         'recurring_rules', 'tasks', 'task_templates', 'subtasks',
-        'task_tags', 'timer_sessions'
+        'task_tags', 'timer_sessions', 'experiments', 'experiment_check_ins'
       )
       and pg_catalog.array_length(fk.conkey, 1) <> 2
   ) as relationships_owner_scoped,
-  (select pg_catalog.count(*) = 16 and coalesce(pg_catalog.bool_and(
+  (select pg_catalog.count(*) = 18 and coalesce(pg_catalog.bool_and(
     not pg_catalog.has_table_privilege('authenticated', oid, 'INSERT')
     and not pg_catalog.has_table_privilege('authenticated', oid, 'UPDATE')
     and not pg_catalog.has_table_privilege('authenticated', oid, 'DELETE')
   ), false) from planner_tables) as direct_authenticated_writes_revoked,
-  (select pg_catalog.count(*) = 16 and coalesce(pg_catalog.bool_and(
+  (select pg_catalog.count(*) = 18 and coalesce(pg_catalog.bool_and(
     not pg_catalog.has_table_privilege('anon', oid, 'SELECT')
     and not pg_catalog.has_table_privilege('anon', oid, 'INSERT')
     and not pg_catalog.has_table_privilege('anon', oid, 'UPDATE')
@@ -270,7 +293,8 @@ select
     from planner_functions
     where proname in ('apply_sync_operation_v1_unsafe','apply_sync_operation_v1_hardened',
       'apply_sync_operation_v1_prebaseline_base','apply_sync_operation_v2_prebaseline_base',
-      'planner_apply_sync_operation_internal','planner_recompute_task_actual',
+      'planner_apply_sync_operation_internal',
+      'planner_apply_sync_operation_internal_pre_experiments','planner_recompute_task_actual',
       'planner_validate_timer_payload','planner_validate_plan_title_history',
       'planner_normalize_task_title_history','planner_account_has_history')), false)
     as security_definer_helpers_private,
