@@ -398,6 +398,57 @@ void main() {
 
     await _teardown(tester, harness);
   });
+
+  testWidgets(
+    'Reset cloud setup is in the Sync menu while Personal Planner runs locally',
+    (tester) async {
+      final harness = await _pump(
+        tester,
+        backend: const LocalOnlyRuntimeBackend(),
+        profileStore: profileStore,
+        capabilities: capabilities,
+        api: api,
+        signedIn: false,
+        profileHealth: BackendProfileHealth.corrupt,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sync-overflow-menu')));
+      await tester.pumpAndSettle();
+      expect(find.text('Reset cloud setup'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('sync-menu-reset-cloud-setup')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('cloud-reset-dialog')), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('cloud-reset-confirm')));
+      await settle(tester);
+
+      expect(api.calls, contains('resetSetup'));
+
+      await _teardown(tester, harness);
+    },
+  );
+
+  testWidgets(
+    'the Sync menu offers no reset while a provisioned backend is connected',
+    (tester) async {
+      final harness = await _pump(
+        tester,
+        backend: testProvisionedBackend(),
+        profileStore: profileStore,
+        capabilities: capabilities,
+        api: api,
+        signedIn: true,
+        initialSyncPhase: InitialSyncPhase.retryable,
+      );
+
+      expect(find.byKey(const ValueKey('sync-overflow-menu')), findsNothing);
+
+      await _teardown(tester, harness);
+    },
+  );
 }
 
 BackendConnectionProfile _readyProfile({bool disconnected = false}) =>

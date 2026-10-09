@@ -1691,6 +1691,50 @@ void main() {
     );
   });
 
+  group('reset cloud setup', () {
+    test('reset returns to the first step, forgets the attempt and stops '
+        'polling', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.migrateResult = testInProgress(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+      await controller().startWatching();
+      await waitFor(() => api.calls.contains('migrate'));
+
+      await controller().resetSetup();
+
+      expect(current().phase, ProvisioningUiPhase.localOnly);
+      expect(current().resetCompleted, isTrue);
+      expect(api.calls, contains('resetSetup'));
+      final callsAfterReset = api.calls.length;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(api.calls.length, callsAfterReset);
+    });
+
+    test('a failed reset changes nothing and says so', () async {
+      api.attempt = testAttempt(ProvisioningState.expired);
+      api.resetResult = ProvisioningResetOutcome.failed;
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().resetSetup();
+
+      expect(current().phase, ProvisioningUiPhase.restartRequired);
+      expect(current().message, cloudSetupResetFailedMessage);
+      expect(current().resetCompleted, isFalse);
+    });
+  });
+
   group('Supabase access lifecycle', () {
     void readyAttempt() {
       api.attempt = testAttempt(

@@ -80,7 +80,8 @@ enum BackendProfileHealth {
     ConnectionProfileStoreFailure.unsupportedVersion =>
       BackendProfileHealth.unsupportedVersion,
     ConnectionProfileStoreFailure.tooLarge => BackendProfileHealth.tooLarge,
-    ConnectionProfileStoreFailure.writeFailed => BackendProfileHealth.writeFailed,
+    ConnectionProfileStoreFailure.writeFailed =>
+      BackendProfileHealth.writeFailed,
   };
 }
 
@@ -267,6 +268,40 @@ class ConnectionProfileStore {
       );
     }
     return profile;
+  }
+
+  /// Sets the stored profile aside so the next [read] reports no profile.
+  ///
+  /// Used only by an explicit "Start over". The file is renamed, never deleted,
+  /// so a mistaken reset can be undone by hand. Returns false when no profile
+  /// is stored. Planner databases in the same folder are never touched.
+  Future<bool> discard() async {
+    final target = await _profileFile();
+    if (!await _exists(target)) return false;
+
+    final now = DateTime.now().toUtc();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final stamp =
+        '${now.year.toString().padLeft(4, '0')}${two(now.month)}${two(now.day)}'
+        'T${two(now.hour)}${two(now.minute)}${two(now.second)}Z';
+    try {
+      await target.rename('${target.path}.discarded-$stamp');
+    } on FileSystemException {
+      throw const ConnectionProfileStoreException(
+        ConnectionProfileStoreFailure.writeFailed,
+        'The cloud setup file could not be set aside.',
+      );
+    }
+
+    final temporary = File(
+      '${target.path}$plannerBackendProfileTemporarySuffix',
+    );
+    try {
+      if (await temporary.exists()) await temporary.delete();
+    } on FileSystemException {
+      // Best effort: a leftover temporary file is never read.
+    }
+    return true;
   }
 
   /// Returns the stored profile for the generation check in [save].

@@ -19,7 +19,6 @@ Future<void> _pumpCard(
   required ProvisioningApi? api,
   required FakeBrowserLauncher launcher,
   FakeProjectProbe? probe,
-  Future<void> Function()? onUseOfflineOnly,
   Future<void> Function()? onStopUsingCloud,
   Duration pollInterval = const Duration(hours: 1),
   Duration? reachabilityRetryDelay,
@@ -45,7 +44,6 @@ Future<void> _pumpCard(
         home: Scaffold(
           body: SingleChildScrollView(
             child: CloudSetupCard(
-              onUseOfflineOnly: onUseOfflineOnly,
               // The production screen always supplies this lifecycle action;
               // the default keeps the advanced section's real control present.
               onStopUsingCloud: onStopUsingCloud ?? () async {},
@@ -1642,13 +1640,7 @@ void main() {
         'https://api.supabase.com/v1/oauth/authorize?client_id=client',
       ),
     );
-    var usedOffline = false;
-    await _pumpCard(
-      tester,
-      api: api,
-      launcher: launcher,
-      onUseOfflineOnly: () async => usedOffline = true,
-    );
+    await _pumpCard(tester, api: api, launcher: launcher);
 
     await _openAdvancedAccess(tester);
     await tester.tap(find.byKey(const ValueKey('cloud-reauthorize-action')));
@@ -1684,10 +1676,82 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey('cloud-use-offline-only-action')),
     );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('cloud-reset-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('cloud-reset-confirm')));
     await _settle(tester);
-    expect(usedOffline, isTrue);
+    expect(api.calls, contains('resetSetup'));
 
     await _unmount(tester);
+  });
+
+  testWidgets('Cancel setup asks first and keeping the setup changes nothing', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.expired);
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-cancel-setup')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('cloud-reset-dialog')), findsOneWidget);
+    expect(find.text(cloudSetupResetDialogTitle), findsOneWidget);
+    expect(find.text(cloudSetupResetDialogBody), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-reset-cancel')));
+    await _settle(tester);
+
+    expect(api.calls, isNot(contains('resetSetup')));
+    expect(find.text('Setup session ended'), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('Cancel setup and Start over return to the first step', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.expired);
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-cancel-setup')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-reset-confirm')));
+    await _settle(tester);
+
+    expect(api.calls, contains('resetSetup'));
+    expect(find.text('Set up cloud storage'), findsOneWidget);
+    expect(find.text(cloudSetupResetDoneMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('every unfinished setup card offers Cancel setup', (
+    tester,
+  ) async {
+    for (final state in <ProvisioningState>[
+      ProvisioningState.authorizationPending,
+      ProvisioningState.organizationSelected,
+      ProvisioningState.projectWaiting,
+      ProvisioningState.expired,
+      ProvisioningState.terminalError,
+    ]) {
+      final stateApi = FakeProvisioningApi()
+        ..attempt = testAttempt(
+          state,
+          projectRef: state == ProvisioningState.projectWaiting
+              ? testProjectRef
+              : null,
+        );
+      await _pumpCard(tester, api: stateApi, launcher: launcher);
+
+      expect(
+        find.byKey(const ValueKey('cloud-cancel-setup')),
+        findsOneWidget,
+        reason: state.name,
+      );
+
+      await _unmount(tester);
+    }
   });
 
   testWidgets('saved missing project opens recovery and setup needs a choice', (

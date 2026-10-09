@@ -80,6 +80,9 @@ class FakeProvisioningApi implements ProvisioningApi {
       <({String slug, String projectName})>[];
   int startAttemptCount = 0;
 
+  /// Scripted result of clearing the cloud setup.
+  ProvisioningResetOutcome resetResult = ProvisioningResetOutcome.cleared;
+
   ProvisioningResult startResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.inProgress,
   );
@@ -146,6 +149,13 @@ class FakeProvisioningApi implements ProvisioningApi {
   Future<ProvisioningAttempt?> loadAttempt() async {
     calls.add('loadAttempt');
     return attempt;
+  }
+
+  @override
+  Future<ProvisioningResetOutcome> resetSetup() async {
+    calls.add('resetSetup');
+    if (resetResult != ProvisioningResetOutcome.failed) attempt = null;
+    return resetResult;
   }
 
   @override

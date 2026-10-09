@@ -11,6 +11,7 @@ import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
 import 'cloud_setup_preflight.dart';
+import 'cloud_setup_reset_dialog.dart';
 import 'sync_action_group.dart';
 
 /// Settings → Sync card for the user-owned Supabase setup flow.
@@ -18,20 +19,11 @@ import 'sync_action_group.dart';
 /// Presentation only: it drives [ProvisioningUiController] and never talks to
 /// the Worker, secure storage or the Durable Object directly.
 class CloudSetupCard extends ConsumerStatefulWidget {
-  const CloudSetupCard({
-    super.key,
-    this.onUseOfflineOnly,
-    this.onStopUsingCloud,
-  });
-
-  /// Lets the user stop using the (now missing) cloud backend from the
-  /// recovery card. The Settings screen owns that lifecycle action, so it is
-  /// injected rather than duplicated here.
-  final Future<void> Function()? onUseOfflineOnly;
+  const CloudSetupCard({super.key, this.onStopUsingCloud});
 
   /// Lets the user stop using a healthy cloud backend on this device from the
-  /// Advanced section. Same injected lifecycle action as [onUseOfflineOnly];
-  /// nothing about the underlying behaviour changes here.
+  /// Advanced section. The Settings screen owns that lifecycle action, so it
+  /// is injected rather than duplicated here.
   final Future<void> Function()? onStopUsingCloud;
 
   @override
@@ -161,6 +153,20 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     await controller.startSetup();
   }
 
+  /// Confirms, then clears the cloud setup on this device.
+  Future<void> _confirmReset(ProvisioningUiController controller) async {
+    final confirmed = await showCloudSetupResetDialog(context);
+    if (!confirmed || !mounted) return;
+    await controller.resetSetup();
+  }
+
+  Widget _cancelSetupButton(ProvisioningUiController controller, bool busy) =>
+      TextButton(
+        key: const ValueKey('cloud-cancel-setup'),
+        onPressed: busy ? null : () => unawaited(_confirmReset(controller)),
+        child: const Text(cloudSetupCancelSetupLabel),
+      );
+
   @override
   Widget build(BuildContext context) {
     ref.listen(provisioningUiProvider, (previous, next) {
@@ -250,6 +256,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           title: cloudStorageTitle,
           body: cloudSetupLocalOnlyBody,
           busy: busy,
+          confirmation: state.resetCompleted
+              ? cloudSetupResetDoneMessage
+              : null,
           actions: <Widget>[
             FilledButton(
               key: const ValueKey('cloud-enable-action'),
@@ -287,6 +296,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.startAgain,
               child: const Text('Start setup again'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -338,6 +348,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                   : controller.continueSetup,
               child: const Text('Continue'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -356,6 +367,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.createProject,
               child: const Text('Create project'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -373,6 +385,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.retry,
               child: const Text('Reauthorize Supabase'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -427,6 +440,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 candidates.length == 1 ? 'Use this project' : 'Continue',
               ),
             ),
+            if (!state.legacyRecovery) _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -448,6 +462,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.advance,
               child: const Text('Refresh status'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -499,6 +514,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
                 onPressed: busy ? null : controller.openAuthorizationPage,
                 child: const Text('Open authorization page'),
               ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -514,6 +530,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.startAgain,
               child: const Text('Start Setup Again'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -529,6 +546,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               onPressed: busy ? null : controller.startAgain,
               child: const Text('Start Again'),
             ),
+            _cancelSetupButton(controller, busy),
           ],
         );
 
@@ -620,7 +638,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             ),
             OutlinedButton(
               key: const ValueKey('cloud-use-offline-only-action'),
-              onPressed: busy ? null : widget.onUseOfflineOnly,
+              onPressed: busy
+                  ? null
+                  : () => unawaited(_confirmReset(controller)),
               child: const Text('Use offline-only mode'),
             ),
           ],

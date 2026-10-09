@@ -350,4 +350,52 @@ void main() {
       expect(await store.read(), equals(replacement));
     },
   );
+
+  group('discard', () {
+    test(
+      'discard sets the profile aside and a later read reports no profile',
+      () async {
+        await store.save(
+          BackendConnectionProfile.localOnly(
+            profileId: 'profile-1',
+            createdAt: DateTime.utc(2026, 9, 16),
+          ),
+        );
+
+        final discarded = await store.discard();
+
+        expect(discarded, isTrue);
+        expect(file.existsSync(), isFalse);
+        expect(await store.read(), isNull);
+        final setAside = directory
+            .listSync()
+            .where(
+              (entry) => p
+                  .basename(entry.path)
+                  .startsWith('$plannerBackendProfileFileName.discarded-'),
+            )
+            .toList();
+        expect(setAside, hasLength(1));
+      },
+    );
+
+    test(
+      'discard without a profile returns false and changes nothing',
+      () async {
+        final discarded = await store.discard();
+
+        expect(discarded, isFalse);
+        expect(directory.listSync(), isEmpty);
+      },
+    );
+
+    test('discard sets aside a corrupt document', () async {
+      file.writeAsStringSync('not json');
+
+      final discarded = await store.discard();
+
+      expect(discarded, isTrue);
+      expect(await store.read(), isNull);
+    });
+  });
 }

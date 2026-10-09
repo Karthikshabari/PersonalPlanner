@@ -29,6 +29,7 @@ import '../../providers/sync_settings_provider.dart';
 import '../../domain/sync_models.dart';
 import '../widgets/cloud_setup_preflight.dart';
 import '../widgets/cloud_setup_card.dart';
+import '../widgets/cloud_setup_reset_dialog.dart';
 import '../widgets/password_requirements.dart';
 import '../widgets/sync_action_group.dart';
 import '../widgets/sync_status_card.dart';
@@ -85,7 +86,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Sync'),
-          actions: const [SyncStatusAction()],
+          actions: const [SyncStatusAction(), _SyncOverflowMenu()],
         ),
         body: ErrorPanel(
           message: friendlyErrorMessage(
@@ -115,7 +116,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Sync'),
-          actions: const [SyncStatusAction()],
+          actions: const [SyncStatusAction(), _SyncOverflowMenu()],
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -182,7 +183,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       backgroundColor: tokens.canvas,
       appBar: AppBar(
         title: const Text('Sync'),
-        actions: const [SyncStatusAction()],
+        actions: const [SyncStatusAction(), _SyncOverflowMenu()],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) => ListView(
@@ -203,7 +204,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             // compile-time developer config: the legacy path below is
             // unchanged.
             if (backend is LocalOnlyRuntimeBackend) ...[
-              CloudSetupCard(onUseOfflineOnly: _disconnect),
+              const CloudSetupCard(),
               const SizedBox(height: 12),
               const _CloudProfileHealthCard(),
               const Card(
@@ -217,10 +218,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 ),
               ),
             ] else if (backend is ProvisionedRuntimeBackend) ...[
-              CloudSetupCard(
-                onUseOfflineOnly: _disconnect,
-                onStopUsingCloud: _disconnect,
-              ),
+              CloudSetupCard(onStopUsingCloud: _disconnect),
               const SizedBox(height: 12),
               if (session == null)
                 const _AuthForm()
@@ -248,8 +246,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     onRepair: _repairPendingInitialSyncOperation,
                     onDisconnect: _disconnect,
                   ),
-                if (initialSync?.baselineComplete ?? false)
-                  ...syncStateCards(),
+                if (initialSync?.baselineComplete ?? false) ...syncStateCards(),
               ],
             ] else if (session == null)
               _AuthForm()
@@ -769,7 +766,38 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       if (mounted) setState(() => _busy = false);
     }
   }
+}
 
+/// Sync screen menu. "Reset cloud setup" is offered whenever Personal Planner
+/// runs locally, so a stuck or broken setup can always start over.
+class _SyncOverflowMenu extends ConsumerWidget {
+  const _SyncOverflowMenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(runtimeBackendProvider) is! LocalOnlyRuntimeBackend ||
+        ref.watch(provisioningApiProvider) == null) {
+      return const SizedBox.shrink();
+    }
+    return PopupMenuButton<String>(
+      key: const ValueKey('sync-overflow-menu'),
+      tooltip: 'More options',
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          key: ValueKey('sync-menu-reset-cloud-setup'),
+          value: 'reset',
+          child: Text(cloudSetupResetMenuLabel),
+        ),
+      ],
+      onSelected: (_) => unawaited(_reset(context, ref)),
+    );
+  }
+
+  static Future<void> _reset(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showCloudSetupResetDialog(context);
+    if (!confirmed || !context.mounted) return;
+    await ref.read(provisioningUiProvider.notifier).resetSetup();
+  }
 }
 
 /// Explicit repair surface for an unusable stored backend profile.
@@ -785,7 +813,10 @@ class _CloudProfileHealthCard extends ConsumerWidget {
   /// Repairing an unusable stored profile can create the user's first cloud
   /// project, so it goes through the same pre-flight as the main setup entry
   /// point and then runs the unchanged provisioning flow.
-  static Future<void> _repairProfile(BuildContext context, WidgetRef ref) async {
+  static Future<void> _repairProfile(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final confirmed = await showCloudSetupPreflight(context);
     if (!confirmed) return;
     await ref.read(provisioningUiProvider.notifier).startSetup();
@@ -1472,7 +1503,8 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
     // Local validation only gates a submission the guaranteed policy already
     // knows cannot pass; Supabase stays the final authority.
     final canSubmit =
-        !busy && (!registering || PlannerPasswordPolicy.isSatisfied(password.text));
+        !busy &&
+        (!registering || PlannerPasswordPolicy.isSatisfied(password.text));
     return Card(
       key: const ValueKey('planner-account-form'),
       child: Padding(

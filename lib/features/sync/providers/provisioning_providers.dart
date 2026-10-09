@@ -81,6 +81,9 @@ final provisioningClientProvider = Provider<ProvisioningClient?>((ref) {
 abstract interface class ProvisioningApi {
   Future<ProvisioningAttempt?> loadAttempt();
 
+  /// Clears this device's cloud setup state (never Planner data).
+  Future<ProvisioningResetOutcome> resetSetup();
+
   Future<ProvisioningResult> startAttempt();
 
   Future<ProvisioningResult> refresh();
@@ -130,6 +133,9 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
 
   @override
   Future<ProvisioningAttempt?> loadAttempt() => _coordinator.loadAttempt();
+
+  @override
+  Future<ProvisioningResetOutcome> resetSetup() => _coordinator.resetSetup();
 
   @override
   Future<ProvisioningResult> startAttempt() => _coordinator.startAttempt();

@@ -1852,4 +1852,100 @@ void main() {
       },
     );
   });
+
+  group('reset cloud setup', () {
+    List<FileSystemEntity> setAsideFiles() => directory
+        .listSync()
+        .where(
+          (entry) => p
+              .basename(entry.path)
+              .startsWith('$plannerBackendProfileFileName.discarded-'),
+        )
+        .toList();
+
+    test('reset from mid-creation clears setup state and never touches planner '
+        'databases', () async {
+      await seedProfile(state: ProvisioningState.projectCreating);
+      await attemptStore.write(
+        const ManagementAttempt(
+          transactionId: _transactionB,
+          capability: _capability,
+          projectRef: _projectRef,
+        ),
+      );
+      final offlineDb = File(p.join(directory.path, 'personal_planner.sqlite3'))
+        ..writeAsBytesSync(<int>[1, 2, 3]);
+      final accountDb = File(
+        p.join(
+          directory.path,
+          'personal_planner_account_project_${_projectRef}__user_a.sqlite3',
+        ),
+      )..writeAsBytesSync(<int>[4, 5, 6]);
+
+      final outcome = await buildCoordinator().resetSetup();
+
+      expect(outcome, ProvisioningResetOutcome.cleared);
+      expect(await profileStore.read(), isNull);
+      expect(capabilityStore.values, isEmpty);
+      expect(await attemptStore.read(), isNull);
+      expect(offlineDb.existsSync(), isTrue);
+      expect(offlineDb.readAsBytesSync(), <int>[1, 2, 3]);
+      expect(accountDb.existsSync(), isTrue);
+      expect(accountDb.readAsBytesSync(), <int>[4, 5, 6]);
+      expect(setAsideFiles(), hasLength(1));
+      expect(transport.requests, isEmpty);
+    });
+
+    test('reset works when the setup file is corrupt', () async {
+      File(p.join(directory.path, plannerBackendProfileFileName))
+          .writeAsStringSync('not json');
+
+      final outcome = await buildCoordinator().resetSetup();
+
+      expect(outcome, ProvisioningResetOutcome.cleared);
+      expect(await profileStore.read(), isNull);
+    });
+
+    test('reset works when the setup file cannot be read', () async {
+      await seedProfile(state: ProvisioningState.authorizationPending);
+      Process.runSync('chmod', <String>[
+        '000',
+        p.join(directory.path, plannerBackendProfileFileName),
+      ]);
+
+      final outcome = await buildCoordinator().resetSetup();
+
+      expect(outcome, ProvisioningResetOutcome.cleared);
+      expect(await profileStore.read(), isNull);
+    }, skip: !Platform.isLinux);
+
+    test('pressing reset twice is harmless', () async {
+      await seedProfile(state: ProvisioningState.authorizationPending);
+      final coordinator = buildCoordinator();
+
+      final first = await coordinator.resetSetup();
+      final second = await coordinator.resetSetup();
+
+      expect(first, ProvisioningResetOutcome.cleared);
+      expect(second, ProvisioningResetOutcome.nothingToClear);
+    });
+
+    test(
+      'a new attempt after reset starts fresh without a project reference',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.authorizationPending,
+          withProject: true,
+        );
+        final coordinator = buildCoordinator();
+        await coordinator.resetSetup();
+        transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+
+        final result = await coordinator.startAttempt();
+
+        expect(result.profile?.projectRef, isNull);
+        expect(result.profile?.generation, 1);
+      },
+    );
+  });
 }

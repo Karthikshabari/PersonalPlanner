@@ -227,6 +227,18 @@ class ManagementRevokeResult {
   final String? message;
 }
 
+/// Result of clearing this device's cloud setup state.
+enum ProvisioningResetOutcome {
+  /// The setup file was set aside; setup starts again from the first step.
+  cleared,
+
+  /// No setup was stored; nothing changed.
+  nothingToClear,
+
+  /// The setup file could not be set aside; nothing changed.
+  failed,
+}
+
 /// Orchestrates the frozen production provisioning API against durable local
 /// state.
 ///
@@ -289,6 +301,31 @@ class ProvisioningCoordinator {
       transactionId: transactionId,
       hasCapability: await _hasCapability(transactionId),
     );
+  });
+
+  /// Clears this device's cloud setup so setup can start again from the first
+  /// step: sets the profile file aside, deletes the stored capability of its
+  /// transaction and drops an in-flight Management check. Never touches a
+  /// Planner database, an Auth session, a Supabase project or the Worker.
+  Future<ProvisioningResetOutcome> resetSetup() => _serialized(() async {
+    BackendConnectionProfile? profile;
+    try {
+      profile = await profileStore.read();
+    } on ConnectionProfileStoreException {
+      // A corrupt or unreadable file is still set aside below.
+      profile = null;
+    }
+    final transactionId = profile?.provisioningTransactionId;
+    if (transactionId != null) await _discardCapability(transactionId);
+    await _discardManagementAttempt();
+    try {
+      final discarded = await profileStore.discard();
+      return discarded
+          ? ProvisioningResetOutcome.cleared
+          : ProvisioningResetOutcome.nothingToClear;
+    } on ConnectionProfileStoreException {
+      return ProvisioningResetOutcome.failed;
+    }
   });
 
   /// Creates a new provisioning transaction and a new local attempt.

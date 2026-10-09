@@ -108,6 +108,26 @@ const cloudSetupAutoRetryStoppedMessage =
 const cloudSetupProjectGoneRestartMessage =
     'The cloud project this setup was using no longer exists in Supabase. '
     'Start setup again to search your account or create a new project.';
+const cloudSetupCancelSetupLabel = 'Cancel setup';
+const cloudSetupResetMenuLabel = 'Reset cloud setup';
+const cloudSetupResetDialogTitle = 'Start cloud setup over?';
+const cloudSetupResetDialogBody =
+    'This clears the cloud setup on this device so you can start again from '
+    'the first step.\n\n'
+    'Kept: all your Planner data on this device, and every Supabase project '
+    'with its data. Nothing is deleted in Supabase.\n\n'
+    'Cleared on this device: the saved setup progress and the temporary pass '
+    'for the current attempt.\n\n'
+    'If a cloud project was already being created, it stays in your Supabase '
+    'account. A new setup in the same organization can take up to 2 hours '
+    'before it picks that project up.';
+const cloudSetupResetDialogKeepLabel = 'Keep current setup';
+const cloudSetupResetDialogConfirmLabel = 'Start over';
+const cloudSetupResetDoneMessage =
+    'Cloud setup was cleared. Your Planner data is unchanged.';
+const cloudSetupResetFailedMessage =
+    'The cloud setup could not be cleared because this device did not allow '
+    'the change. Nothing was changed. Restart Personal Planner and try again.';
 const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
@@ -310,6 +330,7 @@ class ProvisioningUiState {
     this.reachability = CloudReachability.unknown,
     this.authorizationConfirmed = false,
     this.autoRetryStopped = false,
+    this.resetCompleted = false,
     this.message,
   });
 
@@ -351,6 +372,9 @@ class ProvisioningUiState {
   /// True when background retries stopped: after repeated temporary failures, or for a failure that is never retried automatically.
   final bool autoRetryStopped;
 
+  /// True right after the user cleared the cloud setup, so the first card can confirm it.
+  final bool resetCompleted;
+
   final String? message;
 
   bool get isReady => phase == ProvisioningUiPhase.ready;
@@ -383,6 +407,7 @@ class ProvisioningUiState {
     CloudReachability? reachability,
     bool? authorizationConfirmed,
     bool? autoRetryStopped,
+    bool? resetCompleted,
   }) => ProvisioningUiState(
     phase: phase ?? this.phase,
     stage: stage,
@@ -407,6 +432,7 @@ class ProvisioningUiState {
     authorizationConfirmed:
         authorizationConfirmed ?? this.authorizationConfirmed,
     autoRetryStopped: autoRetryStopped ?? this.autoRetryStopped,
+    resetCompleted: resetCompleted ?? this.resetCompleted,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -1052,6 +1078,44 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// "Start again": the C2 coordinator supersedes the previous attempt.
   Future<void> startAgain() => startSetup();
 
+  /// "Reset cloud setup" and "Cancel setup": clears this device's setup state,
+  /// forgets the in-memory attempt and shows the first step. Planner data is
+  /// never touched.
+  Future<void> resetSetup() async {
+    final api = _api;
+    if (api == null) return;
+    _cancelTimer();
+    _cancelReachabilityRetry();
+    final poll = _backgroundPoll;
+    if (poll != null) await poll.catchError((_) {});
+    if (!ref.mounted) return;
+    _update((current) => current.copyWith(busy: true));
+    final outcome = await api.resetSetup();
+    if (!ref.mounted) return;
+    if (outcome == ProvisioningResetOutcome.failed) {
+      _update(
+        (current) => current.copyWith(
+          busy: false,
+          message: cloudSetupResetFailedMessage,
+        ),
+      );
+      return;
+    }
+    _authorizationUrl = null;
+    _transientFailures = 0;
+    _ticksToSkip = 0;
+    _creationReconcileAttempted = false;
+    _reachabilityFailures = 0;
+    await ref.read(runtimeBackendReloaderProvider)?.reload();
+    if (!ref.mounted) return;
+    _applyState(
+      const ProvisioningUiState(
+        phase: ProvisioningUiPhase.localOnly,
+        resetCompleted: true,
+      ),
+    );
+  }
+
   /// Reconnects the remembered user-owned backend of this device.
   ///
   /// Only the durable "disconnected" flag changes. The stored project ref, URL
@@ -1579,7 +1643,10 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
               ProvisioningState.verifying,
             }.contains(profile?.state);
         _transientFailures += 1;
-        _ticksToSkip = math.min((1 << _transientFailures) - 1, 11);
+        // A visible paused card retries on the next tick after its first
+        // failure; the quiet progress card already waits one tick.
+        final backoffStep = quiet ? _transientFailures : _transientFailures - 1;
+        _ticksToSkip = math.min((1 << backoffStep) - 1, 11);
         if (quiet && _transientFailures < _quietTransientFailureLimit) return;
         final authorizationRetry = result.snapshot?.authorizationFailed == true;
         _applyState(
