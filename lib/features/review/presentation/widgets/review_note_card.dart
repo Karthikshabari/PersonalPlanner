@@ -4,20 +4,19 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../domain/review_draft.dart';
 import 'review_theme.dart';
-import 'review_unsaved_hint.dart';
+import 'weekly_review_style.dart';
 
+/// "Anything worth remembering?": the note field only. Saving lives in the
+/// bottom bar. The text controller is created once; a re-hydration of the
+/// draft (not typing) reloads it.
 class ReviewNoteCard extends StatefulWidget {
   final ReviewDraft draft;
   final ValueChanged<String> onNoteChanged;
-  final Widget saveButton;
-  final bool showShortcutHint;
 
   const ReviewNoteCard({
     super.key,
     required this.draft,
     required this.onNoteChanged,
-    required this.saveButton,
-    required this.showShortcutHint,
   });
 
   @override
@@ -47,40 +46,26 @@ class _ReviewNoteCardState extends State<ReviewNoteCard> {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    const prompt =
+        'What affected today’s plan, or what would you do differently next time?';
     return AppSurface(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('Anything worth remembering?', style: textTheme.titleMedium),
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            'What affected today’s plan, or what would you do differently next time?',
-            style: textTheme.bodySmall,
-          ),
-          const SizedBox(height: AppSpacing.sm),
+          Text(prompt, style: weeklyCaptionStyle(context)),
+          const SizedBox(height: WeeklyStyle.titleGap),
           if (!widget.draft.hydrated) const LinearProgressIndicator(),
           TextField(
             key: const ValueKey('review-note'),
             controller: _controller,
             enabled: widget.draft.hydrated,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: 'What affected today’s plan, or what would you do differently next time?',
-            ),
+            // Three lines tall at rest, six at most, then it scrolls inside.
+            minLines: 3,
+            maxLines: 6,
+            decoration: WeeklyStyle.fieldDecoration(context, hintText: prompt),
             onChanged: widget.onNoteChanged,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.md,
-            runSpacing: AppSpacing.sm,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              widget.saveButton,
-              if (widget.draft.differsFromSaved)
-                const ReviewUnsavedHint(key: ValueKey('review-unsaved-hint')),
-              if (widget.showShortcutHint)
-                Text('Ctrl + Enter', style: reviewMonoStyle(context)),
-            ],
           ),
         ],
       ),

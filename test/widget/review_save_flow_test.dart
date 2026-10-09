@@ -126,6 +126,8 @@ void main() {
   });
 
   testWidgets('Ctrl+Enter saves on desktop', (tester) async {
+    // The hint is for desktops; the test platform defaults to Android.
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await pumpDaily(tester);
     expect(find.text('Ctrl + Enter'), findsOneWidget);
 
@@ -141,9 +143,26 @@ void main() {
   });
 
   testWidgets('shortcut hint is hidden on narrow layouts', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await pumpDaily(tester, surface: const Size(390, 844));
     expect(find.text('Ctrl + Enter'), findsNothing);
     await finish(tester, container);
+  });
+
+  testWidgets('shortcut hint is hidden on Android, iOS and Fuchsia', (
+    tester,
+  ) async {
+    for (final platform in [
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.fuchsia,
+    ]) {
+      debugDefaultTargetPlatformOverride = platform;
+      final container = await pumpDaily(tester);
+      expect(find.text('Ctrl + Enter'), findsNothing, reason: '$platform');
+      expect(find.byKey(const ValueKey('review-save')), findsOneWidget);
+      await finish(tester, container);
+    }
   });
 
   testWidgets('haptic tick only on Android', (tester) async {

@@ -6,12 +6,21 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../domain/review_reason_presets.dart';
 import '../../providers/review_reason_presets_provider.dart';
+import 'review_cell_grid.dart';
+import 'review_equal_grid.dart';
 import 'review_snack_bar.dart';
+import 'weekly_review_style.dart';
 
 /// Edits the quick-reason presets. Writes on every keystroke (cheap local
 /// write) and never replaces the text of a focused field.
+///
+/// With [grid] (the Daily review) the fields sit in equal-width cells, two
+/// columns on a wide card and one on a narrow one, on the inset surface.
+/// Nothing has a fixed height: the panel is as tall as its content.
 class ReviewPresetEditor extends ConsumerStatefulWidget {
-  const ReviewPresetEditor({super.key});
+  const ReviewPresetEditor({super.key, this.grid = false});
+
+  final bool grid;
 
   @override
   ConsumerState<ReviewPresetEditor> createState() => _ReviewPresetEditorState();
@@ -54,6 +63,48 @@ class _ReviewPresetEditorState extends ConsumerState<ReviewPresetEditor> {
     }
   }
 
+  /// One preset: its field and the remove button.
+  Widget _presetRow(
+    BuildContext context,
+    int index,
+    ReviewReasonPresetsNotifier notifier,
+  ) {
+    final tokens = AppThemeTokens.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            key: ValueKey('review-preset-field-$index'),
+            controller: _controllers[index],
+            focusNode: _focusNodes[index],
+            inputFormatters: [
+              LengthLimitingTextInputFormatter(maxReviewReasonPresetLength),
+            ],
+            decoration: widget.grid
+                // On the inset panel: the card colour reads as a field.
+                ? WeeklyStyle.fieldDecoration(
+                    context,
+                    isDense: true,
+                    fill: tokens.surface,
+                    hintText: 'Preset ${index + 1}',
+                  )
+                : InputDecoration(
+                    isDense: true,
+                    hintText: 'Preset ${index + 1}',
+                  ),
+            onChanged: (v) => notifier.updateAt(index, v),
+          ),
+        ),
+        IconButton(
+          key: ValueKey('review-preset-remove-$index'),
+          tooltip: 'Remove preset ${index + 1}',
+          icon: const Icon(Icons.close_rounded),
+          onPressed: () => notifier.removeAt(index),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
@@ -70,12 +121,40 @@ class _ReviewPresetEditorState extends ConsumerState<ReviewPresetEditor> {
     }
     _sync(presets);
     final notifier = ref.read(reviewReasonPresetsProvider.notifier);
+    final Widget fields = widget.grid
+        ? ReviewCellGrid(
+            // Fourteen characters, the field's own padding and the 48 dp
+            // remove button; two columns only when two cells fit.
+            minCellWidth:
+                measureWidestText(context, [
+                  '0' * 14,
+                ], Theme.of(context).textTheme.bodyLarge) +
+                2 * AppSpacing.lg +
+                48,
+            spacing: AppSpacing.sm,
+            maxColumns: 2,
+            children: [
+              for (var i = 0; i < presets.length; i++)
+                _presetRow(context, i, notifier),
+            ],
+          )
+        : Column(
+            children: [
+              for (var i = 0; i < presets.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _presetRow(context, i, notifier),
+                ),
+            ],
+          );
     return Container(
       key: const ValueKey('review-preset-editor'),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: tokens.surfaceSubtle,
-        borderRadius: BorderRadius.circular(tokens.radiusSmall),
+        color: widget.grid ? WeeklyStyle.inset(context) : tokens.surfaceSubtle,
+        borderRadius: BorderRadius.circular(
+          widget.grid ? WeeklyStyle.insetRadius(context) : tokens.radiusSmall,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -86,37 +165,8 @@ class _ReviewPresetEditorState extends ConsumerState<ReviewPresetEditor> {
                 ?.copyWith(color: tokens.textMuted),
           ),
           const SizedBox(height: AppSpacing.sm),
-          for (var i = 0; i < presets.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      key: ValueKey('review-preset-field-$i'),
-                      controller: _controllers[i],
-                      focusNode: _focusNodes[i],
-                      inputFormatters: [
-                        LengthLimitingTextInputFormatter(
-                          maxReviewReasonPresetLength,
-                        ),
-                      ],
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: 'Preset ${i + 1}',
-                      ),
-                      onChanged: (v) => notifier.updateAt(i, v),
-                    ),
-                  ),
-                  IconButton(
-                    key: ValueKey('review-preset-remove-$i'),
-                    tooltip: 'Remove preset ${i + 1}',
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => notifier.removeAt(i),
-                  ),
-                ],
-              ),
-            ),
+          fields,
+          if (widget.grid) const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,

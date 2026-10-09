@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,10 +11,11 @@ import '../helpers/test_container.dart';
 
 /// B5: the "Not saved yet" hint must be visible whenever mood, note or a
 /// reason differs from what is saved, in the wide and the narrow layout, also
-/// while a reason far from the Save button is still being typed.
+/// while a reason far from the Save button is still being typed. It lives in
+/// the always-visible bottom save bar, so it is on screen wherever the page
+/// is scrolled.
 void main() {
   final hint = find.byKey(const ValueKey('review-unsaved-hint'));
-  final pinned = find.byKey(const ValueKey('review-unsaved-pinned'));
   final save = find.byKey(const ValueKey('review-save'));
 
   Future<(ProviderContainer, List<Finder>)> pumpToday(
@@ -82,7 +84,6 @@ void main() {
       ) async {
         final (container, fields) = await pumpToday(tester, surface, tasks: 1);
         expect(hint, findsNothing);
-        expect(pinned, findsNothing);
 
         await tester.ensureVisible(fields.single);
         await tester.tap(fields.single);
@@ -90,7 +91,6 @@ void main() {
         await settle(tester);
 
         expect(hint, findsOneWidget);
-        expect(pinned, findsOneWidget);
         expect(find.text('Save review'), findsOneWidget);
         expect(find.text('Saved'), findsNothing);
         await finish(tester, container);
@@ -106,8 +106,7 @@ void main() {
         await settle(tester);
 
         expectOnScreen(tester, fields.last, surface);
-        expect(pinned, findsOneWidget);
-        expectOnScreen(tester, pinned, surface);
+        expectOnScreen(tester, hint, surface);
         expect(find.text('Save review'), findsOneWidget);
         await finish(tester, container);
       });
@@ -129,8 +128,7 @@ void main() {
         await settle(tester);
 
         expect(hint, findsOneWidget);
-        expect(pinned, findsOneWidget);
-        expectOnScreen(tester, pinned, surface);
+        expectOnScreen(tester, hint, surface);
         expect(find.text('Save review'), findsOneWidget);
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 200)),
@@ -145,19 +143,16 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('review-mood-3')));
         await settle(tester);
         expect(hint, findsOneWidget);
-        expect(pinned, findsOneWidget);
 
         await tester.ensureVisible(find.byKey(const ValueKey('review-mood-1')));
         await tester.pump();
         await tester.tap(find.byKey(const ValueKey('review-mood-1')));
         await settle(tester);
         expect(hint, findsNothing);
-        expect(pinned, findsNothing);
 
         await tester.enterText(find.byKey(const ValueKey('review-note')), 'x');
         await settle(tester);
         expect(hint, findsOneWidget);
-        expect(pinned, findsOneWidget);
         await finish(tester, container);
       });
 
@@ -171,7 +166,6 @@ void main() {
         await tester.enterText(fields.single, '');
         await settle(tester);
         expect(hint, findsNothing);
-        expect(pinned, findsNothing);
         await finish(tester, container);
       });
 
@@ -193,7 +187,6 @@ void main() {
         await settle(tester);
 
         expect(hint, findsNothing);
-        expect(pinned, findsNothing);
         expect(find.text('Saved'), findsOneWidget);
         await finish(tester, container);
       });
@@ -203,6 +196,7 @@ void main() {
   testWidgets('the hint does not collide with the Ctrl + Enter hint', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final (container, fields) = await pumpToday(
       tester,
       const Size(1100, 900),
@@ -219,7 +213,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('the pinned hint is neutral and ignores pointers', (
+  testWidgets('the bar hint is neutral and ignores pointers', (
     tester,
   ) async {
     final (container, fields) = await pumpToday(
@@ -231,12 +225,12 @@ void main() {
     await settle(tester);
 
     final text = tester.widget<Text>(
-      find.descendant(of: pinned, matching: find.text('Not saved yet')),
+      find.descendant(of: hint, matching: find.text('Not saved yet')),
     );
-    final theme = Theme.of(tester.element(pinned));
+    final theme = Theme.of(tester.element(hint));
     expect(text.style?.color, isNot(theme.colorScheme.error));
     expect(
-      find.ancestor(of: pinned, matching: find.byType(IgnorePointer)),
+      find.descendant(of: hint, matching: find.byType(IgnorePointer)),
       findsWidgets,
     );
     await finish(tester, container);

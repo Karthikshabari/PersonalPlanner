@@ -13,11 +13,15 @@ class ReviewStatusChip extends StatelessWidget {
     required this.reviewed,
     required this.mood,
     required this.onPressed,
+    this.minTapHeight = 0,
   });
 
   final bool reviewed;
   final int? mood;
   final VoidCallback onPressed;
+
+  /// Minimum height of the tappable area (the pill itself stays 32 dp).
+  final double minTapHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -85,18 +89,30 @@ class ReviewStatusChip extends StatelessWidget {
       );
     }
 
+    final tappable = Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onPressed,
+        child: decorated,
+      ),
+    );
     return Semantics(
       button: true,
       label: label,
       excludeSemantics: true,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onPressed,
-          child: decorated,
-        ),
-      ),
+      child: minTapHeight > 0
+          // The pill keeps its size; the empty band above and below it still
+          // taps, so the target is [minTapHeight] tall.
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onPressed,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: minTapHeight),
+                child: Center(widthFactor: 1, child: tappable),
+              ),
+            )
+          : tappable,
     );
   }
 

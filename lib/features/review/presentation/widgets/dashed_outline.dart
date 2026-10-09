@@ -10,6 +10,7 @@ class DashedOutlinePainter extends CustomPainter {
     this.dash = 4,
     this.gap = 3,
     this.circle = false,
+    this.radius,
   });
 
   final Color color;
@@ -18,13 +19,19 @@ class DashedOutlinePainter extends CustomPainter {
   final double gap;
   final bool circle;
 
+  /// Corner radius of the rounded outline; a full stadium when null.
+  final double? radius;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = (Offset.zero & size).deflate(strokeWidth / 2);
     final path = circle
         ? (Path()..addOval(rect))
         : (Path()..addRRect(
-            RRect.fromRectAndRadius(rect, Radius.circular(size.height / 2)),
+            RRect.fromRectAndRadius(
+              rect,
+              Radius.circular(radius ?? size.height / 2),
+            ),
           ));
     final paint = Paint()
       ..color = color
@@ -48,5 +55,6 @@ class DashedOutlinePainter extends CustomPainter {
       oldDelegate.strokeWidth != strokeWidth ||
       oldDelegate.dash != dash ||
       oldDelegate.gap != gap ||
-      oldDelegate.circle != circle;
+      oldDelegate.circle != circle ||
+      oldDelegate.radius != radius;
 }

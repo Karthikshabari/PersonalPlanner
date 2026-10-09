@@ -1,26 +1,38 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 /// A row of children with equal widths and equal heights (the tallest child
 /// sets the height). Unlike `IntrinsicHeight`, it lays children out with real
 /// constraints, so children may contain a `LayoutBuilder`.
+///
+/// [flexes] (one per child) splits the width in those proportions instead of
+/// equally; null, or a list of the wrong length, keeps equal widths.
 class ReviewEqualRow extends MultiChildRenderObjectWidget {
-  const ReviewEqualRow({super.key, required this.spacing, super.children});
+  const ReviewEqualRow({
+    super.key,
+    required this.spacing,
+    this.flexes,
+    super.children,
+  });
 
   final double spacing;
+  final List<int>? flexes;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderEqualRow(spacing);
+      _RenderEqualRow(spacing, flexes);
 
   @override
   void updateRenderObject(
     BuildContext context,
     covariant RenderObject renderObject,
   ) {
-    (renderObject as _RenderEqualRow).spacing = spacing;
+    (renderObject as _RenderEqualRow)
+      ..spacing = spacing
+      ..flexes = flexes;
   }
 }
 
@@ -30,7 +42,23 @@ class _RenderEqualRow extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _EqualRowParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _EqualRowParentData> {
-  _RenderEqualRow(this._spacing);
+  _RenderEqualRow(this._spacing, this._flexes);
+
+  List<int>? _flexes;
+  set flexes(List<int>? value) {
+    if (listEquals(value, _flexes)) return;
+    _flexes = value;
+    markNeedsLayout();
+  }
+
+  /// Width of the child at [index] among [count] children in [width].
+  double _cell(double width, int count, int index) {
+    final room = math.max(0.0, width - _spacing * (count - 1));
+    final flexes = _flexes;
+    if (flexes == null || flexes.length != count) return room / count;
+    final total = flexes.fold<int>(0, (a, b) => a + b);
+    return total <= 0 ? room / count : room * flexes[index] / total;
+  }
 
   double _spacing;
   double get spacing => _spacing;
@@ -63,9 +91,10 @@ class _RenderEqualRow extends RenderBox
       return;
     }
     final width = constraints.maxWidth;
-    final cell = math.max(0.0, (width - _spacing * (count - 1)) / count);
     var tallest = 0.0;
-    for (var c = firstChild; c != null; c = childAfter(c)) {
+    var index = 0;
+    for (var c = firstChild; c != null; c = childAfter(c), index++) {
+      final cell = _cell(width, count, index);
       c.layout(
         BoxConstraints(minWidth: cell, maxWidth: cell),
         parentUsesSize: true,
@@ -73,7 +102,9 @@ class _RenderEqualRow extends RenderBox
       tallest = math.max(tallest, c.size.height);
     }
     var x = 0.0;
-    for (var c = firstChild; c != null; c = childAfter(c)) {
+    index = 0;
+    for (var c = firstChild; c != null; c = childAfter(c), index++) {
+      final cell = _cell(width, count, index);
       if (c.size.height < tallest) {
         c.layout(
           // A minimum, not a tight height: a tight child is a relayout
@@ -93,12 +124,10 @@ class _RenderEqualRow extends RenderBox
   Size computeDryLayout(BoxConstraints constraints) {
     final count = _count;
     if (count == 0) return constraints.constrain(Size.zero);
-    final cell = math.max(
-      0.0,
-      (constraints.maxWidth - _spacing * (count - 1)) / count,
-    );
     var tallest = 0.0;
-    for (var c = firstChild; c != null; c = childAfter(c)) {
+    var index = 0;
+    for (var c = firstChild; c != null; c = childAfter(c), index++) {
+      final cell = _cell(constraints.maxWidth, count, index);
       tallest = math.max(
         tallest,
         c.getDryLayout(BoxConstraints.tightFor(width: cell)).height,

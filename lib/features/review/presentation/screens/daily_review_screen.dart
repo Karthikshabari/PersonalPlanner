@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/models/daily_review.dart';
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/models/day_context.dart';
-import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
@@ -22,15 +22,20 @@ import '../../domain/review_insights.dart';
 import '../../domain/task_outcome.dart';
 import '../../providers/review_draft_controller.dart';
 import '../../providers/review_providers.dart';
+import '../widgets/daily_glance_card.dart';
+import '../widgets/review_equal_row.dart';
+import '../widgets/review_layout.dart';
 import '../widgets/review_mode_switcher.dart';
 import '../widgets/review_mood_card.dart';
 import '../widgets/review_note_card.dart';
-import '../widgets/review_save_button.dart';
+import '../widgets/review_save_bar.dart';
 import '../widgets/review_snack_bar.dart';
-import '../widgets/review_sections.dart';
 import '../widgets/review_status_chip.dart';
-import '../widgets/review_unsaved_hint.dart';
 import '../widgets/task_outcomes_card.dart';
+
+/// Below this width the date row sits on its own line, with the Today button
+/// and the reviewed badge underneath.
+const double _compactHeaderWidth = 560;
 
 class DailyReviewScreen extends ConsumerStatefulWidget {
   const DailyReviewScreen({super.key});
@@ -41,7 +46,6 @@ class DailyReviewScreen extends ConsumerStatefulWidget {
 
 class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
   final _scrollController = ScrollController();
-  final _saveButtonKey = GlobalKey();
   final _saveFocusNode = FocusNode(debugLabel: 'review-save');
 
   @override
@@ -53,16 +57,18 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The screen listens to the day's data, never to the draft: each card
+    // below listens to the slice of the draft it shows, so typing or picking
+    // a rating rebuilds only that card.
     final date = startOfDay(ref.watch(selectedReviewDateProvider));
     final statsAsync = ref.watch(dailyStatsProvider(date));
     final insightsAsync = ref.watch(dailyReviewInsightsProvider(date));
     final outcomesAsync = ref.watch(taskOutcomesProvider(date));
     final reviewAsync = ref.watch(dailyReviewProvider(date));
-    final draft = ref.watch(reviewDraftProvider(date));
-    final notifier = ref.read(reviewDraftProvider(date).notifier);
     final dayContext = ref.watch(dayContextForDateProvider(date)).value;
     final tokens = AppThemeTokens.of(context);
-    final future = date.isAfter(startOfDay(DateTime.now()));
+    final today = startOfDay(DateTime.now());
+    final future = date.isAfter(today);
 
     return Scaffold(
       appBar: AppBar(
@@ -71,104 +77,134 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       ),
       body: ColoredBox(
         color: tokens.canvas,
-        child: Stack(
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final listView = ListView(
-                  controller: _scrollController,
-                  padding: EdgeInsets.all(
-                    constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = ReviewLayout.isWide(constraints.maxWidth);
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  control: true,
+                ): () =>
+                    _save(date),
+                const SingleActivator(
+                  LogicalKeyboardKey.enter,
+                  meta: true,
+                ): () =>
+                    _save(date),
+              },
+              child: Focus(
+                autofocus: true,
+                child: Column(
                   children: [
-                    Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1000),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                    // The page and the bar are separate traversal groups: Tab
+                    // sorts by on-screen position, and the long list runs
+                    // under the bar's y range, which would otherwise make it
+                    // hop to Save between every two controls.
+                    Expanded(
+                      child: FocusTraversalGroup(
+                        child: ListView(
+                          controller: _scrollController,
+                          // The bar sits under the list, not over it, so the
+                          // last card is never hidden (also with the keyboard).
+                          padding: const EdgeInsets.all(
+                            ReviewLayout.pagePadding,
+                          ),
                           children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: ReviewModeSwitcher(
-                                weekly: false,
-                                onChanged: (mode) {
-                                  if (mode == 'overview') {
-                                    openReviewPath(context, '/review/overview');
-                                    return;
-                                  }
-                                  if (mode != 'weekly') return;
-                                  ref
-                                      .read(selectedWeekStartProvider.notifier)
-                                      .state = startOfWeek(
-                                    date,
-                                  );
-                                  if (isDesktopWidth(
-                                    MediaQuery.sizeOf(context).width,
-                                  )) {
-                                    context.go('/review/weekly');
-                                  } else {
-                                    context.push('/review/weekly');
-                                  }
-                                },
+                            Center(
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: ReviewLayout.maxContentWidth,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: ReviewModeSwitcher(
+                                        weekly: false,
+                                        onChanged: (mode) =>
+                                            _onMode(mode, date),
+                                      ),
+                                    ),
+                                    const SizedBox(height: AppSpacing.sm),
+                                    _buildDateNav(
+                                      context,
+                                      date,
+                                      dayContext?.displayLabel,
+                                      reviewAsync,
+                                      future,
+                                    ),
+                                    const SizedBox(height: AppSpacing.md),
+                                    _buildBody(
+                                      date: date,
+                                      statsAsync: statsAsync,
+                                      insightsAsync: insightsAsync,
+                                      outcomesAsync: outcomesAsync,
+                                      future: future,
+                                      isToday: date == today,
+                                      wide: wide,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: AppSpacing.sm),
-                            _buildDateNav(
-                              context,
-                              ref,
-                              date,
-                              dayContext?.displayLabel,
-                              reviewAsync,
-                              future,
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            _buildBody(
-                              date: date,
-                              statsAsync: statsAsync,
-                              insightsAsync: insightsAsync,
-                              outcomesAsync: outcomesAsync,
-                              draft: draft,
-                              notifier: notifier,
-                              future: future,
                             ),
                           ],
                         ),
                       ),
                     ),
+                    FocusTraversalGroup(
+                      child: Consumer(
+                        builder: (context, ref, _) {
+                          final facts = ref.watch(
+                            reviewDraftProvider(date).select(
+                              (d) => (
+                                d.hydrated,
+                                d.saveStatus,
+                                d.differsFromSaved,
+                              ),
+                            ),
+                          );
+                          final (hydrated, saveStatus, differs) = facts;
+                          return ReviewSaveBar(
+                            // "Saved" is only true while nothing differs from
+                            // what is stored.
+                            status:
+                                differs && saveStatus == ReviewSaveStatus.saved
+                                ? ReviewSaveStatus.idle
+                                : saveStatus,
+                            enabled: hydrated && outcomesAsync.hasValue,
+                            differsFromSaved: differs,
+                            focusNode: _saveFocusNode,
+                            onSave: () => _save(date),
+                            showShortcutHint: wide,
+                          );
+                        },
+                      ),
+                    ),
                   ],
-                );
-                return CallbackShortcuts(
-                  bindings: {
-                    const SingleActivator(
-                      LogicalKeyboardKey.enter,
-                      control: true,
-                    ): () =>
-                        _save(date),
-                    const SingleActivator(
-                      LogicalKeyboardKey.enter,
-                      meta: true,
-                    ): () =>
-                        _save(date),
-                  },
-                  child: Focus(autofocus: true, child: listView),
-                );
-              },
-            ),
-            if (draft.differsFromSaved)
-              const Positioned(
-                left: 0,
-                right: 0,
-                bottom: AppSpacing.md,
-                child: Center(
-                  child: ReviewUnsavedPill(
-                    key: ValueKey('review-unsaved-pinned'),
-                  ),
                 ),
               ),
-          ],
+            );
+          },
         ),
       ),
     );
+  }
+
+  void _onMode(String mode, DateTime date) {
+    if (mode == 'overview') {
+      openReviewPath(context, '/review/overview');
+      return;
+    }
+    if (mode != 'weekly') return;
+    ref.read(selectedWeekStartProvider.notifier).state = startOfWeek(date);
+    if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
+      context.go('/review/weekly');
+    } else {
+      context.push('/review/weekly');
+    }
   }
 
   Widget _buildBody({
@@ -176,117 +212,156 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     required AsyncValue<DailyStats> statsAsync,
     required AsyncValue<ReviewInsights> insightsAsync,
     required AsyncValue<List<TaskOutcomeRow>> outcomesAsync,
-    required ReviewDraft draft,
-    required ReviewDraftController notifier,
     required bool future,
+    required bool isToday,
+    required bool wide,
   }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 760;
-        const gap = SizedBox(height: AppSpacing.md);
-        final glance = _buildSummary(statsAsync, insightsAsync, future);
-        final outcomes = TaskOutcomesCard(
-          date: date,
-          future: future,
-          rows: outcomesAsync,
-          draft: draft,
-        );
-        final mood = ReviewMoodCard(
-          selected: draft.mood,
-          enabled: draft.hydrated,
-          onChanged: notifier.setMood,
-        );
-        final note = ReviewNoteCard(
-          // One text controller per date: a draft restored for date A must not
-          // be shown through the field state of date B.
-          key: ValueKey('review-note-card-${isoDateString(date)}'),
-          draft: draft,
-          onNoteChanged: notifier.setNote,
-          showShortcutHint: wide,
-          saveButton: KeyedSubtree(
-            key: _saveButtonKey,
-            child: _buildSaveButton(date, draft, outcomesAsync),
+    const gap = SizedBox(height: ReviewLayout.cardGap);
+    final provider = reviewDraftProvider(date);
+    final glance = _buildSummary(statsAsync, insightsAsync, future, isToday);
+    // Each card with controls is its own traversal group, so in the two-column
+    // layout Tab finishes one column's card before it starts the next.
+    final outcomes = FocusTraversalGroup(
+      child: TaskOutcomesCard(date: date, future: future, rows: outcomesAsync),
+    );
+    // Each card listens only to the draft fields it shows (`select`).
+    final mood = FocusTraversalGroup(
+      child: Consumer(
+        builder: (context, ref, _) => ReviewMoodCard(
+          selected: ref.watch(provider.select((d) => d.mood)),
+          enabled: ref.watch(provider.select((d) => d.hydrated)),
+          onChanged: ref.read(provider.notifier).setMood,
+        ),
+      ),
+    );
+    final note = FocusTraversalGroup(
+      child: Consumer(
+        builder: (context, ref, _) {
+          // Only a re-hydration reloads the text field; typing does not.
+          ref.watch(provider.select((d) => (d.hydrated, d.hydrationVersion)));
+          return ReviewNoteCard(
+            // One text controller per date: a draft restored for date A must
+            // not be shown through the field state of date B.
+            key: ValueKey('review-note-card-${isoDateString(date)}'),
+            draft: ref.read(provider),
+            onNoteChanged: ref.read(provider.notifier).setNote,
+          );
+        },
+      ),
+    );
+    if (wide) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Day at a glance and the rating share a height; the two columns
+          // split 3 : 2 here and below.
+          ReviewEqualRow(
+            spacing: ReviewLayout.cardGap,
+            flexes: const [3, 2],
+            children: [glance, mood],
           ),
-        );
-        if (wide) {
-          return Row(
+          gap,
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                flex: 29,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [glance, gap, outcomes],
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                flex: 20,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [mood, gap, note],
-                ),
-              ),
+              Expanded(flex: 3, child: outcomes),
+              const SizedBox(width: ReviewLayout.cardGap),
+              Expanded(flex: 2, child: note),
             ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [glance, gap, outcomes, gap, mood, gap, note],
-        );
-      },
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [glance, gap, outcomes, gap, mood, gap, note],
     );
   }
 
   Widget _buildDateNav(
     BuildContext context,
-    WidgetRef ref,
     DateTime date,
     String? dayContextLabel,
     AsyncValue<DailyReview?> reviewAsync,
     bool future,
   ) {
     final notifier = ref.read(selectedReviewDateProvider.notifier);
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: AppSpacing.xs,
-      runSpacing: AppSpacing.xs,
-      children: [
-        IconButton(
-          key: const ValueKey('review-prev-day'),
-          tooltip: 'Previous day',
-          icon: const Icon(Icons.chevron_left),
-          onPressed: () => notifier.state = addDays(date, -1),
-        ),
-        Text(
-          DateFormat('EEE, MMM d, yyyy').format(date),
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        if (dayContextLabel != null)
-          _DayContextBadge(
+    final prev = IconButton(
+      key: const ValueKey('review-prev-day'),
+      tooltip: 'Previous day',
+      icon: const Icon(Icons.chevron_left),
+      onPressed: () => notifier.state = addDays(date, -1),
+    );
+    final next = IconButton(
+      key: const ValueKey('review-next-day'),
+      tooltip: 'Next day',
+      icon: const Icon(Icons.chevron_right),
+      onPressed: () => notifier.state = addDays(date, 1),
+    );
+    final dateText = Text(
+      DateFormat('EEE, MMM d, yyyy').format(date),
+      style: Theme.of(context).textTheme.titleLarge,
+    );
+    final badge = dayContextLabel == null
+        ? null
+        : _DayContextBadge(
             key: ValueKey('review-day-context-${isoDateString(date)}'),
             label: dayContextLabel,
-          ),
-        IconButton(
-          key: const ValueKey('review-next-day'),
-          tooltip: 'Next day',
-          icon: const Icon(Icons.chevron_right),
-          onPressed: () => notifier.state = addDays(date, 1),
-        ),
-        const SizedBox(width: AppSpacing.sm),
-        OutlinedButton(
-          key: const ValueKey('review-today'),
-          onPressed: () => notifier.state = startOfDay(DateTime.now()),
-          child: const Text('Today'),
-        ),
-        if (!future && reviewAsync.hasValue)
-          ReviewStatusChip(
+          );
+    final todayButton = OutlinedButton(
+      key: const ValueKey('review-today'),
+      onPressed: () => notifier.state = startOfDay(DateTime.now()),
+      child: const Text('Today'),
+    );
+    final chip = !future && reviewAsync.hasValue
+        ? ReviewStatusChip(
             key: const ValueKey('review-status-chip'),
             reviewed: reviewAsync.value != null,
             mood: reviewAsync.value?.mood,
-            onPressed: _revealSave,
-          ),
-      ],
+            minTapHeight: 48,
+            onPressed: _saveFocusNode.requestFocus,
+          )
+        : null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < _compactHeaderWidth) {
+          // Date on its own line (it wraps rather than overflow), the button
+          // and the badges below it.
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  prev,
+                  Expanded(child: dateText),
+                  next,
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [todayButton, ?badge, ?chip],
+              ),
+            ],
+          );
+        }
+        return Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            prev,
+            dateText,
+            ?badge,
+            next,
+            const SizedBox(width: AppSpacing.sm),
+            todayButton,
+            ?chip,
+          ],
+        );
+      },
     );
   }
 
@@ -294,6 +369,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     AsyncValue<DailyStats> stats,
     AsyncValue<ReviewInsights> insights,
     bool future,
+    bool isToday,
   ) {
     if (stats.hasError) {
       return ErrorPanel(message: friendlyErrorMessage(stats.error!));
@@ -304,29 +380,11 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     if (!stats.hasValue || !insights.hasValue) {
       return const AppSurface(child: LinearProgressIndicator());
     }
-    return ReviewSummarySection(
+    return DailyGlanceCard(
       stats: stats.requireValue,
       insights: insights.requireValue,
       future: future,
-      heading: 'Today / Day at a glance',
-      emptyLabel: 'No planned items for this day.',
-    );
-  }
-
-  Widget _buildSaveButton(
-    DateTime date,
-    ReviewDraft draft,
-    AsyncValue<List<TaskOutcomeRow>> outcomesAsync,
-  ) {
-    return ReviewSaveButton(
-      // "Saved" is only true while nothing differs from what is stored.
-      status:
-          draft.differsFromSaved && draft.saveStatus == ReviewSaveStatus.saved
-          ? ReviewSaveStatus.idle
-          : draft.saveStatus,
-      enabled: draft.hydrated && outcomesAsync.hasValue,
-      focusNode: _saveFocusNode,
-      onPressed: () => _save(date),
+      isToday: isToday,
     );
   }
 
@@ -342,7 +400,11 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       // real write failure gets the error message.
       if (ref.read(reviewDraftProvider(date)).saveStatus ==
           ReviewSaveStatus.failed) {
-        showReviewSnackBar(context, 'Couldn\'t save the review. Try again.');
+        showReviewSnackBar(
+          context,
+          'Couldn\'t save the review. Try again.',
+          liftBy: 72,
+        );
       }
       return;
     }
@@ -356,20 +418,8 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       onAction: () {
         if (mounted) openReviewPath(context, '/review/overview');
       },
+      liftBy: 72,
     );
-  }
-
-  Future<void> _revealSave() async {
-    final target = _saveButtonKey.currentContext;
-    if (target == null) return;
-    await Scrollable.ensureVisible(
-      target,
-      alignment: 0.5,
-      duration: MediaQuery.disableAnimationsOf(context)
-          ? Duration.zero
-          : const Duration(milliseconds: 250),
-    );
-    if (mounted) _saveFocusNode.requestFocus();
   }
 }
 

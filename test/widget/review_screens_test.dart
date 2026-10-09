@@ -92,7 +92,7 @@ void main() {
       await showReviewForToday(tester, container);
 
       expect(find.text('Daily Review'), findsOneWidget);
-      expect(find.text('Today / Day at a glance'), findsOneWidget);
+      expect(find.text('Day at a glance'), findsOneWidget);
       // Factual completion summary: 1 completed out of 2 planned items.
       expect(find.text('1 / 2 completed'), findsOneWidget);
       // Planned total: 1h + 1h30m.
@@ -178,7 +178,7 @@ void main() {
   testWidgets('empty day keeps mood, note and save', (tester) async {
     final container = await pumpReview(tester);
 
-    expect(find.text('No tasks were planned for this day.'), findsOneWidget);
+    expect(find.text('No tasks to review for this day'), findsOneWidget);
     expect(find.text('How was the day?'), findsOneWidget);
     expect(find.byKey(const ValueKey('review-save')), findsOneWidget);
     await finish(tester, container);
@@ -244,9 +244,12 @@ void main() {
 
     await tester.enterText(field, 'Meeting ran long');
     await settle(tester);
-    await tester.tap(
-      find.byKey(ValueKey('review-save-as-preset-${notStarted.id}')),
+    final saveAsPreset = find.byKey(
+      ValueKey('review-save-as-preset-${notStarted.id}'),
     );
+    await tester.ensureVisible(saveAsPreset);
+    await tester.pump();
+    await tester.tap(saveAsPreset);
     await settle(tester);
 
     expect(find.text('Preset added'), findsOneWidget);
