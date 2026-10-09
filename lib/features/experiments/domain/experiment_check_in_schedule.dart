@@ -1,3 +1,5 @@
+import 'package:intl/intl.dart';
+
 import '../../../core/utils/date_utils.dart';
 
 /// The only check-in slot implementation in the app (section 2.4, R19, R20).
@@ -83,4 +85,23 @@ ExperimentCheckInStatus experimentCheckInStatus({
     dueToday: pending.contains(today),
     nextSlot: next,
   );
+}
+
+/// The "Check-ins" statistic (R23, ED31): "{n} written", then " · {m} missed"
+/// when [missed] is above 0, then " · next {Mon d}" only when none are missed,
+/// the experiment is [running] and a future slot ([nextSlot], `yyyy-MM-dd`)
+/// exists.
+String experimentCheckInStatistic({
+  required int written,
+  required int missed,
+  required bool running,
+  required String? nextSlot,
+}) {
+  final text = StringBuffer('$written written');
+  if (missed > 0) {
+    text.write(' · $missed missed');
+  } else if (running && nextSlot != null) {
+    text.write(' · next ${DateFormat('MMM d').format(parseIsoDate(nextSlot))}');
+  }
+  return text.toString();
 }

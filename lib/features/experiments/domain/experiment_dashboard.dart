@@ -3,8 +3,10 @@ import 'dart:convert';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/experiment_dao.dart';
 import '../../../core/models/experiment.dart';
+import '../../../core/models/experiment_check_in.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import 'experiment_check_in_schedule.dart';
 import 'experiment_days.dart';
 import 'experiment_progress.dart';
 
@@ -16,6 +18,13 @@ class ExperimentView {
     required this.minutesByDay,
     required this.today,
     required this.progress,
+    this.checkIns = const [],
+    this.pendingDates = const [],
+    this.missedCount = 0,
+    this.dueToday = false,
+    this.checkInStatistic = '0 written',
+    this.showsEndPanel = false,
+    this.extensionLine,
   });
 
   final Experiment experiment;
@@ -30,6 +39,29 @@ class ExperimentView {
   final String today;
 
   final ExperimentProgress progress;
+
+  /// The written check-ins, newest slot first.
+  final List<ExperimentCheckIn> checkIns;
+
+  /// Slots dated today or earlier with no check-in, earliest first. Empty for
+  /// a concluded experiment: its unwritten slots are not asked for any more.
+  final List<String> pendingDates;
+
+  /// Unwritten slots dated before today. For a concluded experiment every
+  /// unwritten slot counts, because none of them can be written any more.
+  final int missedCount;
+
+  /// Whether a pending slot is dated today.
+  final bool dueToday;
+
+  /// The "Check-ins" statistic text (R23).
+  final String checkInStatistic;
+
+  /// Running and today is on or after the end date (R25).
+  final bool showsEndPanel;
+
+  /// "Extended n time(s). Last reason: ...", or null when never extended.
+  final String? extensionLine;
 }
 
 /// The Experiments card's data: views sorted as ED25 and the two counts.
@@ -78,6 +110,15 @@ class ExperimentDashboardService {
           .map((e) => e.endDate)
           .reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
       final leaveDates = await dao.leaveOrHolidayDates(firstDate, lastDate);
+      final checkInRows = await dao.getCheckInsForExperiments([
+        for (final e in experiments) e.id,
+      ]);
+      final checkInsByExperiment = <String, List<ExperimentCheckIn>>{};
+      for (final row in checkInRows) {
+        checkInsByExperiment
+            .putIfAbsent(row.experimentId, () => [])
+            .add(_toCheckIn(row));
+      }
 
       final views = <ExperimentView>[];
       for (final experiment in experiments) {
@@ -99,6 +140,7 @@ class ExperimentDashboardService {
             blocks: blocks,
             today: today,
             formatDuration: formatDuration,
+            checkIns: checkInsByExperiment[experiment.id] ?? const [],
           ),
         );
       }
@@ -123,12 +165,27 @@ ExperimentView buildExperimentView({
   required Iterable<TaggedBlockRow> blocks,
   required String today,
   required DurationFormatter formatDuration,
+  Iterable<ExperimentCheckIn> checkIns = const [],
 }) {
   final days = buildExperimentDays(experiment, leaveOrHolidayDates);
   final minutesByDay = groupBlocksByDay(
     blocks,
     startDate: experiment.startDate,
     endDate: experiment.endDate,
+  );
+  final running = experiment.status == ExperimentStatus.running;
+  final newestFirst = checkIns.toList()
+    ..sort((a, b) => b.slotDate.compareTo(a.slotDate));
+  // A concluded experiment is read as of the day after its last slot, so every
+  // unwritten slot is a missed one and none is still "due today" (R24).
+  final status = experimentCheckInStatus(
+    startDate: experiment.startDate,
+    endDate: experiment.endDate,
+    checkInEveryDays: experiment.checkInEveryDays,
+    writtenSlotDates: [for (final c in newestFirst) c.slotDate],
+    today: running
+        ? today
+        : isoDateString(addDays(parseIsoDate(experiment.endDate), 1)),
   );
   return ExperimentView(
     experiment: experiment,
@@ -142,6 +199,18 @@ ExperimentView buildExperimentView({
       today: today,
       formatDuration: formatDuration,
     ),
+    checkIns: List.unmodifiable(newestFirst),
+    pendingDates: running ? status.pendingDates : const [],
+    missedCount: status.missedCount,
+    dueToday: running && status.dueToday,
+    checkInStatistic: experimentCheckInStatistic(
+      written: newestFirst.length,
+      missed: status.missedCount,
+      running: running,
+      nextSlot: status.nextSlot,
+    ),
+    showsEndPanel: running && today.compareTo(experiment.endDate) >= 0,
+    extensionLine: experimentExtensionLine(experiment),
   );
 }
 
@@ -180,6 +249,15 @@ Experiment _toExperiment(ExperimentRow row, String tagName) => Experiment(
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
   revision: row.revision,
+);
+
+ExperimentCheckIn _toCheckIn(ExperimentCheckInRow row) => ExperimentCheckIn(
+  id: row.id,
+  experimentId: row.experimentId,
+  slotDate: row.slotDate,
+  note: row.note,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
 );
 
 List<ExperimentExtension> _decodeExtensions(String json) {

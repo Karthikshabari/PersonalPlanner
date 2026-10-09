@@ -1,0 +1,345 @@
+diff --git a/lib/core/database/daos/experiment_dao.dart b/lib/core/database/daos/experiment_dao.dart
+index 5df8cd7..16f4e3b 100644
+--- a/lib/core/database/daos/experiment_dao.dart
++++ b/lib/core/database/daos/experiment_dao.dart
+@@ -109,6 +109,23 @@ class ExperimentDao extends DatabaseAccessor<AppDatabase>
+       ..orderBy([(c) => OrderingTerm.asc(c.slotDate)]);
+   }
+ 
++  /// The non-deleted check-ins of every experiment in [experimentIds], read
++  /// with one query. Earliest slot first within an experiment.
++  Future<List<ExperimentCheckInRow>> getCheckInsForExperiments(
++    List<String> experimentIds,
++  ) {
++    if (experimentIds.isEmpty) return Future.value(const []);
++    return (select(experimentCheckIns)
++          ..where(
++            (c) => c.experimentId.isIn(experimentIds) & c.deletedAt.isNull(),
++          )
++          ..orderBy([
++            (c) => OrderingTerm.asc(c.experimentId),
++            (c) => OrderingTerm.asc(c.slotDate),
++          ]))
++        .get();
++  }
++
+   Future<ExperimentCheckInRow?> getCheckInById(String id) => (select(
+     experimentCheckIns,
+   )..where((c) => c.id.equals(id))).getSingleOrNull();
+diff --git a/lib/features/experiments/domain/experiment_check_in_schedule.dart b/lib/features/experiments/domain/experiment_check_in_schedule.dart
+index e2119e5..5238106 100644
+--- a/lib/features/experiments/domain/experiment_check_in_schedule.dart
++++ b/lib/features/experiments/domain/experiment_check_in_schedule.dart
+@@ -1,3 +1,5 @@
++import 'package:intl/intl.dart';
++
+ import '../../../core/utils/date_utils.dart';
+ 
+ /// The only check-in slot implementation in the app (section 2.4, R19, R20).
+@@ -84,3 +86,22 @@ ExperimentCheckInStatus experimentCheckInStatus({
+     nextSlot: next,
+   );
+ }
++
++/// The "Check-ins" statistic (R23, ED31): "{n} written", then " · {m} missed"
++/// when [missed] is above 0, then " · next {Mon d}" only when none are missed,
++/// the experiment is [running] and a future slot ([nextSlot], `yyyy-MM-dd`)
++/// exists.
++String experimentCheckInStatistic({
++  required int written,
++  required int missed,
++  required bool running,
++  required String? nextSlot,
++}) {
++  final text = StringBuffer('$written written');
++  if (missed > 0) {
++    text.write(' · $missed missed');
++  } else if (running && nextSlot != null) {
++    text.write(' · next ${DateFormat('MMM d').format(parseIsoDate(nextSlot))}');
++  }
++  return text.toString();
++}
+diff --git a/lib/features/experiments/domain/experiment_dashboard.dart b/lib/features/experiments/domain/experiment_dashboard.dart
+index ca0b6ce..5ee317c 100644
+--- a/lib/features/experiments/domain/experiment_dashboard.dart
++++ b/lib/features/experiments/domain/experiment_dashboard.dart
+@@ -3,8 +3,10 @@ import 'dart:convert';
+ import '../../../core/database/app_database.dart';
+ import '../../../core/database/daos/experiment_dao.dart';
+ import '../../../core/models/experiment.dart';
++import '../../../core/models/experiment_check_in.dart';
+ import '../../../core/utils/date_utils.dart';
+ import '../../../core/utils/planner_time_zone.dart';
++import 'experiment_check_in_schedule.dart';
+ import 'experiment_days.dart';
+ import 'experiment_progress.dart';
+ 
+@@ -16,6 +18,13 @@ class ExperimentView {
+     required this.minutesByDay,
+     required this.today,
+     required this.progress,
++    this.checkIns = const [],
++    this.pendingDates = const [],
++    this.missedCount = 0,
++    this.dueToday = false,
++    this.checkInStatistic = '0 written',
++    this.showsEndPanel = false,
++    this.extensionLine,
+   });
+ 
+   final Experiment experiment;
+@@ -30,6 +39,29 @@ class ExperimentView {
+   final String today;
+ 
+   final ExperimentProgress progress;
++
++  /// The written check-ins, newest slot first.
++  final List<ExperimentCheckIn> checkIns;
++
++  /// Slots dated today or earlier with no check-in, earliest first. Empty for
++  /// a concluded experiment: its unwritten slots are not asked for any more.
++  final List<String> pendingDates;
++
++  /// Unwritten slots dated before today. For a concluded experiment every
++  /// unwritten slot counts, because none of them can be written any more.
++  final int missedCount;
++
++  /// Whether a pending slot is dated today.
++  final bool dueToday;
++
++  /// The "Check-ins" statistic text (R23).
++  final String checkInStatistic;
++
++  /// Running and today is on or after the end date (R25).
++  final bool showsEndPanel;
++
++  /// "Extended n time(s). Last reason: ...", or null when never extended.
++  final String? extensionLine;
+ }
+ 
+ /// The Experiments card's data: views sorted as ED25 and the two counts.
+@@ -78,6 +110,15 @@ class ExperimentDashboardService {
+           .map((e) => e.endDate)
+           .reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
+       final leaveDates = await dao.leaveOrHolidayDates(firstDate, lastDate);
++      final checkInRows = await dao.getCheckInsForExperiments([
++        for (final e in experiments) e.id,
++      ]);
++      final checkInsByExperiment = <String, List<ExperimentCheckIn>>{};
++      for (final row in checkInRows) {
++        checkInsByExperiment
++            .putIfAbsent(row.experimentId, () => [])
++            .add(_toCheckIn(row));
++      }
+ 
+       final views = <ExperimentView>[];
+       for (final experiment in experiments) {
+@@ -99,6 +140,7 @@ class ExperimentDashboardService {
+             blocks: blocks,
+             today: today,
+             formatDuration: formatDuration,
++            checkIns: checkInsByExperiment[experiment.id] ?? const [],
+           ),
+         );
+       }
+@@ -123,6 +165,7 @@ ExperimentView buildExperimentView({
+   required Iterable<TaggedBlockRow> blocks,
+   required String today,
+   required DurationFormatter formatDuration,
++  Iterable<ExperimentCheckIn> checkIns = const [],
+ }) {
+   final days = buildExperimentDays(experiment, leaveOrHolidayDates);
+   final minutesByDay = groupBlocksByDay(
+@@ -130,6 +173,20 @@ ExperimentView buildExperimentView({
+     startDate: experiment.startDate,
+     endDate: experiment.endDate,
+   );
++  final running = experiment.status == ExperimentStatus.running;
++  final newestFirst = checkIns.toList()
++    ..sort((a, b) => b.slotDate.compareTo(a.slotDate));
++  // A concluded experiment is read as of the day after its last slot, so every
++  // unwritten slot is a missed one and none is still "due today" (R24).
++  final status = experimentCheckInStatus(
++    startDate: experiment.startDate,
++    endDate: experiment.endDate,
++    checkInEveryDays: experiment.checkInEveryDays,
++    writtenSlotDates: [for (final c in newestFirst) c.slotDate],
++    today: running
++        ? today
++        : isoDateString(addDays(parseIsoDate(experiment.endDate), 1)),
++  );
+   return ExperimentView(
+     experiment: experiment,
+     days: days,
+@@ -142,6 +199,18 @@ ExperimentView buildExperimentView({
+       today: today,
+       formatDuration: formatDuration,
+     ),
++    checkIns: List.unmodifiable(newestFirst),
++    pendingDates: running ? status.pendingDates : const [],
++    missedCount: status.missedCount,
++    dueToday: running && status.dueToday,
++    checkInStatistic: experimentCheckInStatistic(
++      written: newestFirst.length,
++      missed: status.missedCount,
++      running: running,
++      nextSlot: status.nextSlot,
++    ),
++    showsEndPanel: running && today.compareTo(experiment.endDate) >= 0,
++    extensionLine: experimentExtensionLine(experiment),
+   );
+ }
+ 
+@@ -182,6 +251,15 @@ Experiment _toExperiment(ExperimentRow row, String tagName) => Experiment(
+   revision: row.revision,
+ );
+ 
++ExperimentCheckIn _toCheckIn(ExperimentCheckInRow row) => ExperimentCheckIn(
++  id: row.id,
++  experimentId: row.experimentId,
++  slotDate: row.slotDate,
++  note: row.note,
++  createdAt: row.createdAt,
++  updatedAt: row.updatedAt,
++);
++
+ List<ExperimentExtension> _decodeExtensions(String json) {
+   final decoded = jsonDecode(json);
+   if (decoded is! List) return const [];
+diff --git a/lib/features/experiments/presentation/widgets/experiment_row.dart b/lib/features/experiments/presentation/widgets/experiment_row.dart
+index 6485501..9c81ef2 100644
+--- a/lib/features/experiments/presentation/widgets/experiment_row.dart
++++ b/lib/features/experiments/presentation/widgets/experiment_row.dart
+@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
+ import '../../../../core/theme/app_spacing.dart';
+ import '../../../../core/theme/app_theme_tokens.dart';
+ import '../../../../core/widgets/app_surface.dart';
++import '../../../../core/models/experiment.dart';
+ import '../../domain/experiment_dashboard.dart';
+ import '../../domain/experiment_progress.dart';
+ import 'experiment_chart.dart';
++import 'experiment_check_in_box.dart';
++import 'experiment_end_panel.dart';
++import 'experiment_past_check_ins.dart';
+ import 'experiment_progress_bar.dart';
+ 
+ /// One experiment on the Experiments card. (Named `ExperimentRowView` so it
+@@ -44,7 +48,14 @@ class ExperimentRowView extends StatelessWidget {
+           ),
+           const SizedBox(height: AppSpacing.xs),
+           Text(experimentDatesLine(experiment), style: mutedStyle),
+-          // E4: the extension line goes here, under the dates line.
++          if (view.extensionLine != null) ...[
++            const SizedBox(height: AppSpacing.xs),
++            Text(
++              view.extensionLine!,
++              key: ValueKey('experiment-extension-$id'),
++              style: mutedStyle,
++            ),
++          ],
+           if (purpose != null) ...[
+             const SizedBox(height: AppSpacing.xs),
+             Text(purpose, style: theme.textTheme.bodyMedium),
+@@ -72,7 +83,11 @@ class ExperimentRowView extends StatelessWidget {
+                 label: 'Days at your target',
+                 value: progress.daysAtTargetLabel,
+               ),
+-              // E4: the "Check-ins" statistic goes here.
++              _Stat(
++                key: ValueKey('experiment-check-ins-$id'),
++                label: 'Check-ins',
++                value: view.checkInStatistic,
++              ),
+             ],
+           ),
+           if (progress.hasTodayLine) ...[
+@@ -89,8 +104,35 @@ class ExperimentRowView extends StatelessWidget {
+           ],
+           const SizedBox(height: AppSpacing.lg),
+           ExperimentChart(view: view),
+-          // E4: the check-in box, the past check-ins, the end panel and the
+-          // concluded summary go here, below the chart.
++          if (experiment.status == ExperimentStatus.concluded) ...[
++            const SizedBox(height: AppSpacing.md),
++            Text(
++              'Outcome: ${experiment.outcome?.label ?? ''}',
++              key: ValueKey('experiment-outcome-$id'),
++              style: theme.textTheme.titleSmall,
++            ),
++            const SizedBox(height: AppSpacing.xs),
++            Text(
++              experiment.conclusionNote ?? 'No note added.',
++              key: ValueKey('experiment-conclusion-note-$id'),
++              style: theme.textTheme.bodyMedium,
++            ),
++          ],
++          if (view.showsEndPanel) ...[
++            const SizedBox(height: AppSpacing.lg),
++            ExperimentEndPanel(experiment: experiment),
++          ],
++          if (view.pendingDates.isNotEmpty) ...[
++            const SizedBox(height: AppSpacing.lg),
++            ExperimentCheckInBox(
++              experimentId: id,
++              pendingDates: view.pendingDates,
++              missedCount: view.missedCount,
++              dueToday: view.dueToday,
++            ),
++          ],
++          const SizedBox(height: AppSpacing.sm),
++          ExperimentPastCheckIns(experimentId: id, checkIns: view.checkIns),
+         ],
+       ),
+     );
+diff --git a/test/unit/experiments/experiment_check_in_schedule_test.dart b/test/unit/experiments/experiment_check_in_schedule_test.dart
+index 7145011..322c174 100644
+--- a/test/unit/experiments/experiment_check_in_schedule_test.dart
++++ b/test/unit/experiments/experiment_check_in_schedule_test.dart
+@@ -178,4 +178,47 @@ void main() {
+       expect(after.pendingDates.length, before.pendingDates.length + 2);
+     });
+   });
++  group('statistic text', () {
++    String stat({
++      int written = 0,
++      int missed = 0,
++      bool running = true,
++      String? next,
++    }) => experimentCheckInStatistic(
++      written: written,
++      missed: missed,
++      running: running,
++      nextSlot: next,
++    );
++
++    test('nothing written and nothing owed', () {
++      expect(stat(), '0 written');
++    });
++
++    test('written with missed slots hides the next date', () {
++      expect(
++        stat(written: 2, missed: 3, next: '2026-10-14'),
++        '2 written · 3 missed',
++      );
++    });
++
++    test('written with none missed shows the next date', () {
++      expect(stat(written: 4, next: '2026-10-14'), '4 written · next Oct 14');
++    });
++
++    test('a concluded experiment with missed slots keeps counting them', () {
++      expect(
++        stat(written: 1, missed: 2, running: false),
++        '1 written · 2 missed',
++      );
++    });
++
++    test('a concluded experiment never shows a next date', () {
++      expect(stat(written: 5, running: false, next: '2026-10-14'), '5 written');
++    });
++
++    test('running with no future slot shows only the written count', () {
++      expect(stat(written: 3), '3 written');
++    });
++  });
+ }

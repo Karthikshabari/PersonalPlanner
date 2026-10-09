@@ -178,4 +178,47 @@ void main() {
       expect(after.pendingDates.length, before.pendingDates.length + 2);
     });
   });
+  group('statistic text', () {
+    String stat({
+      int written = 0,
+      int missed = 0,
+      bool running = true,
+      String? next,
+    }) => experimentCheckInStatistic(
+      written: written,
+      missed: missed,
+      running: running,
+      nextSlot: next,
+    );
+
+    test('nothing written and nothing owed', () {
+      expect(stat(), '0 written');
+    });
+
+    test('written with missed slots hides the next date', () {
+      expect(
+        stat(written: 2, missed: 3, next: '2026-10-14'),
+        '2 written · 3 missed',
+      );
+    });
+
+    test('written with none missed shows the next date', () {
+      expect(stat(written: 4, next: '2026-10-14'), '4 written · next Oct 14');
+    });
+
+    test('a concluded experiment with missed slots keeps counting them', () {
+      expect(
+        stat(written: 1, missed: 2, running: false),
+        '1 written · 2 missed',
+      );
+    });
+
+    test('a concluded experiment never shows a next date', () {
+      expect(stat(written: 5, running: false, next: '2026-10-14'), '5 written');
+    });
+
+    test('running with no future slot shows only the written count', () {
+      expect(stat(written: 3), '3 written');
+    });
+  });
 }

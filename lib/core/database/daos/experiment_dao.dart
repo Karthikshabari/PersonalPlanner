@@ -109,6 +109,23 @@ class ExperimentDao extends DatabaseAccessor<AppDatabase>
       ..orderBy([(c) => OrderingTerm.asc(c.slotDate)]);
   }
 
+  /// The non-deleted check-ins of every experiment in [experimentIds], read
+  /// with one query. Earliest slot first within an experiment.
+  Future<List<ExperimentCheckInRow>> getCheckInsForExperiments(
+    List<String> experimentIds,
+  ) {
+    if (experimentIds.isEmpty) return Future.value(const []);
+    return (select(experimentCheckIns)
+          ..where(
+            (c) => c.experimentId.isIn(experimentIds) & c.deletedAt.isNull(),
+          )
+          ..orderBy([
+            (c) => OrderingTerm.asc(c.experimentId),
+            (c) => OrderingTerm.asc(c.slotDate),
+          ]))
+        .get();
+  }
+
   Future<ExperimentCheckInRow?> getCheckInById(String id) => (select(
     experimentCheckIns,
   )..where((c) => c.id.equals(id))).getSingleOrNull();

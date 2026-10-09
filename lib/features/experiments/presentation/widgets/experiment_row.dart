@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
+import '../../../../core/models/experiment.dart';
 import '../../domain/experiment_dashboard.dart';
 import '../../domain/experiment_progress.dart';
 import 'experiment_chart.dart';
+import 'experiment_check_in_box.dart';
+import 'experiment_end_panel.dart';
+import 'experiment_past_check_ins.dart';
 import 'experiment_progress_bar.dart';
 
 /// One experiment on the Experiments card. (Named `ExperimentRowView` so it
@@ -44,7 +48,14 @@ class ExperimentRowView extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(experimentDatesLine(experiment), style: mutedStyle),
-          // E4: the extension line goes here, under the dates line.
+          if (view.extensionLine != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              view.extensionLine!,
+              key: ValueKey('experiment-extension-$id'),
+              style: mutedStyle,
+            ),
+          ],
           if (purpose != null) ...[
             const SizedBox(height: AppSpacing.xs),
             Text(purpose, style: theme.textTheme.bodyMedium),
@@ -72,7 +83,11 @@ class ExperimentRowView extends StatelessWidget {
                 label: 'Days at your target',
                 value: progress.daysAtTargetLabel,
               ),
-              // E4: the "Check-ins" statistic goes here.
+              _Stat(
+                key: ValueKey('experiment-check-ins-$id'),
+                label: 'Check-ins',
+                value: view.checkInStatistic,
+              ),
             ],
           ),
           if (progress.hasTodayLine) ...[
@@ -89,8 +104,35 @@ class ExperimentRowView extends StatelessWidget {
           ],
           const SizedBox(height: AppSpacing.lg),
           ExperimentChart(view: view),
-          // E4: the check-in box, the past check-ins, the end panel and the
-          // concluded summary go here, below the chart.
+          if (experiment.status == ExperimentStatus.concluded) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              'Outcome: ${experiment.outcome?.label ?? ''}',
+              key: ValueKey('experiment-outcome-$id'),
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              experiment.conclusionNote ?? 'No note added.',
+              key: ValueKey('experiment-conclusion-note-$id'),
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+          if (view.showsEndPanel) ...[
+            const SizedBox(height: AppSpacing.lg),
+            ExperimentEndPanel(experiment: experiment),
+          ],
+          if (view.pendingDates.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.lg),
+            ExperimentCheckInBox(
+              experimentId: id,
+              pendingDates: view.pendingDates,
+              missedCount: view.missedCount,
+              dueToday: view.dueToday,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.sm),
+          ExperimentPastCheckIns(experimentId: id, checkIns: view.checkIns),
         ],
       ),
     );
