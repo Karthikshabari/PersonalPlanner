@@ -692,25 +692,6 @@ class ProvisioningClient {
     );
   }
 
-  /// Explicitly clears a mapping only after Management confirms its exact ref is gone.
-  Future<void> replaceDeleted(
-    String transactionId, {
-    required String capability,
-  }) async {
-    _requireTransactionId(transactionId);
-    final body = _decodeObject(
-      await _send(
-        method: 'POST',
-        path: '${_transactionPath(transactionId)}/replace-deleted',
-        capability: capability,
-        body: const <String, dynamic>{},
-      ),
-    );
-    if (body['kind'] != 'mapping_cleared') {
-      throw _protocol('The provisioning service did not confirm replacement.');
-    }
-  }
-
   Future<ProvisioningSnapshot> selectOrganization(
     String transactionId, {
     required String capability,

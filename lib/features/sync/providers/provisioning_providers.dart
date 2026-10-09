@@ -91,8 +91,6 @@ abstract interface class ProvisioningApi {
 
   Future<ProvisioningResult> resolveProject();
 
-  Future<ProvisioningResult> replaceDeletedProject();
-
   Future<ProvisioningResult> adoptProject(String projectRef);
 
   Future<ProvisioningResult> selectOrganization({
@@ -149,10 +147,6 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
 
   @override
   Future<ProvisioningResult> resolveProject() => _coordinator.resolveProject();
-
-  @override
-  Future<ProvisioningResult> replaceDeletedProject() =>
-      _coordinator.replaceDeletedProject();
 
   @override
   Future<ProvisioningResult> adoptProject(String projectRef) =>

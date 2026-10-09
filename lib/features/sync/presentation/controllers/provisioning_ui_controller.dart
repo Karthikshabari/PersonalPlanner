@@ -102,6 +102,12 @@ const cloudSetupIndeterminateMessage =
 const cloudSetupRateLimitedMessage =
     'Supabase is limiting project creation requests. Wait a minute, then '
     'retry this same setup attempt.';
+const cloudSetupAutoRetryStoppedMessage =
+    'Personal Planner has stopped retrying this step on its own. Press Retry '
+    'when you are ready.';
+const cloudSetupProjectGoneRestartMessage =
+    'The cloud project this setup was using no longer exists in Supabase. '
+    'Start setup again to search your account or create a new project.';
 const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
@@ -149,10 +155,6 @@ const cloudSetupLegacyRecoveryEmptyMessage =
     'The project remembered on this device could not be verified, and no '
     'other Personal Planner cloud was found for this Supabase account. '
     'Your local data is unchanged. You can set up a new cloud project.';
-const cloudSetupMappedProjectDeletedMessage =
-    'Supabase reported that the cloud project linked to this account is gone. '
-    'Your local Planner data remains. If you choose to replace it, Personal '
-    'Planner will check again before allowing a new cloud setup.';
 
 /// Label of the *authoritative* project check: it asks Supabase directly
 /// (through a short Management authorization in the browser) whether this
@@ -227,9 +229,6 @@ enum ProvisioningUiPhase {
 
   /// Verified legacy Planner projects need an explicit first binding.
   candidateSelection,
-
-  /// The account mapping points to a project Supabase confirmed missing.
-  mappedProjectDeleted,
 
   /// The cloud backend is being created, migrated or verified.
   provisioning,
@@ -310,6 +309,7 @@ class ProvisioningUiState {
     this.authorizationRetryAvailable = false,
     this.reachability = CloudReachability.unknown,
     this.authorizationConfirmed = false,
+    this.autoRetryStopped = false,
     this.message,
   });
 
@@ -348,6 +348,9 @@ class ProvisioningUiState {
   /// authorization, so the card can acknowledge it inline.
   final bool authorizationConfirmed;
 
+  /// True when background retries stopped: after repeated temporary failures, or for a failure that is never retried automatically.
+  final bool autoRetryStopped;
+
   final String? message;
 
   bool get isReady => phase == ProvisioningUiPhase.ready;
@@ -379,6 +382,7 @@ class ProvisioningUiState {
     bool? authorizationRetryAvailable,
     CloudReachability? reachability,
     bool? authorizationConfirmed,
+    bool? autoRetryStopped,
   }) => ProvisioningUiState(
     phase: phase ?? this.phase,
     stage: stage,
@@ -402,6 +406,7 @@ class ProvisioningUiState {
     reachability: reachability ?? this.reachability,
     authorizationConfirmed:
         authorizationConfirmed ?? this.authorizationConfirmed,
+    autoRetryStopped: autoRetryStopped ?? this.autoRetryStopped,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -796,18 +801,6 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     }
   });
 
-  Future<void> replaceDeletedProject() => _run(() async {
-    final api = _api;
-    if (api == null) return;
-    final result = await api.replaceDeletedProject();
-    if (result.outcome == ProvisioningOutcome.inProgress &&
-        result.resolutionComplete) {
-      await _continueAfterAuthorization(api);
-    } else {
-      _applyResult(result);
-    }
-  });
-
   /// Handles the browser handing a Supabase authorization back to the app.
   ///
   /// A Management authorization completes the project check the user started;
@@ -951,6 +944,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           message: result.message ?? cloudSetupRetryableMessage,
         ),
       );
+      return;
+    }
+    // The chosen project vanished after discovery: search the account again.
+    if (result.outcome == ProvisioningOutcome.projectDeleted) {
+      await _continueAfterAuthorization(api);
       return;
     }
     _applyResult(result);
@@ -1530,9 +1528,9 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         _cancelTimer();
         _applyState(
           ProvisioningUiState(
-            phase: ProvisioningUiPhase.mappedProjectDeleted,
+            phase: ProvisioningUiPhase.restartRequired,
             transactionId: id,
-            message: cloudSetupMappedProjectDeletedMessage,
+            message: cloudSetupProjectGoneRestartMessage,
           ),
         );
         return;
@@ -1553,6 +1551,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           ProvisioningUiState(
             phase: ProvisioningUiPhase.retryableError,
             transactionId: id,
+            autoRetryStopped: true,
             message: cloudSetupNeedsUserActionMessage,
           ),
         );
@@ -1568,7 +1567,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         return;
       case ProvisioningOutcome.retryable:
         // A transient failure while the Worker is doing its own work keeps the
-        // progress card and backs off; only a streak pauses the card.
+        // progress card and backs off; after six failures automatic retries stop.
         final quiet =
             result.snapshot?.authorizationFailed != true &&
             state.value?.phase == ProvisioningUiPhase.provisioning &&
@@ -1579,11 +1578,9 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
               ProvisioningState.migrationReconciliationRequired,
               ProvisioningState.verifying,
             }.contains(profile?.state);
-        if (quiet) {
-          _transientFailures += 1;
-          _ticksToSkip = math.min((1 << _transientFailures) - 1, 11);
-          if (_transientFailures < _quietTransientFailureLimit) return;
-        }
+        _transientFailures += 1;
+        _ticksToSkip = math.min((1 << _transientFailures) - 1, 11);
+        if (quiet && _transientFailures < _quietTransientFailureLimit) return;
         final authorizationRetry = result.snapshot?.authorizationFailed == true;
         _applyState(
           ProvisioningUiState(
@@ -1591,6 +1588,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             transactionId: id,
             authorizationUrlAvailable: authorizationRetry ? false : canReopen,
             authorizationRetryAvailable: authorizationRetry,
+            autoRetryStopped: _transientFailures >= _quietTransientFailureLimit,
             message: result.message ?? cloudSetupRetryableMessage,
           ),
         );
@@ -1601,6 +1599,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.retryableError,
             transactionId: id,
             authorizationUrlAvailable: canReopen,
+            autoRetryStopped: true,
             message: result.message ?? cloudSetupProtocolMessage,
           ),
         );
@@ -1679,13 +1678,15 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   /// The refresh loop is derived from the phase, not from the action that
   /// entered it: every path into a waiting phase (Continue, Retry, Resume,
   /// reopening the screen, a lifecycle resume) gets the same automatic
-  /// behaviour, and every terminal phase stops it.
+  /// behaviour, and every terminal phase stops it. A paused card whose
+  /// automatic retries stopped waits for the user.
   bool get _shouldRefreshInBackground {
     if (!_watching) return false;
     final phase = state.value?.phase;
     return phase == ProvisioningUiPhase.waitingForAuthorization ||
         phase == ProvisioningUiPhase.provisioning ||
-        phase == ProvisioningUiPhase.retryableError;
+        (phase == ProvisioningUiPhase.retryableError &&
+            !(state.value?.autoRetryStopped ?? false));
   }
 
   void _syncRefreshTimer() {

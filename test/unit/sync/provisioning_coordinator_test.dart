@@ -304,25 +304,6 @@ void main() {
       },
     );
 
-    test(
-      'explicit recovery after a deleted selected candidate restarts discovery',
-      () async {
-        await seedProfile(state: ProvisioningState.authorizationPending);
-        transport.reply(
-          'POST',
-          '${_snapshotPath(_transactionA)}/resolve',
-          <String, dynamic>{'kind': 'candidates', 'candidates': <dynamic>[]},
-        );
-        final replacement = await buildCoordinator().replaceDeletedProject();
-        expect(replacement.outcome, ProvisioningOutcome.inProgress);
-        expect(replacement.resolutionComplete, isTrue);
-        expect(replacement.candidates, isEmpty);
-        expect(transport.keys, <String>[
-          'POST ${_snapshotPath(_transactionA)}/resolve',
-        ]);
-      },
-    );
-
     test('installs an already READY transaction snapshot', () async {
       await seedProfile(state: ProvisioningState.authorizationPending);
       transport.reply(
@@ -1749,6 +1730,125 @@ void main() {
 
         expect(result.outcome, ManagementCheckOutcome.exists);
         expect((await profileStore.read())!.remoteMissing, isFalse);
+      },
+    );
+  });
+
+  group('stale remembered project', () {
+    test('a new attempt never inherits a project reference from an unfinished '
+        'attempt', () async {
+      await seedProfile(
+        state: ProvisioningState.authorizationPending,
+        withProject: true,
+      );
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+
+      final started = await buildCoordinator().startAttempt();
+
+      expect(started.outcome, ProvisioningOutcome.inProgress);
+      expect(started.profile?.projectRef, isNull);
+      final stored = await profileStore.read();
+      expect(stored?.projectRef, isNull);
+      expect(stored?.provisioningTransactionId, _transactionB);
+    });
+
+    test('a new attempt after an expired attempt starts without a project '
+        'reference', () async {
+      await seedProfile(state: ProvisioningState.expired, withProject: true);
+      transport.reply('POST', _transactionsPath, _grantBody(_transactionB));
+
+      final started = await buildCoordinator().startAttempt();
+
+      expect(started.outcome, ProvisioningOutcome.inProgress);
+      expect(started.profile?.projectRef, isNull);
+      final stored = await profileStore.read();
+      expect(stored?.projectRef, isNull);
+      expect(stored?.provisioningTransactionId, _transactionB);
+    });
+
+    test('a deleted remembered project on an unfinished attempt is cleared and '
+        'discovery continues', () async {
+      File(p.join(directory.path, plannerBackendProfileFileName))
+          .writeAsStringSync(
+            '{"format_version":1,"profile_id":"prov-stale-fixture-0001",'
+            '"generation":18,"state":"authorization_pending",'
+            '"project_ref":"staleprojectrefxyzab",'
+            '"provisioning_transaction_id":"0123456789abcdef0123456789abcdef",'
+            '"created_at":"2026-10-07T17:06:46.000Z",'
+            '"updated_at":"2026-10-07T17:06:46.000Z"}',
+          );
+      await capabilityStore.write(
+        transactionId: _transactionA,
+        capability: _capability,
+      );
+      final resolvePath = '${_snapshotPath(_transactionA)}/resolve';
+      transport
+        ..reply('POST', resolvePath, <String, dynamic>{
+          'error': 'project_deleted',
+        }, status: 410)
+        ..reply('POST', resolvePath, <String, dynamic>{
+          'kind': 'candidates',
+          'candidates': <dynamic>[],
+        });
+
+      final result = await buildCoordinator().resolveProject();
+
+      expect(result.outcome, ProvisioningOutcome.inProgress);
+      expect(result.resolutionComplete, isTrue);
+      expect(result.candidates, isEmpty);
+      expect(transport.keys, <String>[
+        'POST $resolvePath',
+        'POST $resolvePath',
+      ]);
+      expect(
+        jsonDecode(transport.requests[0].body!)['projectRef'],
+        'staleprojectrefxyzab',
+      );
+      expect(
+        (jsonDecode(transport.requests[1].body!) as Map).containsKey(
+          'projectRef',
+        ),
+        isFalse,
+      );
+      final stored = await profileStore.read();
+      expect(stored?.projectRef, isNull);
+      expect(stored?.state, ProvisioningState.authorizationPending);
+      expect(stored?.generation, 19);
+      expect(stored?.errorCode, isNull);
+      expect(stored?.provisioningTransactionId, _transactionA);
+      expect(capabilityStore.values[_transactionA], _capability);
+
+      // Reopening the app: a new coordinator must not send the old ref again.
+      await buildCoordinator().resolveProject();
+
+      expect(transport.requests, hasLength(3));
+      expect(
+        (jsonDecode(transport.requests[2].body!) as Map).containsKey(
+          'projectRef',
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'capability_invalid deletes the stored capability so reopening asks to '
+      'start again',
+      () async {
+        await seedProfile(state: ProvisioningState.authorizationPending);
+        transport.reply('GET', _snapshotPath(_transactionA), <String, dynamic>{
+          'error': 'capability_invalid',
+        }, status: 401);
+
+        final result = await buildCoordinator().refresh();
+
+        expect(result.outcome, ProvisioningOutcome.restartRequired);
+        expect(capabilityStore.values.containsKey(_transactionA), isFalse);
+        final reopened = await buildCoordinator().loadAttempt();
+        expect(reopened?.hasCapability, isFalse);
+        expect(
+          (await profileStore.read())?.state,
+          ProvisioningState.authorizationPending,
+        );
       },
     );
   });

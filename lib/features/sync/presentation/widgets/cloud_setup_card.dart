@@ -430,23 +430,6 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           ],
         );
 
-      case ProvisioningUiPhase.mappedProjectDeleted:
-        return _CloudCard(
-          icon: Icons.cloud_off_outlined,
-          title: cloudStorageTitle,
-          status: cloudRemoteMissingTitle,
-          statusTone: _StatusTone.error,
-          body: state.message ?? cloudSetupMappedProjectDeletedMessage,
-          busy: busy,
-          actions: <Widget>[
-            FilledButton(
-              key: const ValueKey('cloud-replace-deleted-project'),
-              onPressed: busy ? null : controller.replaceDeletedProject,
-              child: const Text('Set up replacement cloud'),
-            ),
-          ],
-        );
-
       case ProvisioningUiPhase.provisioning:
         return _CloudCard(
           icon: Icons.cloud_sync_outlined,
@@ -473,6 +456,16 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.cloud_off,
           title: 'Cloud setup paused',
           body: state.message ?? cloudSetupRetryableMessage,
+          content: state.autoRetryStopped
+              ? Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text(
+                    cloudSetupAutoRetryStoppedMessage,
+                    key: const ValueKey('cloud-auto-retry-stopped'),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              : null,
           busy: busy,
           actions: <Widget>[
             FilledButton(

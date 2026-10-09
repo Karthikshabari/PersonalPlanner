@@ -537,31 +537,41 @@ void main() {
     expect(api.calls, contains('recoverCandidateProject:bcdefghijklmnopqrstu'));
   });
 
-  test(
-    'deleted mapping waits for explicit replacement before new setup',
-    () async {
-      api.attempt = testAttempt(ProvisioningState.authorizationPending);
-      api.refreshResult = testInProgress(
-        ProvisioningState.authorizationPending,
-      );
-      api.resolutionResult = const ProvisioningResult(
-        outcome: ProvisioningOutcome.projectDeleted,
-      );
-      buildContainer(withApi: api);
-      await loadState();
-      await controller().checkAuthorization();
-      expect(current().phase, ProvisioningUiPhase.mappedProjectDeleted);
-      expect(api.calls, isNot(contains('replaceDeletedProject')));
+  test('a chosen project that vanished searches the account again', () async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.adoptionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.projectDeleted,
+    );
+    api.organizationsResult = testOrganizations(
+      const <ProvisioningOrganization>[
+        ProvisioningOrganization(
+          id: 'org-1',
+          name: 'Personal',
+          slug: 'personal',
+        ),
+      ],
+    );
+    buildContainer(withApi: api);
+    await loadState();
+    controller().selectCandidate(
+      const ProvisioningCandidate(
+        projectRef: testProjectRef,
+        name: 'Planner cloud',
+      ),
+    );
 
-      api.resolutionResult = const ProvisioningResult(
-        outcome: ProvisioningOutcome.inProgress,
-        resolutionComplete: true,
-      );
-      await controller().replaceDeletedProject();
-      expect(api.calls, contains('replaceDeletedProject'));
-      expect(current().phase, ProvisioningUiPhase.organizationSelection);
-    },
-  );
+    await controller().useSelectedCandidate();
+
+    expect(api.calls, contains('adoptProject:$testProjectRef'));
+    expect(api.calls, contains('resolveProject'));
+    expect(api.calls, contains('listOrganizations'));
+    expect(
+      api.calls.indexOf('adoptProject:$testProjectRef'),
+      lessThan(api.calls.indexOf('resolveProject')),
+    );
+    expect(current().phase, ProvisioningUiPhase.organizationSelection);
+  });
 
   test(
     'retryable discovery failure never offers new project creation',
@@ -1605,6 +1615,80 @@ void main() {
       expect(api.calls.where((c) => c == 'migrate').length, before + 1);
       expect(current().phase, ProvisioningUiPhase.provisioning);
     });
+  });
+
+  group('bounded automatic retries', () {
+    int count(String call) => api.calls.where((c) => c == call).length;
+
+    void scriptTemporaryFailure() {
+      api.attempt = testAttempt(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        profile: testProfile(
+          ProvisioningState.projectWaiting,
+          projectRef: testProjectRef,
+        ),
+      );
+    }
+
+    test('temporary failures back off and stop retrying on their own after six '
+        'attempts', () async {
+      scriptTemporaryFailure();
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(() => current().autoRetryStopped, attempts: 1000);
+
+      expect(current().phase, ProvisioningUiPhase.retryableError);
+      expect(count('refresh'), 6);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(count('refresh'), 6);
+    });
+
+    test('a failure that needs the user is never retried on its own', () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.needsUserAction,
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(
+        () => current().phase == ProvisioningUiPhase.retryableError,
+      );
+
+      expect(current().autoRetryStopped, isTrue);
+      expect(count('resolveProject'), 1);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(count('resolveProject'), 1);
+    });
+
+    test(
+      'pressing Retry after automatic retries stopped tries exactly once more',
+      () async {
+        scriptTemporaryFailure();
+        buildPollingContainer(api: api);
+        await loadState();
+        await controller().startWatching();
+        await waitFor(() => current().autoRetryStopped, attempts: 1000);
+        final before = count('refresh');
+
+        await controller().retry();
+
+        expect(count('refresh'), before + 1);
+        expect(current().autoRetryStopped, isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        expect(count('refresh'), before + 1);
+      },
+    );
   });
 
   group('Supabase access lifecycle', () {

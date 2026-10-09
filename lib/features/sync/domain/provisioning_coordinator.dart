@@ -366,11 +366,14 @@ class ProvisioningCoordinator {
         state: ProvisioningState.authorizationPending,
         createdAt: now,
         updatedAt: now,
-        // A confirmed missing ref must not trap the new attempt in an exact-X
-        // lookup. Broad discovery still requires this explicit setup action.
-        projectRef: existing?.remoteMissing == true
-            ? null
-            : existing?.projectRef,
+        // Only a verified READY backend that is not known to be missing is a
+        // remembered project (Guide §20). An unfinished attempt's ref is never inherited.
+        projectRef:
+            existing != null &&
+                existing.state == ProvisioningState.ready &&
+                !existing.remoteMissing
+            ? existing.projectRef
+            : null,
         provisioningTransactionId: grant.transactionId,
       );
     } on BackendProfileValidationException {
@@ -484,36 +487,53 @@ class ProvisioningCoordinator {
   /// Discover fully verified Planner backends before offering first creation.
   Future<ProvisioningResult> resolveProject() => _serialized(
     () => _withAttempt((attempt, capability) async {
-      final resolution = await client.resolve(
-        attempt.transactionId,
-        capability: capability,
-        projectRef: attempt.profile.projectRef,
-      );
+      final remembered = attempt.profile.projectRef;
+      ProvisioningAttempt current = attempt;
+      ProvisioningResolution resolution;
+      try {
+        resolution = await client.resolve(
+          attempt.transactionId,
+          capability: capability,
+          projectRef: remembered,
+        );
+      } on ProvisioningApiException catch (error) {
+        if (error.code != 'project_deleted' ||
+            remembered == null ||
+            attempt.profile.state == ProvisioningState.ready) {
+          rethrow;
+        }
+        // The remembered project is gone: forget it and search the account instead (R4).
+        try {
+          current = await _clearRememberedProject(attempt);
+        } on StaleConnectionProfileException {
+          return _stale(attempt);
+        } on ConnectionProfileStoreException catch (storeError) {
+          return _result(
+            ProvisioningOutcome.retryable,
+            profile: attempt.profile,
+            message: storeError.message,
+          );
+        } on BackendProfileValidationException {
+          return _result(
+            ProvisioningOutcome.protocolError,
+            profile: attempt.profile,
+          );
+        }
+        try {
+          resolution = await client.resolve(
+            current.transactionId,
+            capability: capability,
+          );
+        } on ProvisioningApiException catch (retryError) {
+          return await _failureOrExpiry(current, retryError);
+        }
+      }
       if (resolution.snapshot case final snapshot?) {
-        return await _applySnapshot(attempt, snapshot);
+        return await _applySnapshot(current, snapshot);
       }
       return ProvisioningResult(
         outcome: ProvisioningOutcome.inProgress,
-        profile: attempt.profile,
-        candidates: resolution.candidates,
-        resolutionComplete: true,
-      );
-    }),
-  );
-
-  /// Explicitly restart discovery after a selected project was deleted.
-  Future<ProvisioningResult> replaceDeletedProject() => _serialized(
-    () => _withAttempt((attempt, capability) async {
-      final resolution = await client.resolve(
-        attempt.transactionId,
-        capability: capability,
-      );
-      if (resolution.snapshot case final snapshot?) {
-        return _applySnapshot(attempt, snapshot);
-      }
-      return ProvisioningResult(
-        outcome: ProvisioningOutcome.inProgress,
-        profile: attempt.profile,
+        profile: current.profile,
         candidates: resolution.candidates,
         resolutionComplete: true,
       );
@@ -1066,6 +1086,30 @@ class ProvisioningCoordinator {
     }
   }
 
+  /// Removes a remembered project ref from an unfinished attempt while keeping its transaction and Supabase authorization.
+  Future<ProvisioningAttempt> _clearRememberedProject(
+    ProvisioningAttempt attempt,
+  ) async {
+    final now = _clock().toUtc();
+    final created = attempt.profile.createdAt;
+    final cleared = attempt.profile.copyWith(
+      generation: attempt.profile.generation + 1,
+      updatedAt: now.isBefore(created) ? created : now,
+      projectRef: null,
+      projectUrl: null,
+      errorCode: null,
+    );
+    await profileStore.save(
+      cleared,
+      expectedGeneration: attempt.profile.generation,
+    );
+    return ProvisioningAttempt(
+      profile: cleared,
+      transactionId: attempt.transactionId,
+      hasCapability: attempt.hasCapability,
+    );
+  }
+
   /// Marks the durable backend remote-missing after authoritative evidence.
   ///
   /// Nothing is deleted: the profile keeps its project ref, generation history,
@@ -1542,6 +1586,10 @@ class ProvisioningCoordinator {
           errorCode: 'provisioning_expired',
         ),
       );
+    }
+    if (error.code == 'capability_invalid') {
+      // The Worker no longer accepts this device's pass for the attempt. Dropping it makes a reopened screen show "Setup session ended" instead of retrying.
+      await _discardCapability(attempt.transactionId);
     }
     return _failure(error, profile: attempt.profile);
   }

@@ -96,10 +96,6 @@ class FakeProvisioningApi implements ProvisioningApi {
     outcome: ProvisioningOutcome.inProgress,
     resolutionComplete: true,
   );
-  ProvisioningResult replacementResult = const ProvisioningResult(
-    outcome: ProvisioningOutcome.inProgress,
-    resolutionComplete: true,
-  );
   ProvisioningResult adoptionResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.ready,
   );
@@ -182,12 +178,6 @@ class FakeProvisioningApi implements ProvisioningApi {
   Future<ProvisioningResult> resolveProject() async {
     calls.add('resolveProject');
     return resolutionResult;
-  }
-
-  @override
-  Future<ProvisioningResult> replaceDeletedProject() async {
-    calls.add('replaceDeletedProject');
-    return replacementResult;
   }
 
   @override

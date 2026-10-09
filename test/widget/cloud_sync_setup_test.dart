@@ -1824,4 +1824,24 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await _unmount(tester);
   });
+
+  testWidgets('a stopped automatic retry is explained on the paused card', (
+    tester,
+  ) async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.needsUserAction,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    expect(find.text('Cloud setup paused'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-auto-retry-stopped')),
+      findsOneWidget,
+    );
+    expect(find.text(cloudSetupAutoRetryStoppedMessage), findsOneWidget);
+
+    await _unmount(tester);
+  });
 }
