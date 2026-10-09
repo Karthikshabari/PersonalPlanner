@@ -265,15 +265,16 @@ void main() {
             );
             expect(tester.takeException(), isNull);
 
-            // Today's card has a task, no review and a context: the tallest
-            // content. Its Column plus the vertical padding is the card, so
+            // Today's card has a task, no review and a context: the fullest
+            // content. Its Column plus the padding and border is the tile, so
             // there is neither overflow nor dead space.
             final content = tester.getSize(
               find
                   .descendant(of: card(today()), matching: find.byType(Column))
                   .first,
             );
-            expect(cardHeight(tester), closeTo(content.height + 20, 1));
+            // 10 dp of padding and the 1 dp border on each side.
+            expect(cardHeight(tester), closeTo(content.height + 22, 1));
 
             // Every card in the strip shares that height.
             expect(

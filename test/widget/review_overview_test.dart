@@ -136,7 +136,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: find.byKey(const ValueKey('overview-subtabs')),
-        matching: find.text('Weekly'),
+        matching: find.text('Weeks'),
       ),
     );
     await settle(tester);

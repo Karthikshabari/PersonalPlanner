@@ -85,18 +85,24 @@ void main() {
       tester.getTopLeft(card(thisWeek())).dx,
       greaterThan(tester.getTopLeft(card(lastWeek)).dx),
     );
-    expect(tester.getSize(card(lastWeek)).width, 112);
+    // Every tile of the mode has the same measured size.
+    expect(tester.getSize(card(lastWeek)), tester.getSize(card(thisWeek())));
     expect(
       tester.getSemantics(card(lastWeek)).label,
-      endsWith(': 75% completed, Excellent'),
+      endsWith(', Excellent, 75% done'),
     );
     expect(
       tester.getSemantics(card(thisWeek())).label,
-      endsWith(': No tasks, Not reviewed'),
+      endsWith(', this week, Not reviewed, No tasks'),
+    );
+    // Tiles are selectable buttons; the current week starts selected.
+    expect(
+      tester.getSemantics(card(thisWeek())),
+      isSemantics(isButton: true, isSelected: true, hasTapAction: true),
     );
     expect(
-      find.descendant(of: card(lastWeek), matching: find.byType(InkWell)),
-      findsNothing,
+      tester.getSemantics(card(lastWeek)),
+      isSemantics(isButton: true, isSelected: false, hasTapAction: true),
     );
     handle.dispose();
     await finish(tester, container);
@@ -145,7 +151,7 @@ void main() {
     expect(strip, findsOneWidget);
     expect(
       tester.getSemantics(card(thisWeek())).label,
-      endsWith(': No tasks, Legendary'),
+      endsWith(', this week, Legendary, No tasks'),
     );
     handle.dispose();
     await drainDisposedStreams(tester);

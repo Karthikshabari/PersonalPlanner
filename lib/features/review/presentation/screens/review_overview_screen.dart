@@ -12,7 +12,10 @@ import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../providers/review_providers.dart';
 import '../widgets/overview_day_strip.dart';
 import '../widgets/overview_week_strip.dart';
+import '../widgets/review_animated_size.dart';
+import '../widgets/review_layout.dart';
 import '../widgets/review_mode_switcher.dart';
+import '../widgets/weekly_review_style.dart';
 
 class ReviewOverviewScreen extends ConsumerStatefulWidget {
   const ReviewOverviewScreen({super.key, this.initialWeekly = false});
@@ -64,66 +67,90 @@ class _ReviewOverviewScreenState extends ConsumerState<ReviewOverviewScreen> {
       body: ColoredBox(
         color: tokens.canvas,
         child: LayoutBuilder(
-          builder: (context, constraints) => ListView(
-            padding: EdgeInsets.all(
-              constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.lg,
-            ),
-            children: [
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: ReviewModeSwitcher(
-                          weekly: false,
-                          overview: true,
-                          onChanged: _onMode,
+          builder: (context, constraints) {
+            // The same rule as the Daily and Weekly reviews: the content
+            // column, not the window, decides.
+            final wide = ReviewLayout.isWide(constraints.maxWidth);
+            return ListView(
+              padding: const EdgeInsets.all(ReviewLayout.pagePadding),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: ReviewLayout.maxContentWidth,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ReviewModeSwitcher(
+                            weekly: false,
+                            overview: true,
+                            onChanged: _onMode,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      AppSurface(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: SegmentedButton<bool>(
-                                key: const ValueKey('overview-subtabs'),
-                                showSelectedIcon: false,
-                                segments: const [
-                                  ButtonSegment(
-                                    value: false,
-                                    label: Text('Daily'),
-                                  ),
-                                  ButtonSegment(
-                                    value: true,
-                                    label: Text('Weekly'),
-                                  ),
-                                ],
-                                selected: {_weekly},
-                                onSelectionChanged: (selection) =>
-                                    setState(() => _weekly = selection.first),
+                        const SizedBox(height: AppSpacing.md),
+                        AppSurface(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: SegmentedButton<bool>(
+                                  key: const ValueKey('overview-subtabs'),
+                                  showSelectedIcon: false,
+                                  expandedInsets: wide ? null : EdgeInsets.zero,
+                                  // "Days" and "Weeks" so the labels cannot be
+                                  // mistaken for the Daily / Weekly switcher.
+                                  segments: const [
+                                    ButtonSegment(
+                                      value: false,
+                                      label: Text('Days'),
+                                    ),
+                                    ButtonSegment(
+                                      value: true,
+                                      label: Text('Weeks'),
+                                    ),
+                                  ],
+                                  selected: {_weekly},
+                                  onSelectionChanged: (selection) =>
+                                      setState(() => _weekly = selection.first),
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: AppSpacing.md),
-                            if (_weekly)
-                              const OverviewWeekStrip()
-                            else
-                              const OverviewDayStrip(),
-                          ],
+                              const SizedBox(height: AppSpacing.md),
+                              // A short cross-fade; the card eases to the new
+                              // height instead of jumping.
+                              ReviewAnimatedSize(
+                                child: AnimatedSwitcher(
+                                  duration: _crossFade(context),
+                                  switchInCurve: WeeklyStyle.curve,
+                                  switchOutCurve: WeeklyStyle.curve,
+                                  child: KeyedSubtree(
+                                    key: ValueKey(_weekly),
+                                    child: _weekly
+                                        ? const OverviewWeekStrip()
+                                        : OverviewDayStrip(wide: wide),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
+
+  Duration _crossFade(BuildContext context) =>
+      MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 150);
 }
