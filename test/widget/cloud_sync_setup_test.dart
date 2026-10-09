@@ -1908,4 +1908,65 @@ void main() {
 
     await _unmount(tester);
   });
+
+  testWidgets(
+    'the attention card offers Continue without this project and safe Details',
+    (tester) async {
+      api.attempt = testAttempt(
+        ProvisioningState.authorizationPending,
+        projectRef: testProjectRef,
+        errorCode: 'project_access_denied',
+      );
+      await _pumpCard(tester, api: api, launcher: launcher);
+
+      expect(find.text(cloudSetupAttentionTitle), findsOneWidget);
+      expect(find.text(cloudSetupProjectAccessDeniedMessage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cloud-forget-remembered-project')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('cloud-cancel-setup')), findsOneWidget);
+
+      final details = find.byKey(const ValueKey('cloud-setup-details'));
+      await tester.ensureVisible(details);
+      await tester.tap(details);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Setup state: authorization_pending'), findsOneWidget);
+      expect(find.text('Error code: project_access_denied'), findsOneWidget);
+      expect(find.text('HTTP status: not available'), findsOneWidget);
+      expect(find.text('Last step: not available'), findsOneWidget);
+      expect(find.text('Setup ID: 012345…'), findsOneWidget);
+      expect(find.textContaining('Time: '), findsOneWidget);
+      expect(find.textContaining(testTransactionId), findsNothing);
+      expect(find.textContaining(testProjectRef), findsNothing);
+
+      await _unmount(tester);
+    },
+  );
+
+  testWidgets('an unexpected response offers Start over', (tester) async {
+    api.attempt = testAttempt(ProvisioningState.authorizationPending);
+    api.refreshResult = testInProgress(ProvisioningState.authorizationPending);
+    api.resolutionResult = const ProvisioningResult(
+      outcome: ProvisioningOutcome.protocolError,
+      errorCode: 'unexpected_response',
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    expect(find.text(cloudSetupAttentionTitle), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cloud-attention-start-over')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('cloud-attention-start-over')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('cloud-reset-dialog')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-reset-cancel')));
+    await _settle(tester);
+
+    await _unmount(tester);
+  });
 }

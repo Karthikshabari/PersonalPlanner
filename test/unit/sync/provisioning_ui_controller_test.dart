@@ -379,7 +379,7 @@ void main() {
     await controller().startSetup();
     await controller().checkAuthorization();
 
-    expect(current().phase, ProvisioningUiPhase.retryableError);
+    expect(current().phase, ProvisioningUiPhase.attentionRequired);
     expect(api.calls, isNot(contains('listOrganizations')));
     expect(api.calls, isNot(contains('createOrContinueProject')));
   });
@@ -1732,6 +1732,152 @@ void main() {
       expect(current().phase, ProvisioningUiPhase.restartRequired);
       expect(current().message, cloudSetupResetFailedMessage);
       expect(current().resetCompleted, isFalse);
+    });
+  });
+
+  group('plain failure messages', () {
+    test(
+      'a remembered project failure asks for a choice and is not retried',
+      () async {
+        api.attempt = testAttempt(
+          ProvisioningState.authorizationPending,
+          projectRef: testProjectRef,
+        );
+        api.refreshResult = testInProgress(
+          ProvisioningState.authorizationPending,
+          projectRef: testProjectRef,
+        );
+        api.resolutionResult = ProvisioningResult(
+          outcome: ProvisioningOutcome.needsUserAction,
+          profile: testProfile(
+            ProvisioningState.authorizationPending,
+            projectRef: testProjectRef,
+            errorCode: 'project_access_denied',
+          ),
+          errorCode: 'project_access_denied',
+          httpStatus: 403,
+          requestLabel: 'POST /v1/provisioning/transactions/:id/resolve',
+        );
+        buildPollingContainer(api: api);
+        await loadState();
+
+        await controller().startWatching();
+        await waitFor(
+          () => current().phase == ProvisioningUiPhase.attentionRequired,
+        );
+
+        expect(current().message, cloudSetupProjectAccessDeniedMessage);
+        expect(current().diagnostics?.errorCode, 'project_access_denied');
+        expect(current().diagnostics?.httpStatus, 403);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(
+          api.calls.where((call) => call == 'resolveProject'),
+          hasLength(1),
+        );
+      },
+    );
+
+    test('reopening a remembered project failure shows the same choice '
+        'without a request', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.authorizationPending,
+        projectRef: testProjectRef,
+        errorCode: 'project_access_denied',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().startWatching();
+
+      expect(current().phase, ProvisioningUiPhase.attentionRequired);
+      expect(current().message, cloudSetupProjectAccessDeniedMessage);
+      expect(current().diagnostics?.setupState, 'authorization_pending');
+      expect(api.calls, isNot(contains('refresh')));
+      expect(api.calls, isNot(contains('resolveProject')));
+    });
+
+    test('Continue without this project searches the account again', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.authorizationPending,
+        projectRef: testProjectRef,
+        errorCode: 'project_access_denied',
+      );
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.organizationsResult = testOrganizations(<ProvisioningOrganization>[
+        const ProvisioningOrganization(
+          id: 'org-1',
+          name: 'Personal',
+          slug: 'personal',
+        ),
+      ]);
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().forgetRememberedProject();
+
+      expect(
+        api.calls.where(
+          (call) => const <String>{
+            'forgetRememberedProject',
+            'resolveProject',
+            'listOrganizations',
+          }.contains(call),
+        ),
+        <String>[
+          'forgetRememberedProject',
+          'resolveProject',
+          'listOrganizations',
+        ],
+      );
+      expect(current().phase, ProvisioningUiPhase.organizationSelection);
+    });
+
+    test('an unexpected response stops and offers Start over', () async {
+      api.attempt = testAttempt(ProvisioningState.authorizationPending);
+      api.refreshResult = testInProgress(
+        ProvisioningState.authorizationPending,
+      );
+      api.resolutionResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.protocolError,
+        errorCode: 'unexpected_response',
+      );
+      buildPollingContainer(api: api);
+      await loadState();
+
+      await controller().startWatching();
+      await waitFor(
+        () => current().phase == ProvisioningUiPhase.attentionRequired,
+      );
+
+      expect(current().message, cloudSetupProtocolMessage);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(api.calls.where((call) => call == 'resolveProject'), hasLength(1));
+    });
+
+    test('failure messages never show codes or HTTP numbers', () async {
+      api.attempt = testAttempt(
+        ProvisioningState.projectWaiting,
+        projectRef: testProjectRef,
+      );
+      api.refreshResult = const ProvisioningResult(
+        outcome: ProvisioningOutcome.retryable,
+        errorCode: 'temporarily_unavailable',
+        httpStatus: 502,
+        message: 'Provisioning stopped: temporarily_unavailable (HTTP 502).',
+      );
+      buildContainer(withApi: api);
+      await loadState();
+
+      await controller().advance();
+
+      expect(current().phase, ProvisioningUiPhase.retryableError);
+      expect(current().message, cloudSetupServiceUnavailableMessage);
+      expect(current().message, isNot(contains('HTTP')));
+      expect(current().message, isNot(contains('temporarily_unavailable')));
+      expect(current().diagnostics?.httpStatus, 502);
+      expect(current().diagnostics?.errorCode, 'temporarily_unavailable');
     });
   });
 

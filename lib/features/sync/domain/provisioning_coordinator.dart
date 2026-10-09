@@ -69,6 +69,9 @@ class ProvisioningResult {
     this.resolutionComplete = false,
     this.message,
     this.authorizationUrl,
+    this.errorCode,
+    this.httpStatus,
+    this.requestLabel,
   });
 
   final ProvisioningOutcome outcome;
@@ -79,6 +82,15 @@ class ProvisioningResult {
   final bool resolutionComplete;
   final String? message;
   final Uri? authorizationUrl;
+
+  /// Sanitized failure code: a Worker code such as project_deleted, or network_unavailable, request_timeout or unexpected_response. Null on success.
+  final String? errorCode;
+
+  /// HTTP status of the failed request; null when no answer arrived.
+  final int? httpStatus;
+
+  /// METHOD and route of the last request, with the transaction id replaced by :id.
+  final String? requestLabel;
 
   bool get isReady => outcome == ProvisioningOutcome.ready;
 
@@ -537,6 +549,31 @@ class ProvisioningCoordinator {
         if (error.code != 'project_deleted' ||
             remembered == null ||
             attempt.profile.state == ProvisioningState.ready) {
+          // Remember the choice the user must make, so reopening does not repeat this request (R6).
+          if (remembered != null &&
+              attempt.profile.state != ProvisioningState.ready &&
+              (error.code == 'project_access_denied' ||
+                  error.code == 'verification_failed')) {
+            var marked = attempt.profile.copyWith(
+              generation: attempt.profile.generation + 1,
+              updatedAt: _clock().toUtc(),
+              errorCode: error.code,
+            );
+            // Best effort: the answer is still shown; reopening re-checks once.
+            try {
+              await profileStore.save(
+                marked,
+                expectedGeneration: attempt.profile.generation,
+              );
+            } on StaleConnectionProfileException {
+              marked = attempt.profile;
+            } on ConnectionProfileStoreException {
+              marked = attempt.profile;
+            } on BackendProfileValidationException {
+              marked = attempt.profile;
+            }
+            return _failure(error, profile: marked);
+          }
           rethrow;
         }
         // The remembered project is gone: forget it and search the account instead (R4).
@@ -574,6 +611,39 @@ class ProvisioningCoordinator {
         candidates: resolution.candidates,
         resolutionComplete: true,
       );
+    }),
+  );
+
+  /// The user chose to continue without the remembered project: forget it on this attempt, keeping its transaction and Supabase authorization.
+  Future<ProvisioningResult> forgetRememberedProject() => _serialized(
+    () => _withAttempt((attempt, _) async {
+      if (attempt.profile.state != ProvisioningState.authorizationPending ||
+          attempt.profile.projectRef == null) {
+        return _result(
+          ProvisioningOutcome.inProgress,
+          profile: attempt.profile,
+        );
+      }
+      try {
+        final cleared = await _clearRememberedProject(attempt);
+        return _result(
+          ProvisioningOutcome.inProgress,
+          profile: cleared.profile,
+        );
+      } on StaleConnectionProfileException {
+        return _stale(attempt);
+      } on ConnectionProfileStoreException catch (storeError) {
+        return _result(
+          ProvisioningOutcome.retryable,
+          profile: attempt.profile,
+          message: storeError.message,
+        );
+      } on BackendProfileValidationException {
+        return _result(
+          ProvisioningOutcome.protocolError,
+          profile: attempt.profile,
+        );
+      }
     }),
   );
 
@@ -1631,6 +1701,19 @@ class ProvisioningCoordinator {
     return _failure(error, profile: attempt.profile);
   }
 
+  String _failureCode(ProvisioningApiException error) {
+    final code = error.code;
+    if (code != null && RegExp(r'^[a-z][a-z0-9_]{2,47}$').hasMatch(code)) {
+      return code;
+    }
+    return switch (error.kind) {
+      ProvisioningErrorKind.network => 'network_unavailable',
+      ProvisioningErrorKind.timeout => 'request_timeout',
+      ProvisioningErrorKind.protocol => 'unexpected_response',
+      ProvisioningErrorKind.worker => 'unexpected_response',
+    };
+  }
+
   ProvisioningResult _failure(
     ProvisioningApiException error, {
     BackendConnectionProfile? profile,
@@ -1644,6 +1727,9 @@ class ProvisioningCoordinator {
           message:
               'Supabase authorization expired before project creation. '
               'Reauthorize this setup, then press Create project again.',
+          errorCode: _failureCode(error),
+          httpStatus: error.statusCode,
+          requestLabel: client.lastRequestLabel,
         )
       // 410 never reaches this branch for these states: _failureOrExpiry
       // persists it as expired first.
@@ -1655,38 +1741,53 @@ class ProvisioningCoordinator {
           message:
               'Supabase authorization ended during setup. Reauthorize to '
               'continue; your cloud project is kept.',
+          errorCode: _failureCode(error),
+          httpStatus: error.statusCode,
+          requestLabel: client.lastRequestLabel,
         )
       : error.code == 'project_deleted'
       ? _result(
           ProvisioningOutcome.projectDeleted,
           profile: profile,
-          message: error.message,
+          errorCode: _failureCode(error),
+          httpStatus: error.statusCode,
+          requestLabel: client.lastRequestLabel,
         )
       : switch (error.failureClass) {
           ProvisioningFailureClass.retryable => _result(
             ProvisioningOutcome.retryable,
             profile: profile,
-            message: error.message,
+            errorCode: _failureCode(error),
+            httpStatus: error.statusCode,
+            requestLabel: client.lastRequestLabel,
           ),
           ProvisioningFailureClass.actionRequired => _result(
             ProvisioningOutcome.needsUserAction,
             profile: profile,
-            message: error.message,
+            errorCode: _failureCode(error),
+            httpStatus: error.statusCode,
+            requestLabel: client.lastRequestLabel,
           ),
           ProvisioningFailureClass.terminal => _result(
             ProvisioningOutcome.terminal,
             profile: profile,
-            message: error.message,
+            errorCode: _failureCode(error),
+            httpStatus: error.statusCode,
+            requestLabel: client.lastRequestLabel,
           ),
           ProvisioningFailureClass.restartRequired => _result(
             ProvisioningOutcome.restartRequired,
             profile: profile,
-            message: error.message,
+            errorCode: _failureCode(error),
+            httpStatus: error.statusCode,
+            requestLabel: client.lastRequestLabel,
           ),
           ProvisioningFailureClass.protocol => _result(
             ProvisioningOutcome.protocolError,
             profile: profile,
-            message: error.message,
+            errorCode: _failureCode(error),
+            httpStatus: error.statusCode,
+            requestLabel: client.lastRequestLabel,
           ),
         };
 
@@ -1709,6 +1810,9 @@ class ProvisioningCoordinator {
         const <ProvisioningOrganization>[],
     String? message,
     Uri? authorizationUrl,
+    String? errorCode,
+    int? httpStatus,
+    String? requestLabel,
   }) => ProvisioningResult(
     outcome: outcome,
     profile: profile,
@@ -1716,6 +1820,9 @@ class ProvisioningCoordinator {
     organizations: organizations,
     message: message,
     authorizationUrl: authorizationUrl,
+    errorCode: errorCode,
+    httpStatus: httpStatus,
+    requestLabel: requestLabel,
   );
 
   /// Serializes coordinator actions so two overlapping calls cannot persist

@@ -1948,4 +1948,114 @@ void main() {
       },
     );
   });
+
+  group('failure diagnostics', () {
+    test(
+      'a remembered project the account cannot open is remembered as needing a '
+      'choice',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.authorizationPending,
+          withProject: true,
+        );
+        transport.reply('POST', '${_snapshotPath(_transactionA)}/resolve', {
+          'error': 'project_access_denied',
+        }, status: 403);
+
+        final result = await buildCoordinator().resolveProject();
+
+        expect(result.outcome, ProvisioningOutcome.needsUserAction);
+        expect(result.errorCode, 'project_access_denied');
+        expect(result.httpStatus, 403);
+        expect(
+          result.requestLabel,
+          'POST /v1/provisioning/transactions/:id/resolve',
+        );
+        expect(result.message, isNull);
+        final stored = await profileStore.read();
+        expect(stored?.errorCode, 'project_access_denied');
+        expect(stored?.projectRef, _projectRef);
+        expect(stored?.state, ProvisioningState.authorizationPending);
+        expect(transport.keys, hasLength(1));
+      },
+    );
+
+    test(
+      'an incompatible remembered project is remembered as needing a choice',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.authorizationPending,
+          withProject: true,
+        );
+        transport.reply('POST', '${_snapshotPath(_transactionA)}/resolve', {
+          'error': 'verification_failed',
+        }, status: 409);
+
+        final result = await buildCoordinator().resolveProject();
+
+        expect(result.outcome, ProvisioningOutcome.terminal);
+        expect(result.errorCode, 'verification_failed');
+        final stored = await profileStore.read();
+        expect(stored?.errorCode, 'verification_failed');
+        expect(stored?.state, ProvisioningState.authorizationPending);
+      },
+    );
+
+    test(
+      'forgetting the remembered project clears it and the next search sends '
+      'no reference',
+      () async {
+        await seedProfile(
+          state: ProvisioningState.authorizationPending,
+          withProject: true,
+        );
+        transport.reply('POST', '${_snapshotPath(_transactionA)}/resolve', {
+          'error': 'project_access_denied',
+        }, status: 403);
+        await buildCoordinator().resolveProject();
+
+        final forgotten = await buildCoordinator().forgetRememberedProject();
+
+        expect(forgotten.outcome, ProvisioningOutcome.inProgress);
+        final stored = await profileStore.read();
+        expect(stored?.projectRef, isNull);
+        expect(stored?.errorCode, isNull);
+
+        transport.replaceReply(
+          'POST',
+          '${_snapshotPath(_transactionA)}/resolve',
+          {'kind': 'candidates', 'candidates': <dynamic>[]},
+        );
+        final resolution = await buildCoordinator().resolveProject();
+
+        expect(resolution.outcome, ProvisioningOutcome.inProgress);
+        expect(resolution.resolutionComplete, isTrue);
+        final body =
+            jsonDecode(transport.requests.last.body!) as Map<String, dynamic>;
+        expect(body.containsKey('projectRef'), isFalse);
+      },
+    );
+
+    test(
+      'a network failure is reported as a plain code without technical text',
+      () async {
+        await seedProfile(state: ProvisioningState.authorizationPending);
+        transport.fail(
+          'GET',
+          _snapshotPath(_transactionA),
+          const ProvisioningApiException(
+            ProvisioningErrorKind.network,
+            'The provisioning service could not be reached.',
+          ),
+        );
+
+        final result = await buildCoordinator().refresh();
+
+        expect(result.outcome, ProvisioningOutcome.retryable);
+        expect(result.errorCode, 'network_unavailable');
+        expect(result.message, isNull);
+        expect(result.httpStatus, isNull);
+      },
+    );
+  });
 }

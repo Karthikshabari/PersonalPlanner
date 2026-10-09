@@ -72,7 +72,9 @@ const cloudSetupTerminalMessage =
     "Cloud setup couldn't be completed. Start again or continue using Personal "
     'Planner locally.';
 const cloudSetupProtocolMessage =
-    'Cloud setup returned an unexpected response. Please try again later.';
+    'The cloud setup service answered in a way this version of Personal '
+    'Planner does not understand. Start over to begin a new setup. If this '
+    'happens again, the setup service needs an update.';
 const cloudSetupStaleMessage =
     'Cloud setup changed on this device. Try again to continue the active '
     'session.';
@@ -95,6 +97,33 @@ String cloudSetupTerminalMessageForCode(String? code) => switch (code) {
   'project_health_failed' => cloudSetupProjectHealthFailedMessage,
   _ => cloudSetupTerminalMessage,
 };
+
+/// Plain sentence for a setup failure code, or null when the code has none.
+String? cloudSetupMessageForCode(String? code) => switch (code) {
+  'network_unavailable' => cloudSetupNetworkMessage,
+  'request_timeout' => cloudSetupTimeoutMessage,
+  'temporarily_unavailable' ||
+  'internal_error' => cloudSetupServiceUnavailableMessage,
+  'rate_limited' => cloudSetupRateLimitedRetryMessage,
+  'operation_in_progress' => cloudSetupOperationInProgressMessage,
+  'state_conflict' => cloudSetupStateConflictMessage,
+  'candidate_discovery_failed' ||
+  'organization_discovery_failed' ||
+  'runtime_config_unavailable' => cloudSetupDiscoveryFailedMessage,
+  'capability_invalid' => cloudSetupMissingCapabilityMessage,
+  'provisioning_expired' => cloudSetupRestartMessage,
+  'unexpected_response' || 'invalid_request' => cloudSetupProtocolMessage,
+  _ => null,
+};
+
+const _rememberedProjectCodes = <String>{
+  'project_access_denied',
+  'verification_failed',
+};
+
+String _rememberedProjectMessage(String? code) => code == 'verification_failed'
+    ? cloudSetupProjectIncompatibleMessage
+    : cloudSetupProjectAccessDeniedMessage;
 const cloudSetupIndeterminateMessage =
     'Supabase may have created the project, but its response could not be '
     'confirmed. Check for the project before trying setup again. Your Planner '
@@ -128,6 +157,41 @@ const cloudSetupResetDoneMessage =
 const cloudSetupResetFailedMessage =
     'The cloud setup could not be cleared because this device did not allow '
     'the change. Nothing was changed. Restart Personal Planner and try again.';
+const cloudSetupAttentionTitle = 'Cloud setup needs your choice';
+const cloudSetupNetworkMessage =
+    'Personal Planner could not reach the cloud setup service. Check your '
+    'internet connection, then press Retry. Your Planner data is safe.';
+const cloudSetupTimeoutMessage =
+    'The cloud setup service took too long to answer. Press Retry in a '
+    'moment. Your Planner data is safe.';
+const cloudSetupServiceUnavailableMessage =
+    'The cloud setup service is having a temporary problem. Personal Planner '
+    'retries a few times on its own; you can also press Retry later. Your '
+    'Planner data is safe.';
+const cloudSetupRateLimitedRetryMessage =
+    'Supabase is limiting requests right now. Wait a minute, then press Retry.';
+const cloudSetupOperationInProgressMessage =
+    'Another cloud setup is still working in this Supabase organization. It '
+    'can take up to 2 hours to finish. Press Retry later, or start over and '
+    'choose a different organization.';
+const cloudSetupStateConflictMessage =
+    'This setup step was already handled. Press Retry to read the latest '
+    'progress.';
+const cloudSetupDiscoveryFailedMessage =
+    'Supabase did not return a complete answer about your organizations and '
+    'projects. Press Retry in a moment.';
+const cloudSetupProjectAccessDeniedMessage =
+    'The Supabase account you authorized cannot open the cloud project this '
+    'device remembers. Continue without that project to search this account '
+    'again, or cancel setup.';
+const cloudSetupProjectIncompatibleMessage =
+    'The cloud project this device remembers does not have the Personal '
+    'Planner database. Continue without that project to search this account '
+    'again, or cancel setup.';
+const cloudSetupForgetProjectLabel = 'Continue without this project';
+const cloudSetupStartOverLabel = 'Start over';
+const cloudSetupDetailsLabel = 'Details';
+const cloudSetupDetailNotAvailable = 'not available';
 const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
@@ -256,6 +320,9 @@ enum ProvisioningUiPhase {
   /// A transient problem; retrying is safe.
   retryableError,
 
+  /// A failure that retrying cannot fix; the user chooses the next step.
+  attentionRequired,
+
   /// The attempt cannot continue; the user must start setup again.
   restartRequired,
 
@@ -309,6 +376,46 @@ final cloudReachabilityRetryDelayProvider = Provider<Duration Function(int)>(
   (ref) => cloudReachabilityRetryDelay,
 );
 
+/// Non-secret facts about the last setup failure, shown under "Details". Never a full transaction id, capability, token, key or project ref.
+class CloudSetupDiagnostics {
+  CloudSetupDiagnostics({
+    this.setupState,
+    this.step,
+    this.httpStatus,
+    this.errorCode,
+    this.setupIdPrefix,
+    required this.at,
+  });
+
+  final String? setupState;
+  final String? step;
+  final int? httpStatus;
+  final String? errorCode;
+  final String? setupIdPrefix;
+  final DateTime at;
+
+  static String? idPrefix(String? transactionId) =>
+      transactionId == null || transactionId.length < 6
+      ? null
+      : transactionId.substring(0, 6);
+
+  List<String> lines() {
+    final utc = at.toUtc();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final time =
+        '${utc.year.toString().padLeft(4, '0')}-${two(utc.month)}-'
+        '${two(utc.day)} ${two(utc.hour)}:${two(utc.minute)}';
+    return <String>[
+      'Setup state: ${setupState ?? cloudSetupDetailNotAvailable}',
+      'Last step: ${step ?? cloudSetupDetailNotAvailable}',
+      'HTTP status: ${httpStatus ?? cloudSetupDetailNotAvailable}',
+      'Error code: ${errorCode ?? cloudSetupDetailNotAvailable}',
+      'Setup ID: ${setupIdPrefix == null ? cloudSetupDetailNotAvailable : '$setupIdPrefix…'}',
+      'Time: $time UTC',
+    ];
+  }
+}
+
 class ProvisioningUiState {
   const ProvisioningUiState({
     required this.phase,
@@ -331,6 +438,7 @@ class ProvisioningUiState {
     this.authorizationConfirmed = false,
     this.autoRetryStopped = false,
     this.resetCompleted = false,
+    this.diagnostics,
     this.message,
   });
 
@@ -375,6 +483,9 @@ class ProvisioningUiState {
   /// True right after the user cleared the cloud setup, so the first card can confirm it.
   final bool resetCompleted;
 
+  /// Facts behind the Details line of a failure card.
+  final CloudSetupDiagnostics? diagnostics;
+
   final String? message;
 
   bool get isReady => phase == ProvisioningUiPhase.ready;
@@ -408,6 +519,7 @@ class ProvisioningUiState {
     bool? authorizationConfirmed,
     bool? autoRetryStopped,
     bool? resetCompleted,
+    CloudSetupDiagnostics? diagnostics,
   }) => ProvisioningUiState(
     phase: phase ?? this.phase,
     stage: stage,
@@ -433,6 +545,7 @@ class ProvisioningUiState {
         authorizationConfirmed ?? this.authorizationConfirmed,
     autoRetryStopped: autoRetryStopped ?? this.autoRetryStopped,
     resetCompleted: resetCompleted ?? this.resetCompleted,
+    diagnostics: diagnostics ?? this.diagnostics,
     message: clearMessage ? null : (message ?? this.message),
   );
 }
@@ -1116,6 +1229,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     );
   }
 
+  /// "Continue without this project": forgets the remembered project of this attempt and searches the authorized account again.
+  Future<void> forgetRememberedProject() => _run(() async {
+    final api = _api;
+    if (api == null) return;
+    final result = await api.forgetRememberedProject();
+    if (result.outcome != ProvisioningOutcome.inProgress) {
+      _applyResult(result);
+      return;
+    }
+    await _continueAfterAuthorization(api);
+  });
+
   /// Reconnects the remembered user-owned backend of this device.
   ///
   /// Only the durable "disconnected" flag changes. The stored project ref, URL
@@ -1347,11 +1472,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     if (attempt.state == ProvisioningState.localOnly) {
       return const ProvisioningUiState(phase: ProvisioningUiPhase.localOnly);
     }
+    final diagnostics = CloudSetupDiagnostics(
+      setupState: attempt.state.wireName,
+      errorCode: attempt.profile.errorCode,
+      setupIdPrefix: CloudSetupDiagnostics.idPrefix(attempt.transactionId),
+      at: attempt.profile.updatedAt,
+    );
     if (!attempt.hasCapability) {
       return ProvisioningUiState(
         phase: ProvisioningUiPhase.restartRequired,
         transactionId: attempt.transactionId,
         message: cloudSetupMissingCapabilityMessage,
+        diagnostics: diagnostics,
       );
     }
     if (attempt.state == ProvisioningState.expired) {
@@ -1359,6 +1491,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         phase: ProvisioningUiPhase.restartRequired,
         transactionId: attempt.transactionId,
         message: cloudSetupRestartMessage,
+        diagnostics: diagnostics,
       );
     }
     if (attempt.state == ProvisioningState.terminalError) {
@@ -1367,6 +1500,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         transactionId: attempt.transactionId,
         errorCode: attempt.profile.errorCode,
         message: cloudSetupTerminalMessageForCode(attempt.profile.errorCode),
+        diagnostics: diagnostics,
+      );
+    }
+    if (attempt.state == ProvisioningState.authorizationPending &&
+        attempt.profile.projectRef != null &&
+        _rememberedProjectCodes.contains(attempt.profile.errorCode)) {
+      return ProvisioningUiState(
+        phase: ProvisioningUiPhase.attentionRequired,
+        transactionId: attempt.transactionId,
+        errorCode: attempt.profile.errorCode,
+        message: _rememberedProjectMessage(attempt.profile.errorCode),
+        diagnostics: diagnostics,
       );
     }
     return _provisioningState(
@@ -1488,6 +1633,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     if (consumed || pastAuthorization) _authorizationUrl = null;
   }
 
+  String _failureMessage(ProvisioningResult result, String fallback) =>
+      cloudSetupMessageForCode(result.errorCode) ??
+      (result.errorCode == null ? result.message : null) ??
+      fallback;
+
   void _applyResult(
     ProvisioningResult result, {
     String? transactionId,
@@ -1504,6 +1654,32 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
         transactionId ??
         state.value?.transactionId;
     final canReopen = authorizationUrlAvailable ?? (_authorizationUrl != null);
+    final diagnostics = (result.errorCode == null && result.httpStatus == null)
+        ? null
+        : CloudSetupDiagnostics(
+            setupState: profile?.state.wireName,
+            step: result.requestLabel,
+            httpStatus: result.httpStatus,
+            errorCode: result.errorCode,
+            setupIdPrefix: CloudSetupDiagnostics.idPrefix(id),
+            at: DateTime.now().toUtc(),
+          );
+    if (_rememberedProjectCodes.contains(result.errorCode) &&
+        profile?.projectRef != null &&
+        (result.outcome == ProvisioningOutcome.needsUserAction ||
+            result.outcome == ProvisioningOutcome.terminal)) {
+      _cancelTimer();
+      _applyState(
+        ProvisioningUiState(
+          phase: ProvisioningUiPhase.attentionRequired,
+          transactionId: id,
+          errorCode: result.errorCode,
+          message: _rememberedProjectMessage(result.errorCode),
+          diagnostics: diagnostics,
+        ),
+      );
+      return;
+    }
     switch (result.outcome) {
       case ProvisioningOutcome.ready:
         _cancelTimer();
@@ -1562,6 +1738,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.restartRequired,
             transactionId: id,
             message: cloudSetupMissingCapabilityMessage,
+            diagnostics: diagnostics,
           ),
         );
         return;
@@ -1571,7 +1748,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
           ProvisioningUiState(
             phase: ProvisioningUiPhase.restartRequired,
             transactionId: id,
-            message: result.message ?? cloudSetupRestartMessage,
+            message: _failureMessage(result, cloudSetupRestartMessage),
+            diagnostics: diagnostics,
           ),
         );
         return;
@@ -1582,9 +1760,11 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.terminalError,
             transactionId: id,
             errorCode: profile?.errorCode,
-            message:
-                result.message ??
-                cloudSetupTerminalMessageForCode(profile?.errorCode),
+            message: _failureMessage(
+              result,
+              cloudSetupTerminalMessageForCode(profile?.errorCode),
+            ),
+            diagnostics: diagnostics,
           ),
         );
         return;
@@ -1607,6 +1787,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
               phase: ProvisioningUiPhase.creationAuthorizationRequired,
               transactionId: id,
               message: result.message,
+              diagnostics: diagnostics,
             ),
           );
           return;
@@ -1616,7 +1797,8 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             phase: ProvisioningUiPhase.retryableError,
             transactionId: id,
             autoRetryStopped: true,
-            message: cloudSetupNeedsUserActionMessage,
+            message: _failureMessage(result, cloudSetupNeedsUserActionMessage),
+            diagnostics: diagnostics,
           ),
         );
         return;
@@ -1656,18 +1838,18 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
             authorizationUrlAvailable: authorizationRetry ? false : canReopen,
             authorizationRetryAvailable: authorizationRetry,
             autoRetryStopped: _transientFailures >= _quietTransientFailureLimit,
-            message: result.message ?? cloudSetupRetryableMessage,
+            message: _failureMessage(result, cloudSetupRetryableMessage),
+            diagnostics: diagnostics,
           ),
         );
         return;
       case ProvisioningOutcome.protocolError:
         _applyState(
           ProvisioningUiState(
-            phase: ProvisioningUiPhase.retryableError,
+            phase: ProvisioningUiPhase.attentionRequired,
             transactionId: id,
-            authorizationUrlAvailable: canReopen,
-            autoRetryStopped: true,
-            message: result.message ?? cloudSetupProtocolMessage,
+            message: _failureMessage(result, cloudSetupProtocolMessage),
+            diagnostics: diagnostics,
           ),
         );
         return;

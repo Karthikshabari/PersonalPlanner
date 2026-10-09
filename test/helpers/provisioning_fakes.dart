@@ -99,6 +99,10 @@ class FakeProvisioningApi implements ProvisioningApi {
     outcome: ProvisioningOutcome.inProgress,
     resolutionComplete: true,
   );
+  ProvisioningResult forgetResult = ProvisioningResult(
+    outcome: ProvisioningOutcome.inProgress,
+    profile: testProfile(ProvisioningState.authorizationPending),
+  );
   ProvisioningResult adoptionResult = const ProvisioningResult(
     outcome: ProvisioningOutcome.ready,
   );
@@ -188,6 +192,15 @@ class FakeProvisioningApi implements ProvisioningApi {
   Future<ProvisioningResult> resolveProject() async {
     calls.add('resolveProject');
     return resolutionResult;
+  }
+
+  @override
+  Future<ProvisioningResult> forgetRememberedProject() async {
+    calls.add('forgetRememberedProject');
+    if (attempt != null) {
+      attempt = testAttempt(ProvisioningState.authorizationPending);
+    }
+    return forgetResult;
   }
 
   @override

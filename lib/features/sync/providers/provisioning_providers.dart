@@ -94,6 +94,9 @@ abstract interface class ProvisioningApi {
 
   Future<ProvisioningResult> resolveProject();
 
+  /// Forgets the remembered project of an unfinished attempt.
+  Future<ProvisioningResult> forgetRememberedProject();
+
   Future<ProvisioningResult> adoptProject(String projectRef);
 
   Future<ProvisioningResult> selectOrganization({
@@ -153,6 +156,10 @@ class _CoordinatorProvisioningApi implements ProvisioningApi {
 
   @override
   Future<ProvisioningResult> resolveProject() => _coordinator.resolveProject();
+
+  @override
+  Future<ProvisioningResult> forgetRememberedProject() =>
+      _coordinator.forgetRememberedProject();
 
   @override
   Future<ProvisioningResult> adoptProject(String projectRef) =>

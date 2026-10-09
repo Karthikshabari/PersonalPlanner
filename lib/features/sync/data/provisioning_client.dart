@@ -515,6 +515,15 @@ class ProvisioningClient {
   final Uri _base;
   final ProvisioningTransport transport;
 
+  String? _lastRequestLabel;
+  int? _lastResponseStatus;
+
+  /// METHOD and route of the last request, with the transaction id replaced by ":id". Never contains a capability.
+  String? get lastRequestLabel => _lastRequestLabel;
+
+  /// HTTP status of the last answer, or null when no answer arrived.
+  int? get lastResponseStatus => _lastResponseStatus;
+
   Future<ProvisioningGrant> createTransaction() async {
     final json = _decodeObject(
       await _send(
@@ -954,13 +963,16 @@ class ProvisioningClient {
     String? capability,
     Map<String, dynamic>? body,
     Duration? timeout,
-  }) {
+  }) async {
+    _lastRequestLabel =
+        '$method ${path.replaceAll(RegExp(r'[a-f0-9]{32}'), ':id')}';
+    _lastResponseStatus = null;
     final headers = <String, String>{'accept': 'application/json'};
     if (capability != null) {
       headers['authorization'] = 'Provisioning $capability';
     }
     if (body != null) headers['content-type'] = 'application/json';
-    return transport.send(
+    final response = await transport.send(
       ProvisioningHttpRequest(
         method: method,
         uri: Uri.parse('${_base.toString()}$path'),
@@ -969,6 +981,8 @@ class ProvisioningClient {
         timeout: timeout,
       ),
     );
+    _lastResponseStatus = response.statusCode;
+    return response;
   }
 
   Map<String, dynamic> _decodeObject(ProvisioningHttpResponse response) {

@@ -1158,4 +1158,61 @@ void main() {
       );
     });
   });
+
+  group('request diagnostics', () {
+    test('remembers the last request without the transaction id', () async {
+      final transport = _FakeTransport(
+        (_) async => _json(_snapshot('authorization_pending')),
+      );
+      final client = _client(transport);
+
+      await client.snapshot(_transactionId, capability: _capability);
+
+      expect(client.lastRequestLabel, 'GET /v1/provisioning/transactions/:id');
+      expect(client.lastResponseStatus, 200);
+      expect(client.lastRequestLabel, isNot(contains(_transactionId)));
+      expect(client.lastRequestLabel, isNot(contains(_capability)));
+    });
+
+    test('keeps the status of a rejected request', () async {
+      final transport = _FakeTransport(
+        (_) async =>
+            _json(<String, dynamic>{'error': 'project_deleted'}, status: 410),
+      );
+      final client = _client(transport);
+
+      await expectLater(
+        client.resolve(
+          _transactionId,
+          capability: _capability,
+          projectRef: _projectRef,
+        ),
+        throwsA(isA<ProvisioningApiException>()),
+      );
+
+      expect(
+        client.lastRequestLabel,
+        'POST /v1/provisioning/transactions/:id/resolve',
+      );
+      expect(client.lastResponseStatus, 410);
+    });
+
+    test('has no status when no answer arrived', () async {
+      final transport = _FakeTransport(
+        (_) async => throw const ProvisioningApiException(
+          ProvisioningErrorKind.network,
+          'The provisioning service could not be reached.',
+        ),
+      );
+      final client = _client(transport);
+
+      await expectLater(
+        client.snapshot(_transactionId, capability: _capability),
+        throwsA(isA<ProvisioningApiException>()),
+      );
+
+      expect(client.lastResponseStatus, isNull);
+      expect(client.lastRequestLabel, 'GET /v1/provisioning/transactions/:id');
+    });
+  });
 }

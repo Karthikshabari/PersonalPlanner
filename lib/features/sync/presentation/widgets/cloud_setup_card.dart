@@ -471,16 +471,24 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           icon: Icons.cloud_off,
           title: 'Cloud setup paused',
           body: state.message ?? cloudSetupRetryableMessage,
-          content: state.autoRetryStopped
-              ? Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.sm),
-                  child: Text(
-                    cloudSetupAutoRetryStoppedMessage,
-                    key: const ValueKey('cloud-auto-retry-stopped'),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                )
-              : null,
+          content: !state.autoRetryStopped && state.diagnostics == null
+              ? null
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (state.autoRetryStopped)
+                      Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.sm),
+                        child: Text(
+                          cloudSetupAutoRetryStoppedMessage,
+                          key: const ValueKey('cloud-auto-retry-stopped'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    if (state.diagnostics != null)
+                      _CloudSetupDetails(diagnostics: state.diagnostics!),
+                  ],
+                ),
           busy: busy,
           actions: <Widget>[
             FilledButton(
@@ -518,12 +526,46 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           ],
         );
 
+      case ProvisioningUiPhase.attentionRequired:
+        final remembered =
+            state.errorCode == 'project_access_denied' ||
+            state.errorCode == 'verification_failed';
+        return _CloudCard(
+          icon: Icons.info_outline,
+          title: cloudSetupAttentionTitle,
+          body: state.message ?? cloudSetupProtocolMessage,
+          busy: busy,
+          content: state.diagnostics == null
+              ? null
+              : _CloudSetupDetails(diagnostics: state.diagnostics!),
+          actions: <Widget>[
+            if (remembered) ...[
+              FilledButton(
+                key: const ValueKey('cloud-forget-remembered-project'),
+                onPressed: busy ? null : controller.forgetRememberedProject,
+                child: const Text(cloudSetupForgetProjectLabel),
+              ),
+              _cancelSetupButton(controller, busy),
+            ] else
+              FilledButton(
+                key: const ValueKey('cloud-attention-start-over'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_confirmReset(controller)),
+                child: const Text(cloudSetupStartOverLabel),
+              ),
+          ],
+        );
+
       case ProvisioningUiPhase.restartRequired:
         return _CloudCard(
           icon: Icons.restart_alt,
           title: 'Setup session ended',
           body: state.message ?? cloudSetupRestartMessage,
           busy: busy,
+          content: state.diagnostics == null
+              ? null
+              : _CloudSetupDetails(diagnostics: state.diagnostics!),
           actions: <Widget>[
             FilledButton(
               key: const ValueKey('cloud-restart-action'),
@@ -540,6 +582,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
           title: "Cloud setup couldn't be completed",
           body: state.message ?? cloudSetupTerminalMessage,
           busy: busy,
+          content: state.diagnostics == null
+              ? null
+              : _CloudSetupDetails(diagnostics: state.diagnostics!),
           actions: <Widget>[
             FilledButton(
               key: const ValueKey('cloud-restart-action'),
@@ -784,6 +829,34 @@ class _SupabaseAccessSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Collapsed "Details" disclosure with the non-secret facts of a failure.
+class _CloudSetupDetails extends StatelessWidget {
+  const _CloudSetupDetails({required this.diagnostics});
+
+  final CloudSetupDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        key: const ValueKey('cloud-setup-details'),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        title: Text(cloudSetupDetailsLabel, style: style),
+        children: <Widget>[
+          for (final line in diagnostics.lines())
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(line, style: style),
+            ),
+        ],
+      ),
     );
   }
 }
