@@ -1,6 +1,6 @@
 import titleHistoryRuntimeTest from "../../supabase/tests/database/title_history_conflict_ordering_test.sql";
 import { MIGRATIONS, SCHEMA_VERIFICATION_SQL } from "./migrations";
-import { ProvisioningTransaction, plannerEmailConfirmationPage, productionFetch, productionManagementAuthorization, productionOAuthCallback, productionProjectCheck, productionProjectResolution } from "./production";
+import { PROVISIONING_WORKER_REVISION, ProvisioningTransaction, logProvisioningResponse, plannerEmailConfirmationPage, productionFetch, productionManagementAuthorization, productionOAuthCallback, productionProjectCheck, productionProjectResolution } from "./production";
 
 export { ProvisioningTransaction };
 export { ManagementAccountProject } from "./management_account_project";
@@ -1242,34 +1242,21 @@ async function oauthCallback(request: Request, env: Env): Promise<Response> {
   ]);
 }
 
-/** Logs only the route shape and status of production failures, never a URL
- * query, capability, credential, request body, or upstream response body. */
-function logProductionFailure(request: Request, response: Response): Response {
-  if (response.status >= 500) {
-    const route = new URL(request.url).pathname.replace(
-      /\/transactions\/[a-f0-9]{32}(?=\/|$)/gu,
-      '/transactions/:id',
-    );
-    console.error(JSON.stringify({ event: 'provisioning_http_failure', route, status: response.status }));
-  }
-  return response;
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const productionCallback = await productionOAuthCallback(request, env);
-    if (productionCallback !== null) return logProductionFailure(request, productionCallback);
+    if (productionCallback !== null) return logProvisioningResponse(request, productionCallback);
     const projectCheck = await productionProjectCheck(request, env);
-    if (projectCheck !== null) return logProductionFailure(request, projectCheck);
+    if (projectCheck !== null) return logProvisioningResponse(request, projectCheck);
     const projectResolution = await productionProjectResolution(request, env);
-    if (projectResolution !== null) return logProductionFailure(request, projectResolution);
+    if (projectResolution !== null) return logProvisioningResponse(request, projectResolution);
     const managementAuthorization = await productionManagementAuthorization(
       request,
       env,
     );
-    if (managementAuthorization !== null) return logProductionFailure(request, managementAuthorization);
+    if (managementAuthorization !== null) return logProvisioningResponse(request, managementAuthorization);
     const production = await productionFetch(request, env);
-    if (production !== null) return logProductionFailure(request, production);
+    if (production !== null) return logProvisioningResponse(request, production);
     const url = new URL(request.url);
 
     // Planner user email confirmation landing page.
@@ -1303,7 +1290,7 @@ export default {
 
     if (url.pathname === "/health") {
       return Response.json(
-        { status: "ok", phase: env.POC_PHASE },
+        { status: "ok", phase: env.POC_PHASE, revision: PROVISIONING_WORKER_REVISION },
         { headers: { "cache-control": "no-store" } },
       );
     }
