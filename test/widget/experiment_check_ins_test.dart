@@ -72,7 +72,7 @@ void main() {
   String statistic(WidgetTester tester, Experiment e) {
     final stat = find.byKey(ValueKey('experiment-check-ins-${e.id}'));
     final texts = find.descendant(of: stat, matching: find.byType(Text));
-    return tester.widget<Text>(texts.last).data!;
+    return tester.widget<Text>(texts.last).textSpan!.toPlainText();
   }
 
   testWidgets('the box appears only while a slot is pending', (tester) async {
@@ -107,10 +107,9 @@ void main() {
 
     expect(find.text('2 missed'), findsOneWidget);
     expect(find.text('1 due today'), findsOneWidget);
+    expect(find.text('Which day is this for?'), findsOneWidget);
     expect(
-      find.text(
-        'Which day is this for? Missed days stay here until you write them.',
-      ),
+      find.text('Missed days stay here until you write them.'),
       findsOneWidget,
     );
     expect(
@@ -231,10 +230,15 @@ void main() {
 
     final toggle = find.byKey(ValueKey('checkin-past-${e.id}'));
     await show(tester, toggle);
-    expect(find.text('Show past check-ins (0)'), findsOneWidget);
+    Finder count(String n) => find.descendant(
+      of: find.byKey(ValueKey('checkin-past-count-${e.id}')),
+      matching: find.text(n),
+    );
+    expect(find.text('Past check-ins'), findsOneWidget);
+    expect(count('0'), findsOneWidget);
+    expect(find.text('No check-ins written yet.'), findsNothing);
     await tester.tap(toggle);
     await tester.pump();
-    expect(find.text('Hide past check-ins (0)'), findsOneWidget);
     expect(find.text('No check-ins written yet.'), findsOneWidget);
 
     await writeNote(tester, e, 'Third note');
@@ -244,7 +248,7 @@ void main() {
     await writeNote(tester, e, 'First note');
     await save(tester, e);
 
-    expect(find.text('Hide past check-ins (3)'), findsOneWidget);
+    expect(count('3'), findsOneWidget);
     expect(find.text('No check-ins written yet.'), findsNothing);
     final list = find.byKey(ValueKey('checkin-past-list-${e.id}'));
     expect(list, findsOneWidget);
@@ -259,6 +263,11 @@ void main() {
       find.descendant(of: list, matching: find.text('Oct 7')),
       findsOneWidget,
     );
+    // The weekday sits under the date, and the note is its own text.
+    expect(
+      find.descendant(of: list, matching: find.text('Wed')),
+      findsOneWidget,
+    );
     // There is nothing to edit or delete.
     expect(
       find.descendant(of: list, matching: find.byType(IconButton)),
@@ -271,7 +280,7 @@ void main() {
 
     await tester.tap(toggle);
     await tester.pump();
-    expect(find.text('Show past check-ins (3)'), findsOneWidget);
+    expect(count('3'), findsOneWidget);
     expect(list, findsNothing);
 
     await teardownApp(tester, container);
@@ -297,6 +306,8 @@ void main() {
       );
       await settle(tester);
 
+      await tester.tap(find.text('Concluded (1)'));
+      await settle(tester);
       expect(box(e), findsNothing);
       expect(find.text('Share your experience'), findsNothing);
       expect(find.byKey(ValueKey('end-panel-${e.id}')), findsNothing);

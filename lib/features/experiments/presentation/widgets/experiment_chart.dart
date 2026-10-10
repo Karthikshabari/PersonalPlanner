@@ -8,16 +8,17 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/experiment.dart';
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../analytics/presentation/widgets/analytics_cards.dart'
     show formatMinutes;
 import '../../domain/experiment_chart_buckets.dart';
 import '../../domain/experiment_dashboard.dart';
+import 'experiment_ui.dart';
 
-/// Height of the bars' area (ED30). The today dot sits in the strip below.
-const experimentChartPlotHeight = 140.0;
-const _dotStrip = 10.0;
+/// Height of the bars' area (ED30). The "Today" caption sits in the strip
+/// below, which exists only while a bucket is today.
+const experimentChartPlotHeight = 96.0;
+const _todayStrip = 16.0;
 
 /// Minutes per day, week or month as one painted chart (R18). The whole chart
 /// is a single [CustomPaint]; there is no widget per bar. Hover (desktop) and
@@ -74,8 +75,7 @@ class _ExperimentChartState extends State<ExperimentChart> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = AppThemeTokens.of(context);
-    final theme = Theme.of(context);
+    final styles = ExperimentStyles.of(context);
     final view = widget.view;
     final id = view.experiment.id;
     return LayoutBuilder(
@@ -88,22 +88,36 @@ class _ExperimentChartState extends State<ExperimentChart> {
         final line = selected == null ? null : data.buckets[selected].tapLine;
         final first = view.experiment.startDate;
         final last = view.experiment.endDate;
-        final mutedStyle = theme.textTheme.bodySmall?.copyWith(
-          color: tokens.textMuted,
-        );
+        final hasToday = data.buckets.any((b) => b.isToday);
+        final narrow = width < experimentNarrowWidth - 2 * AppSpacing.lg;
+        final unit = switch (data.grouping) {
+          ExperimentChartGrouping.days => 'day',
+          ExperimentChartGrouping.weeks => 'week',
+          ExperimentChartGrouping.months => 'month',
+        };
+        final heading = 'Minutes per $unit';
+        final caption = "Faint bar = that $unit's target";
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(data.caption, style: mutedStyle),
+            Wrap(
+              spacing: AppSpacing.md,
+              runSpacing: AppSpacing.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(heading, style: styles.label),
+                Text(caption, style: styles.caption),
+              ],
+            ),
             if (data.groupingNote != null) ...[
               const SizedBox(height: AppSpacing.xs),
-              Text(data.groupingNote!, style: mutedStyle),
+              Text(data.groupingNote!, style: styles.caption),
             ],
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: AppSpacing.md),
             Semantics(
               container: true,
               explicitChildNodes: true,
-              label: experimentChartSummary(data.caption, first, last),
+              label: experimentChartSummary('$heading. $caption.', first, last),
               child: MouseRegion(
                 onHover: (event) => setState(() {
                   _hoverFirstDate = data
@@ -129,30 +143,35 @@ class _ExperimentChartState extends State<ExperimentChart> {
                   },
                   child: CustomPaint(
                     key: ValueKey('experiment-chart-$id'),
-                    size: Size(width, experimentChartPlotHeight + _dotStrip),
+                    size: Size(
+                      width,
+                      experimentChartPlotHeight + (hasToday ? _todayStrip : 0),
+                    ),
                     painter: ExperimentChartPainter(
                       buckets: data.buckets,
                       selectedIndex: selected,
-                      doneColor: tokens.success,
-                      belowTargetColor: tokens.textMuted.withValues(alpha: 0.6),
-                      targetOutlineColor: tokens.outlineStrong,
-                      futureOutlineColor: tokens.outline,
-                      selectedColumnColor: tokens.surfaceSubtle,
-                      todayDotColor: tokens.textPrimary,
+                      doneColor: styles.done,
+                      targetColor: styles.scheme.onSurface.withValues(
+                        alpha: 0.1,
+                      ),
+                      selectedColumnColor: styles.strip,
+                      todayColor: styles.accentText,
+                      todayLabelStyle: styles.caption.copyWith(
+                        color: styles.accentText,
+                      ),
+                      gap: narrow ? 2 : 3,
                     ),
                   ),
                 ),
               ),
             ),
             const SizedBox(height: AppSpacing.xs),
-            // A Wrap, not a Row: at large text sizes the two dates stack
-            // instead of overflowing.
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              spacing: AppSpacing.md,
+            // Dates at the two ends of the chart.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_monthDay(first), style: mutedStyle),
-                Text(_monthDay(last), style: mutedStyle),
+                Text(_monthDay(first), style: styles.caption),
+                Text(_monthDay(last), style: styles.caption),
               ],
             ),
             const SizedBox(height: AppSpacing.xs),
@@ -160,7 +179,7 @@ class _ExperimentChartState extends State<ExperimentChart> {
             Text(
               line ?? ' ',
               key: ValueKey('experiment-chart-line-$id'),
-              style: theme.textTheme.bodyMedium,
+              style: styles.label,
             ),
           ],
         );
@@ -179,32 +198,32 @@ class ExperimentChartPainter extends CustomPainter {
     required this.buckets,
     required this.selectedIndex,
     required this.doneColor,
-    required this.belowTargetColor,
-    required this.targetOutlineColor,
-    required this.futureOutlineColor,
+    required this.targetColor,
     required this.selectedColumnColor,
-    required this.todayDotColor,
+    required this.todayColor,
+    required this.todayLabelStyle,
+    required this.gap,
   });
 
   final List<ExperimentChartBucket> buckets;
   final int? selectedIndex;
   final Color doneColor;
-  final Color belowTargetColor;
-  final Color targetOutlineColor;
-  final Color futureOutlineColor;
+  final Color targetColor;
   final Color selectedColumnColor;
-  final Color todayDotColor;
+  final Color todayColor;
+  final TextStyle todayLabelStyle;
 
-  static const _barShare = 0.7;
-  static const _leaveOutlineHeight = 3.0;
-  static const _dash = 4.0;
-  static const _gap = 3.0;
+  /// Space between two bars.
+  final double gap;
+
+  static const _barRadius = 3.0;
+  static const _leaveBarHeight = 3.0;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (buckets.isEmpty) return;
     final slot = size.width / buckets.length;
-    final barWidth = slot * _barShare;
+    final barWidth = math.max(1.0, slot - gap);
     // The vertical scale is the largest of every done and target, at least 1.
     final scale = math.max(
       1,
@@ -216,11 +235,17 @@ class ExperimentChartPainter extends CustomPainter {
     const plot = experimentChartPlotHeight;
     double heightOf(int minutes) =>
         minutes <= 0 ? 0 : math.max(1.0, minutes / scale * plot);
+    final radius = Radius.circular(math.min(_barRadius, barWidth / 2));
+    RRect bar(double left, double h) => RRect.fromRectAndRadius(
+      Rect.fromLTWH(left, plot - h, barWidth, h),
+      Radius.circular(math.min(radius.x, h / 2)),
+    );
 
     final fill = Paint()..style = PaintingStyle.fill;
     final outline = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
+      ..strokeWidth = 1
+      ..color = todayColor;
 
     for (var i = 0; i < buckets.length; i++) {
       final bucket = buckets[i];
@@ -228,72 +253,41 @@ class ExperimentChartPainter extends CustomPainter {
 
       if (i == selectedIndex) {
         canvas.drawRect(
-          Rect.fromLTWH(slot * i, 0, slot, size.height),
+          Rect.fromLTWH(slot * i, 0, slot, plot),
           fill..color = selectedColumnColor,
         );
       }
 
-      if (bucket.isLeaveOrHoliday) {
-        _dashedRect(
-          canvas,
-          Rect.fromLTWH(
-            left,
-            plot - _leaveOutlineHeight,
-            barWidth,
-            _leaveOutlineHeight,
-          ),
-          outline..color = futureOutlineColor,
-        );
-      } else if (bucket.isFuture) {
-        final h = heightOf(bucket.targetMin);
-        if (h > 0) {
-          _dashedRect(
-            canvas,
-            Rect.fromLTWH(left, plot - h, barWidth, h),
-            outline..color = futureOutlineColor,
-          );
-        }
-      } else {
-        final h = heightOf(bucket.targetMin);
-        if (h > 0) {
-          _dashedRect(
-            canvas,
-            Rect.fromLTWH(left, plot - h, barWidth, h),
-            outline..color = targetOutlineColor,
-          );
-        }
+      // The faint target bar: every day, future ones included. A Leave or
+      // Holiday day has no target, so it gets a thin sliver instead.
+      final targetHeight = bucket.isLeaveOrHoliday
+          ? _leaveBarHeight
+          : heightOf(bucket.targetMin);
+      if (targetHeight > 0) {
+        canvas.drawRRect(bar(left, targetHeight), fill..color = targetColor);
       }
 
       // A completed amount is filled for every non-future bucket, also on a
-      // Leave or Holiday day (its target is 0, so it counts as met).
+      // Leave or Holiday day.
+      var doneHeight = 0.0;
       if (!bucket.isFuture && bucket.doneMin > 0) {
-        final h = heightOf(bucket.doneMin);
-        final met = bucket.doneMin >= bucket.targetMin;
-        canvas.drawRect(
-          Rect.fromLTWH(left, plot - h, barWidth, h),
-          fill..color = met ? doneColor : belowTargetColor,
-        );
+        doneHeight = heightOf(bucket.doneMin);
+        canvas.drawRRect(bar(left, doneHeight), fill..color = doneColor);
       }
 
       if (bucket.isToday) {
-        canvas.drawCircle(
-          Offset(slot * i + slot / 2, plot + _dotStrip / 2 + 1),
-          2,
-          fill..color = todayDotColor,
-        );
-      }
-    }
-  }
-
-  /// Dashed outline of [rect], drawn along its path.
-  void _dashedRect(Canvas canvas, Rect rect, Paint paint) {
-    final path = Path()..addRect(rect);
-    for (final metric in path.computeMetrics()) {
-      var distance = 0.0;
-      while (distance < metric.length) {
-        final end = math.min(distance + _dash, metric.length);
-        canvas.drawPath(metric.extractPath(distance, end), paint);
-        distance += _dash + _gap;
+        final h = math.max(math.max(targetHeight, doneHeight), _leaveBarHeight);
+        canvas.drawRRect(bar(left, h).inflate(0.5), outline);
+        final label = TextPainter(
+          text: TextSpan(text: 'Today', style: todayLabelStyle),
+          textDirection: ui.TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+        final x = (slot * i + slot / 2 - label.width / 2)
+            .clamp(0.0, math.max(0.0, size.width - label.width))
+            .toDouble();
+        label.paint(canvas, Offset(x, plot + 2));
+        label.dispose();
       }
     }
   }
@@ -302,11 +296,11 @@ class ExperimentChartPainter extends CustomPainter {
   bool shouldRepaint(ExperimentChartPainter oldDelegate) =>
       selectedIndex != oldDelegate.selectedIndex ||
       doneColor != oldDelegate.doneColor ||
-      belowTargetColor != oldDelegate.belowTargetColor ||
-      targetOutlineColor != oldDelegate.targetOutlineColor ||
-      futureOutlineColor != oldDelegate.futureOutlineColor ||
+      targetColor != oldDelegate.targetColor ||
       selectedColumnColor != oldDelegate.selectedColumnColor ||
-      todayDotColor != oldDelegate.todayDotColor ||
+      todayColor != oldDelegate.todayColor ||
+      todayLabelStyle != oldDelegate.todayLabelStyle ||
+      gap != oldDelegate.gap ||
       !listEquals(buckets, oldDelegate.buckets);
 
   @override

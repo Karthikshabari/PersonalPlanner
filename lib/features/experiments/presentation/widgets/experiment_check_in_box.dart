@@ -4,12 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
-import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../analytics/providers/analytics_providers.dart';
 import '../../providers/experiment_providers.dart';
+import 'experiment_ui.dart';
 
 /// Limits text to [maxRunes] Unicode code points, the unit the experiment
 /// texts are validated in (ED9), and never splits a grapheme cluster, so an
@@ -42,8 +41,8 @@ class CodePointLimitingTextInputFormatter extends TextInputFormatter {
   }
 }
 
-const _dateLabel =
-    'Which day is this for? Missed days stay here until you write them.';
+const _dateLabel = 'Which day is this for?';
+const _dateHelper = 'Missed days stay here until you write them.';
 const _noteLabel =
     'How is it going? What did you notice, and is it what you expected?';
 const _maxNoteRunes = 4000;
@@ -132,126 +131,134 @@ class _ExperimentCheckInBoxState extends ConsumerState<ExperimentCheckInBox> {
     final pending = widget.pendingDates;
     if (pending.isEmpty) return const SizedBox.shrink();
     final id = widget.experimentId;
-    final theme = Theme.of(context);
-    final tokens = AppThemeTokens.of(context);
+    final styles = ExperimentStyles.of(context);
     final date = _effectiveDate;
     final canSave = !_saving && _note.text.trim().isNotEmpty;
-    final labelStyle = theme.textTheme.bodySmall?.copyWith(
-      color: tokens.textSecondary,
-    );
+    OutlineInputBorder border([BorderSide side = BorderSide.none]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(ExperimentStyles.innerRadius),
+          borderSide: side,
+        );
 
-    return AppSurface(
+    return Column(
       key: ValueKey('checkin-box-$id'),
-      color: tokens.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text('Share your experience', style: theme.textTheme.titleSmall),
-              if (widget.missedCount > 0)
-                _CountChip(
-                  key: ValueKey('checkin-missed-$id'),
-                  text: '${widget.missedCount} missed',
-                ),
-              if (widget.dueToday)
-                _CountChip(
-                  key: ValueKey('checkin-due-today-$id'),
-                  text: '1 due today',
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          ExcludeSemantics(child: Text(_dateLabel, style: labelStyle)),
-          const SizedBox(height: AppSpacing.xs),
-          Semantics(
-            label: _dateLabel,
-            child: InputDecorator(
-              decoration: const InputDecoration(
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: AppSpacing.xs,
-                ),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  key: ValueKey('checkin-date-$id'),
-                  value: date,
-                  isExpanded: true,
-                  items: [
-                    for (final d in pending)
-                      DropdownMenuItem(value: d, child: Text(_dropdownDate(d))),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (value) => setState(() => _selected = value),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          ExcludeSemantics(child: Text(_noteLabel, style: labelStyle)),
-          const SizedBox(height: AppSpacing.xs),
-          Semantics(
-            label: _noteLabel,
-            child: TextField(
-              key: ValueKey('checkin-note-$id'),
-              controller: _note,
-              minLines: 3,
-              maxLines: 6,
-              keyboardType: TextInputType.multiline,
-              inputFormatters: const [
-                CodePointLimitingTextInputFormatter(_maxNoteRunes),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.md,
+          runSpacing: AppSpacing.sm,
+          children: [
+            Text('Share your experience', style: styles.sectionHeading),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.xs,
+              children: [
+                if (widget.missedCount > 0)
+                  ExperimentChip(
+                    key: ValueKey('checkin-missed-$id'),
+                    text: '${widget.missedCount} missed',
+                    color: styles.amber,
+                  ),
+                if (widget.dueToday)
+                  ExperimentChip(
+                    key: ValueKey('checkin-due-today-$id'),
+                    text: '1 due today',
+                    color: styles.accent,
+                    textColor: styles.accentText,
+                  ),
               ],
-              decoration: const InputDecoration(
-                hintText: 'A few lines is enough.',
-              ),
-              onChanged: (_) => setState(() {}),
             ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              key: ValueKey('checkin-save-$id'),
-              onPressed: canSave ? () => _save(date) : null,
-              child: Text(
-                'Save check-in for ${_buttonDate(date)}',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// A quiet, neutral count label (never red).
-class _CountChip extends StatelessWidget {
-  const _CountChip({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = AppThemeTokens.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: tokens.surfaceRaised,
-        borderRadius: BorderRadius.circular(tokens.radiusSmall),
-        border: Border.all(color: tokens.outline),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.xs,
+          ],
         ),
-        child: Text(text, style: Theme.of(context).textTheme.labelMedium),
-      ),
+        const SizedBox(height: AppSpacing.lg),
+        ExcludeSemantics(child: Text(_dateLabel, style: styles.label)),
+        const SizedBox(height: AppSpacing.xs),
+        Semantics(
+          label: '$_dateLabel $_dateHelper',
+          child: InputDecorator(
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: styles.field,
+              border: border(),
+              enabledBorder: border(),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+              ),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                key: ValueKey('checkin-date-$id'),
+                value: date,
+                isExpanded: true,
+                itemHeight: 48,
+                style: styles.body,
+                items: [
+                  for (final d in pending)
+                    DropdownMenuItem(value: d, child: Text(_dropdownDate(d))),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() => _selected = value),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        ExcludeSemantics(child: Text(_dateHelper, style: styles.caption)),
+        const SizedBox(height: AppSpacing.lg),
+        ExcludeSemantics(child: Text(_noteLabel, style: styles.label)),
+        const SizedBox(height: AppSpacing.xs),
+        Semantics(
+          label: _noteLabel,
+          child: TextField(
+            key: ValueKey('checkin-note-$id'),
+            controller: _note,
+            minLines: 3,
+            maxLines: 6,
+            style: styles.body,
+            keyboardType: TextInputType.multiline,
+            inputFormatters: const [
+              CodePointLimitingTextInputFormatter(_maxNoteRunes),
+            ],
+            decoration: InputDecoration(
+              hintText: 'A few lines is enough.',
+              filled: true,
+              fillColor: styles.field,
+              border: border(),
+              enabledBorder: border(),
+              focusedBorder: border(
+                BorderSide(color: styles.accent, width: 1.5),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton(
+            key: ValueKey('checkin-save-$id'),
+            style: FilledButton.styleFrom(
+              backgroundColor: styles.accent,
+              foregroundColor: styles.scheme.onPrimary,
+              disabledBackgroundColor: styles.scheme.surfaceContainerHighest,
+              disabledForegroundColor: styles.muted,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(
+                  ExperimentStyles.innerRadius,
+                ),
+              ),
+            ),
+            onPressed: canSave ? () => _save(date) : null,
+            child: Text(
+              'Save check-in for ${_buttonDate(date)}',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

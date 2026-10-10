@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_toast.dart';
 import '../../../analytics/providers/analytics_providers.dart';
 import '../../providers/experiment_providers.dart';
 import 'experiment_check_in_box.dart' show CodePointLimitingTextInputFormatter;
+import 'experiment_ui.dart';
 
 const _reasonLabel = 'Why are you extending? (required)';
 const _learnedLabel = 'What did you learn?';
@@ -94,7 +95,9 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
 
     return AppSurface(
       key: ValueKey('end-panel-$id'),
-      color: tokens.surface,
+      color: ExperimentStyles.of(context).strip,
+      outlined: false,
+      borderRadius: BorderRadius.circular(ExperimentStyles.innerRadius),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

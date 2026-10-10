@@ -1,54 +1,73 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
-import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../analytics/presentation/widgets/analytics_cards.dart'
-    show InsightsProgressBar, formatMinutes;
+    show formatMinutes;
 import '../../domain/experiment_progress.dart';
+import 'experiment_ui.dart';
 
 /// The experiment's bar: the filled part is what is done, the thin tick marks
-/// what was expected by now, and the whole bar is the whole window. The legend
-/// sits underneath.
+/// what was expected by now, and the whole bar is the whole window. One
+/// caption line sits underneath.
+///
+/// With [concluded] true there is no expected tick: the bar is the final
+/// result against the whole window.
 class ExperimentProgressBar extends StatelessWidget {
   const ExperimentProgressBar({
     super.key,
     required this.experimentId,
     required this.progress,
+    this.concluded = false,
   });
 
   final String experimentId;
   final ExperimentProgress progress;
+  final bool concluded;
 
-  static const _barHeight = 10.0;
+  static const _barHeight = 8.0;
   static const _tickWidth = 2.0;
-  static const _tickHeight = 18.0;
+  static const _tickHeight = 16.0;
 
   @override
   Widget build(BuildContext context) {
-    final tokens = AppThemeTokens.of(context);
-    final primary = Theme.of(context).colorScheme.primary;
-    final mutedStyle = Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: tokens.textMuted);
+    final styles = ExperimentStyles.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final tickLeft =
-                (progress.tickFraction * constraints.maxWidth - _tickWidth / 2)
-                    .clamp(0.0, constraints.maxWidth - _tickWidth);
+            final width = constraints.maxWidth;
+            final tickLeft = (progress.tickFraction * width - _tickWidth / 2)
+                .clamp(0.0, width - _tickWidth);
+            final fill = progress.fillFraction.isFinite
+                ? progress.fillFraction.clamp(0.0, 1.0)
+                : 0.0;
             return SizedBox(
               height: _tickHeight,
               child: Stack(
                 alignment: Alignment.centerLeft,
                 children: [
-                  InsightsProgressBar(
-                    key: ValueKey('experiment-bar-$experimentId'),
-                    fraction: progress.fillFraction,
-                    color: tokens.success,
-                    height: _barHeight,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(_barHeight / 2),
+                    child: SizedBox(
+                      key: ValueKey('experiment-bar-$experimentId'),
+                      height: _barHeight,
+                      width: width,
+                      child: ColoredBox(
+                        color: styles.scheme.surfaceContainerHighest,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FractionallySizedBox(
+                            widthFactor: fill,
+                            child: SizedBox.expand(
+                              child: ColoredBox(color: styles.done),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  if (progress.expectedMin > 0)
+                  if (!concluded && progress.expectedMin > 0)
                     Positioned(
                       left: tickLeft,
                       top: 0,
@@ -56,7 +75,7 @@ class ExperimentProgressBar extends StatelessWidget {
                       child: SizedBox(
                         key: ValueKey('experiment-tick-$experimentId'),
                         width: _tickWidth,
-                        child: ColoredBox(color: primary),
+                        child: ColoredBox(color: styles.accent),
                       ),
                     ),
                 ],
@@ -70,22 +89,20 @@ class ExperimentProgressBar extends StatelessWidget {
           runSpacing: AppSpacing.xs,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            _LegendItem(color: tokens.success, label: 'Done'),
-            _LegendItem(color: primary, label: 'Expected by now', tick: true),
+            _LegendItem(color: styles.done, label: 'Done'),
+            if (!concluded)
+              _LegendItem(
+                color: styles.accent,
+                label: 'Expected by now',
+                tick: true,
+              ),
             Text(
               'Full bar = the whole window, '
               '${formatMinutes(progress.totalMin)}',
-              style: mutedStyle,
+              style: styles.caption,
             ),
           ],
         ),
-        if (progress.showExtraLegendLine) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            "Today's target only counts against you once the day is over.",
-            style: mutedStyle,
-          ),
-        ],
       ],
     );
   }
@@ -104,18 +121,21 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodySmall
-        ?.copyWith(color: AppThemeTokens.of(context).textMuted);
+    final styles = ExperimentStyles.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          width: tick ? 2 : 10,
-          height: tick ? 14 : 10,
-          child: ColoredBox(color: color),
+          width: tick ? 2 : 8,
+          height: tick ? 12 : 8,
+          child: DecoratedBox(
+            decoration: tick
+                ? BoxDecoration(color: color)
+                : ShapeDecoration(color: color, shape: const CircleBorder()),
+          ),
         ),
         const SizedBox(width: AppSpacing.xs),
-        Flexible(child: Text(label, style: style)),
+        Flexible(child: Text(label, style: styles.caption)),
       ],
     );
   }

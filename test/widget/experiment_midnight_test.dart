@@ -74,13 +74,21 @@ void main() {
     appRouter.go('/analytics');
     await pumpApp(tester, container, surface: const Size(1200, 1000));
 
-    Text todayLine() =>
-        tester.widget<Text>(find.byKey(ValueKey('experiment-today-${e.id}')));
+    List<String> todayLine() => tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byKey(ValueKey('experiment-today-${e.id}')),
+            matching: find.byType(Text),
+          ),
+        )
+        .map((t) => t.data!)
+        .take(4)
+        .toList();
 
     expect(isoDateString(container.read(insightsNowProvider)), '2026-10-06');
     expect(find.text('1 due today'), findsOneWidget);
     expect(find.text('1 missed'), findsNothing);
-    expect(todayLine().data, 'Today: 0m done · 0m still planned · target 1h');
+    expect(todayLine(), ['Today', '0m done', '0m still planned', 'target 1h']);
     expect(find.byKey(ValueKey('end-panel-${e.id}')), findsNothing);
 
     now = PlannerTimeZone.calendarDate(2026, 10, 7, second: 1);
@@ -92,7 +100,7 @@ void main() {
     expect(find.text('1 due today'), findsNothing);
     expect(find.text('1 missed'), findsOneWidget);
     // The today line moved to the new day (it shows that day's planned block).
-    expect(todayLine().data, 'Today: 0m done · 30m still planned · target 1h');
+    expect(todayLine(), ['Today', '0m done', '30m still planned', 'target 1h']);
     // Oct 7 is the end date: the end panel is there.
     expect(find.byKey(ValueKey('end-panel-${e.id}')), findsOneWidget);
     expect(find.text('The end date has arrived'), findsOneWidget);

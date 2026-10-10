@@ -89,6 +89,13 @@ void main() {
         ),
   );
 
+  /// The headline's text ("2h of 1h 40m expected so far"): the done value
+  /// is a larger span of the same line.
+  String headlineText(WidgetTester tester, Experiment e) => tester
+      .widget<Text>(find.byKey(ValueKey('experiment-headline-${e.id}')))
+      .textSpan!
+      .toPlainText();
+
   Finder inCard(Finder finder) => find.descendant(
     of: find.byKey(const ValueKey('experiments-section')),
     matching: finder,
@@ -191,14 +198,10 @@ void main() {
     final e = await workedExample(tester, container);
     await settle(tester);
 
-    expect(find.byKey(const ValueKey('experiments-counts')), findsOneWidget);
-    expect(find.text('1 running · 0 concluded'), findsOneWidget);
-    expect(
-      tester
-          .widget<Text>(find.byKey(ValueKey('experiment-headline-${e.id}')))
-          .data,
-      'Done 2h of 1h 40m expected so far',
-    );
+    expect(find.byKey(const ValueKey('experiments-filter')), findsOneWidget);
+    expect(find.text('Running (1)'), findsOneWidget);
+    expect(find.text('Concluded (0)'), findsOneWidget);
+    expect(headlineText(tester, e), '2h of 1h 40m expected so far');
     expect(
       find.descendant(
         of: find.byKey(ValueKey('experiment-pace-${e.id}')),
@@ -213,22 +216,28 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widget<Text>(find.byKey(ValueKey('experiment-today-${e.id}')))
-          .data,
-      'Today: 40m done · 30m still planned · target 1h',
-    );
-    expect(find.text('Running · Day 3 of 7'), findsOneWidget);
+    final today = find.byKey(ValueKey('experiment-today-${e.id}'));
+    for (final text in [
+      'Today',
+      '40m done',
+      '30m still planned',
+      'target 1h',
+    ]) {
+      expect(
+        find.descendant(of: today, matching: find.text(text)),
+        findsOneWidget,
+      );
+    }
+    expect(find.text('Day 3 of 7'), findsOneWidget);
     expect(
       find.text(
-        'Oct 5 to Oct 11 · 60 min weekdays · 90 min weekends · '
-        'every day check-in',
+        'Oct 5 – Oct 11 · 60 min weekdays · 90 min weekends · '
+        'Daily check-in',
       ),
       findsOneWidget,
     );
-    expect(find.text('Pace'), findsOneWidget);
-    expect(find.text('Days at your target'), findsOneWidget);
+    expect(find.text('PACE'), findsOneWidget);
+    expect(find.text('DAYS AT YOUR TARGET'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
     expect(find.text('Expected by now'), findsOneWidget);
     expect(find.text('Full bar = the whole window, 7h'), findsOneWidget);
@@ -245,10 +254,8 @@ void main() {
     final container = await open(tester);
     final e = await workedExample(tester, container);
     await settle(tester);
-    Text headline() => tester.widget<Text>(
-      find.byKey(ValueKey('experiment-headline-${e.id}')),
-    );
-    expect(headline().data, 'Done 2h of 1h 40m expected so far');
+    String headline() => headlineText(tester, e);
+    expect(headline(), '2h of 1h 40m expected so far');
 
     await addBlock(
       tester,
@@ -260,7 +267,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(headline().data, 'Done 2h 20m of 1h 40m expected so far');
+    expect(headline(), '2h 20m of 1h 40m expected so far');
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await teardownApp(tester, container);
@@ -272,8 +279,8 @@ void main() {
     final e = await workedExample(tester, container);
     await settle(tester);
     final headlineKey = ValueKey('experiment-headline-${e.id}');
-    final cached = tester.widget<Text>(find.byKey(headlineKey)).data;
-    expect(cached, 'Done 2h of 1h 40m expected so far');
+    final cached = headlineText(tester, e);
+    expect(cached, '2h of 1h 40m expected so far');
 
     await goTo(tester, '/day');
     expect(find.byKey(const ValueKey('experiments-section')), findsNothing);
@@ -294,7 +301,7 @@ void main() {
         findsOneWidget,
         reason: 'the headline must be there in the first frame of the content',
       );
-      expect(tester.widget<Text>(find.byKey(headlineKey)).data, cached);
+      expect(headlineText(tester, e), cached);
       expect(inCard(find.byType(CircularProgressIndicator)), findsNothing);
       expect(
         find.byKey(const ValueKey('experiments-placeholder')),
@@ -325,12 +332,7 @@ void main() {
     await settle(tester);
     await goTo(tester, '/analytics');
 
-    expect(
-      tester
-          .widget<Text>(find.byKey(ValueKey('experiment-headline-${e.id}')))
-          .data,
-      'Done 2h 20m of 1h 40m expected so far',
-    );
+    expect(headlineText(tester, e), '2h 20m of 1h 40m expected so far');
     expect(inCard(find.byType(CircularProgressIndicator)), findsNothing);
 
     await teardownApp(tester, container);
@@ -444,10 +446,10 @@ void main() {
       await settle(tester);
 
       expect(find.text('New experiment'), findsNothing);
-      expect(find.text('1 running · 0 concluded'), findsOneWidget);
+      expect(find.text('Running (1)'), findsOneWidget);
       expect(find.text('Sketching'), findsOneWidget);
-      expect(find.textContaining('every week check-in'), findsOneWidget);
-      expect(find.text('Running · Day 1 of 30'), findsOneWidget);
+      expect(find.textContaining('Weekly check-in'), findsOneWidget);
+      expect(find.text('Day 1 of 30'), findsOneWidget);
       final tag = await runDb(
         tester,
         () =>
@@ -503,9 +505,9 @@ void main() {
       await tapKey(tester, 'experiment-start-submit');
       await settle(tester);
       await settle(tester);
-      expect(find.text('1 running · 0 concluded'), findsOneWidget);
+      expect(find.text('Running (1)'), findsOneWidget);
       // The block of Oct 1 is inside the window and counts straight away.
-      expect(find.text('Running · Day 7 of 36'), findsOneWidget);
+      expect(find.text('Day 7 of 36'), findsOneWidget);
 
       await openForm(tester);
       await tester.enterText(
@@ -568,6 +570,8 @@ void main() {
       final line = find.byKey(ValueKey('experiment-chart-line-${e.id}'));
       expect(tester.widget<Text>(line).data, ' ');
 
+      await tester.ensureVisible(chart);
+      await tester.pump();
       final box = tester.getRect(chart);
       final slot = box.width / 7;
       // Monday is the first slot; tap just beside the bar, still in the slot.
@@ -656,10 +660,8 @@ void main() {
         find.textContaining('Showing months because 400 days'),
         findsOneWidget,
       );
-      expect(
-        find.text("Minutes per day. The dashed outline is that day's target."),
-        findsOneWidget,
-      );
+      expect(find.text('Minutes per day'), findsOneWidget);
+      expect(find.text("Faint bar = that day's target"), findsOneWidget);
 
       // A wide surface fits the 60 days.
       tester.view.physicalSize = desktop;
@@ -679,7 +681,7 @@ void main() {
 
       expect(
         find.bySemanticsLabel(
-          "Minutes per day. The dashed outline is that day's target. "
+          "Minutes per day. Faint bar = that day's target. "
           'Oct 5 to Oct 11.',
         ),
         findsOneWidget,

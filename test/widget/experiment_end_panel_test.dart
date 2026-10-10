@@ -230,7 +230,7 @@ void main() {
     );
     await settle(tester);
     expect(
-      find.textContaining('Oct 1 to Oct 7 · 60 min weekdays'),
+      find.textContaining('Oct 1 – Oct 7 · 60 min weekdays'),
       findsOneWidget,
     );
     expect(
@@ -245,7 +245,7 @@ void main() {
     await enter(tester, 'extend-reason-${e.id}', 'I missed a week');
     await tapKey(tester, 'extend-submit-${e.id}');
 
-    expect(find.textContaining('Oct 1 to Oct 21 · 60 min weekdays'), findsOne);
+    expect(find.textContaining('Oct 1 – Oct 21 · 60 min weekdays'), findsOne);
     expect(
       find.text('Extended 1 time. Last reason: I missed a week'),
       findsOneWidget,
@@ -278,14 +278,14 @@ void main() {
     await tapKey(tester, 'extend-days-7');
     await enter(tester, 'extend-reason-${a.id}', 'A bit more');
     await tapKey(tester, 'extend-submit-${a.id}');
-    expect(find.textContaining('Oct 1 to Oct 14 · 60 min weekdays'), findsOne);
+    expect(find.textContaining('Oct 1 – Oct 14 · 60 min weekdays'), findsOne);
 
     final b = await create(tester, container, name: 'Thirty');
     await settle(tester);
     await tapKey(tester, 'extend-days-30');
     await enter(tester, 'extend-reason-${b.id}', 'Long haul');
     await tapKey(tester, 'extend-submit-${b.id}');
-    expect(find.textContaining('Oct 1 to Nov 6 · 60 min weekdays'), findsOne);
+    expect(find.textContaining('Oct 1 – Nov 6 · 60 min weekdays'), findsOne);
 
     await teardownApp(tester, container);
   });
@@ -315,7 +315,7 @@ void main() {
       find.text('Extended 2 times. Last reason: Second reason'),
       findsOneWidget,
     );
-    expect(find.textContaining('Oct 1 to Nov 4 · 60 min weekdays'), findsOne);
+    expect(find.textContaining('Oct 1 – Nov 4 · 60 min weekdays'), findsOne);
     expect(panel(e), findsNothing);
 
     await teardownApp(tester, container);
@@ -344,15 +344,22 @@ void main() {
           ),
     );
     await settle(tester);
-    expect(find.text('1 running · 0 concluded'), findsOneWidget);
+    expect(find.text('Running (1)'), findsOneWidget);
+    expect(find.text('Concluded (0)'), findsOneWidget);
 
     await tapKey(tester, 'conclude-outcome-drop');
     await tapKey(tester, 'conclude-submit-${e.id}');
 
+    // The card moved to the Concluded filter.
+    expect(find.byKey(ValueKey('experiment-${e.id}')), findsNothing);
+    expect(find.text('Running (0)'), findsOneWidget);
+    expect(find.text('Concluded (1)'), findsOneWidget);
+    await tester.tap(find.text('Concluded (1)'));
+    await tester.pump();
+
     expect(find.byKey(ValueKey('experiment-${e.id}')), findsOneWidget);
-    expect(find.text('0 running · 1 concluded'), findsOneWidget);
     expect(find.text('Concluded Oct 7'), findsOneWidget);
-    expect(find.text('Outcome: Drop it'), findsOneWidget);
+    expect(find.text('Drop it'), findsOneWidget);
     expect(find.text('No note added.'), findsOneWidget);
     expect(panel(e), findsNothing);
     expect(find.byKey(ValueKey('experiment-today-${e.id}')), findsNothing);
@@ -378,7 +385,10 @@ void main() {
     await enter(tester, 'conclude-note-${e.id}', '  It stuck.  ');
     await tapKey(tester, 'conclude-submit-${e.id}');
 
-    expect(find.text('Outcome: Continue as a habit'), findsOneWidget);
+    await tester.tap(find.text('Concluded (1)'));
+    await tester.pump();
+
+    expect(find.text('Continue as a habit'), findsOneWidget);
     expect(find.text('It stuck.'), findsOneWidget);
     expect(find.text('No note added.'), findsNothing);
 
