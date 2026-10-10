@@ -37,7 +37,20 @@ class AnalyticsScreen extends ConsumerWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1160),
                   child: snapshot.when(
-                    loading: () => const _InsightsLoading(),
+                    loading: () {
+                      // The snapshot from the last visit, only while it is
+                      // still exactly what a fresh calculation would return:
+                      // shown in the first frame, before the stream delivers
+                      // its (identical) first value. Read, not watched, so a
+                      // write while Insights is open does not rebuild twice.
+                      final instant = ref.read(insightsCachedSnapshotProvider);
+                      return instant == null
+                          ? const _InsightsLoading()
+                          : _InsightsContent(
+                              snapshot: instant,
+                              compact: compact,
+                            );
+                    },
                     error: (error, _) =>
                         ErrorPanel(message: friendlyErrorMessage(error)),
                     data: (value) =>

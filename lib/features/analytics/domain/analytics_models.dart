@@ -191,3 +191,55 @@ class InsightsSnapshot {
   bool get hasConsistencyHistory =>
       consistencyDays.any((day) => !day.isNeutral);
 }
+
+/// True when [a] and [b] show exactly the same thing, field by field. Used so a
+/// recalculation that produced the same snapshot (a sync acknowledgement, a
+/// task edit that changes no total) does not rebuild the Insights screen.
+/// When a field is added to the snapshot or the types it holds, add it here.
+bool sameInsightsSnapshot(InsightsSnapshot a, InsightsSnapshot b) {
+  if (identical(a, b)) return true;
+  // The screen only uses the planner day of `generatedFor`, not the instant.
+  if (startOfDay(a.generatedFor) != startOfDay(b.generatedFor) ||
+      a.consistencyStart != b.consistencyStart ||
+      a.streaks.current != b.streaks.current ||
+      a.streaks.best != b.streaks.best ||
+      a.weekStart != b.weekStart ||
+      a.weekEndExclusive != b.weekEndExclusive ||
+      a.plannedMinutes != b.plannedMinutes ||
+      a.actualMinutes != b.actualMinutes ||
+      a.completedPlannedMinutes != b.completedPlannedMinutes ||
+      a.consistencyDays.length != b.consistencyDays.length ||
+      a.categories.length != b.categories.length ||
+      a.notable.length != b.notable.length) {
+    return false;
+  }
+  for (var i = 0; i < a.consistencyDays.length; i++) {
+    final x = a.consistencyDays[i];
+    final y = b.consistencyDays[i];
+    if (x.date != y.date ||
+        x.plannedMinutes != y.plannedMinutes ||
+        x.completedPlannedMinutes != y.completedPlannedMinutes ||
+        x.actualMinutes != y.actualMinutes ||
+        x.context != y.context ||
+        x.isFuture != y.isFuture) {
+      return false;
+    }
+  }
+  for (var i = 0; i < a.categories.length; i++) {
+    final x = a.categories[i];
+    final y = b.categories[i];
+    if (x.id != y.id ||
+        x.name != y.name ||
+        x.colorHex != y.colorHex ||
+        x.actualMinutes != y.actualMinutes) {
+      return false;
+    }
+  }
+  for (var i = 0; i < a.notable.length; i++) {
+    if (a.notable[i].kind != b.notable[i].kind ||
+        a.notable[i].message != b.notable[i].message) {
+      return false;
+    }
+  }
+  return true;
+}

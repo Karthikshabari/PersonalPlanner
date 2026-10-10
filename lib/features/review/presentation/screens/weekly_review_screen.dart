@@ -20,6 +20,7 @@ import '../../domain/review_draft.dart';
 import '../../domain/weekly_review_history.dart';
 import '../../domain/weekly_review_numbers.dart';
 import '../../providers/review_providers.dart';
+import '../../providers/review_warmup.dart';
 import '../../providers/weekly_review_draft_controller.dart';
 import '../widgets/review_equal_row.dart';
 import '../widgets/review_mode_switcher.dart';
@@ -51,6 +52,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
   final _scrollController = ScrollController();
   final _saveFocusNode = FocusNode(debugLabel: 'weekly-save');
   final _revealKey = GlobalKey();
+  final _warmup = ReviewWarmup();
 
   /// Content is at least 760 dp wide (two columns, Ctrl + Enter hint).
   bool _wide = true;
@@ -60,6 +62,26 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
 
   void _onTab() {
     if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(selectedWeekStartProvider, (_, _) => _warmNext());
+    _warmNext();
+  }
+
+  /// After the frame that shows the selected week, load what is likely next
+  /// (the weeks either side, the Daily tab), so stepping there is instant and
+  /// the neighbours never compete with the week on screen.
+  void _warmNext() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _warmup.replace(
+        ref,
+        weeklyReviewWarmTargets(ref.read(selectedWeekStartProvider)),
+      );
+    });
   }
 
   @override

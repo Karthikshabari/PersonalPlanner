@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdateQuery;
+
 import '../database/app_database.dart';
 
 /// Shared invalidation owner for derived review/analytics calculations.
@@ -8,16 +11,32 @@ import '../database/app_database.dart';
 /// calculation is allowed to finish before the next invalidated calculation
 /// starts, so a burst of writes cannot create an unbounded stack of duplicate
 /// database reads. Only the newest generation is allowed to emit.
+///
+/// By default every table a review or analytics calculation can read is
+/// watched; a calculation that reads fewer passes [tables], so a write to an
+/// unrelated table does not recompute it. A caller that already holds a value
+/// known to be current passes it as [initial]: it is emitted at once and the
+/// first calculation is skipped (later writes still recalculate).
+///
+/// Most writes (a sync acknowledgement, a task on another day) leave the result
+/// unchanged. With [isSame] a result equal to the one last emitted is dropped,
+/// so listeners are not notified and the screen is not rebuilt for nothing.
+/// [isSame] must compare every field a listener can show.
 Stream<T> watchReactiveStats<T>(
   AppDatabase database,
-  Future<T> Function() calculate,
-) {
+  Future<T> Function() calculate, {
+  List<ResultSetImplementation<dynamic, dynamic>>? tables,
+  T? initial,
+  bool Function(T previous, T next)? isSame,
+}) {
   return Stream<T>.multi((controller) {
     var disposed = false;
     var generation = 0;
     var calculationRunning = false;
     var rerunRequested = false;
     Timer? pending;
+    T? last;
+    var hasLast = false;
     final subscriptions = <StreamSubscription<dynamic>>[];
 
     void schedule([Object? _]) {
@@ -35,10 +54,17 @@ Stream<T> watchReactiveStats<T>(
           try {
             final value = await calculate();
             if (!disposed && currentGeneration == generation) {
-              controller.add(value);
+              if (!hasLast || isSame == null || !isSame(last as T, value)) {
+                last = value;
+                hasLast = true;
+                controller.add(value);
+              }
             }
           } catch (error, stack) {
             if (!disposed && currentGeneration == generation) {
+              // The next value must replace the error even if it equals the
+              // last good one.
+              hasLast = false;
               controller.addError(error, stack);
             }
           } finally {
@@ -52,23 +78,34 @@ Stream<T> watchReactiveStats<T>(
       });
     }
 
-    subscriptions.add(database.select(database.tasks).watch().listen(schedule));
+    // Only the "a table changed" signal is needed. `tableUpdates` delivers it
+    // without running (and discarding) a `SELECT *` over each whole table, and
+    // without the six extra initial emissions that used to force a second,
+    // identical calculation right after the first one.
     subscriptions.add(
-      database.select(database.categories).watch().listen(schedule),
+      database
+          .tableUpdates(
+            TableUpdateQuery.onAllTables(
+              tables ??
+                  [
+                    database.tasks,
+                    database.categories,
+                    database.timerSessions,
+                    database.dailyReviews,
+                    database.weeklyReviews,
+                    database.dayContexts,
+                  ],
+            ),
+          )
+          .listen(schedule),
     );
-    subscriptions.add(
-      database.select(database.timerSessions).watch().listen(schedule),
-    );
-    subscriptions.add(
-      database.select(database.dailyReviews).watch().listen(schedule),
-    );
-    subscriptions.add(
-      database.select(database.weeklyReviews).watch().listen(schedule),
-    );
-    subscriptions.add(
-      database.select(database.dayContexts).watch().listen(schedule),
-    );
-    schedule();
+    if (initial != null) {
+      last = initial;
+      hasLast = true;
+      controller.add(initial);
+    } else {
+      schedule();
+    }
 
     controller.onCancel = () async {
       disposed = true;

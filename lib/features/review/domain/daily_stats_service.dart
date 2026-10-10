@@ -311,8 +311,26 @@ class DailyStatsService {
               ),
         ))
         .get();
-    final taskRows = await (_db.select(_db.tasks)).get();
-    final ids = <String>{for (final session in overlapping) session.taskId};
+    final sessionTaskIds = <String>{
+      for (final session in overlapping) session.taskId,
+    };
+    // Only the tasks that start in the range or own an overlapping session can
+    // matter. The SQL range is widened by a day on each side as a prefilter;
+    // the exact range test below stays in Dart, so the result is the same as
+    // scanning the whole table (soft-deleted tasks included).
+    final slackStart = addDays(startInclusive, -1).toUtc().toIso8601String();
+    final slackEnd = addDays(endExclusive, 1).toUtc().toIso8601String();
+    final taskRows =
+        await (_db.select(_db.tasks)..where(
+              (task) =>
+                  (task.startTime.isBiggerOrEqualValue(slackStart) &
+                      task.startTime.isSmallerThanValue(slackEnd)) |
+                  (sessionTaskIds.isEmpty
+                      ? const Constant<bool>(false)
+                      : task.id.isIn(sessionTaskIds)),
+            ))
+            .get();
+    final ids = <String>{...sessionTaskIds};
     for (final task in taskRows) {
       if (task.startTime != null &&
           !task.startTime!.isBefore(startInclusive) &&

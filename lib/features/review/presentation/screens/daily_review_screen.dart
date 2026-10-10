@@ -22,6 +22,7 @@ import '../../domain/review_insights.dart';
 import '../../domain/task_outcome.dart';
 import '../../providers/review_draft_controller.dart';
 import '../../providers/review_providers.dart';
+import '../../providers/review_warmup.dart';
 import '../widgets/daily_glance_card.dart';
 import '../widgets/review_equal_row.dart';
 import '../widgets/review_layout.dart';
@@ -47,6 +48,27 @@ class DailyReviewScreen extends ConsumerStatefulWidget {
 class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
   final _scrollController = ScrollController();
   final _saveFocusNode = FocusNode(debugLabel: 'review-save');
+  final _warmup = ReviewWarmup();
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(selectedReviewDateProvider, (_, _) => _warmNext());
+    _warmNext();
+  }
+
+  /// After the frame that shows the selected day, load what is likely next
+  /// (the days either side, the Weekly tab), so stepping there is instant and
+  /// the neighbours never compete with the day on screen.
+  void _warmNext() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _warmup.replace(
+        ref,
+        dailyReviewWarmTargets(ref.read(selectedReviewDateProvider)),
+      );
+    });
+  }
 
   @override
   void dispose() {

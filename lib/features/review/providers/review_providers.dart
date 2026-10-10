@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../../../core/models/daily_review.dart';
 import '../../../core/models/daily_stats.dart';
 import '../../../core/models/weekly_review.dart';
+import '../../../core/providers/brief_keep_alive.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
@@ -11,6 +12,7 @@ import '../data/review_repository.dart';
 import '../domain/daily_stats_service.dart';
 import '../domain/review_insights.dart';
 import '../domain/review_overview.dart';
+import '../domain/review_result_equality.dart';
 import '../domain/task_outcome.dart';
 import '../domain/task_outcome_service.dart';
 import '../domain/weekly_review_history.dart';
@@ -43,12 +45,14 @@ final selectedWeekStartProvider = StateProvider<DateTime>((ref) {
 /// The saved review for a date (null when none yet).
 final dailyReviewProvider = StreamProvider.autoDispose
     .family<DailyReview?, DateTime>((ref, date) {
+      keepAliveBriefly(ref);
       return ref.watch(reviewRepositoryProvider).watchReviewForDate(date);
     });
 
 /// The saved review for the Mon–Sun week starting at [weekStart].
 final weeklyReviewProvider = StreamProvider.autoDispose
     .family<WeeklyReview?, DateTime>((ref, weekStart) {
+      keepAliveBriefly(ref);
       return ref
           .watch(reviewRepositoryProvider)
           .watchWeeklyReviewForWeek(weekStart);
@@ -57,10 +61,12 @@ final weeklyReviewProvider = StreamProvider.autoDispose
 /// Live-computed aggregates for one calendar day.
 final dailyStatsProvider = StreamProvider.autoDispose
     .family<DailyStats, DateTime>((ref, date) {
+      keepAliveBriefly(ref);
       final normalized = startOfDay(date);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(dailyStatsServiceProvider).computeForDate(normalized),
+        isSame: sameDailyStats,
       );
     });
 
@@ -73,15 +79,18 @@ final weeklyStatsProvider = StreamProvider.autoDispose
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(dailyStatsServiceProvider).computeRange(start, end),
+        isSame: sameDailyStats,
       );
     });
 
 final dailyReviewInsightsProvider = StreamProvider.autoDispose
     .family<ReviewInsights, DateTime>((ref, date) {
+      keepAliveBriefly(ref);
       final normalized = startOfDay(date);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(reviewInsightsServiceProvider).forDay(normalized),
+        isSame: sameReviewInsights,
       );
     });
 
@@ -92,10 +101,12 @@ final taskOutcomeServiceProvider = Provider<TaskOutcomeService>((ref) {
 /// One row per task starting on [date], ordered by start time.
 final taskOutcomesProvider = StreamProvider.autoDispose
     .family<List<TaskOutcomeRow>, DateTime>((ref, date) {
+      keepAliveBriefly(ref);
       final normalized = startOfDay(date);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(taskOutcomeServiceProvider).forDay(normalized),
+        isSame: sameTaskOutcomes,
       );
     });
 
@@ -107,11 +118,13 @@ final reviewOverviewServiceProvider = Provider<ReviewOverviewService>((ref) {
 /// review and day-context writes.
 final reviewOverviewWindowProvider = StreamProvider.autoDispose
     .family<List<ReviewOverviewDay>, int>((ref, dayCount) {
+      keepAliveBriefly(ref);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref
             .read(reviewOverviewServiceProvider)
             .window(today: DateTime.now(), dayCount: dayCount),
+        isSame: sameOverviewDays,
       );
     });
 
@@ -149,9 +162,11 @@ final weeklyReviewServiceProvider = Provider<WeeklyReviewService>((ref) {
 /// day-context row changes (no timers).
 final weeklyDaysProvider = StreamProvider.autoDispose
     .family<List<WeeklyDayInput>, DateTime>((ref, weekStart) {
+      keepAliveBriefly(ref);
       final normalized = startOfWeek(weekStart);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () => ref.read(weeklyReviewServiceProvider).loadWeek(normalized),
+        isSame: sameWeeklyDays,
       );
     });

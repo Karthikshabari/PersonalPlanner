@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/day_context.dart';
+import '../../../core/providers/brief_keep_alive.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/date_utils.dart';
 import '../data/day_context_repository.dart';
@@ -13,6 +14,7 @@ final dayContextRepositoryProvider = Provider<DayContextRepository>((ref) {
 /// existing Day/Week date providers, then converts only to canonical date text.
 final dayContextForDateProvider = StreamProvider.autoDispose
     .family<DayContext?, DateTime>((ref, date) {
+      keepAliveBriefly(ref);
       return ref
           .watch(dayContextRepositoryProvider)
           .watchForDate(isoDateString(date));

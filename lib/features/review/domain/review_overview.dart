@@ -48,7 +48,7 @@ class ReviewOverviewService {
     final end = addDays(newest, 1);
     final startIso = isoDateString(oldest);
     final endIso = isoDateString(end);
-    final tasks = await _db.taskDao.getTasksBetween(oldest, end);
+    final tasks = await _db.taskDao.getStartAndStatusBetween(oldest, end);
     final reviewRows = await _db.reviewDao.getDailyReviewsBetween(startIso, endIso);
     final contextRows = await (_db.select(_db.dayContexts)
           ..where(
@@ -61,10 +61,8 @@ class ReviewOverviewService {
     final totals = <String, int>{};
     final completed = <String, int>{};
     for (final row in tasks) {
-      final start = row.startTime;
-      if (start == null || start.isBefore(oldest) || !start.isBefore(end)) {
-        continue;
-      }
+      final start = row.start;
+      if (start.isBefore(oldest) || !start.isBefore(end)) continue;
       final key = isoDateString(start);
       totals[key] = (totals[key] ?? 0) + 1;
       if (row.status == TaskStatus.completed.dbValue) {

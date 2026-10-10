@@ -40,6 +40,54 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
             ..orderBy([(t) => OrderingTerm.asc(t.startTime)]))
           .get();
 
+  /// The start instant and status of the same tasks [getTasksBetween] returns
+  /// (the filter below mirrors [_dayFilter]; a test keeps them equal), without
+  /// reading or decoding the other ~40 columns: 5 800 rows take about 13 ms
+  /// this way against about 100 ms for the typed full-row query. For callers
+  /// that only count tasks per day or week (Review Overview, Weekly history).
+  /// Order is not specified.
+  Future<List<({DateTime start, String status})>> getStartAndStatusBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final rows = await customSelect(
+      'SELECT start_time, status FROM tasks WHERE deleted_at IS NULL '
+      'AND is_inbox = 0 AND start_time IS NOT NULL AND end_time IS NOT NULL '
+      'AND start_time < ? AND end_time > ?',
+      variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
+      readsFrom: {tasks},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          start: DateTime.parse(row.read<String>('start_time')).toLocal(),
+          status: row.read<String>('status'),
+        ),
+    ];
+  }
+
+  /// Start, end and status of the same tasks [getTasksBetween] returns, for
+  /// callers that only add up planned minutes (Insights). Same reasoning and
+  /// filter as [getStartAndStatusBetween]. Order is not specified.
+  Future<List<({DateTime start, DateTime end, String status})>>
+  getScheduleSpansBetween(DateTime start, DateTime end) async {
+    final rows = await customSelect(
+      'SELECT start_time, end_time, status FROM tasks WHERE deleted_at IS NULL '
+      'AND is_inbox = 0 AND start_time IS NOT NULL AND end_time IS NOT NULL '
+      'AND start_time < ? AND end_time > ?',
+      variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
+      readsFrom: {tasks},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          start: DateTime.parse(row.read<String>('start_time')).toLocal(),
+          end: DateTime.parse(row.read<String>('end_time')).toLocal(),
+          status: row.read<String>('status'),
+        ),
+    ];
+  }
+
   /// Searches the schema-v6 external-content FTS index. The query is already
   /// normalized to a safe literal expression by [SearchRepository]; the
   /// value is still bound as a parameter so user text never becomes SQL.

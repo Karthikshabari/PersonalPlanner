@@ -1,3 +1,9 @@
+import 'package:drift/drift.dart'
+    show
+        BooleanExpressionOperators,
+        ComparableExpr,
+        CustomExpression,
+        OrderingTerm;
 import 'package:intl/intl.dart';
 
 import '../../../core/database/app_database.dart';
@@ -66,8 +72,7 @@ class ReviewInsightsService {
   Future<ReviewInsights> forDay(DateTime date) async {
     final day = startOfDay(date);
     final end = addDays(day, 1);
-    final tasks = await _loadTasks();
-    final byId = {for (final task in tasks) task.id: task};
+    final (tasks, byId) = await _loadTasksAroundDay(day, end);
     final relevant = tasks.where((task) => _scheduledIn(task, day, end));
     final changes = <ReviewChange>[];
     for (final task in relevant) {
@@ -110,6 +115,64 @@ class ReviewInsightsService {
       changes: changes,
       carryover: _carryoverFor(tasks, end, nextEnd, byId, sourceStart: start),
     );
+  }
+
+  /// The tasks [forDay] can actually look at, instead of the whole table:
+  /// the ones scheduled on [day], the ones starting on the next day (carry-over
+  /// candidates), and the reschedule targets/sources those two sets point to.
+  ///
+  /// The SQL ranges are widened by a day as a prefilter; every exact range test
+  /// stays in Dart (`_scheduledIn`, `_inRange`), and rows come back in rowid
+  /// order, which is the order a full scan produced. The result is therefore
+  /// the same as filtering the full list.
+  Future<(List<Task>, Map<String, Task>)> _loadTasksAroundDay(
+    DateTime day,
+    DateTime end,
+  ) async {
+    String iso(DateTime instant) => instant.toUtc().toIso8601String();
+    final windowStart = iso(addDays(day, -1));
+    final scheduledBefore = iso(addDays(end, 1));
+    final nextStart = iso(addDays(end, -1));
+    final nextBefore = iso(addDays(end, 2));
+    final rows =
+        await (_db.select(_db.tasks)
+              ..where(
+                (task) =>
+                    task.deletedAt.isNull() &
+                    task.isInbox.equals(false) &
+                    ((task.startTime.isSmallerThanValue(scheduledBefore) &
+                            task.endTime.isBiggerThanValue(windowStart)) |
+                        (task.startTime.isBiggerOrEqualValue(nextStart) &
+                            task.startTime.isSmallerThanValue(nextBefore))),
+              )
+              ..orderBy([
+                (task) =>
+                    OrderingTerm.asc(const CustomExpression<int>('rowid')),
+              ]))
+            .get();
+    final tasks = rows.map(TaskRepository.fromRow).toList(growable: false);
+    final byId = {for (final task in tasks) task.id: task};
+    final linkedIds = <String>{
+      for (final task in tasks) ...[
+        if (task.rescheduledToId != null) task.rescheduledToId!,
+        if (task.rescheduledFromId != null) task.rescheduledFromId!,
+      ],
+    }..removeAll(byId.keys);
+    if (linkedIds.isNotEmpty) {
+      final linked =
+          await (_db.select(_db.tasks)..where(
+                (task) =>
+                    task.id.isIn(linkedIds) &
+                    task.deletedAt.isNull() &
+                    task.isInbox.equals(false),
+              ))
+              .get();
+      for (final row in linked) {
+        final task = TaskRepository.fromRow(row);
+        byId[task.id] = task;
+      }
+    }
+    return (tasks, byId);
   }
 
   Future<List<Task>> _loadTasks() async {

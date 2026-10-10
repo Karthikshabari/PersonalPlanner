@@ -47,14 +47,12 @@ class WeeklyReviewHistoryService {
     final oldest = addDays(current, -7 * weekCount);
     final reviews = await ReviewRepository(_db)
         .getWeeklyReviewsBetween(oldest, current);
-    final rows = await _db.taskDao.getTasksBetween(oldest, current);
+    final rows = await _db.taskDao.getStartAndStatusBetween(oldest, current);
     final totals = <String, int>{};
     final completed = <String, int>{};
     for (final row in rows) {
-      final start = row.startTime;
-      if (start == null || start.isBefore(oldest) || !start.isBefore(current)) {
-        continue;
-      }
+      final start = row.start;
+      if (start.isBefore(oldest) || !start.isBefore(current)) continue;
       final key = isoDateString(startOfWeek(start));
       totals[key] = (totals[key] ?? 0) + 1;
       if (row.status == TaskStatus.completed.dbValue) {

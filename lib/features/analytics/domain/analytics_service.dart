@@ -18,6 +18,8 @@ import 'analytics_models.dart';
 class InsightsService {
   InsightsService(this._db);
 
+  static final _placeholderInstant = DateTime.utc(2000);
+
   final AppDatabase _db;
 
   Future<InsightsSnapshot> compute({
@@ -56,13 +58,26 @@ class InsightsService {
     // One planned-history query supports the visible calendar plus accurate
     // all-history current/best streaks. It retains the DAO's canonical active,
     // scheduled, interval-overlap predicate.
-    final plannedRows = await _db.taskDao.getTasksBetween(
+    //
+    // The calculator only adds up planned minutes, so each task is reduced to
+    // its start, end and status (the typed full-row read of the whole history
+    // cost about 100 ms; this costs about 15 ms). The other fields stay empty.
+    final plannedSpans = await _db.taskDao.getScheduleSpansBetween(
       PlannerTimeZone.calendarDate(2000, 1, 1),
       plannedRangeEnd,
     );
-    final plannedTasks = plannedRows
-        .map(TaskRepository.fromRow)
-        .toList(growable: false);
+    final plannedTasks = [
+      for (final span in plannedSpans)
+        Task(
+          id: '',
+          title: '',
+          startTime: span.start,
+          endTime: span.end,
+          status: TaskStatus.fromDb(span.status),
+          createdAt: _placeholderInstant,
+          updatedAt: _placeholderInstant,
+        ),
+    ];
 
     final overlappingSessions =
         await (_db.select(_db.timerSessions)..where(
@@ -81,28 +96,25 @@ class InsightsService {
 
     // Same task set as DailyStatsService: every task starting in range,
     // including soft-deleted ones, so their manual Actual is not dropped.
-    final tasksStartingInRange =
-        await (_db.selectOnly(_db.tasks)
-              ..addColumns([_db.tasks.id])
-              ..where(
-                _db.tasks.startTime.isBiggerOrEqualValue(
-                      actualRangeStart.toUtc().toIso8601String(),
-                    ) &
-                    _db.tasks.startTime.isSmallerThanValue(
-                      actualRangeEnd.toUtc().toIso8601String(),
-                    ),
-              ))
-            .map((row) => row.read(_db.tasks.id)!)
-            .get();
+    final startsInRange = [
+      Variable<String>(actualRangeStart.toUtc().toIso8601String()),
+      Variable<String>(actualRangeEnd.toUtc().toIso8601String()),
+    ];
+    final tasksStartingInRange = [
+      for (final row
+          in await _db
+              .customSelect(
+                'SELECT id FROM tasks WHERE start_time >= ? AND start_time < ?',
+                variables: startsInRange,
+                readsFrom: {_db.tasks},
+              )
+              .get())
+        row.read<String>('id'),
+    ];
     final actualTaskIds = <String>{
       ...tasksStartingInRange,
       for (final session in overlappingSessions) session.taskId,
     };
-    final actualRows = actualTaskIds.isEmpty
-        ? const <TaskRow>[]
-        : await (_db.select(
-            _db.tasks,
-          )..where((task) => task.id.isIn(actualTaskIds))).get();
     final finishedHistory = actualTaskIds.isEmpty
         ? const <TimerSessionRow>[]
         : await (_db.select(_db.timerSessions)..where(
@@ -119,6 +131,29 @@ class InsightsService {
           .putIfAbsent(session.taskId, () => <TimerSessionRow>[])
           .add(session);
     }
+    // `allocateActualByDate` yields nothing for a task without finished timer
+    // history and without a manually recorded Actual, so only those tasks need
+    // their row loaded. A manual-only task can only be in range by its start.
+    final manualOnlyIds = actualTaskIds.isEmpty
+        ? const <String>[]
+        : [
+            for (final row
+                in await _db
+                    .customSelect(
+                      'SELECT id FROM tasks WHERE manual_actual_set = 1 '
+                      'AND start_time >= ? AND start_time < ?',
+                      variables: startsInRange,
+                      readsFrom: {_db.tasks},
+                    )
+                    .get())
+              row.read<String>('id'),
+          ];
+    final producerIds = <String>{...historyByTask.keys, ...manualOnlyIds};
+    final actualRows = producerIds.isEmpty
+        ? const <TaskRow>[]
+        : await (_db.select(
+            _db.tasks,
+          )..where((task) => task.id.isIn(producerIds))).get();
     final actualSlices = <ActualTimeSlice>[];
     for (final task in actualRows) {
       final allocation = TaskActualDurationService.allocateActualByDate(
@@ -216,21 +251,23 @@ abstract final class InsightsCalculator {
     final contexts = {
       for (final context in source.dayContexts) context.date: context.kind,
     };
-    final allDays = <ConsistencyDay>[];
+    final dates = <DateTime>[];
     for (
       var date = historyStart;
       date.isBefore(consistencyEnd);
       date = addDays(date, 1)
     ) {
-      final totals = _plannedTotals(
-        source.plannedTasks,
-        InsightDateRange(date, addDays(date, 1)),
-      );
+      dates.add(date);
+    }
+    final plannedByDay = _plannedTotalsByDay(source.plannedTasks, dates);
+    final allDays = <ConsistencyDay>[];
+    for (var index = 0; index < dates.length; index++) {
+      final date = dates[index];
       allDays.add(
         ConsistencyDay(
           date: date,
-          plannedMinutes: totals.planned,
-          completedPlannedMinutes: totals.completed,
+          plannedMinutes: plannedByDay.planned[index],
+          completedPlannedMinutes: plannedByDay.completed[index],
           actualMinutes: actualByDate[isoDateString(date)] ?? 0,
           context: contexts[isoDateString(date)],
           isFuture: date.isAfter(today),
@@ -341,6 +378,51 @@ abstract final class InsightsCalculator {
     return duration != 0
         ? duration
         : left.name.toLowerCase().compareTo(right.name.toLowerCase());
+  }
+
+  /// [_plannedTotals] for every one-day range `[date, date + 1)` of [dates]
+  /// (ascending planner days) in a single pass over [tasks]: each task adds its
+  /// overlap to the days it touches, with the same arithmetic per task and day
+  /// as [_plannedTotals]. Looping every day over every task cost O(days x
+  /// tasks) (about 4 million overlap tests for two years of history).
+  static ({List<int> planned, List<int> completed}) _plannedTotalsByDay(
+    Iterable<Task> tasks,
+    List<DateTime> dates,
+  ) {
+    final ranges = [
+      for (final date in dates) InsightDateRange(date, addDays(date, 1)),
+    ];
+    final planned = List<int>.filled(dates.length, 0);
+    final completed = List<int>.filled(dates.length, 0);
+    for (final task in tasks) {
+      final start = task.startTime;
+      final end = task.endTime;
+      if (start == null || end == null) continue;
+      // First day whose range ends after the task starts (ranges ascend).
+      var low = 0;
+      var high = ranges.length;
+      while (low < high) {
+        final middle = (low + high) >> 1;
+        if (ranges[middle].endExclusive.isAfter(start)) {
+          high = middle;
+        } else {
+          low = middle + 1;
+        }
+      }
+      for (var index = low; index < ranges.length; index++) {
+        final range = ranges[index];
+        if (!range.start.isBefore(end)) break;
+        final overlapStart = start.isAfter(range.start) ? start : range.start;
+        final overlapEnd = end.isBefore(range.endExclusive)
+            ? end
+            : range.endExclusive;
+        if (!overlapEnd.isAfter(overlapStart)) continue;
+        final minutes = overlapEnd.difference(overlapStart).inMinutes;
+        planned[index] += minutes;
+        if (task.status == TaskStatus.completed) completed[index] += minutes;
+      }
+    }
+    return (planned: planned, completed: completed);
   }
 
   static ({int planned, int completed}) _plannedTotals(

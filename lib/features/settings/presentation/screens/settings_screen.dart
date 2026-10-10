@@ -524,6 +524,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _invalidatePortableProviders() {
+    ref.invalidate(insightsSnapshotCacheProvider);
     ref.invalidate(analyticsSnapshotProvider);
     ref.invalidate(categoriesProvider);
     ref.invalidate(inboxClockProvider);
