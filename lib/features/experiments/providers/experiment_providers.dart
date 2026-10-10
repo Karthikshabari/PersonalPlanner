@@ -13,6 +13,7 @@ import '../../task_editor/data/tag_repository.dart';
 import '../../task_editor/providers/tag_providers.dart';
 import '../data/experiment_repository.dart';
 import '../domain/experiment_dashboard.dart';
+import '../domain/kept_experiment.dart';
 
 final experimentRepositoryProvider = Provider<ExperimentRepository>((ref) {
   return ExperimentRepository(ref.watch(appDatabaseProvider));
@@ -137,6 +138,20 @@ final experimentDashboardProvider =
         return dashboard;
       });
     }, retry: (retryCount, error) => null);
+
+/// The kept rows, taken from the dashboard value (or, before the first load
+/// finishes, from the cached dashboard). It issues no query of its own and
+/// reads no table. [KeptSegment] has deep value equality, so a reload that
+/// changes nothing kept notifies nobody (a write to an untagged task reloads
+/// the dashboard but does not rebuild the Kept list).
+final keptSegmentProvider = Provider.autoDispose<KeptSegment>((ref) {
+  final kept = ref.watch(
+    experimentDashboardProvider.select((dashboard) => dashboard.value?.kept),
+  );
+  return kept ??
+      ref.read(experimentDashboardCacheProvider)?.dashboard.kept ??
+      emptyKeptSegment;
+});
 
 /// The active tags the start form matches the typed name against.
 final experimentFormTagsProvider =

@@ -42,6 +42,47 @@ const taggedBlocksInRangeSql =
     'WHERE deleted_at IS NULL AND is_inbox = 0 AND tag_id IS NOT NULL '
     'AND tag_id = ? AND start_time >= ? AND start_time < ?';
 
+/// A kept experiment's tag and the instant its blocks start to count from (the
+/// start of its start date in planner time).
+typedef KeptTagWindow = ({String tagId, DateTime countedFrom});
+
+/// The done rule of `groupBlocksByDay` (ED10, ED45) in SQL: a recorded Actual
+/// (negative counts 0), otherwise the planned duration.
+const keptDoneMinutesExpression =
+    'CASE WHEN t.actual_duration_min IS NOT NULL '
+    'THEN MAX(t.actual_duration_min, 0) '
+    'ELSE MAX(COALESCE(t.estimated_duration_min, 0), 0) END';
+
+/// Completed minutes per tag and bucket. Used twice: 9 week buckets, 7 day
+/// buckets. Bound values, in order: `(tag_id, counted_from)` per kept
+/// experiment, then `(bucket, range_start, range_end)` per bucket. The first
+/// three WHERE conditions are literal SQL in the form of the partial index
+/// `idx_tasks_tag_date` (see [taggedBlocksInRangeSql]).
+String keptCompletedMinutesSql(int keptCount, int bucketCount) =>
+    'WITH kept(tag_id, counted_from) AS (VALUES '
+    '${List.filled(keptCount, '(?, ?)').join(', ')}), '
+    'buckets(bucket, range_start, range_end) AS (VALUES '
+    '${List.filled(bucketCount, '(?, ?, ?)').join(', ')}) '
+    'SELECT t.tag_id AS tag_id, b.bucket AS bucket, '
+    'SUM($keptDoneMinutesExpression) AS done_min '
+    'FROM kept k CROSS JOIN buckets b '
+    'JOIN tasks t ON t.tag_id = k.tag_id '
+    'AND t.start_time >= b.range_start AND t.start_time < b.range_end '
+    'WHERE t.deleted_at IS NULL AND t.is_inbox = 0 AND t.tag_id IS NOT NULL '
+    "AND t.status = 'completed' AND t.start_time >= k.counted_from "
+    'GROUP BY t.tag_id, b.bucket';
+
+/// Planned minutes per tag from the start of today to the next week start.
+/// Bound values, in order: the tag ids, then the half-open UTC range.
+String keptPlannedMinutesSql(int tagCount) =>
+    'SELECT tag_id, SUM(MAX(COALESCE(estimated_duration_min, 0), 0)) AS planned_min '
+    'FROM tasks '
+    'WHERE deleted_at IS NULL AND is_inbox = 0 AND tag_id IS NOT NULL '
+    'AND tag_id IN (${List.filled(tagCount, '?').join(', ')}) '
+    "AND status IN ('planned', 'in_progress') "
+    'AND start_time >= ? AND start_time < ? '
+    'GROUP BY tag_id';
+
 @DriftAccessor(
   tables: [Experiments, ExperimentCheckIns, Tags, DayContexts, Tasks],
 )
@@ -159,6 +200,61 @@ class ExperimentDao extends DatabaseAccessor<AppDatabase>
           estimatedDurationMin: row.readNullable<int>('estimated_duration_min'),
         ),
     ];
+  }
+
+  /// Completed minutes per tag and bucket for the [kept] experiments. Each
+  /// bucket is a half-open [start, end) range; the result is keyed by tag id,
+  /// then by the bucket's index in [buckets]. Blocks before a tag's
+  /// `countedFrom` are ignored. Empty buckets are absent from the maps.
+  Future<Map<String, Map<int, int>>> keptCompletedMinutes(
+    List<KeptTagWindow> kept,
+    List<(DateTime, DateTime)> buckets,
+  ) async {
+    if (kept.isEmpty || buckets.isEmpty) return const {};
+    final rows = await customSelect(
+      keptCompletedMinutesSql(kept.length, buckets.length),
+      variables: [
+        for (final window in kept) ...[
+          Variable<String>(window.tagId),
+          Variable<String>(_iso(window.countedFrom)),
+        ],
+        for (var i = 0; i < buckets.length; i++) ...[
+          Variable<int>(i),
+          Variable<String>(_iso(buckets[i].$1)),
+          Variable<String>(_iso(buckets[i].$2)),
+        ],
+      ],
+      readsFrom: {tasks},
+    ).get();
+    final result = <String, Map<int, int>>{};
+    for (final row in rows) {
+      final byBucket = result.putIfAbsent(row.read<String>('tag_id'), () => {});
+      byBucket[row.read<int>('bucket')] = row.read<int>('done_min');
+    }
+    return result;
+  }
+
+  /// Planned and in-progress minutes per tag for blocks that start in
+  /// [from, to). Tags without such blocks are absent from the map.
+  Future<Map<String, int>> keptPlannedMinutes(
+    List<String> tagIds, {
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    if (tagIds.isEmpty) return const {};
+    final rows = await customSelect(
+      keptPlannedMinutesSql(tagIds.length),
+      variables: [
+        for (final tagId in tagIds) Variable<String>(tagId),
+        Variable<String>(_iso(from)),
+        Variable<String>(_iso(to)),
+      ],
+      readsFrom: {tasks},
+    ).get();
+    return {
+      for (final row in rows)
+        row.read<String>('tag_id'): row.read<int>('planned_min'),
+    };
   }
 
   /// The dates in [firstDate]..[lastDate] (inclusive, `yyyy-MM-dd`) that have

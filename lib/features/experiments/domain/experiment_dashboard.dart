@@ -8,6 +8,7 @@ import '../data/experiment_repository.dart';
 import 'experiment_check_in_schedule.dart';
 import 'experiment_days.dart';
 import 'experiment_progress.dart';
+import 'kept_experiment.dart';
 
 /// One experiment together with everything its row shows.
 class ExperimentView {
@@ -69,6 +70,7 @@ class ExperimentDashboard {
     required this.views,
     required this.runningCount,
     required this.concludedCount,
+    this.kept = emptyKeptSegment,
   });
 
   static const empty = ExperimentDashboard(
@@ -80,6 +82,13 @@ class ExperimentDashboard {
   final List<ExperimentView> views;
   final int runningCount;
   final int concludedCount;
+
+  /// The kept rows (concluded with Keep it and not retired), most recently
+  /// kept first. Empty when no experiment is kept.
+  final KeptSegment kept;
+
+  /// The number in the Kept segment label.
+  int get keptCount => kept.views.length;
 
   bool get isEmpty => views.isEmpty;
 }
@@ -145,6 +154,13 @@ class ExperimentDashboardService {
         );
       }
       views.sort(_compareViews);
+      final keptExperiments = [
+        for (final e in experiments)
+          if (e.isKept) e,
+      ];
+      final kept = keptExperiments.isEmpty
+          ? emptyKeptSegment
+          : await _loadKept(dao, keptExperiments, today);
       return ExperimentDashboard(
         views: List.unmodifiable(views),
         runningCount: experiments
@@ -153,9 +169,62 @@ class ExperimentDashboardService {
         concludedCount: experiments
             .where((e) => e.status == ExperimentStatus.concluded)
             .length,
+        kept: kept,
       );
     });
   }
+
+  /// Three indexed aggregates for all kept experiments at once: completed
+  /// minutes per week, completed minutes per day of this week, and planned
+  /// minutes from the start of today to the next week start.
+  Future<KeptSegment> _loadKept(
+    ExperimentDao dao,
+    List<Experiment> kept,
+    String today,
+  ) async {
+    final weekStarts = keptWeekStarts(today);
+    final weekStart = parseIsoDate(weekStarts.last);
+    final nextWeekStart = addDays(weekStart, 7);
+    final weekBuckets = [
+      for (final start in weekStarts)
+        (parseIsoDate(start), addDays(parseIsoDate(start), 7)),
+    ];
+    final dayBuckets = [
+      for (var i = 0; i < 7; i++)
+        PlannerTimeZone.dayBounds(addDays(weekStart, i)),
+    ];
+    final windows = [
+      for (final e in kept)
+        (tagId: e.tagId, countedFrom: parseIsoDate(e.startDate)),
+    ];
+    final byWeek = await dao.keptCompletedMinutes(windows, weekBuckets);
+    final byDay = await dao.keptCompletedMinutes(windows, dayBuckets);
+    final planned = await dao.keptPlannedMinutes(
+      [for (final e in kept) e.tagId],
+      from: PlannerTimeZone.dayBounds(parseIsoDate(today)).$1,
+      to: nextWeekStart,
+    );
+    final views = [
+      for (final e in kept)
+        buildKeptExperimentView(
+          experiment: e,
+          today: today,
+          doneByWeek: byWeek[e.tagId] ?? const {},
+          doneByDay: byDay[e.tagId] ?? const {},
+          plannedMin: planned[e.tagId] ?? 0,
+          formatDuration: formatDuration,
+        ),
+    ]..sort(_compareKeptViews);
+    return KeptSegment(views: List.unmodifiable(views));
+  }
+}
+
+/// Most recently kept first, then name (case-insensitive), then id.
+int _compareKeptViews(KeptExperimentView a, KeptExperimentView b) {
+  final bySince = b.keptSince.compareTo(a.keptSince);
+  if (bySince != 0) return bySince;
+  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  return byName != 0 ? byName : a.experimentId.compareTo(b.experimentId);
 }
 
 /// Builds the view of one experiment from its tagged blocks.
