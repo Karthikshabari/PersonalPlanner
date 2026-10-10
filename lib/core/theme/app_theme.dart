@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/experiments/presentation/widgets/experiment_theme.dart';
 import '../../features/review/presentation/widgets/review_theme.dart';
 import 'app_colors.dart';
 import 'app_theme_tokens.dart';
@@ -62,6 +63,9 @@ abstract final class AppTheme {
       extensions: [
         tokens,
         brightness == Brightness.dark ? ReviewColors.dark : ReviewColors.light,
+        brightness == Brightness.dark
+            ? ExperimentColors.dark
+            : ExperimentColors.light,
       ],
       appBarTheme: AppBarTheme(
         backgroundColor: background,

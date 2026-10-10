@@ -8,6 +8,7 @@ import '../../../analytics/presentation/widgets/analytics_cards.dart'
     show formatMinutes;
 import '../../domain/experiment_dashboard.dart';
 import '../../domain/experiment_progress.dart';
+import '../../domain/kept_copy.dart';
 import 'experiment_chart.dart';
 import 'experiment_check_in_box.dart';
 import 'experiment_end_panel.dart';
@@ -18,9 +19,12 @@ import 'experiment_ui.dart';
 /// One experiment on the Experiments card. (Named `ExperimentRowView` so it
 /// does not clash with the Drift row class `ExperimentRow`.)
 class ExperimentRowView extends StatelessWidget {
-  const ExperimentRowView({super.key, required this.view});
+  const ExperimentRowView({super.key, required this.view, this.onShowKept});
 
   final ExperimentView view;
+
+  /// Shows the Kept segment; called by "See it" on a kept concluded row.
+  final VoidCallback? onShowKept;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +43,7 @@ class ExperimentRowView extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(narrow ? AppSpacing.lg : AppSpacing.xl),
             child: concluded
-                ? _ConcludedBody(view: view)
+                ? _ConcludedBody(view: view, onShowKept: onShowKept)
                 : _RunningBody(view: view),
           ),
         );
@@ -136,9 +140,10 @@ class _RunningBody extends StatelessWidget {
 /// A concluded experiment: the outcome first, then the final result. The
 /// chart and the written check-ins sit behind one "Show details" toggle.
 class _ConcludedBody extends StatefulWidget {
-  const _ConcludedBody({required this.view});
+  const _ConcludedBody({required this.view, this.onShowKept});
 
   final ExperimentView view;
+  final VoidCallback? onShowKept;
 
   @override
   State<_ConcludedBody> createState() => _ConcludedBodyState();
@@ -164,21 +169,32 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (outcome != null && outcome.isNotEmpty)
-            Semantics(
-              label: 'Outcome: $outcome',
-              child: ExcludeSemantics(
-                child: ExperimentChip(
-                  key: ValueKey('experiment-outcome-$id'),
-                  text: outcome,
-                  color: styles.accent,
-                  textColor: styles.accentText,
-                  leading: Icon(
-                    Icons.check,
-                    size: 14,
-                    color: styles.accentText,
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                Semantics(
+                  label: 'Outcome: $outcome',
+                  child: ExcludeSemantics(
+                    child: ExperimentChip(
+                      key: ValueKey('experiment-outcome-$id'),
+                      text: outcome,
+                      color: styles.accent,
+                      textColor: styles.accentText,
+                      leading: Icon(
+                        Icons.check,
+                        size: 14,
+                        color: styles.accentText,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                if (experiment.isRetired)
+                  ExperimentChip(
+                    key: ValueKey('experiment-retired-chip-$id'),
+                    text: keptRetiredChip(experiment.retiredAt!),
+                  ),
+              ],
             ),
           const SizedBox(height: AppSpacing.sm),
           Text(
@@ -186,6 +202,16 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
             key: ValueKey('experiment-conclusion-note-$id'),
             style: styles.body,
           ),
+          if (experiment.retireNote != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(keptWhenRetiredLabel.toUpperCase(), style: styles.statLabel),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              experiment.retireNote!,
+              key: ValueKey('experiment-retire-note-$id'),
+              style: styles.body,
+            ),
+          ],
         ],
       ),
       Column(
@@ -249,6 +275,24 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
           ],
         ],
       ),
+      if (experiment.isKept)
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.sm,
+          children: [
+            Text(
+              keptNowUnderText(),
+              key: ValueKey('experiment-now-kept-$id'),
+              style: styles.note,
+            ),
+            ExperimentTextLink(
+              key: ValueKey('experiment-see-kept-$id'),
+              label: keptSeeIt,
+              color: styles.accentText,
+              onPressed: widget.onShowKept,
+            ),
+          ],
+        ),
     ]);
   }
 }

@@ -5,10 +5,12 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/models/experiment.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../domain/experiment_dashboard.dart';
+import '../../domain/kept_copy.dart';
 import '../../providers/experiment_providers.dart';
 import 'experiment_row.dart';
 import 'experiment_start_form.dart';
 import 'experiment_ui.dart';
+import 'kept_experiment_list.dart';
 
 /// The Experiments card of Insights (ED25). It shows the dashboard provider's
 /// value, else the last cached dashboard, else a fixed-height placeholder with
@@ -95,6 +97,8 @@ class _StartButton extends StatelessWidget {
   );
 }
 
+enum _Segment { running, kept, concluded }
+
 class _Body extends StatefulWidget {
   const _Body({required this.dashboard});
 
@@ -106,7 +110,7 @@ class _Body extends StatefulWidget {
 
 class _BodyState extends State<_Body> {
   // Local, not saved: the card always opens on Running.
-  ExperimentStatus _filter = ExperimentStatus.running;
+  _Segment _segment = _Segment.running;
 
   @override
   Widget build(BuildContext context) {
@@ -120,39 +124,56 @@ class _BodyState extends State<_Body> {
         style: mutedBody,
       );
     }
-    final running = _filter == ExperimentStatus.running;
-    final shown = [
-      for (final view in dashboard.views)
-        if (view.experiment.status == _filter) view,
-    ];
+    final running = _segment == _Segment.running;
+    final kept = _segment == _Segment.kept;
+    final shown = kept
+        ? const <ExperimentView>[]
+        : [
+            for (final view in dashboard.views)
+              if (view.experiment.status ==
+                  (running
+                      ? ExperimentStatus.running
+                      : ExperimentStatus.concluded))
+                view,
+          ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Align(
           alignment: Alignment.centerLeft,
-          child: SegmentedButton<ExperimentStatus>(
-            key: const ValueKey('experiments-filter'),
-            showSelectedIcon: false,
-            style: SegmentedButton.styleFrom(
-              minimumSize: const Size(0, 44),
-              textStyle: styles.label,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<_Segment>(
+              key: const ValueKey('experiments-filter'),
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                minimumSize: const Size(0, 44),
+                textStyle: styles.label,
+              ),
+              segments: [
+                ButtonSegment(
+                  value: _Segment.running,
+                  label: Text('Running (${dashboard.runningCount})'),
+                ),
+                ButtonSegment(
+                  value: _Segment.kept,
+                  label: Text(keptSegmentLabel(dashboard.keptCount)),
+                ),
+                ButtonSegment(
+                  value: _Segment.concluded,
+                  label: Text('Concluded (${dashboard.concludedCount})'),
+                ),
+              ],
+              selected: {_segment},
+              onSelectionChanged: (selection) =>
+                  setState(() => _segment = selection.first),
             ),
-            segments: [
-              ButtonSegment(
-                value: ExperimentStatus.running,
-                label: Text('Running (${dashboard.runningCount})'),
-              ),
-              ButtonSegment(
-                value: ExperimentStatus.concluded,
-                label: Text('Concluded (${dashboard.concludedCount})'),
-              ),
-            ],
-            selected: {_filter},
-            onSelectionChanged: (selection) =>
-                setState(() => _filter = selection.first),
           ),
         ),
-        if (shown.isEmpty) ...[
+        if (kept) ...const [
+          SizedBox(height: AppSpacing.lg),
+          KeptExperimentList(),
+        ] else if (shown.isEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
           Text(
             running
@@ -177,6 +198,7 @@ class _BodyState extends State<_Body> {
           ExperimentRowView(
             key: ValueKey('experiment-row-${view.experiment.id}'),
             view: view,
+            onShowKept: () => setState(() => _segment = _Segment.kept),
           ),
         ],
       ],
