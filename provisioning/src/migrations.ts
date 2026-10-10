@@ -17,6 +17,7 @@ import syncHistoryCompaction from "../../supabase/migrations/20261004000100_sync
 import reviewOutcomes from "../../supabase/migrations/20261007000000_review_outcomes.sql";
 import weeklyReviewMoodFeeling from "../../supabase/migrations/20261008000000_weekly_review_mood_feeling.sql";
 import experiments from "../../supabase/migrations/20261009000000_experiments.sql";
+import keptExperiments from "../../supabase/migrations/20261010000000_kept_experiments.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -74,6 +75,11 @@ export const MIGRATIONS = [
     name: "20261009000000_experiments",
     query: experiments,
     sha256: "98c84b8bf0dce82e24709b4c970284b2aed404facdb7a67059a5a74d1a14d2a9",
+  },
+  {
+    name: "20261010000000_kept_experiments",
+    query: keptExperiments,
+    sha256: "6c4d20a601417f4290d6489cdcd7457bd65f2a484b08501ad06b109237e65579",
   },
 ] as const;
 
@@ -260,6 +266,29 @@ select
       and pg_catalog.strpos(definition, 'planner_apply_sync_operation_internal_pre_experiments') > 0
     from function_definitions where proname = 'planner_apply_sync_operation_internal'
       and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4']), false) as experiments_present,
+  exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'experiments'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'retired_at' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'experiments'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'retire_note' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'experiments'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'target_changes_json' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_constraint k
+    join pg_catalog.pg_class c on c.oid = k.conrelid and c.relname = 'experiments'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where k.conname = 'experiments_retired_only_kept'
+  ) and coalesce((select pg_catalog.strpos(definition, 'target_changes_json') > 0
+    from function_definitions where proname = 'planner_apply_sync_operation_internal'
+      and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4']), false) as kept_experiments_present,
   not exists (
     select 1
     from pg_catalog.pg_constraint fk

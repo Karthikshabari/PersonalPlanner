@@ -28,6 +28,7 @@ void main() {
         '20261007000000_review_outcomes.sql',
         '20261008000000_weekly_review_mood_feeling.sql',
         '20261009000000_experiments.sql',
+        '20261010000000_kept_experiments.sql',
       ]),
     );
   });
@@ -43,7 +44,7 @@ void main() {
       r'name: "([0-9a-z_]+)",\s*\n\s*query: [A-Za-z0-9]+,\s*\n\s*sha256: "([0-9a-f]{64})"',
     ).allMatches(manifest).toList();
 
-    expect(entries, hasLength(11));
+    expect(entries, hasLength(12));
     for (final entry in entries) {
       final name = entry.group(1)!;
       final expected = entry.group(2)!;
@@ -69,6 +70,7 @@ void main() {
         '20261007000000_review_outcomes',
         '20261008000000_weekly_review_mood_feeling',
         '20261009000000_experiments',
+        '20261010000000_kept_experiments',
       ]),
     );
   });
