@@ -180,6 +180,18 @@ class BackupCodec {
     // Backups before v6 carry no experiments and no block tags.
     result['experiments'] ??= <dynamic>[];
     result['experiment_check_ins'] ??= <dynamic>[];
+    // Backups before v7 carry no retirement or target history.
+    final experimentRows = result['experiments'];
+    if (experimentRows is List) {
+      for (final raw in experimentRows) {
+        if (raw is! Map<String, dynamic>) continue;
+        if (!raw.containsKey('retired_at')) raw['retired_at'] = null;
+        if (!raw.containsKey('retire_note')) raw['retire_note'] = null;
+        if (!raw.containsKey('target_changes_json')) {
+          raw['target_changes_json'] = '[]';
+        }
+      }
+    }
     final timerRows = result['timer_sessions'];
     if (timerRows is List) {
       for (final raw in timerRows) {
@@ -588,6 +600,9 @@ class BackupCodec {
     'outcome': row.outcome,
     'conclusion_note': row.conclusionNote,
     'concluded_on': row.concludedOn,
+    'retired_at': _iso(row.retiredAt),
+    'retire_note': row.retireNote,
+    'target_changes_json': row.targetChangesJson,
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),
     'deleted_at': _iso(row.deletedAt),

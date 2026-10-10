@@ -27,6 +27,7 @@ class SyncRemoteApplier {
     await _normalizeLegacyTaskPayload(change);
     await _normalizeLegacyTimerPayload(change);
     await _normalizeReviewPayload(change);
+    await _normalizeLegacyExperimentPayload(change);
     SyncPayloadValidator.validate(change);
     if (change.operation == 'delete') return;
     if (change.tableName == 'tasks') {
@@ -256,6 +257,18 @@ class SyncRemoteApplier {
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
     }
+    // A pre-kept Experiment snapshot is still a complete semantic row. The
+    // adapter fills the kept fields from the local row before the SQL upsert.
+    if (change.tableName == 'experiments') {
+      return definition.columns
+          .where(
+            (column) =>
+                column.jsonKey != 'retired_at' &&
+                column.jsonKey != 'retire_note' &&
+                column.jsonKey != 'target_changes_json',
+          )
+          .every((column) => change.payload.containsKey(column.jsonKey));
+    }
     return false;
   }
 
@@ -333,6 +346,33 @@ class SyncRemoteApplier {
       payload['running_since'] = current.runningSince?.toIso8601String();
       payload['work_intervals_json'] = current.workIntervalsJson;
       payload['owner_device_id'] = current.ownerDeviceId;
+    }
+  }
+
+  /// Older clients and servers without the kept-experiments migration omit
+  /// `retired_at`, `retire_note` and `target_changes_json`. Absence keeps the
+  /// local value; an explicit null clears `retired_at` and `retire_note`.
+  Future<void> _normalizeLegacyExperimentPayload(
+    SyncRemoteChange change,
+  ) async {
+    if (change.tableName != 'experiments' || change.operation == 'delete') {
+      return;
+    }
+    final payload = change.payload;
+    if (payload.containsKey('retired_at') &&
+        payload.containsKey('retire_note') &&
+        payload.containsKey('target_changes_json')) {
+      return;
+    }
+    final current = await _db.experimentDao.getExperimentById(change.recordId);
+    if (!payload.containsKey('retired_at')) {
+      payload['retired_at'] = current?.retiredAt?.toUtc().toIso8601String();
+    }
+    if (!payload.containsKey('retire_note')) {
+      payload['retire_note'] = current?.retireNote;
+    }
+    if (!payload.containsKey('target_changes_json')) {
+      payload['target_changes_json'] = current?.targetChangesJson ?? '[]';
     }
   }
 
@@ -440,7 +480,7 @@ ON CONFLICT(${definition.primaryKey}) DO UPDATE SET $updates
         'deleted_at',
       },
       'day_contexts': {'created_at', 'updated_at', 'deleted_at'},
-      'experiments': {'created_at', 'updated_at', 'deleted_at'},
+      'experiments': {'created_at', 'updated_at', 'deleted_at', 'retired_at'},
       'experiment_check_ins': {'created_at', 'updated_at', 'deleted_at'},
     };
     final result = Map<String, dynamic>.from(source);
@@ -745,6 +785,9 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('outcome'),
       _SyncColumn('conclusion_note'),
       _SyncColumn('concluded_on'),
+      _SyncColumn('retired_at'),
+      _SyncColumn('retire_note'),
+      _SyncColumn('target_changes_json'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),

@@ -177,7 +177,7 @@ void main() {
     expect(find.text('7 more days'), findsOneWidget);
     expect(find.text('14 more days'), findsOneWidget);
     expect(find.text('30 more days'), findsOneWidget);
-    expect(find.text('Continue as a habit'), findsOneWidget);
+    expect(find.text('Keep it'), findsOneWidget);
     expect(find.text('Drop it'), findsOneWidget);
     expect(find.text('Why are you extending? (required)'), findsOneWidget);
     expect(find.text('What did you learn?'), findsOneWidget);
@@ -388,7 +388,7 @@ void main() {
     await tester.tap(find.text('Concluded (1)'));
     await tester.pump();
 
-    expect(find.text('Continue as a habit'), findsOneWidget);
+    expect(find.text('Keep it'), findsOneWidget);
     expect(find.text('It stuck.'), findsOneWidget);
     expect(find.text('No note added.'), findsNothing);
 

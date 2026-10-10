@@ -283,10 +283,282 @@ as String,
 
 }
 
+
+/// @nodoc
+mixin _$ExperimentTargetChange {
+
+@JsonKey(name: 'effective_week_start') String get effectiveWeekStart;@JsonKey(name: 'weekday_target_min') int get weekdayTargetMin;@JsonKey(name: 'weekend_target_min') int get weekendTargetMin;@JsonKey(name: 'made_on') String get madeOn;
+/// Create a copy of ExperimentTargetChange
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ExperimentTargetChangeCopyWith<ExperimentTargetChange> get copyWith => _$ExperimentTargetChangeCopyWithImpl<ExperimentTargetChange>(this as ExperimentTargetChange, _$identity);
+
+  /// Serializes this ExperimentTargetChange to a JSON map.
+  Map<String, dynamic> toJson();
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ExperimentTargetChange&&(identical(other.effectiveWeekStart, effectiveWeekStart) || other.effectiveWeekStart == effectiveWeekStart)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.madeOn, madeOn) || other.madeOn == madeOn));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,effectiveWeekStart,weekdayTargetMin,weekendTargetMin,madeOn);
+
+@override
+String toString() {
+  return 'ExperimentTargetChange(effectiveWeekStart: $effectiveWeekStart, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, madeOn: $madeOn)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ExperimentTargetChangeCopyWith<$Res>  {
+  factory $ExperimentTargetChangeCopyWith(ExperimentTargetChange value, $Res Function(ExperimentTargetChange) _then) = _$ExperimentTargetChangeCopyWithImpl;
+@useResult
+$Res call({
+@JsonKey(name: 'effective_week_start') String effectiveWeekStart,@JsonKey(name: 'weekday_target_min') int weekdayTargetMin,@JsonKey(name: 'weekend_target_min') int weekendTargetMin,@JsonKey(name: 'made_on') String madeOn
+});
+
+
+
+
+}
+/// @nodoc
+class _$ExperimentTargetChangeCopyWithImpl<$Res>
+    implements $ExperimentTargetChangeCopyWith<$Res> {
+  _$ExperimentTargetChangeCopyWithImpl(this._self, this._then);
+
+  final ExperimentTargetChange _self;
+  final $Res Function(ExperimentTargetChange) _then;
+
+/// Create a copy of ExperimentTargetChange
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') @override $Res call({Object? effectiveWeekStart = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? madeOn = null,}) {
+  return _then(_self.copyWith(
+effectiveWeekStart: null == effectiveWeekStart ? _self.effectiveWeekStart : effectiveWeekStart // ignore: cast_nullable_to_non_nullable
+as String,weekdayTargetMin: null == weekdayTargetMin ? _self.weekdayTargetMin : weekdayTargetMin // ignore: cast_nullable_to_non_nullable
+as int,weekendTargetMin: null == weekendTargetMin ? _self.weekendTargetMin : weekendTargetMin // ignore: cast_nullable_to_non_nullable
+as int,madeOn: null == madeOn ? _self.madeOn : madeOn // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+}
+
+
+/// Adds pattern-matching-related methods to [ExperimentTargetChange].
+extension ExperimentTargetChangePatterns on ExperimentTargetChange {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _ExperimentTargetChange value)?  $default,{required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case _ExperimentTargetChange() when $default != null:
+return $default(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _ExperimentTargetChange value)  $default,){
+final _that = this;
+switch (_that) {
+case _ExperimentTargetChange():
+return $default(_that);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _ExperimentTargetChange value)?  $default,){
+final _that = this;
+switch (_that) {
+case _ExperimentTargetChange() when $default != null:
+return $default(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(name: 'effective_week_start')  String effectiveWeekStart, @JsonKey(name: 'weekday_target_min')  int weekdayTargetMin, @JsonKey(name: 'weekend_target_min')  int weekendTargetMin, @JsonKey(name: 'made_on')  String madeOn)?  $default,{required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case _ExperimentTargetChange() when $default != null:
+return $default(_that.effectiveWeekStart,_that.weekdayTargetMin,_that.weekendTargetMin,_that.madeOn);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(name: 'effective_week_start')  String effectiveWeekStart, @JsonKey(name: 'weekday_target_min')  int weekdayTargetMin, @JsonKey(name: 'weekend_target_min')  int weekendTargetMin, @JsonKey(name: 'made_on')  String madeOn)  $default,) {final _that = this;
+switch (_that) {
+case _ExperimentTargetChange():
+return $default(_that.effectiveWeekStart,_that.weekdayTargetMin,_that.weekendTargetMin,_that.madeOn);case _:
+  throw StateError('Unexpected subclass');
+
+}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(name: 'effective_week_start')  String effectiveWeekStart, @JsonKey(name: 'weekday_target_min')  int weekdayTargetMin, @JsonKey(name: 'weekend_target_min')  int weekendTargetMin, @JsonKey(name: 'made_on')  String madeOn)?  $default,) {final _that = this;
+switch (_that) {
+case _ExperimentTargetChange() when $default != null:
+return $default(_that.effectiveWeekStart,_that.weekdayTargetMin,_that.weekendTargetMin,_that.madeOn);case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+@JsonSerializable()
+
+class _ExperimentTargetChange implements ExperimentTargetChange {
+  const _ExperimentTargetChange({@JsonKey(name: 'effective_week_start') required this.effectiveWeekStart, @JsonKey(name: 'weekday_target_min') required this.weekdayTargetMin, @JsonKey(name: 'weekend_target_min') required this.weekendTargetMin, @JsonKey(name: 'made_on') required this.madeOn});
+  factory _ExperimentTargetChange.fromJson(Map<String, dynamic> json) => _$ExperimentTargetChangeFromJson(json);
+
+@override@JsonKey(name: 'effective_week_start') final  String effectiveWeekStart;
+@override@JsonKey(name: 'weekday_target_min') final  int weekdayTargetMin;
+@override@JsonKey(name: 'weekend_target_min') final  int weekendTargetMin;
+@override@JsonKey(name: 'made_on') final  String madeOn;
+
+/// Create a copy of ExperimentTargetChange
+/// with the given fields replaced by the non-null parameter values.
+@override @JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+_$ExperimentTargetChangeCopyWith<_ExperimentTargetChange> get copyWith => __$ExperimentTargetChangeCopyWithImpl<_ExperimentTargetChange>(this, _$identity);
+
+@override
+Map<String, dynamic> toJson() {
+  return _$ExperimentTargetChangeToJson(this, );
+}
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ExperimentTargetChange&&(identical(other.effectiveWeekStart, effectiveWeekStart) || other.effectiveWeekStart == effectiveWeekStart)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.madeOn, madeOn) || other.madeOn == madeOn));
+}
+
+@JsonKey(includeFromJson: false, includeToJson: false)
+@override
+int get hashCode => Object.hash(runtimeType,effectiveWeekStart,weekdayTargetMin,weekendTargetMin,madeOn);
+
+@override
+String toString() {
+  return 'ExperimentTargetChange(effectiveWeekStart: $effectiveWeekStart, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, madeOn: $madeOn)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class _$ExperimentTargetChangeCopyWith<$Res> implements $ExperimentTargetChangeCopyWith<$Res> {
+  factory _$ExperimentTargetChangeCopyWith(_ExperimentTargetChange value, $Res Function(_ExperimentTargetChange) _then) = __$ExperimentTargetChangeCopyWithImpl;
+@override @useResult
+$Res call({
+@JsonKey(name: 'effective_week_start') String effectiveWeekStart,@JsonKey(name: 'weekday_target_min') int weekdayTargetMin,@JsonKey(name: 'weekend_target_min') int weekendTargetMin,@JsonKey(name: 'made_on') String madeOn
+});
+
+
+
+
+}
+/// @nodoc
+class __$ExperimentTargetChangeCopyWithImpl<$Res>
+    implements _$ExperimentTargetChangeCopyWith<$Res> {
+  __$ExperimentTargetChangeCopyWithImpl(this._self, this._then);
+
+  final _ExperimentTargetChange _self;
+  final $Res Function(_ExperimentTargetChange) _then;
+
+/// Create a copy of ExperimentTargetChange
+/// with the given fields replaced by the non-null parameter values.
+@override @pragma('vm:prefer-inline') $Res call({Object? effectiveWeekStart = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? madeOn = null,}) {
+  return _then(_ExperimentTargetChange(
+effectiveWeekStart: null == effectiveWeekStart ? _self.effectiveWeekStart : effectiveWeekStart // ignore: cast_nullable_to_non_nullable
+as String,weekdayTargetMin: null == weekdayTargetMin ? _self.weekdayTargetMin : weekdayTargetMin // ignore: cast_nullable_to_non_nullable
+as int,weekendTargetMin: null == weekendTargetMin ? _self.weekendTargetMin : weekendTargetMin // ignore: cast_nullable_to_non_nullable
+as int,madeOn: null == madeOn ? _self.madeOn : madeOn // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
 /// @nodoc
 mixin _$Experiment {
 
- String get id; String get tagId; String get tagName; String? get purpose; String get startDate; String get endDate; int get weekdayTargetMin; int get weekendTargetMin; int get checkInEveryDays; ExperimentStatus get status; List<ExperimentExtension> get extensions; ExperimentOutcome? get outcome; String? get conclusionNote; String? get concludedOn; DateTime get createdAt; DateTime get updatedAt; int get revision;
+ String get id; String get tagId; String get tagName; String? get purpose; String get startDate; String get endDate; int get weekdayTargetMin; int get weekendTargetMin; int get checkInEveryDays; ExperimentStatus get status; List<ExperimentExtension> get extensions; ExperimentOutcome? get outcome; String? get conclusionNote; String? get concludedOn; DateTime? get retiredAt; String? get retireNote; List<ExperimentTargetChange> get targetChanges; DateTime get createdAt; DateTime get updatedAt; int get revision;
 /// Create a copy of Experiment
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -297,16 +569,16 @@ $ExperimentCopyWith<Experiment> get copyWith => _$ExperimentCopyWithImpl<Experim
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Experiment&&(identical(other.id, id) || other.id == id)&&(identical(other.tagId, tagId) || other.tagId == tagId)&&(identical(other.tagName, tagName) || other.tagName == tagName)&&(identical(other.purpose, purpose) || other.purpose == purpose)&&(identical(other.startDate, startDate) || other.startDate == startDate)&&(identical(other.endDate, endDate) || other.endDate == endDate)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.checkInEveryDays, checkInEveryDays) || other.checkInEveryDays == checkInEveryDays)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.extensions, extensions)&&(identical(other.outcome, outcome) || other.outcome == outcome)&&(identical(other.conclusionNote, conclusionNote) || other.conclusionNote == conclusionNote)&&(identical(other.concludedOn, concludedOn) || other.concludedOn == concludedOn)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.revision, revision) || other.revision == revision));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Experiment&&(identical(other.id, id) || other.id == id)&&(identical(other.tagId, tagId) || other.tagId == tagId)&&(identical(other.tagName, tagName) || other.tagName == tagName)&&(identical(other.purpose, purpose) || other.purpose == purpose)&&(identical(other.startDate, startDate) || other.startDate == startDate)&&(identical(other.endDate, endDate) || other.endDate == endDate)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.checkInEveryDays, checkInEveryDays) || other.checkInEveryDays == checkInEveryDays)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.extensions, extensions)&&(identical(other.outcome, outcome) || other.outcome == outcome)&&(identical(other.conclusionNote, conclusionNote) || other.conclusionNote == conclusionNote)&&(identical(other.concludedOn, concludedOn) || other.concludedOn == concludedOn)&&(identical(other.retiredAt, retiredAt) || other.retiredAt == retiredAt)&&(identical(other.retireNote, retireNote) || other.retireNote == retireNote)&&const DeepCollectionEquality().equals(other.targetChanges, targetChanges)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.revision, revision) || other.revision == revision));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,tagId,tagName,purpose,startDate,endDate,weekdayTargetMin,weekendTargetMin,checkInEveryDays,status,const DeepCollectionEquality().hash(extensions),outcome,conclusionNote,concludedOn,createdAt,updatedAt,revision);
+int get hashCode => Object.hashAll([runtimeType,id,tagId,tagName,purpose,startDate,endDate,weekdayTargetMin,weekendTargetMin,checkInEveryDays,status,const DeepCollectionEquality().hash(extensions),outcome,conclusionNote,concludedOn,retiredAt,retireNote,const DeepCollectionEquality().hash(targetChanges),createdAt,updatedAt,revision]);
 
 @override
 String toString() {
-  return 'Experiment(id: $id, tagId: $tagId, tagName: $tagName, purpose: $purpose, startDate: $startDate, endDate: $endDate, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, checkInEveryDays: $checkInEveryDays, status: $status, extensions: $extensions, outcome: $outcome, conclusionNote: $conclusionNote, concludedOn: $concludedOn, createdAt: $createdAt, updatedAt: $updatedAt, revision: $revision)';
+  return 'Experiment(id: $id, tagId: $tagId, tagName: $tagName, purpose: $purpose, startDate: $startDate, endDate: $endDate, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, checkInEveryDays: $checkInEveryDays, status: $status, extensions: $extensions, outcome: $outcome, conclusionNote: $conclusionNote, concludedOn: $concludedOn, retiredAt: $retiredAt, retireNote: $retireNote, targetChanges: $targetChanges, createdAt: $createdAt, updatedAt: $updatedAt, revision: $revision)';
 }
 
 
@@ -317,7 +589,7 @@ abstract mixin class $ExperimentCopyWith<$Res>  {
   factory $ExperimentCopyWith(Experiment value, $Res Function(Experiment) _then) = _$ExperimentCopyWithImpl;
 @useResult
 $Res call({
- String id, String tagId, String tagName, String? purpose, String startDate, String endDate, int weekdayTargetMin, int weekendTargetMin, int checkInEveryDays, ExperimentStatus status, List<ExperimentExtension> extensions, ExperimentOutcome? outcome, String? conclusionNote, String? concludedOn, DateTime createdAt, DateTime updatedAt, int revision
+ String id, String tagId, String tagName, String? purpose, String startDate, String endDate, int weekdayTargetMin, int weekendTargetMin, int checkInEveryDays, ExperimentStatus status, List<ExperimentExtension> extensions, ExperimentOutcome? outcome, String? conclusionNote, String? concludedOn, DateTime? retiredAt, String? retireNote, List<ExperimentTargetChange> targetChanges, DateTime createdAt, DateTime updatedAt, int revision
 });
 
 
@@ -334,7 +606,7 @@ class _$ExperimentCopyWithImpl<$Res>
 
 /// Create a copy of Experiment
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? tagId = null,Object? tagName = null,Object? purpose = freezed,Object? startDate = null,Object? endDate = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? checkInEveryDays = null,Object? status = null,Object? extensions = null,Object? outcome = freezed,Object? conclusionNote = freezed,Object? concludedOn = freezed,Object? createdAt = null,Object? updatedAt = null,Object? revision = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? tagId = null,Object? tagName = null,Object? purpose = freezed,Object? startDate = null,Object? endDate = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? checkInEveryDays = null,Object? status = null,Object? extensions = null,Object? outcome = freezed,Object? conclusionNote = freezed,Object? concludedOn = freezed,Object? retiredAt = freezed,Object? retireNote = freezed,Object? targetChanges = null,Object? createdAt = null,Object? updatedAt = null,Object? revision = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,tagId: null == tagId ? _self.tagId : tagId // ignore: cast_nullable_to_non_nullable
@@ -350,7 +622,10 @@ as ExperimentStatus,extensions: null == extensions ? _self.extensions : extensio
 as List<ExperimentExtension>,outcome: freezed == outcome ? _self.outcome : outcome // ignore: cast_nullable_to_non_nullable
 as ExperimentOutcome?,conclusionNote: freezed == conclusionNote ? _self.conclusionNote : conclusionNote // ignore: cast_nullable_to_non_nullable
 as String?,concludedOn: freezed == concludedOn ? _self.concludedOn : concludedOn // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,retiredAt: freezed == retiredAt ? _self.retiredAt : retiredAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,retireNote: freezed == retireNote ? _self.retireNote : retireNote // ignore: cast_nullable_to_non_nullable
+as String?,targetChanges: null == targetChanges ? _self.targetChanges : targetChanges // ignore: cast_nullable_to_non_nullable
+as List<ExperimentTargetChange>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,revision: null == revision ? _self.revision : revision // ignore: cast_nullable_to_non_nullable
 as int,
@@ -438,10 +713,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime createdAt,  DateTime updatedAt,  int revision)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime? retiredAt,  String? retireNote,  List<ExperimentTargetChange> targetChanges,  DateTime createdAt,  DateTime updatedAt,  int revision)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Experiment() when $default != null:
-return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.createdAt,_that.updatedAt,_that.revision);case _:
+return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.retiredAt,_that.retireNote,_that.targetChanges,_that.createdAt,_that.updatedAt,_that.revision);case _:
   return orElse();
 
 }
@@ -459,10 +734,10 @@ return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime createdAt,  DateTime updatedAt,  int revision)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime? retiredAt,  String? retireNote,  List<ExperimentTargetChange> targetChanges,  DateTime createdAt,  DateTime updatedAt,  int revision)  $default,) {final _that = this;
 switch (_that) {
 case _Experiment():
-return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.createdAt,_that.updatedAt,_that.revision);case _:
+return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.retiredAt,_that.retireNote,_that.targetChanges,_that.createdAt,_that.updatedAt,_that.revision);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -479,10 +754,10 @@ return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime createdAt,  DateTime updatedAt,  int revision)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String tagId,  String tagName,  String? purpose,  String startDate,  String endDate,  int weekdayTargetMin,  int weekendTargetMin,  int checkInEveryDays,  ExperimentStatus status,  List<ExperimentExtension> extensions,  ExperimentOutcome? outcome,  String? conclusionNote,  String? concludedOn,  DateTime? retiredAt,  String? retireNote,  List<ExperimentTargetChange> targetChanges,  DateTime createdAt,  DateTime updatedAt,  int revision)?  $default,) {final _that = this;
 switch (_that) {
 case _Experiment() when $default != null:
-return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.createdAt,_that.updatedAt,_that.revision);case _:
+return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate,_that.endDate,_that.weekdayTargetMin,_that.weekendTargetMin,_that.checkInEveryDays,_that.status,_that.extensions,_that.outcome,_that.conclusionNote,_that.concludedOn,_that.retiredAt,_that.retireNote,_that.targetChanges,_that.createdAt,_that.updatedAt,_that.revision);case _:
   return null;
 
 }
@@ -494,7 +769,7 @@ return $default(_that.id,_that.tagId,_that.tagName,_that.purpose,_that.startDate
 
 
 class _Experiment implements Experiment {
-  const _Experiment({required this.id, required this.tagId, required this.tagName, this.purpose, required this.startDate, required this.endDate, required this.weekdayTargetMin, required this.weekendTargetMin, required this.checkInEveryDays, required this.status, this.extensions = const <ExperimentExtension>[], this.outcome, this.conclusionNote, this.concludedOn, required this.createdAt, required this.updatedAt, this.revision = 1});
+  const _Experiment({required this.id, required this.tagId, required this.tagName, this.purpose, required this.startDate, required this.endDate, required this.weekdayTargetMin, required this.weekendTargetMin, required this.checkInEveryDays, required this.status, this.extensions = const <ExperimentExtension>[], this.outcome, this.conclusionNote, this.concludedOn, this.retiredAt, this.retireNote, this.targetChanges = const <ExperimentTargetChange>[], required this.createdAt, required this.updatedAt, this.revision = 1});
   
 
 @override final  String id;
@@ -511,6 +786,9 @@ class _Experiment implements Experiment {
 @override final  ExperimentOutcome? outcome;
 @override final  String? conclusionNote;
 @override final  String? concludedOn;
+@override final  DateTime? retiredAt;
+@override final  String? retireNote;
+@override@JsonKey() final  List<ExperimentTargetChange> targetChanges;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 @override@JsonKey() final  int revision;
@@ -525,16 +803,16 @@ _$ExperimentCopyWith<_Experiment> get copyWith => __$ExperimentCopyWithImpl<_Exp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Experiment&&(identical(other.id, id) || other.id == id)&&(identical(other.tagId, tagId) || other.tagId == tagId)&&(identical(other.tagName, tagName) || other.tagName == tagName)&&(identical(other.purpose, purpose) || other.purpose == purpose)&&(identical(other.startDate, startDate) || other.startDate == startDate)&&(identical(other.endDate, endDate) || other.endDate == endDate)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.checkInEveryDays, checkInEveryDays) || other.checkInEveryDays == checkInEveryDays)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.extensions, extensions)&&(identical(other.outcome, outcome) || other.outcome == outcome)&&(identical(other.conclusionNote, conclusionNote) || other.conclusionNote == conclusionNote)&&(identical(other.concludedOn, concludedOn) || other.concludedOn == concludedOn)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.revision, revision) || other.revision == revision));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Experiment&&(identical(other.id, id) || other.id == id)&&(identical(other.tagId, tagId) || other.tagId == tagId)&&(identical(other.tagName, tagName) || other.tagName == tagName)&&(identical(other.purpose, purpose) || other.purpose == purpose)&&(identical(other.startDate, startDate) || other.startDate == startDate)&&(identical(other.endDate, endDate) || other.endDate == endDate)&&(identical(other.weekdayTargetMin, weekdayTargetMin) || other.weekdayTargetMin == weekdayTargetMin)&&(identical(other.weekendTargetMin, weekendTargetMin) || other.weekendTargetMin == weekendTargetMin)&&(identical(other.checkInEveryDays, checkInEveryDays) || other.checkInEveryDays == checkInEveryDays)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.extensions, extensions)&&(identical(other.outcome, outcome) || other.outcome == outcome)&&(identical(other.conclusionNote, conclusionNote) || other.conclusionNote == conclusionNote)&&(identical(other.concludedOn, concludedOn) || other.concludedOn == concludedOn)&&(identical(other.retiredAt, retiredAt) || other.retiredAt == retiredAt)&&(identical(other.retireNote, retireNote) || other.retireNote == retireNote)&&const DeepCollectionEquality().equals(other.targetChanges, targetChanges)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.revision, revision) || other.revision == revision));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,id,tagId,tagName,purpose,startDate,endDate,weekdayTargetMin,weekendTargetMin,checkInEveryDays,status,const DeepCollectionEquality().hash(extensions),outcome,conclusionNote,concludedOn,createdAt,updatedAt,revision);
+int get hashCode => Object.hashAll([runtimeType,id,tagId,tagName,purpose,startDate,endDate,weekdayTargetMin,weekendTargetMin,checkInEveryDays,status,const DeepCollectionEquality().hash(extensions),outcome,conclusionNote,concludedOn,retiredAt,retireNote,const DeepCollectionEquality().hash(targetChanges),createdAt,updatedAt,revision]);
 
 @override
 String toString() {
-  return 'Experiment(id: $id, tagId: $tagId, tagName: $tagName, purpose: $purpose, startDate: $startDate, endDate: $endDate, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, checkInEveryDays: $checkInEveryDays, status: $status, extensions: $extensions, outcome: $outcome, conclusionNote: $conclusionNote, concludedOn: $concludedOn, createdAt: $createdAt, updatedAt: $updatedAt, revision: $revision)';
+  return 'Experiment(id: $id, tagId: $tagId, tagName: $tagName, purpose: $purpose, startDate: $startDate, endDate: $endDate, weekdayTargetMin: $weekdayTargetMin, weekendTargetMin: $weekendTargetMin, checkInEveryDays: $checkInEveryDays, status: $status, extensions: $extensions, outcome: $outcome, conclusionNote: $conclusionNote, concludedOn: $concludedOn, retiredAt: $retiredAt, retireNote: $retireNote, targetChanges: $targetChanges, createdAt: $createdAt, updatedAt: $updatedAt, revision: $revision)';
 }
 
 
@@ -545,7 +823,7 @@ abstract mixin class _$ExperimentCopyWith<$Res> implements $ExperimentCopyWith<$
   factory _$ExperimentCopyWith(_Experiment value, $Res Function(_Experiment) _then) = __$ExperimentCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String tagId, String tagName, String? purpose, String startDate, String endDate, int weekdayTargetMin, int weekendTargetMin, int checkInEveryDays, ExperimentStatus status, List<ExperimentExtension> extensions, ExperimentOutcome? outcome, String? conclusionNote, String? concludedOn, DateTime createdAt, DateTime updatedAt, int revision
+ String id, String tagId, String tagName, String? purpose, String startDate, String endDate, int weekdayTargetMin, int weekendTargetMin, int checkInEveryDays, ExperimentStatus status, List<ExperimentExtension> extensions, ExperimentOutcome? outcome, String? conclusionNote, String? concludedOn, DateTime? retiredAt, String? retireNote, List<ExperimentTargetChange> targetChanges, DateTime createdAt, DateTime updatedAt, int revision
 });
 
 
@@ -562,7 +840,7 @@ class __$ExperimentCopyWithImpl<$Res>
 
 /// Create a copy of Experiment
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? tagId = null,Object? tagName = null,Object? purpose = freezed,Object? startDate = null,Object? endDate = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? checkInEveryDays = null,Object? status = null,Object? extensions = null,Object? outcome = freezed,Object? conclusionNote = freezed,Object? concludedOn = freezed,Object? createdAt = null,Object? updatedAt = null,Object? revision = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? tagId = null,Object? tagName = null,Object? purpose = freezed,Object? startDate = null,Object? endDate = null,Object? weekdayTargetMin = null,Object? weekendTargetMin = null,Object? checkInEveryDays = null,Object? status = null,Object? extensions = null,Object? outcome = freezed,Object? conclusionNote = freezed,Object? concludedOn = freezed,Object? retiredAt = freezed,Object? retireNote = freezed,Object? targetChanges = null,Object? createdAt = null,Object? updatedAt = null,Object? revision = null,}) {
   return _then(_Experiment(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,tagId: null == tagId ? _self.tagId : tagId // ignore: cast_nullable_to_non_nullable
@@ -578,7 +856,10 @@ as ExperimentStatus,extensions: null == extensions ? _self.extensions : extensio
 as List<ExperimentExtension>,outcome: freezed == outcome ? _self.outcome : outcome // ignore: cast_nullable_to_non_nullable
 as ExperimentOutcome?,conclusionNote: freezed == conclusionNote ? _self.conclusionNote : conclusionNote // ignore: cast_nullable_to_non_nullable
 as String?,concludedOn: freezed == concludedOn ? _self.concludedOn : concludedOn // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String?,retiredAt: freezed == retiredAt ? _self.retiredAt : retiredAt // ignore: cast_nullable_to_non_nullable
+as DateTime?,retireNote: freezed == retireNote ? _self.retireNote : retireNote // ignore: cast_nullable_to_non_nullable
+as String?,targetChanges: null == targetChanges ? _self.targetChanges : targetChanges // ignore: cast_nullable_to_non_nullable
+as List<ExperimentTargetChange>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,revision: null == revision ? _self.revision : revision // ignore: cast_nullable_to_non_nullable
 as int,

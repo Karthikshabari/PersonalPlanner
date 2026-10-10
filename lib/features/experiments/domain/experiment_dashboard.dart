@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/experiment_dao.dart';
 import '../../../core/models/experiment.dart';
 import '../../../core/models/experiment_check_in.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import '../data/experiment_repository.dart';
 import 'experiment_check_in_schedule.dart';
 import 'experiment_days.dart';
 import 'experiment_progress.dart';
@@ -101,7 +100,8 @@ class ExperimentDashboardService {
       if (rows.isEmpty) return ExperimentDashboard.empty;
 
       final experiments = [
-        for (final r in rows) _toExperiment(r.experiment, r.tag.name),
+        for (final r in rows)
+          ExperimentRepository.fromRow(r.experiment, r.tag.name),
       ];
       final firstDate = experiments
           .map((e) => e.startDate)
@@ -230,27 +230,6 @@ int _compareViews(ExperimentView a, ExperimentView b) {
   return byName != 0 ? byName : ea.id.compareTo(eb.id);
 }
 
-/// Mirrors `ExperimentRepository` row mapping, which is private there.
-Experiment _toExperiment(ExperimentRow row, String tagName) => Experiment(
-  id: row.id,
-  tagId: row.tagId,
-  tagName: tagName,
-  purpose: row.purpose,
-  startDate: row.startDate,
-  endDate: row.endDate,
-  weekdayTargetMin: row.weekdayTargetMin,
-  weekendTargetMin: row.weekendTargetMin,
-  checkInEveryDays: row.checkInEveryDays,
-  status: ExperimentStatus.fromDb(row.status),
-  extensions: _decodeExtensions(row.extensionsJson),
-  outcome: ExperimentOutcome.fromDb(row.outcome),
-  conclusionNote: row.conclusionNote,
-  concludedOn: row.concludedOn,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
-  revision: row.revision,
-);
-
 ExperimentCheckIn _toCheckIn(ExperimentCheckInRow row) => ExperimentCheckIn(
   id: row.id,
   experimentId: row.experimentId,
@@ -259,12 +238,3 @@ ExperimentCheckIn _toCheckIn(ExperimentCheckInRow row) => ExperimentCheckIn(
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 );
-
-List<ExperimentExtension> _decodeExtensions(String json) {
-  final decoded = jsonDecode(json);
-  if (decoded is! List) return const [];
-  return [
-    for (final item in decoded)
-      ExperimentExtension.fromJson(Map<String, dynamic>.from(item as Map)),
-  ];
-}

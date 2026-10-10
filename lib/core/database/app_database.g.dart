@@ -6233,6 +6233,41 @@ class $ExperimentsTable extends Experiments
     requiredDuringInsert: false,
   );
   @override
+  late final GeneratedColumnWithTypeConverter<DateTime?, String> retiredAt =
+      GeneratedColumn<String>(
+        'retired_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<DateTime?>($ExperimentsTable.$converterretiredAt);
+  static const VerificationMeta _retireNoteMeta = const VerificationMeta(
+    'retireNote',
+  );
+  @override
+  late final GeneratedColumn<String> retireNote = GeneratedColumn<String>(
+    'retire_note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints:
+        'CHECK (retire_note IS NULL OR length(retire_note) <= 4000)',
+  );
+  static const VerificationMeta _targetChangesJsonMeta = const VerificationMeta(
+    'targetChangesJson',
+  );
+  @override
+  late final GeneratedColumn<String> targetChangesJson =
+      GeneratedColumn<String>(
+        'target_changes_json',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
+  @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
         'created_at',
@@ -6309,6 +6344,9 @@ class $ExperimentsTable extends Experiments
     outcome,
     conclusionNote,
     concludedOn,
+    retiredAt,
+    retireNote,
+    targetChangesJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -6435,6 +6473,21 @@ class $ExperimentsTable extends Experiments
         ),
       );
     }
+    if (data.containsKey('retire_note')) {
+      context.handle(
+        _retireNoteMeta,
+        retireNote.isAcceptableOrUnknown(data['retire_note']!, _retireNoteMeta),
+      );
+    }
+    if (data.containsKey('target_changes_json')) {
+      context.handle(
+        _targetChangesJsonMeta,
+        targetChangesJson.isAcceptableOrUnknown(
+          data['target_changes_json']!,
+          _targetChangesJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -6517,6 +6570,20 @@ class $ExperimentsTable extends Experiments
         DriftSqlType.string,
         data['${effectivePrefix}concluded_on'],
       ),
+      retiredAt: $ExperimentsTable.$converterretiredAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}retired_at'],
+        ),
+      ),
+      retireNote: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}retire_note'],
+      ),
+      targetChangesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}target_changes_json'],
+      )!,
       createdAt: $ExperimentsTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -6555,6 +6622,8 @@ class $ExperimentsTable extends Experiments
     return $ExperimentsTable(attachedDatabase, alias);
   }
 
+  static TypeConverter<DateTime?, String?> $converterretiredAt =
+      const NullableDateTimeUtcConverter();
   static TypeConverter<DateTime, String> $convertercreatedAt =
       const DateTimeUtcConverter();
   static TypeConverter<DateTime, String> $converterupdatedAt =
@@ -6579,6 +6648,17 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
   final String? outcome;
   final String? conclusionNote;
   final String? concludedOn;
+
+  /// When a kept experiment was retired (UTC). Null while kept and for every
+  /// experiment that was never kept.
+  final DateTime? retiredAt;
+
+  /// What was learned, written when retiring. At most 4000 code points.
+  final String? retireNote;
+
+  /// JSON array of `{effective_week_start, weekday_target_min,
+  /// weekend_target_min, made_on}`, ascending, at most one entry per week.
+  final String targetChangesJson;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -6599,6 +6679,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
     this.outcome,
     this.conclusionNote,
     this.concludedOn,
+    this.retiredAt,
+    this.retireNote,
+    required this.targetChangesJson,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -6630,6 +6713,15 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
     if (!nullToAbsent || concludedOn != null) {
       map['concluded_on'] = Variable<String>(concludedOn);
     }
+    if (!nullToAbsent || retiredAt != null) {
+      map['retired_at'] = Variable<String>(
+        $ExperimentsTable.$converterretiredAt.toSql(retiredAt),
+      );
+    }
+    if (!nullToAbsent || retireNote != null) {
+      map['retire_note'] = Variable<String>(retireNote);
+    }
+    map['target_changes_json'] = Variable<String>(targetChangesJson);
     {
       map['created_at'] = Variable<String>(
         $ExperimentsTable.$convertercreatedAt.toSql(createdAt),
@@ -6676,6 +6768,13 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
       concludedOn: concludedOn == null && nullToAbsent
           ? const Value.absent()
           : Value(concludedOn),
+      retiredAt: retiredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(retiredAt),
+      retireNote: retireNote == null && nullToAbsent
+          ? const Value.absent()
+          : Value(retireNote),
+      targetChangesJson: Value(targetChangesJson),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -6708,6 +6807,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
       outcome: serializer.fromJson<String?>(json['outcome']),
       conclusionNote: serializer.fromJson<String?>(json['conclusionNote']),
       concludedOn: serializer.fromJson<String?>(json['concludedOn']),
+      retiredAt: serializer.fromJson<DateTime?>(json['retiredAt']),
+      retireNote: serializer.fromJson<String?>(json['retireNote']),
+      targetChangesJson: serializer.fromJson<String>(json['targetChangesJson']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -6733,6 +6835,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
       'outcome': serializer.toJson<String?>(outcome),
       'conclusionNote': serializer.toJson<String?>(conclusionNote),
       'concludedOn': serializer.toJson<String?>(concludedOn),
+      'retiredAt': serializer.toJson<DateTime?>(retiredAt),
+      'retireNote': serializer.toJson<String?>(retireNote),
+      'targetChangesJson': serializer.toJson<String>(targetChangesJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -6756,6 +6861,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
     Value<String?> outcome = const Value.absent(),
     Value<String?> conclusionNote = const Value.absent(),
     Value<String?> concludedOn = const Value.absent(),
+    Value<DateTime?> retiredAt = const Value.absent(),
+    Value<String?> retireNote = const Value.absent(),
+    String? targetChangesJson,
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -6778,6 +6886,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
         ? conclusionNote.value
         : this.conclusionNote,
     concludedOn: concludedOn.present ? concludedOn.value : this.concludedOn,
+    retiredAt: retiredAt.present ? retiredAt.value : this.retiredAt,
+    retireNote: retireNote.present ? retireNote.value : this.retireNote,
+    targetChangesJson: targetChangesJson ?? this.targetChangesJson,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -6814,6 +6925,13 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
       concludedOn: data.concludedOn.present
           ? data.concludedOn.value
           : this.concludedOn,
+      retiredAt: data.retiredAt.present ? data.retiredAt.value : this.retiredAt,
+      retireNote: data.retireNote.present
+          ? data.retireNote.value
+          : this.retireNote,
+      targetChangesJson: data.targetChangesJson.present
+          ? data.targetChangesJson.value
+          : this.targetChangesJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -6843,6 +6961,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
           ..write('outcome: $outcome, ')
           ..write('conclusionNote: $conclusionNote, ')
           ..write('concludedOn: $concludedOn, ')
+          ..write('retiredAt: $retiredAt, ')
+          ..write('retireNote: $retireNote, ')
+          ..write('targetChangesJson: $targetChangesJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -6854,7 +6975,7 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     tagId,
     purpose,
@@ -6868,13 +6989,16 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
     outcome,
     conclusionNote,
     concludedOn,
+    retiredAt,
+    retireNote,
+    targetChangesJson,
     createdAt,
     updatedAt,
     deletedAt,
     syncStatus,
     revision,
     serverVersion,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -6892,6 +7016,9 @@ class ExperimentRow extends DataClass implements Insertable<ExperimentRow> {
           other.outcome == this.outcome &&
           other.conclusionNote == this.conclusionNote &&
           other.concludedOn == this.concludedOn &&
+          other.retiredAt == this.retiredAt &&
+          other.retireNote == this.retireNote &&
+          other.targetChangesJson == this.targetChangesJson &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -6914,6 +7041,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
   final Value<String?> outcome;
   final Value<String?> conclusionNote;
   final Value<String?> concludedOn;
+  final Value<DateTime?> retiredAt;
+  final Value<String?> retireNote;
+  final Value<String> targetChangesJson;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -6935,6 +7065,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
     this.outcome = const Value.absent(),
     this.conclusionNote = const Value.absent(),
     this.concludedOn = const Value.absent(),
+    this.retiredAt = const Value.absent(),
+    this.retireNote = const Value.absent(),
+    this.targetChangesJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -6957,6 +7090,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
     this.outcome = const Value.absent(),
     this.conclusionNote = const Value.absent(),
     this.concludedOn = const Value.absent(),
+    this.retiredAt = const Value.absent(),
+    this.retireNote = const Value.absent(),
+    this.targetChangesJson = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -6987,6 +7123,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
     Expression<String>? outcome,
     Expression<String>? conclusionNote,
     Expression<String>? concludedOn,
+    Expression<String>? retiredAt,
+    Expression<String>? retireNote,
+    Expression<String>? targetChangesJson,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -7009,6 +7148,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
       if (outcome != null) 'outcome': outcome,
       if (conclusionNote != null) 'conclusion_note': conclusionNote,
       if (concludedOn != null) 'concluded_on': concludedOn,
+      if (retiredAt != null) 'retired_at': retiredAt,
+      if (retireNote != null) 'retire_note': retireNote,
+      if (targetChangesJson != null) 'target_changes_json': targetChangesJson,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -7033,6 +7175,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
     Value<String?>? outcome,
     Value<String?>? conclusionNote,
     Value<String?>? concludedOn,
+    Value<DateTime?>? retiredAt,
+    Value<String?>? retireNote,
+    Value<String>? targetChangesJson,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -7055,6 +7200,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
       outcome: outcome ?? this.outcome,
       conclusionNote: conclusionNote ?? this.conclusionNote,
       concludedOn: concludedOn ?? this.concludedOn,
+      retiredAt: retiredAt ?? this.retiredAt,
+      retireNote: retireNote ?? this.retireNote,
+      targetChangesJson: targetChangesJson ?? this.targetChangesJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -7107,6 +7255,17 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
     if (concludedOn.present) {
       map['concluded_on'] = Variable<String>(concludedOn.value);
     }
+    if (retiredAt.present) {
+      map['retired_at'] = Variable<String>(
+        $ExperimentsTable.$converterretiredAt.toSql(retiredAt.value),
+      );
+    }
+    if (retireNote.present) {
+      map['retire_note'] = Variable<String>(retireNote.value);
+    }
+    if (targetChangesJson.present) {
+      map['target_changes_json'] = Variable<String>(targetChangesJson.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
         $ExperimentsTable.$convertercreatedAt.toSql(createdAt.value),
@@ -7153,6 +7312,9 @@ class ExperimentsCompanion extends UpdateCompanion<ExperimentRow> {
           ..write('outcome: $outcome, ')
           ..write('conclusionNote: $conclusionNote, ')
           ..write('concludedOn: $concludedOn, ')
+          ..write('retiredAt: $retiredAt, ')
+          ..write('retireNote: $retireNote, ')
+          ..write('targetChangesJson: $targetChangesJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -18597,6 +18759,9 @@ typedef $$ExperimentsTableCreateCompanionBuilder =
       Value<String?> outcome,
       Value<String?> conclusionNote,
       Value<String?> concludedOn,
+      Value<DateTime?> retiredAt,
+      Value<String?> retireNote,
+      Value<String> targetChangesJson,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -18620,6 +18785,9 @@ typedef $$ExperimentsTableUpdateCompanionBuilder =
       Value<String?> outcome,
       Value<String?> conclusionNote,
       Value<String?> concludedOn,
+      Value<DateTime?> retiredAt,
+      Value<String?> retireNote,
+      Value<String> targetChangesJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -18745,6 +18913,22 @@ class $$ExperimentsTableFilterComposer
 
   ColumnFilters<String> get concludedOn => $composableBuilder(
     column: $table.concludedOn,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<DateTime?, DateTime, String> get retiredAt =>
+      $composableBuilder(
+        column: $table.retiredAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<String> get retireNote => $composableBuilder(
+    column: $table.retireNote,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get targetChangesJson => $composableBuilder(
+    column: $table.targetChangesJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -18899,6 +19083,21 @@ class $$ExperimentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get retiredAt => $composableBuilder(
+    column: $table.retiredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get retireNote => $composableBuilder(
+    column: $table.retireNote,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get targetChangesJson => $composableBuilder(
+    column: $table.targetChangesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -19007,6 +19206,19 @@ class $$ExperimentsTableAnnotationComposer
 
   GeneratedColumn<String> get concludedOn => $composableBuilder(
     column: $table.concludedOn,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<DateTime?, String> get retiredAt =>
+      $composableBuilder(column: $table.retiredAt, builder: (column) => column);
+
+  GeneratedColumn<String> get retireNote => $composableBuilder(
+    column: $table.retireNote,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get targetChangesJson => $composableBuilder(
+    column: $table.targetChangesJson,
     builder: (column) => column,
   );
 
@@ -19123,6 +19335,9 @@ class $$ExperimentsTableTableManager
                 Value<String?> outcome = const Value.absent(),
                 Value<String?> conclusionNote = const Value.absent(),
                 Value<String?> concludedOn = const Value.absent(),
+                Value<DateTime?> retiredAt = const Value.absent(),
+                Value<String?> retireNote = const Value.absent(),
+                Value<String> targetChangesJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -19144,6 +19359,9 @@ class $$ExperimentsTableTableManager
                 outcome: outcome,
                 conclusionNote: conclusionNote,
                 concludedOn: concludedOn,
+                retiredAt: retiredAt,
+                retireNote: retireNote,
+                targetChangesJson: targetChangesJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -19167,6 +19385,9 @@ class $$ExperimentsTableTableManager
                 Value<String?> outcome = const Value.absent(),
                 Value<String?> conclusionNote = const Value.absent(),
                 Value<String?> concludedOn = const Value.absent(),
+                Value<DateTime?> retiredAt = const Value.absent(),
+                Value<String?> retireNote = const Value.absent(),
+                Value<String> targetChangesJson = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -19188,6 +19409,9 @@ class $$ExperimentsTableTableManager
                 outcome: outcome,
                 conclusionNote: conclusionNote,
                 concludedOn: concludedOn,
+                retiredAt: retiredAt,
+                retireNote: retireNote,
+                targetChangesJson: targetChangesJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,

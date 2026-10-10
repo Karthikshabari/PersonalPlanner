@@ -46,6 +46,33 @@ Map<String, dynamic> _experimentPayload({
   ...?extra,
 };
 
+/// A concluded experiment with the keep outcome (stored `continue_habit`).
+Map<String, dynamic> _keptPayload({Map<String, dynamic>? extra}) =>
+    _experimentPayload(
+      extra: {
+        'start_date': '2026-09-04',
+        'end_date': '2026-10-03',
+        'status': 'concluded',
+        'outcome': 'continue_habit',
+        'concluded_on': '2026-10-09',
+        ...?extra,
+      },
+    );
+
+String _targetChanges(List<Map<String, Object?>> items) => jsonEncode(items);
+
+Map<String, Object?> _targetChange({
+  String week = '2026-10-05',
+  int weekday = 75,
+  int weekend = 90,
+  String madeOn = '2026-10-10',
+}) => {
+  'effective_week_start': week,
+  'weekday_target_min': weekday,
+  'weekend_target_min': weekend,
+  'made_on': madeOn,
+};
+
 Map<String, dynamic> _checkInPayload({
   String experimentId = _experimentId,
   String slotDate = '2026-10-05',
@@ -395,6 +422,131 @@ void main() {
       accepts(_checkInChange(_checkInPayload(note: ok)));
       rejects(_checkInChange(_checkInPayload(note: '🙂' * 4001)));
     });
+
+    group('kept fields', () {
+      test('accepts a kept payload with all three keys', () {
+        accepts(
+          _experimentChange(
+            _keptPayload(
+              extra: {
+                'retired_at': '2026-10-10T08:00:00.000Z',
+                'retire_note': 'Mornings beat evenings.',
+                'target_changes_json': _targetChanges([
+                  _targetChange(),
+                  _targetChange(week: '2026-10-12', weekday: 60),
+                ]),
+              },
+            ),
+          ),
+        );
+        accepts(
+          _experimentChange(
+            _keptPayload(extra: {'retired_at': null, 'retire_note': null}),
+          ),
+        );
+      });
+
+      test('accepts payloads without the three keys', () {
+        accepts(_experimentChange(_experimentPayload()));
+        accepts(_experimentChange(_keptPayload()));
+      });
+
+      test('rejects retired_at on a dropped or running experiment', () {
+        rejects(
+          _experimentChange(
+            _keptPayload(
+              extra: {
+                'outcome': 'drop',
+                'retired_at': '2026-10-10T08:00:00.000Z',
+              },
+            ),
+          ),
+          'Only a kept experiment can be retired',
+        );
+        rejects(
+          _experimentChange(
+            _experimentPayload(extra: {'retired_at': '2026-10-10T08:00:00Z'}),
+          ),
+          'Only a kept experiment can be retired',
+        );
+      });
+
+      test('rejects a bad retired_at', () {
+        rejects(
+          _experimentChange(_keptPayload(extra: {'retired_at': 'yesterday'})),
+        );
+      });
+
+      test('rejects a note without a retirement', () {
+        rejects(
+          _experimentChange(_keptPayload(extra: {'retire_note': 'Done'})),
+          'A retire note needs a retirement',
+        );
+      });
+
+      test('bounds the retire note in code points', () {
+        Map<String, dynamic> withNote(String note) => _keptPayload(
+          extra: {
+            'retired_at': '2026-10-10T08:00:00.000Z',
+            'retire_note': note,
+          },
+        );
+        accepts(_experimentChange(withNote('🙂' * 4000)));
+        rejects(_experimentChange(withNote('🙂' * 4001)));
+      });
+
+      test('rejects bad target changes', () {
+        void rejectsChanges(String json, [Pattern? message]) => rejects(
+          _experimentChange(_keptPayload(extra: {'target_changes_json': json})),
+          message,
+        );
+        // 2026-10-06 is a Tuesday.
+        rejectsChanges(_targetChanges([_targetChange(week: '2026-10-06')]));
+        rejectsChanges(_targetChanges([_targetChange(weekday: 10)]));
+        rejectsChanges(_targetChanges([_targetChange(weekend: 241)]));
+        rejectsChanges(_targetChanges([_targetChange(), _targetChange()]));
+        rejectsChanges(
+          _targetChanges([
+            _targetChange(week: '2026-10-12'),
+            _targetChange(week: '2026-10-05'),
+          ]),
+        );
+        rejectsChanges(_targetChanges([_targetChange()..['extra'] = 1]));
+        rejectsChanges('{}');
+        rejectsChanges('not json');
+      });
+
+      test('rejects target_changes_json that is not text', () {
+        rejects(
+          _experimentChange(_keptPayload(extra: {'target_changes_json': []})),
+        );
+        rejects(
+          _experimentChange(_keptPayload(extra: {'target_changes_json': null})),
+        );
+      });
+
+      test('rejects a non-empty history on a running or dropped one', () {
+        final history = _targetChanges([_targetChange()]);
+        rejects(
+          _experimentChange(
+            _experimentPayload(extra: {'target_changes_json': history}),
+          ),
+          'Only a kept experiment can have target changes',
+        );
+        rejects(
+          _experimentChange(
+            _keptPayload(
+              extra: {'outcome': 'drop', 'target_changes_json': history},
+            ),
+          ),
+        );
+        accepts(
+          _experimentChange(
+            _experimentPayload(extra: {'target_changes_json': '[]'}),
+          ),
+        );
+      });
+    });
   });
 
   group('database', () {
@@ -534,6 +686,123 @@ void main() {
         expect(jsonDecode(experiment.extensionsJson), hasLength(1));
       });
 
+      group('kept fields', () {
+        final keptFields = {
+          'retired_at': '2026-10-10T08:00:00.000Z',
+          'retire_note': 'Mornings beat evenings.',
+          'target_changes_json': _targetChanges([_targetChange()]),
+        };
+
+        Future<ExperimentRow> experiment() async =>
+            (await db.experimentDao.getExperimentById(_experimentId))!;
+
+        test('absent keys keep the local values', () async {
+          await insertLocalTag();
+          await applyRemote(_experimentChange(_keptPayload(extra: keptFields)));
+          var row = await experiment();
+          expect(row.retireNote, 'Mornings beat evenings.');
+          expect(row.targetChangesJson, keptFields['target_changes_json']);
+
+          // A later snapshot from an older client carries none of the keys.
+          await applyRemote(
+            _change(
+              'experiments',
+              _experimentId,
+              _keptPayload(extra: {'purpose': 'Updated elsewhere'}),
+              serverVersion: 6,
+            ),
+          );
+          row = await experiment();
+          expect(row.purpose, 'Updated elsewhere');
+          expect(row.serverVersion, 6);
+          expect(
+            row.retiredAt!.isAtSameMomentAs(DateTime.utc(2026, 10, 10, 8)),
+            isTrue,
+          );
+          expect(row.retireNote, 'Mornings beat evenings.');
+          expect(row.targetChangesJson, keptFields['target_changes_json']);
+          expect(
+            (await db.select(db.syncLog).get()).where(
+              (row) => row.entityTableName == 'experiments',
+            ),
+            isEmpty,
+          );
+        });
+
+        test('with no local row the defaults apply', () async {
+          await insertLocalTag();
+          await applyRemote(_experimentChange(_keptPayload()));
+          final row = await experiment();
+          expect(row.retiredAt, isNull);
+          expect(row.retireNote, isNull);
+          expect(row.targetChangesJson, '[]');
+        });
+
+        test('an explicit null clears retired_at and retire_note', () async {
+          await insertLocalTag();
+          await applyRemote(_experimentChange(_keptPayload(extra: keptFields)));
+          await applyRemote(
+            _change(
+              'experiments',
+              _experimentId,
+              _keptPayload(
+                extra: {
+                  'retired_at': null,
+                  'retire_note': null,
+                  'target_changes_json': '[]',
+                },
+              ),
+              serverVersion: 6,
+            ),
+          );
+          final row = await experiment();
+          expect(row.retiredAt, isNull);
+          expect(row.retireNote, isNull);
+          expect(row.targetChangesJson, '[]');
+        });
+
+        test('retired_at is stored as a canonical UTC instant', () async {
+          await insertLocalTag();
+          await applyRemote(
+            _experimentChange(
+              _keptPayload(
+                extra: {
+                  ...keptFields,
+                  'retired_at': '2026-10-10T08:00:00.123+00:00',
+                },
+              ),
+            ),
+          );
+          final raw = await db
+              .customSelect('SELECT retired_at FROM experiments')
+              .getSingle();
+          expect(raw.read<String>('retired_at'), '2026-10-10T08:00:00.123Z');
+        });
+
+        test(
+          'a complete delete snapshot without the keys keeps them',
+          () async {
+            await insertLocalTag();
+            await applyRemote(
+              _experimentChange(_keptPayload(extra: keptFields)),
+            );
+            await applyRemote(
+              _change(
+                'experiments',
+                _experimentId,
+                _keptPayload(extra: {'deleted_at': _stamp}),
+                serverVersion: 6,
+                operation: 'delete',
+              ),
+            );
+            final row = await experiment();
+            expect(row.deletedAt, isNotNull);
+            expect(row.retireNote, 'Mornings beat evenings.');
+            expect(row.targetChangesJson, keptFields['target_changes_json']);
+          },
+        );
+      });
+
       test('a tasks payload without tag_id keeps the local tag', () async {
         await insertLocalTag();
         await insertLocalTask('t1', tagId: _tagId);
@@ -613,6 +882,89 @@ void main() {
         }),
         isFalse,
       );
+    });
+
+    group('semantic equality of kept fields', () {
+      test('target_changes_json is compared structurally', () {
+        final local = _keptPayload(
+          extra: {
+            'target_changes_json':
+                '[{"effective_week_start":"2026-10-05","weekday_target_min":75,'
+                '"weekend_target_min":90,"made_on":"2026-10-10"}]',
+          },
+        );
+        final reordered = _keptPayload(
+          extra: {
+            'target_changes_json':
+                '[ {"made_on":"2026-10-10","weekend_target_min":90,'
+                '"weekday_target_min":75,"effective_week_start":"2026-10-05"} ]',
+          },
+        );
+        expect(
+          semanticallyEqualSnapshots('experiments', local, reordered),
+          isTrue,
+        );
+        final other = _keptPayload(
+          extra: {
+            'target_changes_json': _targetChanges([_targetChange(weekday: 90)]),
+          },
+        );
+        expect(
+          semanticallyEqualSnapshots('experiments', local, other),
+          isFalse,
+        );
+      });
+
+      test(
+        'target_changes_json is ignored when one side is null or absent',
+        () {
+          final local = _keptPayload(
+            extra: {
+              'target_changes_json': _targetChanges([_targetChange()]),
+            },
+          );
+          expect(
+            semanticallyEqualSnapshots('experiments', local, {
+              ...local,
+              'target_changes_json': null,
+            }),
+            isTrue,
+          );
+          final absent = {...local}..remove('target_changes_json');
+          expect(
+            semanticallyEqualSnapshots('experiments', local, absent),
+            isTrue,
+          );
+        },
+      );
+
+      test('retired_at compares instants and a null clears', () {
+        final local = _keptPayload(
+          extra: {'retired_at': '2026-10-10T08:00:00.123Z'},
+        );
+        expect(
+          semanticallyEqualSnapshots('experiments', local, {
+            ...local,
+            'retired_at': '2026-10-10T08:00:00.123+00:00',
+          }),
+          isTrue,
+        );
+        expect(
+          semanticallyEqualSnapshots('experiments', local, {
+            ...local,
+            'retired_at': null,
+          }),
+          isFalse,
+        );
+        expect(
+          semanticallyEqualSnapshots(
+            'experiments',
+            {...local, 'retire_note': 'Done'},
+            {...local, 'retire_note': null},
+          ),
+          isFalse,
+        );
+      });
     });
 
     test('a missing tag_id is not treated as equal to a set one', () {

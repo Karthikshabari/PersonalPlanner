@@ -318,7 +318,7 @@ void main() {
       final b = await create(name: 'B');
       final doneA = await repo.concludeExperiment(
         a.id,
-        outcome: ExperimentOutcome.continueHabit,
+        outcome: ExperimentOutcome.keep,
         note: '  Like it  ',
         today: '2026-10-30',
         expectedRevision: a.revision,
@@ -330,7 +330,7 @@ void main() {
         expectedRevision: b.revision,
       );
       expect(doneA.status, ExperimentStatus.concluded);
-      expect(doneA.outcome, ExperimentOutcome.continueHabit);
+      expect(doneA.outcome, ExperimentOutcome.keep);
       expect(doneA.conclusionNote, 'Like it');
       expect(doneA.concludedOn, '2026-10-30');
       expect(doneA.revision, a.revision + 1);
@@ -385,7 +385,7 @@ void main() {
       await expectLater(
         repo.concludeExperiment(
           e.id,
-          outcome: ExperimentOutcome.continueHabit,
+          outcome: ExperimentOutcome.keep,
           today: '2026-10-30',
           expectedRevision: done.revision,
         ),
@@ -564,5 +564,287 @@ void main() {
         );
       }
     });
+  });
+
+  group('kept writes', () {
+    const today = '2026-10-10';
+    final retireTime = DateTime.utc(2026, 10, 10, 8, 30);
+
+    Future<Experiment> concluded(String name, ExperimentOutcome outcome) async {
+      final e = await create(
+        name: name,
+        start: '2026-09-04',
+        end: '2026-10-03',
+      );
+      return repo.concludeExperiment(
+        e.id,
+        outcome: outcome,
+        today: '2026-10-09',
+        expectedRevision: e.revision,
+      );
+    }
+
+    Future<Experiment> kept() =>
+        concluded('Morning pages', ExperimentOutcome.keep);
+
+    Future<List<String>> experimentOperations() async =>
+        (await db.select(db.syncLog).get())
+            .where((r) => r.entityTableName == 'experiments')
+            .map((r) => r.operation)
+            .toList();
+
+    test('adjust from next week creates a pending entry', () async {
+      final e = await kept();
+      final adjusted = await repo.adjustKeptTarget(
+        e.id,
+        weekdayTargetMin: 75,
+        weekendTargetMin: 90,
+        fromNextWeek: true,
+        today: today,
+        expectedRevision: e.revision,
+      );
+      expect(adjusted.revision, e.revision + 1);
+      expect(adjusted.weekdayTargetMin, 60);
+      expect(adjusted.targetChanges, hasLength(1));
+      final change = adjusted.targetChanges.single;
+      expect(change.effectiveWeekStart, '2026-10-12');
+      expect(change.weekdayTargetMin, 75);
+      expect(change.weekendTargetMin, 90);
+      expect(change.madeOn, today);
+    });
+
+    test('adjust from this week creates a current entry', () async {
+      final e = await kept();
+      final adjusted = await repo.adjustKeptTarget(
+        e.id,
+        weekdayTargetMin: 75,
+        weekendTargetMin: 105,
+        fromNextWeek: false,
+        today: today,
+        expectedRevision: e.revision,
+      );
+      expect(adjusted.targetChanges.single.effectiveWeekStart, '2026-10-05');
+      expect(adjusted.targetChanges.single.weekendTargetMin, 105);
+    });
+
+    test('an equal adjust is a no-op and adds no sync_log row', () async {
+      final e = await kept();
+      final before = (await experimentOperations()).length;
+      final same = await repo.adjustKeptTarget(
+        e.id,
+        weekdayTargetMin: 60,
+        weekendTargetMin: 90,
+        fromNextWeek: true,
+        today: today,
+        expectedRevision: e.revision,
+      );
+      expect(same.revision, e.revision);
+      expect(same.targetChanges, isEmpty);
+      expect((await experimentOperations()).length, before);
+    });
+
+    test('adjust is refused when the experiment is not kept', () async {
+      Future<void> adjust(Experiment e, {int weekday = 75}) =>
+          repo.adjustKeptTarget(
+            e.id,
+            weekdayTargetMin: weekday,
+            weekendTargetMin: 90,
+            fromNextWeek: true,
+            today: today,
+            expectedRevision: e.revision,
+          );
+      final running = await create(name: 'Running one');
+      await expectLater(adjust(running), throwsStateError);
+      final dropped = await concluded('Dropped one', ExperimentOutcome.drop);
+      await expectLater(adjust(dropped), throwsStateError);
+      final k = await kept();
+      final retired = await repo.retireKeptExperiment(
+        k.id,
+        expectedRevision: k.revision,
+      );
+      await expectLater(adjust(retired), throwsStateError);
+    });
+
+    test('adjust is refused for 14, 241 and a stale revision', () async {
+      final e = await kept();
+      for (final bad in [14, 241]) {
+        await expectLater(
+          repo.adjustKeptTarget(
+            e.id,
+            weekdayTargetMin: bad,
+            weekendTargetMin: 90,
+            fromNextWeek: true,
+            today: today,
+            expectedRevision: e.revision,
+          ),
+          throwsArgumentError,
+        );
+        await expectLater(
+          repo.adjustKeptTarget(
+            e.id,
+            weekdayTargetMin: 60,
+            weekendTargetMin: bad,
+            fromNextWeek: true,
+            today: today,
+            expectedRevision: e.revision,
+          ),
+          throwsArgumentError,
+        );
+      }
+      await expectLater(
+        repo.adjustKeptTarget(
+          e.id,
+          weekdayTargetMin: 75,
+          weekendTargetMin: 90,
+          fromNextWeek: true,
+          today: today,
+          expectedRevision: e.revision + 1,
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        repo.adjustKeptTarget(
+          e.id,
+          weekdayTargetMin: 75,
+          weekendTargetMin: 90,
+          fromNextWeek: true,
+          today: 'not-a-date',
+          expectedRevision: e.revision,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('retire stores the clock time and a trimmed note', () async {
+      final clocked = ExperimentRepository(db, clock: () => retireTime);
+      final e = await kept();
+      final retired = await clocked.retireKeptExperiment(
+        e.id,
+        note: '  Mornings beat evenings.  ',
+        expectedRevision: e.revision,
+      );
+      expect(retired.retiredAt!.isAtSameMomentAs(retireTime), isTrue);
+      expect(retired.retireNote, 'Mornings beat evenings.');
+      expect(retired.isRetired, isTrue);
+      expect(retired.isKept, isFalse);
+      expect(retired.revision, e.revision + 1);
+    });
+
+    test('retire stores null for a blank note', () async {
+      final e = await kept();
+      final retired = await repo.retireKeptExperiment(
+        e.id,
+        note: '   ',
+        expectedRevision: e.revision,
+      );
+      expect(retired.retiredAt, isNotNull);
+      expect(retired.retireNote, isNull);
+    });
+
+    test(
+      'retire refuses 4001 emoji, a stale revision and a non-kept one',
+      () async {
+        final e = await kept();
+        await expectLater(
+          repo.retireKeptExperiment(
+            e.id,
+            note: '😀' * 4001,
+            expectedRevision: e.revision,
+          ),
+          throwsArgumentError,
+        );
+        final ok = await repo.retireKeptExperiment(
+          e.id,
+          note: '😀' * 4000,
+          expectedRevision: e.revision,
+        );
+        expect(ok.retireNote!.runes.length, 4000);
+        await expectLater(
+          repo.retireKeptExperiment(e.id, expectedRevision: ok.revision),
+          throwsStateError,
+          reason: 'already retired',
+        );
+        final fresh = await concluded('Other', ExperimentOutcome.keep);
+        await expectLater(
+          repo.retireKeptExperiment(
+            fresh.id,
+            expectedRevision: fresh.revision + 1,
+          ),
+          throwsStateError,
+        );
+        final running = await create(name: 'Running one');
+        await expectLater(
+          repo.retireKeptExperiment(
+            running.id,
+            expectedRevision: running.revision,
+          ),
+          throwsStateError,
+        );
+        final dropped = await concluded('Dropped one', ExperimentOutcome.drop);
+        await expectLater(
+          repo.retireKeptExperiment(
+            dropped.id,
+            expectedRevision: dropped.revision,
+          ),
+          throwsStateError,
+        );
+      },
+    );
+
+    test('undo clears both fields and refuses when not retired', () async {
+      final e = await kept();
+      await expectLater(
+        repo.undoRetireExperiment(e.id, expectedRevision: e.revision),
+        throwsStateError,
+      );
+      final retired = await repo.retireKeptExperiment(
+        e.id,
+        note: 'Done with it',
+        expectedRevision: e.revision,
+      );
+      final undone = await repo.undoRetireExperiment(
+        e.id,
+        expectedRevision: retired.revision,
+      );
+      expect(undone.retiredAt, isNull);
+      expect(undone.retireNote, isNull);
+      expect(undone.isKept, isTrue);
+      expect(undone.revision, retired.revision + 1);
+      await expectLater(
+        repo.undoRetireExperiment(e.id, expectedRevision: undone.revision),
+        throwsStateError,
+      );
+    });
+
+    test(
+      'each successful write queues exactly one experiments update',
+      () async {
+        final e = await kept();
+        Future<int> updates() async =>
+            (await experimentOperations()).where((o) => o == 'update').length;
+        final base = await updates();
+
+        final adjusted = await repo.adjustKeptTarget(
+          e.id,
+          weekdayTargetMin: 75,
+          weekendTargetMin: 90,
+          fromNextWeek: false,
+          today: today,
+          expectedRevision: e.revision,
+        );
+        expect(await updates(), base + 1);
+        final retired = await repo.retireKeptExperiment(
+          e.id,
+          note: 'x',
+          expectedRevision: adjusted.revision,
+        );
+        expect(await updates(), base + 2);
+        await repo.undoRetireExperiment(
+          e.id,
+          expectedRevision: retired.revision,
+        );
+        expect(await updates(), base + 3);
+      },
+    );
   });
 }

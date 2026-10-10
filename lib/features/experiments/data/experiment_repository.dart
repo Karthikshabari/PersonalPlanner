@@ -10,6 +10,7 @@ import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../task_editor/data/tag_repository.dart';
 import '../domain/experiment_check_in_schedule.dart';
+import '../domain/experiment_target_changes.dart';
 
 /// Thrown by [ExperimentRepository.createExperiment] when an experiment
 /// already uses the tag the name resolves to (ED6: one experiment per tag).
@@ -43,7 +44,7 @@ class ExperimentRepository {
   ExperimentDao get _dao => _db.experimentDao;
 
   Stream<List<Experiment>> watchExperiments() => _dao.watchExperiments().map(
-    (rows) => [for (final r in rows) _fromRow(r.experiment, r.tag.name)],
+    (rows) => [for (final r in rows) fromRow(r.experiment, r.tag.name)],
   );
 
   Stream<List<ExperimentCheckIn>> watchCheckIns(String experimentId) => _dao
@@ -171,6 +172,96 @@ class ExperimentRepository {
     });
   }
 
+  /// Changes the weekday and weekend minimum of a kept experiment, from this
+  /// week or from next Monday. Writes nothing when the history would not
+  /// change.
+  Future<Experiment> adjustKeptTarget(
+    String experimentId, {
+    required int weekdayTargetMin,
+    required int weekendTargetMin,
+    required bool fromNextWeek,
+    required String today,
+    required int expectedRevision,
+  }) async {
+    _requireKeptTarget(weekdayTargetMin, 'weekdayTargetMin');
+    _requireKeptTarget(weekendTargetMin, 'weekendTargetMin');
+    _requireDate(today, 'today');
+    return _db.writeTransaction(() async {
+      final row = await _keptRow(
+        experimentId,
+        expectedRevision,
+        retired: false,
+      );
+      final currentWeekStart = isoDateString(startOfWeek(parseIsoDate(today)));
+      final changes = applyKeptTargetChange(
+        experiment: fromRow(row, ''),
+        draft: (weekdayMin: weekdayTargetMin, weekendMin: weekendTargetMin),
+        fromNextWeek: fromNextWeek,
+        currentWeekStart: currentWeekStart,
+        madeOn: today,
+      );
+      final encoded = encodeTargetChangesJson(changes);
+      if (encoded == row.targetChangesJson) return _load(experimentId);
+      await _dao.updateExperiment(
+        row.copyWith(
+          targetChangesJson: encoded,
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
+  /// Retires a kept experiment, with an optional note on what was learned.
+  Future<Experiment> retireKeptExperiment(
+    String experimentId, {
+    String? note,
+    required int expectedRevision,
+  }) async {
+    final storedNote = _optionalText(note, 'note', _maxNoteRunes);
+    return _db.writeTransaction(() async {
+      final row = await _keptRow(
+        experimentId,
+        expectedRevision,
+        retired: false,
+      );
+      final now = _clock().toUtc();
+      await _dao.updateExperiment(
+        row.copyWith(
+          retiredAt: Value(now),
+          retireNote: Value(storedNote),
+          updatedAt: now,
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
+  /// Brings a retired experiment back to Kept, clearing the retirement and
+  /// its note.
+  Future<Experiment> undoRetireExperiment(
+    String experimentId, {
+    required int expectedRevision,
+  }) async {
+    return _db.writeTransaction(() async {
+      final row = await _keptRow(experimentId, expectedRevision, retired: true);
+      await _dao.updateExperiment(
+        row.copyWith(
+          retiredAt: const Value(null),
+          retireNote: const Value(null),
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
   /// Writes the check-in for one slot of a running experiment. The slot must
   /// be dated [today] or earlier and not written yet.
   Future<ExperimentCheckIn> saveCheckIn({
@@ -251,13 +342,44 @@ class ExperimentRepository {
     return row;
   }
 
+  /// The row of a concluded keep-outcome experiment, after the revision
+  /// check. [retired] says which side of Retire the caller needs.
+  Future<ExperimentRow> _keptRow(
+    String experimentId,
+    int expectedRevision, {
+    required bool retired,
+  }) async {
+    final row = await _dao.getExperimentById(experimentId);
+    if (row == null || row.deletedAt != null) {
+      throw StateError('Experiment $experimentId not found');
+    }
+    if (row.revision != expectedRevision) {
+      throw StateError(
+        'Experiment $experimentId changed while it was open; reload it.',
+      );
+    }
+    if (row.status != ExperimentStatus.concluded.dbValue ||
+        row.outcome != ExperimentOutcome.keep.dbValue) {
+      throw StateError('Experiment $experimentId is not a kept experiment');
+    }
+    if ((row.retiredAt != null) != retired) {
+      throw StateError(
+        retired
+            ? 'Experiment $experimentId is not retired'
+            : 'Experiment $experimentId is already retired',
+      );
+    }
+    return row;
+  }
+
   Future<Experiment> _load(String id) async {
     final row = (await _dao.getExperimentById(id))!;
     final tag = await _db.tagDao.getTagById(row.tagId);
-    return _fromRow(row, tag?.name ?? '');
+    return fromRow(row, tag?.name ?? '');
   }
 
-  static Experiment _fromRow(ExperimentRow row, String tagName) => Experiment(
+  /// Maps a stored row (and its tag name) to the domain model.
+  static Experiment fromRow(ExperimentRow row, String tagName) => Experiment(
     id: row.id,
     tagId: row.tagId,
     tagName: tagName,
@@ -272,6 +394,9 @@ class ExperimentRepository {
     outcome: ExperimentOutcome.fromDb(row.outcome),
     conclusionNote: row.conclusionNote,
     concludedOn: row.concludedOn,
+    retiredAt: row.retiredAt,
+    retireNote: row.retireNote,
+    targetChanges: decodeTargetChangesJson(row.targetChangesJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     revision: row.revision,
@@ -299,6 +424,14 @@ class ExperimentRepository {
   static void _requireDate(String value, String field) {
     if (!isValidIsoDate(value)) {
       throw ArgumentError('$field must be a yyyy-MM-dd date');
+    }
+  }
+
+  static void _requireKeptTarget(int value, String field) {
+    if (value < keptTargetMinMinutes || value > keptTargetMaxMinutes) {
+      throw ArgumentError(
+        '$field must be $keptTargetMinMinutes to $keptTargetMaxMinutes',
+      );
     }
   }
 

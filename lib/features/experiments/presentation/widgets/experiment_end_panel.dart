@@ -35,7 +35,7 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
   final _reason = TextEditingController();
   final _note = TextEditingController();
   int _days = 14;
-  ExperimentOutcome _outcome = ExperimentOutcome.continueHabit;
+  ExperimentOutcome _outcome = ExperimentOutcome.keep;
   bool _busy = false;
 
   @override

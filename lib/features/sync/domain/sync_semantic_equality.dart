@@ -22,6 +22,7 @@ const Set<String> nonSemanticSyncKeys = {
 const Map<String, Set<String>> _instantKeys = {
   'tasks': {'start_time', 'end_time'},
   'timer_sessions': {'started_at', 'ended_at', 'running_since'},
+  'experiments': {'retired_at'},
 };
 
 const Set<String> _jsonTextKeys = {
@@ -37,6 +38,7 @@ const Set<String> _jsonTextKeys = {
   'task_reasons_json',
   'plan_change_reasons_json',
   'extensions_json',
+  'target_changes_json',
 };
 
 /// Keys whose absence or NULL means "keep the stored value", never "clear".
@@ -45,6 +47,7 @@ const Set<String> _preservedWhenNullKeys = {
   'feeling',
   'task_reasons_json',
   'plan_change_reasons_json',
+  'target_changes_json',
 };
 
 /// True when [local] and [remote] describe the same state of one [table] row.

@@ -22,6 +22,21 @@ class Experiments extends Table {
   TextColumn get outcome => text().nullable()();
   TextColumn get conclusionNote => text().nullable()();
   TextColumn get concludedOn => text().nullable()();
+
+  /// When a kept experiment was retired (UTC). Null while kept and for every
+  /// experiment that was never kept.
+  TextColumn get retiredAt =>
+      text().nullable().map(const NullableDateTimeUtcConverter())();
+
+  /// What was learned, written when retiring. At most 4000 code points.
+  TextColumn get retireNote => text().nullable().customConstraint(
+    'CHECK (retire_note IS NULL OR length(retire_note) <= 4000)',
+  )();
+
+  /// JSON array of `{effective_week_start, weekday_target_min,
+  /// weekend_target_min, made_on}`, ascending, at most one entry per week.
+  TextColumn get targetChangesJson =>
+      text().withDefault(const Constant('[]'))();
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
   TextColumn get deletedAt =>

@@ -6,6 +6,7 @@ import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dar
 import 'package:personal_planner/core/utils/json_map_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
+import 'package:personal_planner/features/experiments/domain/experiment_target_changes.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_text.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 
@@ -199,6 +200,9 @@ class BackupValidator {
       'outcome',
       'conclusion_note',
       'concluded_on',
+      'retired_at',
+      'retire_note',
+      'target_changes_json',
       'created_at',
       'updated_at',
       'deleted_at',
@@ -841,6 +845,50 @@ class BackupValidator {
       );
     }
     _validateExperimentExtensions(row);
+    _validateExperimentKept(
+      row,
+      isKeptOutcome: status == 'concluded' && outcome == 'continue_habit',
+    );
+  }
+
+  /// The kept-experiment rules of the sync validator: a retirement and a
+  /// target history belong to a concluded keep-outcome experiment only.
+  void _validateExperimentKept(
+    Map<String, dynamic> row, {
+    required bool isKeptOutcome,
+  }) {
+    final retiredAt = nullableDateTime(row, 'retired_at');
+    final retireNote = nullableString(row, 'retire_note');
+    if (retireNote != null && retireNote.runes.length > 4000) {
+      throw const BackupValidationException('retire_note is too long.');
+    }
+    if (retireNote != null && retiredAt == null) {
+      throw const BackupValidationException(
+        'A retire note needs a retirement.',
+      );
+    }
+    if (retiredAt != null && !isKeptOutcome) {
+      throw const BackupValidationException(
+        'Only a kept experiment can be retired.',
+      );
+    }
+    final raw = row['target_changes_json'];
+    if (raw is! String) {
+      throw const BackupValidationException(
+        'target_changes_json must be JSON text.',
+      );
+    }
+    final List<Object?> changes;
+    try {
+      changes = decodeTargetChangesJson(raw);
+    } on FormatException catch (error) {
+      throw BackupValidationException('${error.message}.');
+    }
+    if (changes.isNotEmpty && !isKeptOutcome) {
+      throw const BackupValidationException(
+        'Only a kept experiment can have target changes.',
+      );
+    }
   }
 
   void _validateExperimentExtensions(Map<String, dynamic> row) {

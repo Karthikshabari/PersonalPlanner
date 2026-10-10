@@ -40,7 +40,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 13);
+        expect(await userVersion(db), 14);
         expect(
           await columns(db, 'weekly_reviews'),
           containsAll(<String>['mood', 'feeling']),
@@ -87,7 +87,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 13);
+        expect(await userVersion(db), 14);
         expect(
           await columns(db, 'weekly_reviews'),
           containsAll(<String>['mood', 'feeling']),

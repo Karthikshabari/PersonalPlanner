@@ -210,7 +210,7 @@ void main() {
         );
         await experiments.concludeExperiment(
           newer.id,
-          outcome: ExperimentOutcome.continueHabit,
+          outcome: ExperimentOutcome.keep,
           today: '2026-10-09',
           expectedRevision: newer.revision,
         );

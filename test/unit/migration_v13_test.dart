@@ -101,7 +101,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 13);
+        expect(await userVersion(db), 14);
         expect(await hasTable(db, 'experiments'), isTrue);
         expect(await hasTable(db, 'experiment_check_ins'), isTrue);
         expect(await columns(db, 'tasks'), contains('tag_id'));
@@ -155,7 +155,7 @@ void main() {
     final db = AppDatabase(NativeDatabase.memory());
     try {
       expect(await syncTriggerCount(db), 40);
-      expect(AppDatabase.syncTriggerVersion, 5);
+      expect(AppDatabase.syncTriggerVersion, 6);
     } finally {
       await db.close();
     }
@@ -196,7 +196,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 13);
+        expect(await userVersion(db), 14);
         expect(await hasTable(db, 'experiments'), isTrue);
         expect(await hasTable(db, 'experiment_check_ins'), isTrue);
         expect(await columns(db, 'tasks'), contains('tag_id'));

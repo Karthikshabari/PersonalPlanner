@@ -16,6 +16,9 @@ Experiment testExperiment({
   String? concludedOn,
   String? purpose,
   List<ExperimentExtension> extensions = const [],
+  ExperimentOutcome? outcome,
+  DateTime? retiredAt,
+  List<ExperimentTargetChange> targetChanges = const [],
 }) {
   final now = DateTime.utc(2026, 10, 1);
   return Experiment(
@@ -30,14 +33,41 @@ Experiment testExperiment({
     checkInEveryDays: every,
     status: status,
     extensions: extensions,
-    outcome: status == ExperimentStatus.concluded
-        ? ExperimentOutcome.drop
-        : null,
+    outcome:
+        outcome ??
+        (status == ExperimentStatus.concluded ? ExperimentOutcome.drop : null),
     concludedOn: concludedOn,
+    retiredAt: retiredAt,
+    targetChanges: targetChanges,
     createdAt: now,
     updatedAt: now,
   );
 }
+
+/// A concluded experiment with the keep outcome, kept since [concludedOn].
+Experiment testKeptExperiment({
+  String id = 'kept-1',
+  String tagName = 'Morning pages',
+  String start = '2026-09-04',
+  String end = '2026-10-03',
+  String concludedOn = '2026-10-09',
+  int weekday = 60,
+  int weekend = 90,
+  String? why,
+  List<ExperimentTargetChange> targetChanges = const [],
+}) => testExperiment(
+  id: id,
+  tagName: tagName,
+  start: start,
+  end: end,
+  weekday: weekday,
+  weekend: weekend,
+  every: 7,
+  status: ExperimentStatus.concluded,
+  concludedOn: concludedOn,
+  outcome: ExperimentOutcome.keep,
+  targetChanges: targetChanges,
+).copyWith(conclusionNote: why);
 
 /// A tagged block row starting at [hour]:[minute] planner time on [date].
 TaggedBlockRow testBlock(

@@ -21,7 +21,7 @@ void main() {
           (await db.customSelect('PRAGMA user_version').getSingle()).read<int>(
             'user_version',
           ),
-          13,
+          14,
         );
         final tables = await db
             .customSelect("SELECT name FROM sqlite_master WHERE type = 'table'")

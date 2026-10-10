@@ -5,6 +5,7 @@ import '../../../core/models/enums/recurrence_removal_reason.dart';
 import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/missed_at.dart';
+import '../../experiments/domain/experiment_target_changes.dart';
 import '../../recurring/domain/rrule_utils.dart';
 import '../../review/domain/weekly_review_text.dart';
 import '../../task_editor/domain/plan_title_history.dart';
@@ -389,8 +390,46 @@ abstract final class SyncPayloadValidator {
       );
     }
     _validateExperimentExtensions(p);
+    _validateExperimentKeptFields(p, outcome);
     _requiredDateTime(p, 'created_at');
     _requiredDateTime(p, 'updated_at');
+  }
+
+  /// The kept-experiment fields (`retired_at`, `retire_note`,
+  /// `target_changes_json`). Each is checked only when its key is present.
+  static void _validateExperimentKeptFields(
+    Map<String, dynamic> p,
+    Object? outcome,
+  ) {
+    _codePointLimitIfPresent(p, 'retire_note', 4000);
+    final isKeptOutcome =
+        p['status'] == 'concluded' && outcome == 'continue_habit';
+    if (p['retire_note'] != null && p['retired_at'] == null) {
+      throw const SyncValidationException('A retire note needs a retirement');
+    }
+    if (p['retired_at'] != null && !isKeptOutcome) {
+      throw const SyncValidationException(
+        'Only a kept experiment can be retired',
+      );
+    }
+    if (!p.containsKey('target_changes_json')) return;
+    final raw = p['target_changes_json'];
+    if (raw is! String) {
+      throw const SyncValidationException(
+        'target_changes_json must be JSON text',
+      );
+    }
+    final List<Object?> changes;
+    try {
+      changes = decodeTargetChangesJson(raw);
+    } on FormatException catch (error) {
+      throw SyncValidationException(error.message);
+    }
+    if (changes.isNotEmpty && !isKeptOutcome) {
+      throw const SyncValidationException(
+        'Only a kept experiment can have target changes',
+      );
+    }
   }
 
   static void _validateExperimentExtensions(Map<String, dynamic> p) {
@@ -677,6 +716,8 @@ abstract final class SyncPayloadValidator {
       keys.addAll({'start_time', 'end_time', 'missed_at'});
     } else if (table == 'timer_sessions') {
       keys.add('ended_at');
+    } else if (table == 'experiments') {
+      keys.add('retired_at');
     }
     for (final key in keys) {
       if (p.containsKey(key)) {

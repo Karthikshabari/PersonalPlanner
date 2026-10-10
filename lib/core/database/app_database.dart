@@ -184,7 +184,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump whenever a sync trigger body changes. Triggers are recreated only
   /// when the stored `schema.sync_trigger_version` differs or one is missing.
-  static const int syncTriggerVersion = 5;
+  static const int syncTriggerVersion = 6;
 
   /// 13 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
   static const int _expectedSyncTriggerCount = 40;
@@ -207,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -267,6 +267,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 13) {
         await _migrateToV13(m);
+      }
+      if (from < 14) {
+        await _migrateToV14(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -422,6 +425,7 @@ class AppDatabase extends _$AppDatabase {
         'created_at': 'instant',
         'updated_at': 'instant',
         'deleted_at': 'instant',
+        'retired_at': 'instant',
       },
       'experiment_check_ins': {
         'created_at': 'instant',
@@ -1023,6 +1027,29 @@ class AppDatabase extends _$AppDatabase {
       if (existing == null) await m.createTable(entry.value);
     }
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.tagId);
+  }
+
+  /// Schema-v14 adds the kept-experiment fields. Additive: every existing
+  /// experiment is unretired, has no retire note and no target changes.
+  Future<void> _migrateToV14(Migrator m) async {
+    await _addColumnIfMissing(
+      m,
+      'experiments',
+      experiments,
+      experiments.retiredAt,
+    );
+    await _addColumnIfMissing(
+      m,
+      'experiments',
+      experiments,
+      experiments.retireNote,
+    );
+    await _addColumnIfMissing(
+      m,
+      'experiments',
+      experiments,
+      experiments.targetChangesJson,
+    );
   }
 
   /// Re-populates `tasks_fts` with exactly the rows its installed triggers
@@ -2016,8 +2043,8 @@ END;
       primaryKeyOld: 'id = OLD.id',
       recordIdNew: 'NEW.id',
       recordIdOld: 'OLD.id',
-      updateColumns: 'id, tag_id, purpose, start_date, end_date, weekday_target_min, weekend_target_min, check_in_every_days, status, extensions_json, outcome, conclusion_note, concluded_on, created_at, updated_at, deleted_at',
-      jsonNew: "json_object('id', NEW.id, 'tag_id', NEW.tag_id, 'purpose', NEW.purpose, 'start_date', NEW.start_date, 'end_date', NEW.end_date, 'weekday_target_min', NEW.weekday_target_min, 'weekend_target_min', NEW.weekend_target_min, 'check_in_every_days', NEW.check_in_every_days, 'status', NEW.status, 'extensions_json', NEW.extensions_json, 'outcome', NEW.outcome, 'conclusion_note', NEW.conclusion_note, 'concluded_on', NEW.concluded_on, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      updateColumns: 'id, tag_id, purpose, start_date, end_date, weekday_target_min, weekend_target_min, check_in_every_days, status, extensions_json, outcome, conclusion_note, concluded_on, retired_at, retire_note, target_changes_json, created_at, updated_at, deleted_at',
+      jsonNew: "json_object('id', NEW.id, 'tag_id', NEW.tag_id, 'purpose', NEW.purpose, 'start_date', NEW.start_date, 'end_date', NEW.end_date, 'weekday_target_min', NEW.weekday_target_min, 'weekend_target_min', NEW.weekend_target_min, 'check_in_every_days', NEW.check_in_every_days, 'status', NEW.status, 'extensions_json', NEW.extensions_json, 'outcome', NEW.outcome, 'conclusion_note', NEW.conclusion_note, 'concluded_on', NEW.concluded_on, 'retired_at', NEW.retired_at, 'retire_note', NEW.retire_note, 'target_changes_json', NEW.target_changes_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );

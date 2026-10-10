@@ -494,6 +494,18 @@ class BackupDatabaseApplier {
                 concludedOn: Value(
                   BackupValidator.nullableDateOnly(row, 'concluded_on'),
                 ),
+                retiredAt: Value(
+                  BackupValidator.nullableDateTime(row, 'retired_at'),
+                ),
+                retireNote: Value(
+                  BackupValidator.nullableString(row, 'retire_note'),
+                ),
+                targetChangesJson: Value(
+                  BackupValidator.string(
+                    row['target_changes_json'],
+                    'target_changes_json',
+                  ),
+                ),
                 createdAt: BackupValidator.dateTime(row, 'created_at'),
                 updatedAt: BackupValidator.dateTime(row, 'updated_at'),
                 deletedAt: Value(
