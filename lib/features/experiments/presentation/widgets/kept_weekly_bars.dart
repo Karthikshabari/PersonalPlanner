@@ -71,8 +71,10 @@ class KeptWeeklyBars extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: AppSpacing.sm,
+          runSpacing: 2,
           children: [
             Text(view.axisStartLabel, style: styles.caption),
             Text(keptThisWeekAxis, style: styles.caption),

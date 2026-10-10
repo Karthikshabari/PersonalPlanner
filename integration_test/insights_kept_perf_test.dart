@@ -17,21 +17,22 @@ import 'package:personal_planner/features/experiments/data/experiment_repository
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 
 /// Frame timings of Insights with five kept experiments: opening it, switching
-/// the Experiments segments and flinging the page.
+/// the Experiments segments (Running, Kept, Concluded), flinging the page and
+/// using the first Kept row (every weekly bar, the explain panel, Adjust target).
 ///
 ///   flutter drive --profile -d linux \
 ///     --driver=test_driver/integration_test.dart \
 ///     --target=integration_test/insights_kept_perf_test.dart
 ///
 /// The results are written to `build/integration_response_data.json` under the
-/// keys `insights_open`, `segments` and `scroll`.
+/// keys `insights_open`, `segments`, `scroll` and `kept_row`.
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('insights kept frame timings', (tester) async {
     final database = AppDatabase(NativeDatabase.memory());
     await CategoryRepository(database).seedDefaultsIfEmpty();
-    await _seedKeptExperiments(database);
+    final kept = await _seedKeptExperiments(database);
     final container = ProviderContainer(
       overrides: [appDatabaseProvider.overrideWithValue(database)],
     );
@@ -55,7 +56,7 @@ void main() {
 
     await binding.watchPerformance(() async {
       for (var i = 0; i < 10; i++) {
-        for (final label in ['Concluded (5)', 'Running (0)']) {
+        for (final label in ['Running (0)', 'Kept (5)', 'Concluded (5)']) {
           final segment = find.text(label);
           await tester.ensureVisible(segment);
           await tester.pumpAndSettle();
@@ -75,6 +76,39 @@ void main() {
       }
     }, reportKey: 'scroll');
 
+    // P-D: the first Kept row (the list is ordered by name when every
+    // experiment was kept today, so "Kept 1").
+    await tester.ensureVisible(find.text('Kept (5)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Kept (5)'));
+    await tester.pumpAndSettle();
+    final id = kept.first.id;
+    final thisWeek = startOfWeek(parseIsoDate(isoDateString(DateTime.now())));
+    Future<void> tapKey(String key) async {
+      final finder = find.byKey(ValueKey(key));
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await binding.watchPerformance(() async {
+      for (var week = 8; week >= 0; week--) {
+        final weekStart = isoDateString(addDays(thisWeek, -7 * week));
+        await tapKey('kept-bar-$id-$weekStart');
+      }
+      await tapKey('kept-explain-toggle-$id');
+      await tapKey('kept-explain-toggle-$id');
+      await tapKey('kept-adjust-$id');
+      for (var i = 0; i < 4; i++) {
+        await tapKey('kept-stepper-weekday-$id-plus');
+      }
+      for (var i = 0; i < 4; i++) {
+        await tapKey('kept-stepper-weekday-$id-minus');
+      }
+      await tapKey('kept-adjust-cancel-$id');
+    }, reportKey: 'kept_row');
+
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() async {
       container.dispose();
@@ -88,7 +122,7 @@ void main() {
 /// 09:00–10:00 block (actual 60) on every weekday of the last 9 weeks that is
 /// not in the future, and one planned block tomorrow when tomorrow is in this
 /// week.
-Future<void> _seedKeptExperiments(AppDatabase database) async {
+Future<List<Experiment>> _seedKeptExperiments(AppDatabase database) async {
   final experiments = ExperimentRepository(database);
   final tasks = TaskRepository(database);
   final today = parseIsoDate(isoDateString(DateTime.now()));
@@ -129,6 +163,7 @@ Future<void> _seedKeptExperiments(AppDatabase database) async {
     );
   }
 
+  final seeded = <Experiment>[];
   for (var n = 1; n <= 5; n++) {
     final created = await experiments.createExperiment(
       name: 'Kept $n',
@@ -138,12 +173,14 @@ Future<void> _seedKeptExperiments(AppDatabase database) async {
       weekendTargetMin: 90,
       checkInEveryDays: 7,
     );
-    await experiments.concludeExperiment(
-      created.id,
-      outcome: ExperimentOutcome.keep,
-      note: 'Worth keeping.',
-      today: todayIso,
-      expectedRevision: created.revision,
+    seeded.add(
+      await experiments.concludeExperiment(
+        created.id,
+        outcome: ExperimentOutcome.keep,
+        note: 'Worth keeping.',
+        today: todayIso,
+        expectedRevision: created.revision,
+      ),
     );
     for (var week = 8; week >= 0; week--) {
       final monday = addDays(thisWeek, -7 * week);
@@ -157,4 +194,5 @@ Future<void> _seedKeptExperiments(AppDatabase database) async {
       await block(tomorrow, created.tagId, TaskStatus.planned);
     }
   }
+  return seeded;
 }
