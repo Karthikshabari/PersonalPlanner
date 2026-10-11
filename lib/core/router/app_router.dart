@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/categories/presentation/screens/categories_screen.dart';
+import '../../features/day_context/presentation/day_context_presets_screen.dart';
 import '../../features/analytics/presentation/screens/analytics_screen.dart';
 import '../../features/inbox/presentation/screens/inbox_screen.dart';
 import '../../features/review/presentation/screens/daily_review_screen.dart';
@@ -73,6 +74,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/settings/notifications',
           builder: (context, state) => const NotificationsScreen(),
+        ),
+        GoRoute(
+          path: '/settings/day-contexts',
+          builder: (context, state) => const DayContextPresetsScreen(),
         ),
         GoRoute(
           path: '/settings/sync',

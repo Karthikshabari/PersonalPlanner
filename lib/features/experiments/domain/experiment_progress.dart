@@ -27,7 +27,7 @@ class ExperimentProgress {
     required this.todayDoneMin,
     required this.todayStillPlannedMin,
     required this.todayTargetMin,
-    required this.todayIsLeaveOrHoliday,
+    this.todayBreakLabel,
     required this.shortfallMin,
     required this.todayLine,
     required this.shortfallHint,
@@ -66,7 +66,11 @@ class ExperimentProgress {
   final int todayDoneMin;
   final int todayStillPlannedMin;
   final int todayTargetMin;
-  final bool todayIsLeaveOrHoliday;
+
+  /// Today's label when today is a break day.
+  final String? todayBreakLabel;
+
+  bool get todayIsBreak => todayBreakLabel != null;
 
   /// Target minus (done plus still planned) when positive, else 0.
   final int shortfallMin;
@@ -109,7 +113,7 @@ ExperimentProgress computeExperimentProgress({
   var todayDone = 0;
   var todayStillPlanned = 0;
   var todayTarget = 0;
-  var todayLeave = false;
+  String? todayBreak;
 
   for (final day in days) {
     final minutes = minutesByDay[day.date] ?? DayMinutes.zero;
@@ -128,7 +132,7 @@ ExperimentProgress computeExperimentProgress({
       todayDone = minutes.doneMin;
       todayStillPlanned = minutes.stillPlannedMin;
       todayTarget = day.targetMin;
-      todayLeave = day.isLeaveOrHoliday;
+      todayBreak = day.breakLabel;
       if (day.targetMin > 0 && minutes.doneMin >= day.targetMin) {
         targetDays++;
         targetDaysMet++;
@@ -152,7 +156,7 @@ ExperimentProgress computeExperimentProgress({
   final todayLine = todayInWindow
       ? 'Today: ${formatDuration(todayDone)} done · '
             '${formatDuration(todayStillPlanned)} still planned · '
-            '${todayLeave ? 'Leave, no target' : 'target ${formatDuration(todayTarget)}'}'
+            '${todayBreak != null ? '$todayBreak, no target' : 'target ${formatDuration(todayTarget)}'}'
       : '';
 
   return ExperimentProgress(
@@ -170,7 +174,7 @@ ExperimentProgress computeExperimentProgress({
     todayDoneMin: todayDone,
     todayStillPlannedMin: todayStillPlanned,
     todayTargetMin: todayTarget,
-    todayIsLeaveOrHoliday: todayLeave,
+    todayBreakLabel: todayBreak,
     shortfallMin: shortfall,
     todayLine: todayLine,
     shortfallHint: shortfall > 0

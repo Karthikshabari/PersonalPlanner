@@ -21,6 +21,7 @@ import '../../../../core/widgets/global_search_action.dart';
 import '../../../../core/widgets/task_block_widget.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../day_context/presentation/day_context_editor.dart';
+import '../../../day_context/providers/day_context_presets_provider.dart';
 import '../../../day_context/providers/day_context_providers.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
@@ -591,6 +592,8 @@ class _WeekHeaderCell extends ConsumerWidget {
     final completed = tasks
         .where((task) => task.status.dbValue == 'completed')
         .length;
+    // A break day counts in nothing: its preset name replaces the count.
+    final breakLabel = ref.watch(breakLabelForDateProvider(date));
     final tokens = AppThemeTokens.of(context);
     final isToday = isSameDay(date, DateTime.now());
     return Container(
@@ -625,7 +628,17 @@ class _WeekHeaderCell extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      if (tasksAsync.hasValue && tasks.isNotEmpty)
+                      if (breakLabel != null)
+                        Text(
+                          breakLabel,
+                          key: ValueKey('day-break-${isoDateString(date)}'),
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color: tokens.textMuted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        )
+                      else if (tasksAsync.hasValue && tasks.isNotEmpty)
                         Text(
                           '$completed/${tasks.length}',
                           key: ValueKey('day-count-${isoDateString(date)}'),

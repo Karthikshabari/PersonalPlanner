@@ -89,7 +89,7 @@ void main() {
         ),
   );
 
-  /// The headline's text ("2h of 1h 40m expected so far"): the done value
+  /// The headline's text ("1h 30m of 1h 40m expected so far"): the done value
   /// is a larger span of the same line.
   String headlineText(WidgetTester tester, Experiment e) => tester
       .widget<Text>(find.byKey(ValueKey('experiment-headline-${e.id}')))
@@ -201,11 +201,11 @@ void main() {
     expect(find.byKey(const ValueKey('experiments-filter')), findsOneWidget);
     expect(find.text('Running (1)'), findsOneWidget);
     expect(find.text('Concluded (0)'), findsOneWidget);
-    expect(headlineText(tester, e), '2h of 1h 40m expected so far');
+    expect(headlineText(tester, e), '1h 30m of 1h 40m expected so far');
     expect(
       find.descendant(
         of: find.byKey(ValueKey('experiment-pace-${e.id}')),
-        matching: find.text('20m ahead'),
+        matching: find.text('10m behind'),
       ),
       findsOneWidget,
     );
@@ -255,7 +255,7 @@ void main() {
     final e = await workedExample(tester, container);
     await settle(tester);
     String headline() => headlineText(tester, e);
-    expect(headline(), '2h of 1h 40m expected so far');
+    expect(headline(), '1h 30m of 1h 40m expected so far');
 
     await addBlock(
       tester,
@@ -267,7 +267,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(headline(), '2h 20m of 1h 40m expected so far');
+    expect(headline(), '1h 50m of 1h 40m expected so far');
     expect(find.byType(CircularProgressIndicator), findsNothing);
 
     await teardownApp(tester, container);
@@ -280,7 +280,7 @@ void main() {
     await settle(tester);
     final headlineKey = ValueKey('experiment-headline-${e.id}');
     final cached = headlineText(tester, e);
-    expect(cached, '2h of 1h 40m expected so far');
+    expect(cached, '1h 30m of 1h 40m expected so far');
 
     await goTo(tester, '/day');
     expect(find.byKey(const ValueKey('experiments-section')), findsNothing);
@@ -332,7 +332,7 @@ void main() {
     await settle(tester);
     await goTo(tester, '/analytics');
 
-    expect(headlineText(tester, e), '2h 20m of 1h 40m expected so far');
+    expect(headlineText(tester, e), '1h 50m of 1h 40m expected so far');
     expect(inCard(find.byType(CircularProgressIndicator)), findsNothing);
 
     await teardownApp(tester, container);

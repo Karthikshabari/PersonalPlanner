@@ -55,7 +55,11 @@ class OverviewDayTile {
     '${_weekdayFormat.format(date)} $dateLabel',
     if (isToday) 'today',
     status,
-    day.percent == null ? 'No tasks' : '${day.percent}% tasks done',
+    day.isBreak
+        ? 'Break'
+        : day.percent == null
+        ? 'No tasks'
+        : '${day.percent}% tasks done',
     ?contextLabel,
   ].join(', ');
 }
@@ -287,7 +291,7 @@ class OverviewDayTileBody extends StatelessWidget {
         gap,
         if (day.percent == null)
           Text(
-            'No tasks',
+            day.isBreak ? 'Break' : 'No tasks',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: OverviewTileText.caption(context),

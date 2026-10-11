@@ -46,11 +46,15 @@ class TaskOutcomesCard extends ConsumerStatefulWidget {
   final bool future;
   final AsyncValue<List<TaskOutcomeRow>> rows;
 
+  /// A break day asks for no reasons and shows no reasons status.
+  final bool breakDay;
+
   const TaskOutcomesCard({
     super.key,
     required this.date,
     required this.future,
     required this.rows,
+    this.breakDay = false,
   });
 
   @override
@@ -85,6 +89,7 @@ class _TaskOutcomesCardState extends ConsumerState<TaskOutcomesCard> {
         Text('Task outcomes', style: textTheme.titleMedium),
         // Hidden while the only unfinished blocks are still to come.
         if (!widget.future &&
+            !widget.breakDay &&
             rows != null &&
             rows.isNotEmpty &&
             (rows.every((row) => row.outcome == TaskOutcome.completed) ||
@@ -190,6 +195,7 @@ class _TaskOutcomesCardState extends ConsumerState<TaskOutcomesCard> {
               showDivider: i > 0,
               presets: presets,
               onSaveAsPreset: _saveAsPreset,
+              asksReason: !widget.breakDay,
             ),
         ],
       );
@@ -233,9 +239,8 @@ class _ReasonStatusPill extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final now = DateTime.now();
     final missing = ref.watch(
-      reviewDraftProvider(
-        date,
-      ).select((draft) => _missingReasons(rows, draft.reasons, now)),
+      reviewDraftProvider(date)
+          .select((draft) => _missingReasons(rows, draft.reasons, now)),
     );
     final tokens = AppThemeTokens.of(context);
     final success = ReviewColors.of(context).success;
@@ -279,6 +284,9 @@ class TaskOutcomeRowView extends ConsumerStatefulWidget {
   final List<String> presets;
   final ValueChanged<String> onSaveAsPreset;
 
+  /// False on a break day: no "Why was this not done?" field.
+  final bool asksReason;
+
   const TaskOutcomeRowView({
     super.key,
     required this.date,
@@ -286,6 +294,7 @@ class TaskOutcomeRowView extends ConsumerStatefulWidget {
     required this.showDivider,
     required this.presets,
     required this.onSaveAsPreset,
+    this.asksReason = true,
   });
 
   @override
@@ -460,11 +469,12 @@ class _TaskOutcomeRowViewState extends ConsumerState<TaskOutcomeRowView> {
                     Text(meta, style: caption),
                   ],
                 ),
-                if (awaitsReason(
-                  row.outcome,
-                  row.endTime,
-                  now: DateTime.now(),
-                )) ...[
+                if (widget.asksReason &&
+                    awaitsReason(
+                      row.outcome,
+                      row.endTime,
+                      now: DateTime.now(),
+                    )) ...[
                   const SizedBox(height: AppSpacing.sm),
                   Semantics(
                     label: 'Reason for ${row.title}',

@@ -36,6 +36,7 @@ class WeeklyDayInput {
     required this.reviewed,
     this.mood,
     this.contextLabel,
+    this.breakLabel,
   });
 
   final DateTime date;
@@ -47,8 +48,12 @@ class WeeklyDayInput {
   /// Daily mood 1..4; null when not reviewed or saved without a mood.
   final int? mood;
 
-  /// Day context short label (`Office`, `Leave`, a custom label), or null.
+  /// Day context label (`Office Day`, `Leave`, a custom label), or null.
   final String? contextLabel;
+
+  /// The context label when this is a break day (`BreakDayRule`): the day
+  /// counts in none of the week's figures.
+  final String? breakLabel;
 }
 
 class WeeklyDayStats {
@@ -59,14 +64,20 @@ class WeeklyDayStats {
     required this.reviewed,
     this.mood,
     this.contextLabel,
+    this.breakLabel,
   });
 
   final DateTime date;
+
+  /// Counted tasks: 0 on a break day.
   final int total;
   final int completed;
   final bool reviewed;
   final int? mood;
   final String? contextLabel;
+  final String? breakLabel;
+
+  bool get isBreak => breakLabel != null;
 
   int? get percent => completionPercent(completed, total);
 }
@@ -148,8 +159,12 @@ class WeeklyNumbers {
   /// At most three, in priority order (spec 3.9).
   final List<String> highlights;
 
-  /// Whole-number completion; null when the week has no tasks.
+  /// Whole-number completion of the counted days; null when they have no
+  /// tasks.
   int? get percent => completionPercent(completed, total);
+
+  /// Every day of the week is a break day.
+  bool get allBreak => days.isNotEmpty && days.every((day) => day.isBreak);
 
   /// Days with a saved daily review.
   int get reviewedDays => days.where((day) => day.reviewed).length;
@@ -176,10 +191,8 @@ class WeeklyNumbers {
 
 /// Pure port of the prototype's `compute()` and `highlights()`. Reasons and
 /// "No reason given" only cover blocks that have ended by [now] (REV-002).
-WeeklyNumbers computeWeeklyNumbers(
-  List<WeeklyDayInput> days, {
-  DateTime? now,
-}) {
+/// A break day counts in nothing: no totals, skips, reasons or day types.
+WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
   final at = now ?? DateTime.now();
   final stats = <WeeklyDayStats>[];
   final outcomeRows = <WeeklyOutcomeRow>[];
@@ -196,6 +209,20 @@ WeeklyNumbers computeWeeklyNumbers(
   var missedOnReviewedDaysWithReason = 0;
 
   for (final day in days) {
+    if (day.breakLabel != null) {
+      stats.add(
+        WeeklyDayStats(
+          date: day.date,
+          total: 0,
+          completed: 0,
+          reviewed: day.reviewed,
+          mood: day.mood,
+          contextLabel: day.contextLabel,
+          breakLabel: day.breakLabel,
+        ),
+      );
+      continue;
+    }
     var dayCompleted = 0;
     for (final task in day.tasks) {
       total++;

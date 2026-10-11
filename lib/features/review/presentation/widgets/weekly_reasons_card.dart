@@ -47,7 +47,9 @@ class _WeeklyReasonsCardState extends State<WeeklyReasonsCard> {
         children: [
           Text('What got in the way', style: textTheme.titleMedium),
           const SizedBox(height: AppSpacing.sm),
-          if (numbers.total == 0)
+          if (numbers.allBreak)
+            Text('Break week.', style: muted)
+          else if (numbers.total == 0)
             Text('No tasks this week.', style: muted)
           else if (!numbers.hasMissedTasks)
             Text('Nothing to show. Everything planned got done.', style: muted)

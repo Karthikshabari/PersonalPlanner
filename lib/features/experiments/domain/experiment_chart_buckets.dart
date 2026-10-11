@@ -22,7 +22,7 @@ class ExperimentChartBucket {
     required this.targetMin,
     required this.isFuture,
     required this.isToday,
-    required this.isLeaveOrHoliday,
+    required this.isBreak,
     required this.label,
     required this.tapLine,
   });
@@ -41,8 +41,8 @@ class ExperimentChartBucket {
   /// A running experiment's bucket that contains today.
   final bool isToday;
 
-  /// A single Leave or Holiday day (day buckets only).
-  final bool isLeaveOrHoliday;
+  /// A single break day (day buckets only).
+  final bool isBreak;
 
   /// "Oct 12 to 18", "Sep 28 to Oct 4", "Oct 12" or "October".
   final String label;
@@ -60,7 +60,7 @@ class ExperimentChartBucket {
       other.targetMin == targetMin &&
       other.isFuture == isFuture &&
       other.isToday == isToday &&
-      other.isLeaveOrHoliday == isLeaveOrHoliday &&
+      other.isBreak == isBreak &&
       other.label == label &&
       other.tapLine == tapLine;
 
@@ -73,7 +73,7 @@ class ExperimentChartBucket {
     targetMin,
     isFuture,
     isToday,
-    isLeaveOrHoliday,
+    isBreak,
     label,
     tapLine,
   );
@@ -198,8 +198,10 @@ ExperimentChartBucket _bucket(
     done += (minutesByDay[day.date] ?? DayMinutes.zero).doneMin;
     target += day.targetMin;
   }
-  final leave =
-      grouping == ExperimentChartGrouping.days && group.single.isLeaveOrHoliday;
+  final breakLabel = grouping == ExperimentChartGrouping.days
+      ? group.single.breakLabel
+      : null;
+  final leave = breakLabel != null;
   final amounts = '${formatDuration(done)} of ${formatDuration(target)}';
   final String label;
   final String tapLine;
@@ -207,7 +209,7 @@ ExperimentChartBucket _bucket(
     case ExperimentChartGrouping.days:
       final text = DateFormat('EEE MMM d').format(parseIsoDate(first));
       label = _monthDay(first);
-      tapLine = leave ? '$text: Leave' : '$text: $amounts target';
+      tapLine = leave ? '$text: $breakLabel' : '$text: $amounts target';
     case ExperimentChartGrouping.weeks:
       label = _rangeLabel(first, last);
       tapLine = '$label: $amounts';
@@ -224,7 +226,7 @@ ExperimentChartBucket _bucket(
     isFuture: running && first.compareTo(today) > 0,
     isToday:
         running && first.compareTo(today) <= 0 && last.compareTo(today) >= 0,
-    isLeaveOrHoliday: leave,
+    isBreak: leave,
     label: label,
     tapLine: tapLine,
   );

@@ -42,7 +42,11 @@ class OverviewWeekTile {
     range,
     if (isCurrent) 'this week',
     status,
-    week.percent == null ? 'No tasks' : '${week.percent}% tasks done',
+    week.allBreak
+        ? 'Break week'
+        : week.percent == null
+        ? 'No tasks'
+        : '${week.percent}% tasks done',
   ].join(', ');
 }
 
@@ -172,7 +176,7 @@ class OverviewWeekTileBody extends StatelessWidget {
         gap,
         if (week.percent == null)
           Text(
-            'No tasks',
+            week.allBreak ? 'Break week' : 'No tasks',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: OverviewTileText.caption(context),

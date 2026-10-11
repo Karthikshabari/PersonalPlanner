@@ -1,24 +1,33 @@
+import 'package:drift/drift.dart';
+
 import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/weekly_review.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../day_context/data/day_context_repository.dart';
+import '../../day_context/domain/break_day.dart';
 import '../data/review_repository.dart';
 import 'task_outcome.dart';
 
 /// One past week as the Weekly review needs it: the saved review (if any)
-/// and the week's completion (tasks that start in the week, D1).
+/// and the week's completion (tasks that start in the week, D1). Tasks on
+/// break days are not counted.
 class WeeklyHistoryWeek {
   const WeeklyHistoryWeek({
     required this.weekStart,
     required this.totalTasks,
     required this.completedTasks,
     this.review,
+    this.allBreak = false,
   });
 
   final DateTime weekStart;
   final int totalTasks;
   final int completedTasks;
   final WeeklyReview? review;
+
+  /// Every day of the week is a break day.
+  final bool allBreak;
 
   /// A saved weekly review record exists for the week.
   bool get reviewed => review != null;
@@ -42,9 +51,26 @@ class WeeklyReviewHistoryService {
   Future<List<WeeklyHistoryWeek>> load(
     DateTime weekStart, {
     int weekCount = 52,
+    BreakDayRule? breakDays,
   }) async {
     final current = startOfWeek(weekStart);
     final oldest = addDays(current, -7 * weekCount);
+    final contextRows =
+        await (_db.select(_db.dayContexts)..where(
+              (row) =>
+                  row.date.isBiggerOrEqualValue(isoDateString(oldest)) &
+                  row.date.isSmallerThanValue(isoDateString(current)) &
+                  row.deletedAt.isNull(),
+            ))
+            .get();
+    final breakDates = (breakDays ?? BreakDayRule.defaults).breakDates(
+      contextRows.map(DayContextRepository.fromRow),
+    );
+    final breakDaysByWeek = <String, int>{};
+    for (final date in breakDates.keys) {
+      final key = isoDateString(startOfWeek(parseIsoDate(date)));
+      breakDaysByWeek[key] = (breakDaysByWeek[key] ?? 0) + 1;
+    }
     final reviews = await ReviewRepository(_db)
         .getWeeklyReviewsBetween(oldest, current);
     final rows = await _db.taskDao.getStartAndStatusBetween(oldest, current);
@@ -53,6 +79,7 @@ class WeeklyReviewHistoryService {
     for (final row in rows) {
       final start = row.start;
       if (start.isBefore(oldest) || !start.isBefore(current)) continue;
+      if (breakDates.containsKey(isoDateString(start))) continue;
       final key = isoDateString(startOfWeek(start));
       totals[key] = (totals[key] ?? 0) + 1;
       if (row.status == TaskStatus.completed.dbValue) {
@@ -72,6 +99,7 @@ class WeeklyReviewHistoryService {
             totalTasks: totals[key] ?? 0,
             completedTasks: completed[key] ?? 0,
             review: byWeek[key],
+            allBreak: (breakDaysByWeek[key] ?? 0) == 7,
           );
         }(),
     ];
@@ -82,9 +110,10 @@ class WeeklyReviewHistoryService {
   Future<List<WeeklyHistoryWeek>> window({
     required DateTime today,
     required int weekCount,
+    BreakDayRule? breakDays,
   }) async {
     final next = addDays(startOfWeek(today), 7);
-    final weeks = await load(next, weekCount: weekCount);
+    final weeks = await load(next, weekCount: weekCount, breakDays: breakDays);
     return weeks.reversed.toList(growable: false);
   }
 }

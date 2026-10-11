@@ -87,7 +87,7 @@ class _InsightsContent extends StatelessWidget {
             StreakSummaryView(streaks: snapshot.streaks),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Leave, Holiday, and days without a plan stay neutral.',
+              'Break days and days without a plan stay neutral.',
               style: Theme.of(context).textTheme.bodySmall
                   ?.copyWith(color: AppThemeTokens.of(context).textMuted),
             ),

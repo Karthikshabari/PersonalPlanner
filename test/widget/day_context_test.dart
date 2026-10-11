@@ -54,23 +54,20 @@ void main() {
       await tester.tap(action);
       await settle(tester);
 
-      await tester.tap(find.byKey(const ValueKey('day-context-kind')));
-      await settle(tester);
-      expect(find.text('Custom'), findsOneWidget);
-      await tester.tap(find.text('Custom'));
-      await settle(tester);
+      // Nothing is chosen yet, so Save is disabled; the presets are listed.
       expect(
-        find.byKey(const ValueKey('day-context-custom-label')),
-        findsOneWidget,
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('day-context-save')),
+            )
+            .onPressed,
+        isNull,
       );
-      await tester.tap(find.byKey(const ValueKey('day-context-save')));
+      expect(find.text('Office Day'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-option-Work From Home')),
+      );
       await settle(tester);
-      expect(find.text('Enter a label.'), findsOneWidget);
-
-      await tester.enterText(
-        find.byKey(const ValueKey('day-context-custom-label')),
-        '  Family visit  ',
-      );
       await tester.tap(find.byKey(const ValueKey('day-context-save')));
       await settle(tester);
 
@@ -81,10 +78,11 @@ void main() {
             .watchForDate(dateText)
             .first,
       );
-      expect(context?.displayLabel, 'Family visit');
+      expect(context?.kind, DayContextKind.custom);
+      expect(context?.displayLabel, 'Work From Home');
       expect(context?.date, dateText);
       final contextId = context!.id;
-      expect(find.text('Family visit'), findsOneWidget);
+      expect(find.text('Work From Home'), findsOneWidget);
 
       final tasksAfterSave = await runDb(
         tester,
@@ -119,9 +117,7 @@ void main() {
 
       await tester.tap(find.byKey(ValueKey('day-context-action-$dateText')));
       await settle(tester);
-      await tester.tap(find.byKey(const ValueKey('day-context-kind')));
-      await settle(tester);
-      await tester.tap(find.text('Travel').last);
+      await tester.tap(find.byKey(const ValueKey('day-context-option-Travel')));
       await settle(tester);
       await tester.tap(find.byKey(const ValueKey('day-context-save')));
       await settle(tester);

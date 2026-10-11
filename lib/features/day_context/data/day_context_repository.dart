@@ -46,6 +46,13 @@ class DayContextRepository {
         .map((rows) => rows.map(fromRow).toList(growable: false));
   }
 
+  /// Every active context. The table holds at most one small row per
+  /// annotated date, so this stays cheap.
+  Stream<List<DayContext>> watchAll() =>
+      (_db.select(_db.dayContexts)..where((row) => row.deletedAt.isNull()))
+          .watch()
+          .map((rows) => rows.map(fromRow).toList(growable: false));
+
   Future<DayContext> save(
     String date,
     DayContextKind kind,

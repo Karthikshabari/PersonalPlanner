@@ -260,7 +260,7 @@ class ExperimentChartPainter extends CustomPainter {
 
       // The faint target bar: every day, future ones included. A Leave or
       // Holiday day has no target, so it gets a thin sliver instead.
-      final targetHeight = bucket.isLeaveOrHoliday
+      final targetHeight = bucket.isBreak
           ? _leaveBarHeight
           : heightOf(bucket.targetMin);
       if (targetHeight > 0) {

@@ -162,7 +162,12 @@ class OverviewTileMetrics {
       dateHeight = math.max(dateHeight, size.height);
     }
     final eyebrow = weeks ? Size.zero : _measure(context, 'Today', caption);
-    final noTasks = _measure(context, 'No tasks', caption);
+    // `Break week` is the widest value a week tile can show.
+    final noTasks = _measure(
+      context,
+      weeks ? 'Break week' : 'No tasks',
+      caption,
+    );
     final percentSize = _measure(context, '100%', percent);
     final valueHeight = math.max(noTasks.height, percentSize.height);
 

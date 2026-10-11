@@ -118,7 +118,7 @@ void main() {
     expect(days.first.date, week);
     expect(days.first.reviewed, isTrue);
     expect(days.first.mood, 3);
-    expect(days.first.contextLabel, 'Office');
+    expect(days.first.contextLabel, 'Office Day');
     expect(days.first.tasks.map((t) => t.title), ['Done', 'Skipped one']);
     expect(days.first.tasks.last.reason, 'Lower priority');
     expect(days[1].reviewed, isFalse);

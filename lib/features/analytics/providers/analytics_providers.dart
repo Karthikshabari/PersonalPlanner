@@ -11,6 +11,8 @@ import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import '../../day_context/domain/break_day.dart';
+import '../../day_context/providers/day_context_presets_provider.dart';
 import '../domain/analytics_models.dart';
 import '../domain/analytics_service.dart';
 import '../domain/follow_through_target.dart';
@@ -125,9 +127,13 @@ class InsightsSnapshotCacheEntry {
     required this.revision,
     required this.weekStart,
     required this.today,
+    this.breakDays,
   });
 
   final InsightsSnapshot snapshot;
+
+  /// The break-day rule the snapshot was computed with.
+  final BreakDayRule? breakDays;
   final int revision;
   final DateTime weekStart;
 
@@ -178,7 +184,11 @@ final insightsCachedSnapshotProvider = Provider.autoDispose<InsightsSnapshot?>((
   );
   final target = ref.watch(_selectedFollowThroughTargetProvider);
   if (entry == null) return null;
-  return entry.isCurrent(revision: revision, weekStart: weekStart, today: today) &&
+  return entry.isCurrent(
+            revision: revision,
+            weekStart: weekStart,
+            today: today,
+          ) &&
           entry.snapshot.followThroughTarget == target
       ? entry.snapshot
       : null;
@@ -200,6 +210,7 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
     insightsNowProvider.select((now) => isoDateString(now)),
   );
   final target = ref.watch(_selectedFollowThroughTargetProvider);
+  final breakDays = ref.watch(breakDayRuleProvider);
   final now = ref.read(insightsNowProvider);
   final database = ref.read(appDatabaseProvider);
   final cacheNotifier = ref.read(insightsSnapshotCacheProvider.notifier);
@@ -211,7 +222,8 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
             weekStart: weekStart,
             today: today,
           ) &&
-          cached.snapshot.followThroughTarget == target
+          cached.snapshot.followThroughTarget == target &&
+          cached.breakDays == breakDays
       ? cached.snapshot
       : null;
   return watchReactiveStats(
@@ -223,10 +235,12 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
       final revision = ref.read(insightsSourceRevisionProvider);
       // The stored target, not the default shown while it loads.
       final storedTarget = await ref.read(followThroughTargetProvider.future);
+      final storedBreakDays = await readBreakDayRule(ref);
       final snapshot = await service.compute(
         weekStart: weekStart,
         now: now,
         followThroughTarget: storedTarget,
+        breakDays: storedBreakDays,
       );
       if (ref.mounted) {
         cacheNotifier.store(
@@ -235,6 +249,7 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
             revision: revision,
             weekStart: weekStart,
             today: today,
+            breakDays: storedBreakDays,
           ),
         );
       }

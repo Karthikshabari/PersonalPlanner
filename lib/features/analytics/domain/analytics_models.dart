@@ -66,15 +66,19 @@ enum DayResult {
   /// Planned time, nothing completed, and the day is over.
   missed,
 
-  /// Nothing planned, or a Holiday / Leave day.
+  /// Nothing planned.
   empty,
+
+  /// A break day (see `BreakDayRule`): it counts in nothing.
+  breakDay,
 }
 
 /// The one rule that classifies a day. Returns null while the day is not
 /// decided yet: a future day, or today before it is a Success (today only
 /// becomes Started or Missed once it is over).
 DayResult? classifyDay(ConsistencyDay day, {required double target}) {
-  if (day.excludedByContext || day.plannedMinutes <= 0) return DayResult.empty;
+  if (day.isBreak) return DayResult.breakDay;
+  if (day.plannedMinutes <= 0) return DayResult.empty;
   if (day.isFuture) return null;
   if (day.followThrough! >= target) return DayResult.success;
   if (day.isToday) return null;
@@ -87,12 +91,13 @@ class ConsistencyDay {
     required this.plannedMinutes,
     required this.completedPlannedMinutes,
     required this.actualMinutes,
-    this.context,
+    this.breakLabel,
     required this.isFuture,
     this.isToday = false,
   });
 
   final DateTime date;
+
   /// Clock time: the union of the day's blocks, so an overlap counts once.
   final int plannedMinutes;
 
@@ -100,16 +105,17 @@ class ConsistencyDay {
   /// [plannedMinutes].
   final int completedPlannedMinutes;
   final int actualMinutes;
-  final DayContextKind? context;
+
+  /// The day context label when this is a break day (`BreakDayRule`).
+  final String? breakLabel;
   final bool isFuture;
 
   /// The day is today: not over yet, so it is only decided once a Success.
   final bool isToday;
 
-  bool get excludedByContext =>
-      context == DayContextKind.holiday || context == DayContextKind.leave;
+  bool get isBreak => breakLabel != null;
 
-  bool get isNeutral => isFuture || excludedByContext || plannedMinutes <= 0;
+  bool get isNeutral => isFuture || isBreak || plannedMinutes <= 0;
 
   double? get followThrough {
     if (isNeutral) return null;
@@ -261,7 +267,7 @@ bool sameInsightsSnapshot(InsightsSnapshot a, InsightsSnapshot b) {
         x.plannedMinutes != y.plannedMinutes ||
         x.completedPlannedMinutes != y.completedPlannedMinutes ||
         x.actualMinutes != y.actualMinutes ||
-        x.context != y.context ||
+        x.breakLabel != y.breakLabel ||
         x.isFuture != y.isFuture ||
         x.isToday != y.isToday) {
       return false;

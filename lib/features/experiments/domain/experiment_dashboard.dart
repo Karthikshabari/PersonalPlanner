@@ -4,6 +4,8 @@ import '../../../core/models/experiment.dart';
 import '../../../core/models/experiment_check_in.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import '../../day_context/data/day_context_repository.dart';
+import '../../day_context/domain/break_day.dart';
 import '../data/experiment_repository.dart';
 import 'experiment_check_in_schedule.dart';
 import 'experiment_days.dart';
@@ -93,8 +95,9 @@ class ExperimentDashboard {
   bool get isEmpty => views.isEmpty;
 }
 
-/// Loads the dashboard: one experiments query, one Leave/Holiday query over
-/// the union of all windows, and one indexed range query per experiment
+/// Loads the dashboard: one experiments query, one day-context query over
+/// the union of all windows (break days via [BreakDayRule]), and one indexed
+/// range query per experiment
 /// (ED41), all in one read transaction. Nothing is stored.
 class ExperimentDashboardService {
   ExperimentDashboardService(this._db, {required this.formatDuration});
@@ -102,7 +105,10 @@ class ExperimentDashboardService {
   final AppDatabase _db;
   final DurationFormatter formatDuration;
 
-  Future<ExperimentDashboard> load({required String today}) {
+  Future<ExperimentDashboard> load({
+    required String today,
+    BreakDayRule? breakDays,
+  }) {
     final dao = _db.experimentDao;
     return _db.transaction(() async {
       final rows = await dao.getExperiments();
@@ -118,7 +124,18 @@ class ExperimentDashboardService {
       final lastDate = experiments
           .map((e) => e.endDate)
           .reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
-      final leaveDates = await dao.leaveOrHolidayDates(firstDate, lastDate);
+      // Also covers the Kept weeks: 8 weeks back to the next week start.
+      final keptFirst = keptWeekStarts(today).first;
+      final keptLast = isoDateString(
+        addDays(startOfWeek(parseIsoDate(today)), 6),
+      );
+      final contextRows = await dao.dayContextsBetween(
+        firstDate.compareTo(keptFirst) <= 0 ? firstDate : keptFirst,
+        lastDate.compareTo(keptLast) >= 0 ? lastDate : keptLast,
+      );
+      final breakDates = (breakDays ?? BreakDayRule.defaults).breakDates(
+        contextRows.map(DayContextRepository.fromRow),
+      );
       final checkInRows = await dao.getCheckInsForExperiments([
         for (final e in experiments) e.id,
       ]);
@@ -145,7 +162,7 @@ class ExperimentDashboardService {
         views.add(
           buildExperimentView(
             experiment: experiment,
-            leaveOrHolidayDates: leaveDates,
+            breakDates: breakDates,
             blocks: blocks,
             today: today,
             formatDuration: formatDuration,
@@ -160,7 +177,12 @@ class ExperimentDashboardService {
       ];
       final kept = keptExperiments.isEmpty
           ? emptyKeptSegment
-          : await _loadKept(dao, keptExperiments, today);
+          : await _loadKept(
+              dao,
+              keptExperiments,
+              today,
+              breakDates.keys.toSet(),
+            );
       return ExperimentDashboard(
         views: List.unmodifiable(views),
         runningCount: experiments
@@ -176,34 +198,94 @@ class ExperimentDashboardService {
 
   /// Three indexed aggregates for all kept experiments at once: completed
   /// minutes per week, completed minutes per day of this week, and planned
-  /// minutes from the start of today to the next week start.
+  /// minutes from the start of today to the next week start. When a break day
+  /// falls in those weeks, completed minutes are read per day (63 buckets)
+  /// and summed without the break days, and planned minutes are read per
+  /// remaining day that is not a break.
   Future<KeptSegment> _loadKept(
     ExperimentDao dao,
     List<Experiment> kept,
     String today,
+    Set<String> breakDates,
   ) async {
     final weekStarts = keptWeekStarts(today);
+    final firstWeek = parseIsoDate(weekStarts.first);
     final weekStart = parseIsoDate(weekStarts.last);
     final nextWeekStart = addDays(weekStart, 7);
-    final weekBuckets = [
-      for (final start in weekStarts)
-        (parseIsoDate(start), addDays(parseIsoDate(start), 7)),
-    ];
-    final dayBuckets = [
-      for (var i = 0; i < 7; i++)
-        PlannerTimeZone.dayBounds(addDays(weekStart, i)),
-    ];
     final windows = [
       for (final e in kept)
         (tagId: e.tagId, countedFrom: parseIsoDate(e.startDate)),
     ];
-    final byWeek = await dao.keptCompletedMinutes(windows, weekBuckets);
-    final byDay = await dao.keptCompletedMinutes(windows, dayBuckets);
-    final planned = await dao.keptPlannedMinutes(
-      [for (final e in kept) e.tagId],
-      from: PlannerTimeZone.dayBounds(parseIsoDate(today)).$1,
-      to: nextWeekStart,
+    final allDays = [
+      for (var i = 0; i < 7 * keptWeekBarCount; i++) addDays(firstWeek, i),
+    ];
+    final hasBreak = allDays.any(
+      (day) => breakDates.contains(isoDateString(day)),
     );
+    final Map<String, Map<int, int>> byWeek;
+    final Map<String, Map<int, int>> byDay;
+    if (!hasBreak) {
+      final weekBuckets = [
+        for (final start in weekStarts)
+          (parseIsoDate(start), addDays(parseIsoDate(start), 7)),
+      ];
+      final dayBuckets = [
+        for (var i = 0; i < 7; i++)
+          PlannerTimeZone.dayBounds(addDays(weekStart, i)),
+      ];
+      byWeek = await dao.keptCompletedMinutes(windows, weekBuckets);
+      byDay = await dao.keptCompletedMinutes(windows, dayBuckets);
+    } else {
+      final perDay = await dao.keptCompletedMinutes(windows, [
+        for (final day in allDays) PlannerTimeZone.dayBounds(day),
+      ]);
+      byWeek = {};
+      byDay = {};
+      for (final entry in perDay.entries) {
+        final weeks = byWeek[entry.key] = <int, int>{};
+        final days = byDay[entry.key] = <int, int>{};
+        for (final bucket in entry.value.entries) {
+          if (breakDates.contains(isoDateString(allDays[bucket.key]))) {
+            continue;
+          }
+          final week = bucket.key ~/ 7;
+          weeks[week] = (weeks[week] ?? 0) + bucket.value;
+          if (week == keptWeekBarCount - 1) days[bucket.key % 7] = bucket.value;
+        }
+      }
+    }
+    final tagIds = [for (final e in kept) e.tagId];
+    final todayDate = parseIsoDate(today);
+    final remaining = [
+      for (
+        var day = todayDate;
+        day.isBefore(nextWeekStart);
+        day = addDays(day, 1)
+      )
+        day,
+    ];
+    final Map<String, int> planned;
+    if (!remaining.any((day) => breakDates.contains(isoDateString(day)))) {
+      planned = await dao.keptPlannedMinutes(
+        tagIds,
+        from: PlannerTimeZone.dayBounds(todayDate).$1,
+        to: nextWeekStart,
+      );
+    } else {
+      planned = {};
+      for (final day in remaining) {
+        if (breakDates.contains(isoDateString(day))) continue;
+        final bounds = PlannerTimeZone.dayBounds(day);
+        final dayPlanned = await dao.keptPlannedMinutes(
+          tagIds,
+          from: bounds.$1,
+          to: bounds.$2,
+        );
+        for (final entry in dayPlanned.entries) {
+          planned[entry.key] = (planned[entry.key] ?? 0) + entry.value;
+        }
+      }
+    }
     final views = [
       for (final e in kept)
         buildKeptExperimentView(
@@ -213,6 +295,7 @@ class ExperimentDashboardService {
           doneByDay: byDay[e.tagId] ?? const {},
           plannedMin: planned[e.tagId] ?? 0,
           formatDuration: formatDuration,
+          breakDates: breakDates,
         ),
     ]..sort(_compareKeptViews);
     return KeptSegment(views: List.unmodifiable(views));
@@ -230,18 +313,19 @@ int _compareKeptViews(KeptExperimentView a, KeptExperimentView b) {
 /// Builds the view of one experiment from its tagged blocks.
 ExperimentView buildExperimentView({
   required Experiment experiment,
-  required Set<String> leaveOrHolidayDates,
+  required Map<String, String> breakDates,
   required Iterable<TaggedBlockRow> blocks,
   required String today,
   required DurationFormatter formatDuration,
   Iterable<ExperimentCheckIn> checkIns = const [],
 }) {
-  final days = buildExperimentDays(experiment, leaveOrHolidayDates);
+  final days = buildExperimentDays(experiment, breakDates);
+  // A break day counts in nothing, even if a tagged block was done on it.
   final minutesByDay = groupBlocksByDay(
     blocks,
     startDate: experiment.startDate,
     endDate: experiment.endDate,
-  );
+  )..removeWhere((date, _) => breakDates.containsKey(date));
   final running = experiment.status == ExperimentStatus.running;
   final newestFirst = checkIns.toList()
     ..sort((a, b) => b.slotDate.compareTo(a.slotDate));

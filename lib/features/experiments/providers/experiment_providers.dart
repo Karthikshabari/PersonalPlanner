@@ -12,6 +12,8 @@ import '../../analytics/providers/analytics_providers.dart';
 import '../../task_editor/data/tag_repository.dart';
 import '../../task_editor/providers/tag_providers.dart';
 import '../data/experiment_repository.dart';
+import '../../day_context/domain/break_day.dart';
+import '../../day_context/providers/day_context_presets_provider.dart';
 import '../domain/experiment_dashboard.dart';
 import '../domain/kept_experiment.dart';
 
@@ -65,10 +67,14 @@ class ExperimentDashboardCacheEntry {
     required this.dashboard,
     required this.revision,
     required this.today,
+    this.breakDays,
   });
 
   final ExperimentDashboard dashboard;
   final int revision;
+
+  /// The break-day rule the dashboard was computed with.
+  final BreakDayRule? breakDays;
 
   /// `yyyy-MM-dd`.
   final String today;
@@ -113,17 +119,23 @@ final experimentDashboardProvider =
         insightsNowProvider.select((now) => isoDateString(now)),
       );
       final revision = ref.watch(experimentSourceRevisionProvider);
+      final breakDays = ref.watch(breakDayRuleProvider);
       final cached = ref.read(experimentDashboardCacheProvider);
       if (cached != null &&
           cached.revision == revision &&
-          cached.today == today) {
+          cached.today == today &&
+          cached.breakDays == breakDays) {
         return cached.dashboard;
       }
       final service = ExperimentDashboardService(
         db,
         formatDuration: formatMinutes,
       );
-      return service.load(today: today).then((dashboard) {
+      return readBreakDayRule(ref).then((storedBreakDays) async {
+        final dashboard = await service.load(
+          today: today,
+          breakDays: storedBreakDays,
+        );
         if (ref.mounted) {
           ref
               .read(experimentDashboardCacheProvider.notifier)
@@ -132,6 +144,7 @@ final experimentDashboardProvider =
                   dashboard: dashboard,
                   revision: revision,
                   today: today,
+                  breakDays: storedBreakDays,
                 ),
               );
         }

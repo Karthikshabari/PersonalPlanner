@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/inbox_item.dart';
+import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/inbox_repository.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/date_utils.dart';
@@ -75,7 +76,28 @@ final inboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
   if (stamp.hasError) {
     return Stream<List<InboxItem>>.error(stamp.error!, stamp.stackTrace);
   }
-  return repo.watchInboxItems(asOf);
+  // A block on a break day is never shown as missed; it stays on the
+  // timeline and can still be completed.
+  final breakDates = ref.watch(breakDatesProvider);
+  if (breakDates.hasError) {
+    return Stream<List<InboxItem>>.error(
+      breakDates.error!,
+      breakDates.stackTrace,
+    );
+  }
+  if (!breakDates.hasValue) return const Stream<List<InboxItem>>.empty();
+  final dates = breakDates.requireValue;
+  final items = repo.watchInboxItems(asOf);
+  if (dates.isEmpty) return items;
+  return items.map(
+    (list) => [
+      for (final item in list)
+        if (!(item.isOverdue &&
+            item.task.startTime != null &&
+            dates.containsKey(isoDateString(item.task.startTime!))))
+          item,
+    ],
+  );
 });
 
 /// Focused Inbox projection used only by the Day/Today surface. The full

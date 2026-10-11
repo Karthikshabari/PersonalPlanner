@@ -75,6 +75,7 @@ bool _sameWeeklyDay(WeeklyDayInput a, WeeklyDayInput b) =>
     a.reviewed == b.reviewed &&
     a.mood == b.mood &&
     a.contextLabel == b.contextLabel &&
+    a.breakLabel == b.breakLabel &&
     _sameList(a.tasks, b.tasks, _sameWeeklyTask);
 
 // `DailyReview` and `DayContext` are Freezed value classes: `==` covers all
@@ -84,4 +85,5 @@ bool _sameOverviewDay(ReviewOverviewDay a, ReviewOverviewDay b) =>
     a.totalTasks == b.totalTasks &&
     a.completedTasks == b.completedTasks &&
     a.review == b.review &&
-    a.dayContext == b.dayContext;
+    a.dayContext == b.dayContext &&
+    a.breakLabel == b.breakLabel;

@@ -39,6 +39,8 @@ class WeeklyGlanceCard extends StatelessWidget {
     final percent = numbers.percent;
     final headline = future
         ? 'This week has not happened yet.'
+        : numbers.allBreak
+        ? 'Break week'
         : percent == null
         ? 'No tasks this week'
         : '$percent% tasks done';
@@ -160,6 +162,7 @@ String weeklyDayCardLabel(WeeklyDayStats day) {
   final date =
       '${DateFormat('EEE').format(day.date)} '
       '${DateFormat('MMM d').format(day.date)}';
+  if (day.isBreak) return '$date: Break, ${day.breakLabel}';
   if (day.total == 0) return '$date: No tasks';
   final mood = day.mood;
   final parts = <String>[
@@ -234,7 +237,9 @@ class WeeklyDayCard extends StatelessWidget {
       h += gap;
       h += text(DateFormat('MMM d').format(day.date), _smallStyle(context));
       h += gap + faceSize + gap;
-      if (day.total == 0) {
+      if (day.isBreak) {
+        h += text('Break', _smallStyle(context));
+      } else if (day.total == 0) {
         h += text('No tasks', _smallStyle(context));
       } else {
         h += text('${day.percent}%', _percentStyle(context));
@@ -328,7 +333,13 @@ class WeeklyDayCard extends StatelessWidget {
                   ),
                 ),
               gapBox,
-              if (day.total == 0)
+              if (day.isBreak)
+                Text(
+                  'Break',
+                  key: ValueKey('weekly-day-break-${day.date.day}'),
+                  style: small,
+                )
+              else if (day.total == 0)
                 Text('No tasks', style: small)
               else ...[
                 Text(

@@ -176,8 +176,11 @@ void main() {
         "'2026-10-01T00:00:00.000Z')",
       );
       expect(
-        await db.experimentDao.leaveOrHolidayDates('2026-10-05', '2026-10-11'),
-        {'2026-10-06', '2026-10-08'},
+        (await db.experimentDao.dayContextsBetween(
+          '2026-10-05',
+          '2026-10-11',
+        )).map((row) => row.date),
+        ['2026-10-06', '2026-10-07', '2026-10-08'],
       );
       final view = (await service().load(today: '2026-10-12')).views.single;
       expect(view.days[1].targetMin, 0);

@@ -28,7 +28,9 @@ void main() {
       weekend: weekend,
     );
     return buildExperimentChart(
-      days: buildExperimentDays(experiment, leave),
+      days: buildExperimentDays(experiment, {
+        for (final date in leave) date: 'Leave',
+      }),
       minutesByDay: minutes,
       today: today,
       running: running,
@@ -196,8 +198,8 @@ void main() {
       expect(data.grouping, ExperimentChartGrouping.days);
       expect(data.buckets[0].tapLine, 'Mon Oct 12: 45m of 1h target');
       expect(data.buckets[1].tapLine, 'Tue Oct 13: Leave');
-      expect(data.buckets[1].isLeaveOrHoliday, isTrue);
-      expect(data.buckets[0].isLeaveOrHoliday, isFalse);
+      expect(data.buckets[1].isBreak, isTrue);
+      expect(data.buckets[0].isBreak, isFalse);
     });
 
     test('future and today flags follow today', () {

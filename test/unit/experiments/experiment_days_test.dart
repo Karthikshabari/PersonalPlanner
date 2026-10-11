@@ -30,13 +30,14 @@ void main() {
 
     test('Leave and Holiday days have target 0 and keep their flag', () {
       final days = buildExperimentDays(testExperiment(), const {
-        '2026-10-06',
-        '2026-10-10',
+        '2026-10-06': 'Leave',
+        '2026-10-10': 'Holiday / Festival',
       });
       expect(days[1].targetMin, 0);
-      expect(days[1].isLeaveOrHoliday, isTrue);
+      expect(days[1].isBreak, isTrue);
       expect(days[5].targetMin, 0);
-      expect(days[0].isLeaveOrHoliday, isFalse);
+      expect(days[5].breakLabel, 'Holiday / Festival');
+      expect(days[0].isBreak, isFalse);
     });
 
     test('a window of one day', () {

@@ -327,7 +327,7 @@ void main() {
     await settle(tester);
 
     expect(badge, findsOneWidget);
-    expect(find.text('Office'), findsOneWidget);
+    expect(find.text('Office Day'), findsOneWidget);
 
     await runDb(
       tester,
@@ -339,7 +339,7 @@ void main() {
 
     expect(badge, findsOneWidget);
     expect(find.text('Travel'), findsOneWidget);
-    expect(find.text('Office'), findsNothing);
+    expect(find.text('Office Day'), findsNothing);
     await finish(tester, container);
   });
 

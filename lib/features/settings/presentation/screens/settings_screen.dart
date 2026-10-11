@@ -125,6 +125,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: AppSpacing.sm),
             Card(
+              child: ListTile(
+                key: const ValueKey('day-contexts-tile'),
+                leading: const Icon(Icons.event_note_outlined),
+                title: const Text('Day contexts'),
+                subtitle: const Text('Presets and break days'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _openSecondary(context, '/settings/day-contexts'),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
               key: const ValueKey('settings-review-reasons'),
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),

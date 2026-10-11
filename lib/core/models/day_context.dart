@@ -63,6 +63,9 @@ abstract class DayContext with _$DayContext {
 }
 
 extension DayContextX on DayContext {
-  String get displayLabel =>
-      kind == DayContextKind.custom ? customLabel! : kind.shortLabel;
+  /// The day's label: the custom text, or the kind's full name. Preset names
+  /// are matched against this label (see `BreakDayRule`).
+  String get label => kind == DayContextKind.custom ? customLabel! : kind.label;
+
+  String get displayLabel => label;
 }

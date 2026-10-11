@@ -257,21 +257,20 @@ class ExperimentDao extends DatabaseAccessor<AppDatabase>
     };
   }
 
-  /// The dates in [firstDate]..[lastDate] (inclusive, `yyyy-MM-dd`) that have
-  /// a non-deleted Leave or Holiday day context.
-  Future<Set<String>> leaveOrHolidayDates(
+  /// The non-deleted day contexts in [firstDate]..[lastDate] (inclusive,
+  /// `yyyy-MM-dd`). Which of them are break days is decided in Dart by
+  /// `BreakDayRule`.
+  Future<List<DayContextRow>> dayContextsBetween(
     String firstDate,
     String lastDate,
-  ) async {
-    final rows = await customSelect(
-      'SELECT date FROM day_contexts '
-      "WHERE deleted_at IS NULL AND kind IN ('leave', 'holiday') "
-      'AND date >= ? AND date <= ?',
-      variables: [Variable<String>(firstDate), Variable<String>(lastDate)],
-      readsFrom: {dayContexts},
-    ).get();
-    return {for (final row in rows) row.read<String>('date')};
-  }
+  ) =>
+      (select(dayContexts)..where(
+            (row) =>
+                row.deletedAt.isNull() &
+                row.date.isBiggerOrEqualValue(firstDate) &
+                row.date.isSmallerOrEqualValue(lastDate),
+          ))
+          .get();
 
   /// Same text form as `TaskDao._iso`, which the stored instants use.
   String _iso(DateTime instant) => instant.toUtc().toIso8601String();

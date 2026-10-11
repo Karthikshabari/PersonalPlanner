@@ -23,7 +23,7 @@ void main() {
     final e = experiment ?? testExperiment();
     return buildExperimentView(
       experiment: e,
-      leaveOrHolidayDates: leave,
+      breakDates: {for (final date in leave) date: 'Leave'},
       blocks: blocks,
       today: today,
       formatDuration: formatMinutes,
@@ -41,15 +41,16 @@ void main() {
     final p = progressFor(today: '2026-10-07', blocks: workedExample);
     expect(p.totalMin, 420);
     expect(p.expectedMin, 100);
-    expect(p.doneMin, 120);
-    expect(p.paceMin, 20);
-    expect(p.paceLabel, '20m ahead');
+    // Tuesday is a break (Leave): its 30m done does not count.
+    expect(p.doneMin, 90);
+    expect(p.paceMin, -10);
+    expect(p.paceLabel, '10m behind');
     expect(p.daysAtTargetLabel, '0 of 1');
     expect(p.hasTodayLine, isTrue);
     expect(p.todayLine, 'Today: 40m done · 30m still planned · target 1h');
     expect(p.shortfallHint, isNull);
-    expect(p.headline, 'Done 2h of 1h 40m expected so far');
-    expect(p.fillFraction, closeTo(120 / 420, 1e-9));
+    expect(p.headline, 'Done 1h 30m of 1h 40m expected so far');
+    expect(p.fillFraction, closeTo(90 / 420, 1e-9));
     expect(p.tickFraction, closeTo(100 / 420, 1e-9));
     expect(p.statusChip, 'Running · Day 3 of 7');
     expect(p.showExtraLegendLine, isTrue);
@@ -97,14 +98,14 @@ void main() {
   });
 
   group('expected so far', () {
-    test('Leave and Holiday days expect nothing but done still counts', () {
+    test('break days expect nothing and their done does not count', () {
       final p = progressFor(
         today: '2026-10-08',
         blocks: [testBlock('2026-10-06', actual: 25)],
       );
-      // Mon 60 + Tue 0 (Leave) + Wed 60.
+      // Mon 60 + Tue 0 (Leave, a break) + Wed 60.
       expect(p.expectedMin, 120);
-      expect(p.doneMin, 25);
+      expect(p.doneMin, 0);
       expect(p.daysAtTargetLabel, '0 of 2');
     });
 
@@ -236,14 +237,14 @@ void main() {
       expect(p.shortfallHint, "Your plan is 30m short of today's target.");
     });
 
-    test('a Leave or Holiday day says there is no target', () {
+    test('a break day names its label, has no target and counts nothing', () {
       final p = progressFor(
         today: '2026-10-06',
         blocks: [testBlock('2026-10-06', actual: 15)],
       );
       expect(
         p.todayLine,
-        'Today: 15m done · 0m still planned · Leave, no target',
+        'Today: 0m done · 0m still planned · Leave, no target',
       );
       expect(p.shortfallHint, isNull);
     });

@@ -10,6 +10,7 @@ import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planned_clock_time.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../day_context/data/day_context_repository.dart';
+import '../../day_context/domain/break_day.dart';
 import '../../timeline/data/task_repository.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
 import 'analytics_models.dart';
@@ -27,6 +28,7 @@ class InsightsService {
     required DateTime weekStart,
     DateTime? now,
     double followThroughTarget = defaultFollowThroughTarget,
+    BreakDayRule? breakDays,
     // Retained for source compatibility with older callers. The consistency
     // history is now always the rolling year on every form factor.
     int desktopMonthCount = 12,
@@ -222,6 +224,7 @@ class InsightsService {
       selectedWeekStart: selectedWeek,
       consistencyStart: consistencyStart,
       followThroughTarget: followThroughTarget,
+      breakDays: breakDays,
     );
   }
 }
@@ -234,6 +237,7 @@ abstract final class InsightsCalculator {
     required DateTime selectedWeekStart,
     required DateTime consistencyStart,
     double followThroughTarget = defaultFollowThroughTarget,
+    BreakDayRule? breakDays,
   }) {
     final today = startOfDay(now);
     final consistencyEnd = addDays(today, 1);
@@ -252,9 +256,10 @@ abstract final class InsightsCalculator {
       final key = isoDateString(slice.date);
       actualByDate[key] = (actualByDate[key] ?? 0) + slice.minutes;
     }
-    final contexts = {
-      for (final context in source.dayContexts) context.date: context.kind,
-    };
+    // Break days count in nothing: no streak step, no week total, no average.
+    final breakDates = (breakDays ?? BreakDayRule.defaults).breakDates(
+      source.dayContexts,
+    );
     final dates = <DateTime>[];
     for (
       var date = historyStart;
@@ -273,7 +278,7 @@ abstract final class InsightsCalculator {
           plannedMinutes: plannedByDay.planned[index],
           completedPlannedMinutes: plannedByDay.completed[index],
           actualMinutes: actualByDate[isoDateString(date)] ?? 0,
-          context: contexts[isoDateString(date)],
+          breakLabel: breakDates[isoDateString(date)],
           isFuture: date.isAfter(today),
           isToday: isSameDay(date, today),
         ),
@@ -284,14 +289,19 @@ abstract final class InsightsCalculator {
         .toList(growable: false);
     final streaks = calculateStreaks(allDays, target: followThroughTarget);
     final weekRange = InsightDateRange(weekStart, weekEnd);
-    final weekPlanned = _plannedTotals(source.plannedTasks, weekRange);
-    final weekActual = _actualTotal(source.actualSlices, weekRange);
-    final rawCategoryMinutes = _categoryMinutes(source, weekRange);
+    final weekPlanned = _plannedTotals(
+      source.plannedTasks,
+      weekRange,
+      breakDates,
+    );
+    final weekActual = _actualTotal(source.actualSlices, weekRange, breakDates);
+    final rawCategoryMinutes = _categoryMinutes(source, weekRange, breakDates);
     final categories = rankCategories(rawCategoryMinutes, source.categories);
     final notable = _notable(
       source: source,
       now: now,
       selectedWeekStart: weekStart,
+      breakDates: breakDates,
     );
     return InsightsSnapshot(
       generatedFor: now,
@@ -309,8 +319,8 @@ abstract final class InsightsCalculator {
     );
   }
 
-  /// Success adds one, Missed resets to zero, Started and Empty keep the
-  /// streak as it is. Today counts only once it is a Success ([classifyDay]).
+  /// Success adds one, Missed resets to zero, Started, Empty and Break keep
+  /// the streak as it is. Today counts only once it is a Success ([classifyDay]).
   static StreakSummary calculateStreaks(
     Iterable<ConsistencyDay> days, {
     double target = defaultFollowThroughTarget,
@@ -326,7 +336,7 @@ abstract final class InsightsCalculator {
           best = math.max(best, current);
         case DayResult.missed:
           current = 0;
-        case DayResult.started || DayResult.empty || null:
+        case DayResult.started || DayResult.empty || DayResult.breakDay || null:
           break;
       }
     }
@@ -406,10 +416,7 @@ abstract final class InsightsCalculator {
       for (final date in dates) InsightDateRange(date, addDays(date, 1)),
     ];
     final plannedSpans = List.generate(dates.length, (_) => <PlannedSpan>[]);
-    final completedSpans = List.generate(
-      dates.length,
-      (_) => <PlannedSpan>[],
-    );
+    final completedSpans = List.generate(dates.length, (_) => <PlannedSpan>[]);
     for (final task in tasks) {
       final start = task.startTime;
       final end = task.endTime;
@@ -453,9 +460,48 @@ abstract final class InsightsCalculator {
     return (planned: planned, completed: completed);
   }
 
-  /// Clock time of [range]: the union of the planned blocks, and the union of
-  /// the completed ones (so completed never exceeds planned).
+  /// Clock time of [range] without its break days: per day, the union of the
+  /// planned blocks and the union of the completed ones (so completed never
+  /// exceeds planned). The day unions add up to the range's union.
   static ({int planned, int completed}) _plannedTotals(
+    Iterable<Task> tasks,
+    InsightDateRange range,
+    Map<String, String> breakDates,
+  ) {
+    final days = [
+      for (
+        var day = range.start;
+        day.isBefore(range.endExclusive);
+        day = addDays(day, 1)
+      )
+        day,
+    ];
+    if (!days.any((day) => breakDates.containsKey(isoDateString(day)))) {
+      return _clockTotals(tasks, range);
+    }
+    final overlapping = [
+      for (final task in tasks)
+        if (task.startTime != null &&
+            task.endTime != null &&
+            task.startTime!.isBefore(range.endExclusive) &&
+            task.endTime!.isAfter(range.start))
+          task,
+    ];
+    var planned = 0;
+    var completed = 0;
+    for (final day in days) {
+      if (breakDates.containsKey(isoDateString(day))) continue;
+      final totals = _clockTotals(
+        overlapping,
+        InsightDateRange(day, addDays(day, 1)),
+      );
+      planned += totals.planned;
+      completed += totals.completed;
+    }
+    return (planned: planned, completed: completed);
+  }
+
+  static ({int planned, int completed}) _clockTotals(
     Iterable<Task> tasks,
     InsightDateRange range,
   ) {
@@ -486,20 +532,30 @@ abstract final class InsightsCalculator {
   static int _actualTotal(
     Iterable<ActualTimeSlice> slices,
     InsightDateRange range,
+    Map<String, String> breakDates,
   ) => slices
-      .where((slice) => range.contains(slice.date))
+      .where(
+        (slice) =>
+            range.contains(slice.date) &&
+            !breakDates.containsKey(isoDateString(slice.date)),
+      )
       .fold(0, (sum, slice) => sum + math.max(0, slice.minutes));
 
   static Map<String?, int> _categoryMinutes(
     InsightsSourceData source,
     InsightDateRange range,
+    Map<String, String> breakDates,
   ) {
     final taskCategory = {
       for (final task in source.actualTasks) task.id: task.categoryId,
     };
     final result = <String?, int>{};
     for (final slice in source.actualSlices) {
-      if (slice.minutes <= 0 || !range.contains(slice.date)) continue;
+      if (slice.minutes <= 0 ||
+          !range.contains(slice.date) ||
+          breakDates.containsKey(isoDateString(slice.date))) {
+        continue;
+      }
       final categoryId = taskCategory[slice.taskId];
       result[categoryId] = (result[categoryId] ?? 0) + slice.minutes;
     }
@@ -510,6 +566,7 @@ abstract final class InsightsCalculator {
     required InsightsSourceData source,
     required DateTime now,
     required DateTime selectedWeekStart,
+    required Map<String, String> breakDates,
   }) {
     final today = startOfDay(now);
     final currentWeek = startOfWeek(today);
@@ -520,13 +577,21 @@ abstract final class InsightsCalculator {
     InsightDateRange window(DateTime start) =>
         InsightDateRange(start, addDays(start, comparableDayCount));
     final selectedRange = window(selectedWeekStart);
-    final selectedCategories = _categoryMinutes(source, selectedRange);
+    final selectedCategories = _categoryMinutes(
+      source,
+      selectedRange,
+      breakDates,
+    );
 
     final comparableRanges = <InsightDateRange>[];
     for (var offset = 1; offset <= 4; offset++) {
       final candidate = window(addDays(selectedWeekStart, -7 * offset));
-      final planned = _plannedTotals(source.plannedTasks, candidate).planned;
-      final actual = _actualTotal(source.actualSlices, candidate);
+      final planned = _plannedTotals(
+        source.plannedTasks,
+        candidate,
+        breakDates,
+      ).planned;
+      final actual = _actualTotal(source.actualSlices, candidate, breakDates);
       if (planned > 0 || actual > 0) comparableRanges.add(candidate);
     }
 
@@ -538,12 +603,13 @@ abstract final class InsightsCalculator {
       };
       final ids = <String?>{...selectedCategories.keys};
       for (final range in comparableRanges) {
-        ids.addAll(_categoryMinutes(source, range).keys);
+        ids.addAll(_categoryMinutes(source, range, breakDates).keys);
       }
       for (final id in ids) {
         final baselineTotal = comparableRanges.fold<int>(
           0,
-          (sum, range) => sum + (_categoryMinutes(source, range)[id] ?? 0),
+          (sum, range) =>
+              sum + (_categoryMinutes(source, range, breakDates)[id] ?? 0),
         );
         final baseline = baselineTotal / comparableRanges.length;
         if (baseline <= 0) continue;
@@ -571,17 +637,21 @@ abstract final class InsightsCalculator {
     final currentPlanned = _plannedTotals(
       source.plannedTasks,
       selectedRange,
+      breakDates,
     ).planned;
     final previousPlanned = _plannedTotals(
       source.plannedTasks,
       previousRange,
+      breakDates,
     ).planned;
     if (currentPlanned > 0 && previousPlanned > 0) {
       final currentGap =
-          (currentPlanned - _actualTotal(source.actualSlices, selectedRange))
+          (currentPlanned -
+                  _actualTotal(source.actualSlices, selectedRange, breakDates))
               .abs();
       final previousGap =
-          (previousPlanned - _actualTotal(source.actualSlices, previousRange))
+          (previousPlanned -
+                  _actualTotal(source.actualSlices, previousRange, breakDates))
               .abs();
       final change = currentGap - previousGap;
       if (previousGap > 0 &&

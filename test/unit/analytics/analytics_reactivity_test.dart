@@ -52,7 +52,7 @@ void main() {
 
         final holiday = await contexts.save(date, DayContextKind.holiday, null);
         await _waitForCount(values, 2);
-        expect(_day(values.last, date).context, DayContextKind.holiday);
+        expect(_day(values.last, date).breakLabel, 'Holiday / Festival');
         expect(_day(values.last, date).isNeutral, isTrue);
 
         await contexts.save(
@@ -62,12 +62,12 @@ void main() {
           expectedRevision: holiday.revision,
         );
         await _waitForCount(values, 3);
-        expect(_day(values.last, date).context, DayContextKind.leave);
+        expect(_day(values.last, date).breakLabel, 'Leave');
         expect(_day(values.last, date).isNeutral, isTrue);
 
         await contexts.remove(holiday.id, expectedRevision: 2);
         await _waitForCount(values, 4);
-        expect(_day(values.last, date).context, isNull);
+        expect(_day(values.last, date).breakLabel, isNull);
         expect(_day(values.last, date).isNeutral, isFalse);
 
         final remoteNow = now.add(const Duration(minutes: 1));
@@ -96,7 +96,7 @@ void main() {
         // Drift watchers receive the same notification as local writes.
         db.markTablesUpdated([db.dayContexts]);
         await _waitForCount(values, 5);
-        expect(_day(values.last, date).context, DayContextKind.holiday);
+        expect(_day(values.last, date).breakLabel, 'Holiday / Festival');
         expect(_day(values.last, date).isNeutral, isTrue);
         expect(await db.select(db.tasks).get(), hasLength(1));
       } finally {

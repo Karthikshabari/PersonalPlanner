@@ -6,6 +6,8 @@ import '../../../core/models/day_context.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_theme_tokens.dart';
 import '../../../core/utils/date_utils.dart';
+import '../domain/day_context_presets.dart';
+import '../providers/day_context_presets_provider.dart';
 import '../providers/day_context_providers.dart';
 
 Future<bool?> showDayContextEditor(
@@ -30,94 +32,89 @@ class DayContextEditor extends ConsumerStatefulWidget {
 }
 
 class _DayContextEditorState extends ConsumerState<DayContextEditor> {
-  final _formKey = GlobalKey<FormState>();
-  late DayContextKind _kind;
-  late final TextEditingController _customLabelController;
+  /// The chosen label: a preset name, or the day's old label.
+  String? _selected;
   bool _busy = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _kind = widget.initial?.kind ?? DayContextKind.office;
-    _customLabelController = TextEditingController(
-      text: widget.initial?.customLabel ?? '',
-    );
-  }
-
-  @override
-  void dispose() {
-    _customLabelController.dispose();
-    super.dispose();
+    _selected = widget.initial?.label;
   }
 
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final date = parseIsoDate(widget.date);
+    final presets =
+        ref.watch(dayContextPresetsProvider).value ?? defaultDayContextPresets;
+    final initial = widget.initial;
+    // A label no preset has any more (an old custom label, or a preset since
+    // renamed or deleted) stays as an extra row, selected, so Save keeps it.
+    final oldLabel =
+        initial != null &&
+            DayContextPresets.indexOfLabel(presets, initial.label) < 0
+        ? initial.label
+        : null;
+    final selectedKey = _selected == null
+        ? null
+        : DayContextPresets.normalize(_selected!);
+    Widget option(String label, {required bool isBreak, String? note}) {
+      final selected = DayContextPresets.normalize(label) == selectedKey;
+      return ListTile(
+        key: ValueKey('day-context-option-$label'),
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        selected: selected,
+        enabled: !_busy,
+        leading: Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        ),
+        title: Text(note == null ? label : '$label $note'),
+        trailing: isBreak
+            ? Text(
+                'Break',
+                style: TextStyle(color: tokens.textMuted, fontSize: 12),
+              )
+            : null,
+        onTap: () => setState(() {
+          _selected = label;
+          _error = null;
+        }),
+      );
+    }
+
     return PopScope(
       canPop: !_busy,
       child: AlertDialog(
         title: Text('Day context · ${DateFormat('EEE, MMM d').format(date)}'),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DropdownButtonFormField<DayContextKind>(
-                    key: const ValueKey('day-context-kind'),
-                    initialValue: _kind,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Context'),
-                    items: [
-                      for (final kind in DayContextKind.values)
-                        DropdownMenuItem(value: kind, child: Text(kind.label)),
-                    ],
-                    onChanged: _busy
-                        ? null
-                        : (kind) {
-                            if (kind == null) return;
-                            setState(() {
-                              _kind = kind;
-                              _error = null;
-                            });
-                          },
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final preset in presets)
+                  option(preset.name, isBreak: preset.isBreak),
+                if (oldLabel != null)
+                  option(
+                    oldLabel,
+                    isBreak: false,
+                    note: initial!.kind == DayContextKind.custom
+                        ? '(old custom)'
+                        : '(old)',
                   ),
-                  if (_kind == DayContextKind.custom) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    TextFormField(
-                      key: const ValueKey('day-context-custom-label'),
-                      controller: _customLabelController,
-                      maxLength: 80,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        labelText: 'Custom label',
-                        hintText: 'Family visit',
-                      ),
-                      validator: (value) {
-                        final trimmed = value?.trim() ?? '';
-                        if (trimmed.isEmpty) return 'Enter a label.';
-                        if (trimmed.length > 80) {
-                          return 'Use 80 characters or fewer.';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                  if (_error != null) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      _error!,
-                      key: const ValueKey('day-context-error'),
-                      style: TextStyle(color: tokens.error),
-                    ),
-                  ],
+                if (_error != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    _error!,
+                    key: const ValueKey('day-context-error'),
+                    style: TextStyle(color: tokens.error),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ),
@@ -126,7 +123,7 @@ class _DayContextEditorState extends ConsumerState<DayContextEditor> {
             onPressed: _busy ? null : () => Navigator.of(context).pop(false),
             child: const Text('Cancel'),
           ),
-          if (widget.initial != null && widget.initial!.deletedAt == null)
+          if (initial != null && initial.deletedAt == null)
             TextButton(
               key: const ValueKey('day-context-remove'),
               onPressed: _busy ? null : _remove,
@@ -134,7 +131,7 @@ class _DayContextEditorState extends ConsumerState<DayContextEditor> {
             ),
           FilledButton(
             key: const ValueKey('day-context-save'),
-            onPressed: _busy ? null : _save,
+            onPressed: _busy || _selected == null ? null : _save,
             child: _busy
                 ? const SizedBox.square(
                     dimension: 18,
@@ -148,7 +145,17 @@ class _DayContextEditorState extends ConsumerState<DayContextEditor> {
   }
 
   Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final label = _selected;
+    if (label == null) return;
+    final initial = widget.initial;
+    // The day's own label, unchanged: nothing to write.
+    if (initial != null &&
+        initial.deletedAt == null &&
+        initial.label == label) {
+      Navigator.of(context).pop(false);
+      return;
+    }
+    final kind = DayContextPresets.kindForName(label);
     setState(() {
       _busy = true;
       _error = null;
@@ -158,9 +165,9 @@ class _DayContextEditorState extends ConsumerState<DayContextEditor> {
           .read(dayContextRepositoryProvider)
           .save(
             widget.date,
-            _kind,
-            _kind == DayContextKind.custom ? _customLabelController.text : null,
-            expectedRevision: widget.initial?.revision,
+            kind,
+            kind == DayContextKind.custom ? label : null,
+            expectedRevision: initial?.revision,
           );
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {

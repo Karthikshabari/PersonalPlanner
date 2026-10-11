@@ -119,11 +119,13 @@ int keptDayTargetMin(KeptTargets targets, String date) {
 }
 
 /// The dates of the week from [weekStart] that count for [experiment]: not
-/// before its start date, and (when [before] is given) before that date.
+/// before its start date, not a break day, and (when [before] is given)
+/// before that date.
 List<String> _countedDates(
   Experiment experiment,
   String weekStart, {
   String? before,
+  Set<String> breakDates = const {},
 }) {
   final first = parseIsoDate(weekStart);
   final dates = <String>[];
@@ -131,6 +133,7 @@ List<String> _countedDates(
     final date = isoDateString(addDays(first, i));
     if (date.compareTo(experiment.startDate) < 0) continue;
     if (before != null && date.compareTo(before) >= 0) continue;
+    if (breakDates.contains(date)) continue;
     dates.add(date);
   }
   return dates;
@@ -140,10 +143,14 @@ int _sumTargets(KeptTargets targets, List<String> dates) =>
     dates.fold(0, (sum, date) => sum + keptDayTargetMin(targets, date));
 
 /// 5 × weekday + 2 × weekend for the week from [weekStart], counting only the
-/// days on or after the experiment's start date. Day contexts are ignored.
-int keptWeekTargetMin(Experiment experiment, String weekStart) => _sumTargets(
+/// days on or after the experiment's start date that are not break days.
+int keptWeekTargetMin(
+  Experiment experiment,
+  String weekStart, {
+  Set<String> breakDates = const {},
+}) => _sumTargets(
   keptTargetsForWeek(experiment, weekStart),
-  _countedDates(experiment, weekStart),
+  _countedDates(experiment, weekStart, breakDates: breakDates),
 );
 
 /// The same sum over the days of the week that are already finished: from
@@ -152,9 +159,10 @@ int keptExpectedByTodayMin(
   Experiment experiment, {
   required String weekStart,
   required String today,
+  Set<String> breakDates = const {},
 }) => _sumTargets(
   keptTargetsForWeek(experiment, weekStart),
-  _countedDates(experiment, weekStart, before: today),
+  _countedDates(experiment, weekStart, before: today, breakDates: breakDates),
 );
 
 /// The Mondays of the 9 weeks ending with the one that contains [today],
@@ -224,7 +232,8 @@ KeptPlanState keptPlanState({
 /// Builds the view of one kept experiment from the three aggregates.
 ///
 /// [doneByWeek] is keyed by the index into [keptWeekStarts]; [doneByDay] by
-/// the day of the current week (0 = week start). Missing keys mean 0.
+/// the day of the current week (0 = week start). Missing keys mean 0. Both
+/// already leave out break days; [breakDates] removes them from the targets.
 KeptExperimentView buildKeptExperimentView({
   required Experiment experiment,
   required String today,
@@ -232,12 +241,13 @@ KeptExperimentView buildKeptExperimentView({
   required Map<int, int> doneByDay,
   required int plannedMin,
   required DurationFormatter formatDuration,
+  Set<String> breakDates = const {},
 }) {
   final weekStarts = keptWeekStarts(today);
   final weekStart = weekStarts.last;
   final nextWeekStart = isoDateString(addDays(parseIsoDate(weekStart), 7));
   final targets = keptTargetsForWeek(experiment, weekStart);
-  final counted = _countedDates(experiment, weekStart);
+  final counted = _countedDates(experiment, weekStart, breakDates: breakDates);
   final weekendCount = counted.where(_isWeekend).length;
   final targetMin = _sumTargets(targets, counted);
   final doneMin = doneByWeek[keptWeekBarCount - 1] ?? 0;
@@ -245,6 +255,7 @@ KeptExperimentView buildKeptExperimentView({
     experiment,
     weekStart: weekStart,
     today: today,
+    breakDates: breakDates,
   );
   final paceMin = doneMin - expectedMin;
   final chip = keptStatusChip(
@@ -265,7 +276,11 @@ KeptExperimentView buildKeptExperimentView({
     if (barWeek.compareTo(startWeek) < 0) continue;
     final isCurrent = i == weekStarts.length - 1;
     final done = doneByWeek[i] ?? 0;
-    final target = keptWeekTargetMin(experiment, barWeek);
+    final target = keptWeekTargetMin(
+      experiment,
+      barWeek,
+      breakDates: breakDates,
+    );
     final label = keptWeekLabel(barWeek, current: isCurrent);
     final rounded = target <= 0 ? null : (done * 100 / target).round();
     bars.add(
@@ -299,7 +314,8 @@ KeptExperimentView buildKeptExperimentView({
     final isToday = date == today;
     final isFuture = date.compareTo(today) > 0;
     final beforeStart = date.compareTo(experiment.startDate) < 0;
-    final outside = isFuture || beforeStart;
+    final isBreak = breakDates.contains(date);
+    final outside = isFuture || beforeStart || isBreak;
     days.add(
       KeptDayColumn(
         date: date,
@@ -310,7 +326,11 @@ KeptExperimentView buildKeptExperimentView({
             : math.min(minutes, keptDayFullScaleMinutes) /
                   keptDayFullScaleMinutes,
         isToday: isToday,
-        valueLabel: outside ? '–' : (isToday ? 'today' : '${minutes}m'),
+        valueLabel: isBreak
+            ? 'break'
+            : outside
+            ? '–'
+            : (isToday ? 'today' : '${minutes}m'),
         dim: isToday || outside,
       ),
     );

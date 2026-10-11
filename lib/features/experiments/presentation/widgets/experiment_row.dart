@@ -544,8 +544,8 @@ class _TodayStrip extends StatelessWidget {
                     style: styles.body,
                   ),
                   Text(
-                    progress.todayIsLeaveOrHoliday
-                        ? 'Leave, no target'
+                    progress.todayIsBreak
+                        ? '${progress.todayBreakLabel}, no target'
                         : 'target ${formatMinutes(progress.todayTargetMin)}',
                     style: styles.body,
                   ),

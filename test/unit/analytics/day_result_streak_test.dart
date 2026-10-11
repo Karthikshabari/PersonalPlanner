@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/analytics/domain/analytics_models.dart';
 import 'package:personal_planner/features/analytics/domain/analytics_service.dart';
@@ -15,13 +14,13 @@ void main() {
     int planned = 100,
     bool today = false,
     bool future = false,
-    DayContextKind? context,
+    String? breakLabel,
   }) => ConsistencyDay(
     date: monday.add(Duration(days: offset)),
     plannedMinutes: planned,
     completedPlannedMinutes: completed,
     actualMinutes: 0,
-    context: context,
+    breakLabel: breakLabel,
     isFuture: future,
     isToday: today,
   );
@@ -38,8 +37,8 @@ void main() {
         DayResult.empty,
       );
       expect(
-        classifyDay(day(0, 0, context: DayContextKind.holiday), target: target),
-        DayResult.empty,
+        classifyDay(day(0, 0, breakLabel: 'Leave'), target: target),
+        DayResult.breakDay,
       );
     });
 

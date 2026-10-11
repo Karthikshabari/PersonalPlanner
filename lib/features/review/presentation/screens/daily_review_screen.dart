@@ -15,6 +15,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/global_search_action.dart';
+import '../../../day_context/providers/day_context_presets_provider.dart';
 import '../../../day_context/providers/day_context_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_draft.dart';
@@ -88,6 +89,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     final outcomesAsync = ref.watch(taskOutcomesProvider(date));
     final reviewAsync = ref.watch(dailyReviewProvider(date));
     final dayContext = ref.watch(dayContextForDateProvider(date)).value;
+    final breakLabel = ref.watch(breakLabelForDateProvider(date));
     final tokens = AppThemeTokens.of(context);
     final today = startOfDay(DateTime.now());
     final future = date.isAfter(today);
@@ -158,9 +160,14 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                                       reviewAsync,
                                       future,
                                     ),
+                                    if (breakLabel != null) ...[
+                                      const SizedBox(height: AppSpacing.sm),
+                                      _BreakDayBanner(label: breakLabel),
+                                    ],
                                     const SizedBox(height: AppSpacing.md),
                                     _buildBody(
                                       date: date,
+                                      breakDay: breakLabel != null,
                                       statsAsync: statsAsync,
                                       insightsAsync: insightsAsync,
                                       outcomesAsync: outcomesAsync,
@@ -237,6 +244,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     required bool future,
     required bool isToday,
     required bool wide,
+    required bool breakDay,
   }) {
     const gap = SizedBox(height: ReviewLayout.cardGap);
     final provider = reviewDraftProvider(date);
@@ -244,7 +252,12 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     // Each card with controls is its own traversal group, so in the two-column
     // layout Tab finishes one column's card before it starts the next.
     final outcomes = FocusTraversalGroup(
-      child: TaskOutcomesCard(date: date, future: future, rows: outcomesAsync),
+      child: TaskOutcomesCard(
+        date: date,
+        future: future,
+        rows: outcomesAsync,
+        breakDay: breakDay,
+      ),
     );
     // Each card listens only to the draft fields it shows (`select`).
     final mood = FocusTraversalGroup(
@@ -441,6 +454,42 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
         if (mounted) openReviewPath(context, '/review/overview');
       },
       liftBy: 72,
+    );
+  }
+}
+
+/// "Break day: Leave": the day counts in no total and asks for no reasons.
+class _BreakDayBanner extends StatelessWidget {
+  final String label;
+
+  const _BreakDayBanner({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Container(
+      key: const ValueKey('review-break-day-banner'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: tokens.surfaceSubtle,
+        border: Border.all(color: tokens.outline),
+        borderRadius: BorderRadius.circular(tokens.radiusSmall),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.beach_access_outlined, size: 18, color: tokens.textMuted),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Break day: $label',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

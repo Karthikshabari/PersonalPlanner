@@ -5,6 +5,7 @@ import '../../../core/models/day_context.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../day_context/data/day_context_repository.dart';
+import '../../day_context/domain/break_day.dart';
 import '../../timeline/data/task_repository.dart';
 import '../data/review_repository.dart';
 import 'review_plan_change.dart';
@@ -19,7 +20,11 @@ class WeeklyReviewService {
 
   final AppDatabase _db;
 
-  Future<List<WeeklyDayInput>> loadWeek(DateTime weekStart) async {
+  Future<List<WeeklyDayInput>> loadWeek(
+    DateTime weekStart, {
+    BreakDayRule? breakDays,
+  }) async {
+    final rule = breakDays ?? BreakDayRule.defaults;
     final start = startOfWeek(weekStart);
     final end = addDays(start, 7);
     final startIso = isoDateString(start);
@@ -65,6 +70,7 @@ class WeeklyReviewService {
             reviewed: review != null,
             mood: review?.mood,
             contextLabel: contextByDate[key]?.displayLabel,
+            breakLabel: rule.breakLabel(contextByDate[key]),
             tasks: [
               for (final task in dayTasks)
                 () {

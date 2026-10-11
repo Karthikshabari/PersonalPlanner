@@ -7,16 +7,20 @@ class ExperimentDay {
   const ExperimentDay({
     required this.date,
     required this.isWeekend,
-    required this.isLeaveOrHoliday,
+    this.breakLabel,
     required this.targetMin,
   });
 
   final String date;
   final bool isWeekend;
-  final bool isLeaveOrHoliday;
+
+  /// The day context label when this is a break day (`BreakDayRule`).
+  final String? breakLabel;
+
+  bool get isBreak => breakLabel != null;
 
   /// Minutes expected on this day: the weekday or weekend target, 0 on a
-  /// Leave or Holiday day.
+  /// break day.
   final int targetMin;
 }
 
@@ -52,9 +56,10 @@ int calendarDaysBetween(String from, String to) {
 }
 
 /// The days from the start date to the end date, both inclusive.
+/// [breakDates] maps each break date to its label.
 List<ExperimentDay> buildExperimentDays(
   Experiment experiment,
-  Set<String> leaveOrHolidayDates,
+  Map<String, String> breakDates,
 ) {
   final start = parseIsoDate(experiment.startDate);
   final count =
@@ -65,13 +70,13 @@ List<ExperimentDay> buildExperimentDays(
     final iso = isoDateString(date);
     final weekend =
         date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
-    final leave = leaveOrHolidayDates.contains(iso);
+    final breakLabel = breakDates[iso];
     days.add(
       ExperimentDay(
         date: iso,
         isWeekend: weekend,
-        isLeaveOrHoliday: leave,
-        targetMin: leave
+        breakLabel: breakLabel,
+        targetMin: breakLabel != null
             ? 0
             : (weekend
                   ? experiment.weekendTargetMin

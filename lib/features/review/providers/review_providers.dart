@@ -8,6 +8,7 @@ import '../../../core/providers/brief_keep_alive.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/review_repository.dart';
 import '../domain/daily_stats_service.dart';
 import '../domain/review_insights.dart';
@@ -119,11 +120,16 @@ final reviewOverviewServiceProvider = Provider<ReviewOverviewService>((ref) {
 final reviewOverviewWindowProvider = StreamProvider.autoDispose
     .family<List<ReviewOverviewDay>, int>((ref, dayCount) {
       keepAliveBriefly(ref);
+      ref.watch(breakDayRuleProvider);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
-        () => ref
+        () async => ref
             .read(reviewOverviewServiceProvider)
-            .window(today: DateTime.now(), dayCount: dayCount),
+            .window(
+              today: DateTime.now(),
+              dayCount: dayCount,
+              breakDays: await readBreakDayRule(ref),
+            ),
         isSame: sameOverviewDays,
       );
     });
@@ -138,19 +144,25 @@ final weeklyReviewHistoryServiceProvider = Provider<WeeklyReviewHistoryService>(
 /// and completion. A one-off read (no stream); the Weekly screen invalidates
 /// it after every save (WD13).
 final weeklyReviewHistoryProvider = FutureProvider.autoDispose
-    .family<List<WeeklyHistoryWeek>, DateTime>((ref, weekStart) {
+    .family<List<WeeklyHistoryWeek>, DateTime>((ref, weekStart) async {
+      ref.watch(breakDayRuleProvider);
       return ref
           .watch(weeklyReviewHistoryServiceProvider)
-          .load(startOfWeek(weekStart));
+          .load(startOfWeek(weekStart), breakDays: await readBreakDayRule(ref));
     });
 
 /// Overview › Weekly: the last [weekCount] weeks ending with this week,
 /// newest first. A one-off read, invalidated after every weekly save.
 final reviewOverviewWeekWindowProvider = FutureProvider.autoDispose
-    .family<List<WeeklyHistoryWeek>, int>((ref, weekCount) {
+    .family<List<WeeklyHistoryWeek>, int>((ref, weekCount) async {
+      ref.watch(breakDayRuleProvider);
       return ref
           .watch(weeklyReviewHistoryServiceProvider)
-          .window(today: DateTime.now(), weekCount: weekCount);
+          .window(
+            today: DateTime.now(),
+            weekCount: weekCount,
+            breakDays: await readBreakDayRule(ref),
+          );
     });
 
 final weeklyReviewServiceProvider = Provider<WeeklyReviewService>((ref) {
@@ -164,9 +176,12 @@ final weeklyDaysProvider = StreamProvider.autoDispose
     .family<List<WeeklyDayInput>, DateTime>((ref, weekStart) {
       keepAliveBriefly(ref);
       final normalized = startOfWeek(weekStart);
+      ref.watch(breakDayRuleProvider);
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
-        () => ref.read(weeklyReviewServiceProvider).loadWeek(normalized),
+        () async => ref
+            .read(weeklyReviewServiceProvider)
+            .loadWeek(normalized, breakDays: await readBreakDayRule(ref)),
         isSame: sameWeeklyDays,
       );
     });

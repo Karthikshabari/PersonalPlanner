@@ -291,7 +291,9 @@ class ConsistencyGrid extends StatelessWidget {
     final intensity = switch (result) {
       DayResult.success => effectiveDay.intensity,
       DayResult.started => ConsistencyIntensity.low,
-      DayResult.missed || DayResult.empty => ConsistencyIntensity.neutral,
+      DayResult.missed ||
+      DayResult.empty ||
+      DayResult.breakDay => ConsistencyIntensity.neutral,
       null =>
         effectiveDay.completedPlannedMinutes > 0
             ? ConsistencyIntensity.low
@@ -337,6 +339,13 @@ class ConsistencyGrid extends StatelessWidget {
                     ? Border.all(color: tokens.outline)
                     : null,
               ),
+              // A break day is hatched so it reads apart from an empty day.
+              child: effectiveDay.isBreak
+                  ? CustomPaint(
+                      key: ValueKey('consistency-break-${isoDateString(date)}'),
+                      painter: _BreakHatchPainter(tokens.outline),
+                    )
+                  : null,
             ),
           ),
         ),
@@ -345,13 +354,14 @@ class ConsistencyGrid extends StatelessWidget {
   }
 
   String _dayTooltip(ConsistencyDay day, DayResult? result) {
-    final context = day.excludedByContext
-        ? ' · ${day.context!.shortLabel}'
-        : '';
+    if (day.isBreak) {
+      return '${DateFormat('MMM d, yyyy').format(day.date)} · '
+          'Break · ${day.breakLabel}';
+    }
     final follow = day.followThroughPercent == null
         ? 'Neutral'
         : '${_resultLabel(day, result)} · ${day.followThroughPercent}% time done';
-    return '${DateFormat('MMM d, yyyy').format(day.date)}$context · $follow';
+    return '${DateFormat('MMM d, yyyy').format(day.date)} · $follow';
   }
 
   static String _resultLabel(ConsistencyDay day, DayResult? result) =>
@@ -360,6 +370,7 @@ class ConsistencyGrid extends StatelessWidget {
         DayResult.started => 'Started',
         DayResult.missed => 'Missed',
         DayResult.empty => 'Neutral',
+        DayResult.breakDay => 'Break',
         null => day.isToday ? 'Today so far' : 'Neutral',
       };
 
@@ -367,51 +378,76 @@ class ConsistencyGrid extends StatelessWidget {
     BuildContext context,
     ConsistencyDay day,
     DayResult? result,
-  ) =>
-      showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(DateFormat('EEEE, MMM d, yyyy').format(day.date)),
-          content: SizedBox(
-            width: 260,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (day.excludedByContext) ...[
-                  _DetailRow(
-                    label: 'Day context',
-                    value: day.context!.shortLabel,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-                _DetailRow(
-                  label: 'Planned',
-                  value: formatMinutes(day.plannedMinutes),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _DetailRow(
-                  label: 'Actual',
-                  value: formatMinutes(day.actualMinutes),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                _DetailRow(
-                  label: 'Time done',
-                  value: day.followThroughPercent == null
-                      ? 'Neutral'
-                      : '${day.followThroughPercent}% · '
-                            '${_resultLabel(day, result)}',
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
+  ) => showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(DateFormat('EEEE, MMM d, yyyy').format(day.date)),
+      content: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (day.isBreak)
+              _DetailRow(label: 'Break', value: day.breakLabel!)
+            else ...[
+              _DetailRow(
+                label: 'Planned',
+                value: formatMinutes(day.plannedMinutes),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _DetailRow(
+                label: 'Actual',
+                value: formatMinutes(day.actualMinutes),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _DetailRow(
+                label: 'Time done',
+                value: day.followThroughPercent == null
+                    ? 'Neutral'
+                    : '${day.followThroughPercent}% · '
+                          '${_resultLabel(day, result)}',
+              ),
+            ],
           ],
         ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Diagonal lines over a neutral cell: a break day, counted in nothing.
+class _BreakHatchPainter extends CustomPainter {
+  const _BreakHatchPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final step = math.max(3.0, size.shortestSide / 3);
+    for (var x = -size.height; x < size.width; x += step) {
+      canvas.drawLine(
+        Offset(x, size.height),
+        Offset(x + size.height, 0),
+        paint,
       );
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BreakHatchPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class StreakSummaryView extends StatelessWidget {

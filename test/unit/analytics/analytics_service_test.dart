@@ -184,14 +184,14 @@ void main() {
       int offset,
       int completed, {
       int planned = 100,
-      DayContextKind? context,
+      String? breakLabel,
       bool future = false,
     }) => ConsistencyDay(
       date: monday.add(Duration(days: offset)),
       plannedMinutes: planned,
       completedPlannedMinutes: completed,
       actualMinutes: 0,
-      context: context,
+      breakLabel: breakLabel,
       isFuture: future,
     );
 
@@ -209,7 +209,7 @@ void main() {
     test('neutral days do not break and future days are ignored', () {
       final streaks = InsightsCalculator.calculateStreaks([
         day(0, 80),
-        day(1, 0, context: DayContextKind.holiday),
+        day(1, 0, breakLabel: 'Holiday / Festival'),
         day(2, 0, planned: 0),
         day(3, 90),
         day(4, 100, future: true),

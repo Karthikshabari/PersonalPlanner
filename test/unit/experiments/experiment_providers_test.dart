@@ -167,9 +167,12 @@ void main() {
       container.read(experimentDashboardProvider.future),
       throwsException,
     );
+    // One failed read of the break-day presets (which falls back to the
+    // defaults) and one failed dashboard load.
+    expect(interceptor.attempts, 2);
     // The default retry would try again after 200 ms.
     await Future<void>.delayed(const Duration(milliseconds: 700));
-    expect(interceptor.attempts, 1);
+    expect(interceptor.attempts, 2);
     expect(container.read(experimentDashboardProvider).hasError, isTrue);
     sub.close();
   });
