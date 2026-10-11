@@ -8,11 +8,11 @@ class SearchRepository {
 
   SearchRepository(this._db);
 
-  /// Converts user text into quoted FTS5 terms. Operators, quotes and
+  /// Converts user text into quoted FTS5 terms; the last term is a prefix match. Operators, quotes and
   /// punctuation are treated as literal separators, so malformed input can
   /// never become an FTS expression or SQL fragment.
   static String? normalizeQuery(String input) {
-    final tokens = input
+    final words = input
         .replaceAll(RegExp(r'[\u0000-\u001F]'), ' ')
         .split(RegExp(r'\s+'))
         .expand(
@@ -22,8 +22,11 @@ class SearchRepository {
         )
         .where((token) => token.trim().isNotEmpty)
         .map((token) => '"${token.replaceAll('"', '""')}"')
-        .join(' AND ');
-    return tokens.isEmpty ? null : tokens;
+        .toList();
+    if (words.isEmpty) return null;
+    // Type-ahead: the last word matches as a prefix, earlier words whole.
+    words[words.length - 1] = '${words.last}*';
+    return words.join(' AND ');
   }
 
   Future<List<SearchResult>> search(String input) async {

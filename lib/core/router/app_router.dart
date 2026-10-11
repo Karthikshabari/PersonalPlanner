@@ -1,4 +1,4 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/categories/presentation/screens/categories_screen.dart';
@@ -29,6 +29,25 @@ final appRouter = GoRouter(
   // confirmation intent data to the engine) replaces '/day'; that URI has no
   // path, go_router normalizes it to '/', and no '/' route exists.
   overridePlatformDefaultLocation: true,
+  errorBuilder: (context, state) {
+    debugPrint('Router error: ${state.error}');
+    return Scaffold(
+      appBar: AppBar(title: const Text('Page Not Found')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('We could not find that page.'),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => context.go('/day'),
+              child: const Text('Home'),
+            ),
+          ],
+        ),
+      ),
+    );
+  },
   routes: [
     ShellRoute(
       builder: (context, state, child) => AdaptiveShell(child: child),

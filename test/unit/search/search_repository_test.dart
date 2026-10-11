@@ -50,6 +50,38 @@ void main() {
   );
 
   test(
+    'normalizeQuery makes only the last word a prefix and stays literal',
+    () {
+      String? q(String s) => SearchRepository.normalizeQuery(s);
+      expect(q('hel'), '"hel"*');
+      expect(q('UAT-A'), '"UAT-A"*');
+      expect(q('uat a'), '"uat" AND "a"*');
+      expect(q('100%'), '"100%"*');
+      expect(q('"'), isNull);
+      expect(q('a_b'), '"a_b"*');
+      expect(q('+*'), '"+"*');
+      expect(q('foo AND NEAR'), '"foo" AND "AND" AND "NEAR"*');
+      expect(q('   '), isNull);
+      expect(q(''), isNull);
+      expect(q('தமிழ்'), '"தமிழ்"*');
+      expect(q('café'), '"café"*');
+    },
+  );
+
+  test(
+    'prefix and hyphenated queries match through FTS without errors',
+    () async {
+      await tasks.insertTask(task(title: 'Hello UAT-A2 café'));
+      for (final input in ['hel', 'UAT-A', 'uat a', 'CAFE', 'hello caf']) {
+        expect(await search.search(input), hasLength(1), reason: input);
+      }
+      for (final input in ['+*', 'a_b', '100%', '"']) {
+        await search.search(input);
+      }
+    },
+  );
+
+  test(
     'insert, edit, soft-delete, restore and hard-delete follow FTS lifecycle',
     () async {
       final saved = await tasks.insertTask(task(title: 'Original title'));
@@ -71,21 +103,24 @@ void main() {
     },
   );
 
-  test('Inbox search returns the raw-content preview, not the placeholder title', () async {
-    final capture = await TaskRepository(db).insertTask(
-      Task(
-        id: '',
-        title: 'Inbox capture',
-        description: '\n  First line\nSecond paragraph',
-        isInbox: true,
-        inboxContentVersion: 1,
-        createdAt: day,
-        updatedAt: day,
-      ),
-    );
-    final result = (await search.search('paragraph')).single;
-    expect(result.id, capture.id);
-    expect(result.title, 'First line');
-    expect(result.isInbox, isTrue);
-  });
+  test(
+    'Inbox search returns the raw-content preview, not the placeholder title',
+    () async {
+      final capture = await TaskRepository(db).insertTask(
+        Task(
+          id: '',
+          title: 'Inbox capture',
+          description: '\n  First line\nSecond paragraph',
+          isInbox: true,
+          inboxContentVersion: 1,
+          createdAt: day,
+          updatedAt: day,
+        ),
+      );
+      final result = (await search.search('paragraph')).single;
+      expect(result.id, capture.id);
+      expect(result.title, 'First line');
+      expect(result.isInbox, isTrue);
+    },
+  );
 }

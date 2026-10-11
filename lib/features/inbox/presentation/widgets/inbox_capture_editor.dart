@@ -38,6 +38,7 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
   late final TextEditingController _contentController;
   String? _dueDate;
   bool _busy = false;
+  DateTime? _lastSuccessAt;
   String? _error;
 
   @override
@@ -57,6 +58,13 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
     if (_busy) return;
     final content = _contentController.text;
     if (content.trim().isEmpty) {
+      // A repeat click/Enter right after a successful save finds the cleared
+      // field; ignore it instead of reporting a blank capture.
+      final last = _lastSuccessAt;
+      if (last != null &&
+          DateTime.now().difference(last) < const Duration(seconds: 1)) {
+        return;
+      }
       setState(() => _error = 'Capture content must not be blank');
       return;
     }
@@ -66,6 +74,7 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
     });
     try {
       await widget.onSubmit(content, _dueDate);
+      _lastSuccessAt = DateTime.now();
       if (!mounted) return;
       if (widget.clearOnSuccess) {
         _contentController.clear();
@@ -180,10 +189,9 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true):
-            _submit,
-        const SingleActivator(LogicalKeyboardKey.escape):
-            () => widget.onCancel?.call(),
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): _submit,
+        const SingleActivator(LogicalKeyboardKey.escape): () =>
+            widget.onCancel?.call(),
       },
       child: FocusTraversalGroup(
         child: widget.compact
