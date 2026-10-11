@@ -11,6 +11,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/database/app_database.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import '../../../core/utils/clock_format.dart';
 import 'planner_notification.dart';
 
 typedef PlannerNotificationResponseHandler = Future<void> Function(
@@ -406,7 +407,7 @@ class NotificationService
   }
 
   static String _formatClock(DateTime value) =>
-      DateFormat.jm().format(PlannerTimeZone.toPlannerLocal(value));
+      formatClock24(PlannerTimeZone.toPlannerLocal(value));
 
   static PlannerNotificationAction? _actionFrom(String? id) => switch (id) {
     timerPauseActionId => PlannerNotificationAction.pause,

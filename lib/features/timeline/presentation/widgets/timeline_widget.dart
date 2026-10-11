@@ -12,6 +12,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/clock_format.dart';
 import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/utils/uuid.dart';
@@ -779,10 +780,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     );
     if (!committed || !mounted) return;
     if (item.isOverdue) {
-      showAppToast(
-        context,
-        'Rescheduled to ${start.hour}:${start.minute.toString().padLeft(2, '0')}',
-      );
+      showAppToast(context, 'Rescheduled to ${formatClock24(start)}');
     } else {
       showAppToast(context, 'Scheduled');
     }

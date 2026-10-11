@@ -9,6 +9,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/utils/planner_time_zone.dart';
+import '../../../../core/widgets/time_picker_24h.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../timeline/presentation/providers/day_view_controller.dart';
 import '../../../timeline/presentation/providers/selected_date_provider.dart';
@@ -97,7 +98,7 @@ class InboxTaskTile extends ConsumerWidget {
       ),
     );
     if (date == null || !context.mounted) return;
-    final time = await showTimePicker(
+    final time = await showTimePicker24h(
       context: context,
       initialTime: item.task.startTime == null
           ? const TimeOfDay(hour: 9, minute: 0)

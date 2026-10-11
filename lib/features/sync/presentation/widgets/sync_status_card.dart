@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
+import '../../../../core/utils/clock_format.dart';
 import '../../domain/sync_models.dart';
 import 'sync_action_group.dart';
 
@@ -271,14 +272,14 @@ SyncStatusView syncStatusView(
   }
 }
 
-/// Stable clock form used by the Sync screen: "11:51 PM".
+/// Stable clock form used by the Sync screen: "23:51".
 ///
 /// This is deliberately not relative: the Sync screen must not re-render
 /// "just now"/"N minutes ago" as a clock ticks.
 String formatSyncClockTime(DateTime value) => _clockTime(value.toLocal());
 
 /// Human-friendly form of a sync instant: "Just now", "5 minutes ago",
-/// "Today at 9:47 PM", "Yesterday at 9:47 PM".
+/// "Today at 21:47", "Yesterday at 21:47".
 ///
 /// Retained for non-sync surfaces that genuinely want a relative phrase. The
 /// Sync panel itself uses [formatSyncClockTime] so its text is stable.
@@ -301,10 +302,6 @@ String formatSyncTimestamp(DateTime value, {DateTime? now}) {
       'at $clock';
 }
 
-String _clockTime(DateTime local) {
-  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-  final minute = _twoDigits(local.minute);
-  return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
-}
+String _clockTime(DateTime local) => formatClock24(local);
 
 String _twoDigits(int value) => value.toString().padLeft(2, '0');

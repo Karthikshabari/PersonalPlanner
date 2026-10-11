@@ -10,6 +10,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/models/task.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/clock_format.dart';
 import '../../../core/utils/duration_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../../core/utils/task_time_metrics.dart';
@@ -296,7 +297,7 @@ class ReviewInsightsService {
 
   String _targetLabel(DateTime target, DateTime sourceDay) {
     final targetLocal = PlannerTimeZone.toPlannerLocal(target);
-    final time = DateFormat('h:mm a').format(targetLocal);
+    final time = formatClock24(targetLocal);
     if (isSameDay(target, sourceDay)) return time;
     if (isSameDay(target, addDays(sourceDay, 1))) return 'Tomorrow · $time';
     return '${DateFormat('EEE, MMM d').format(targetLocal)} · $time';

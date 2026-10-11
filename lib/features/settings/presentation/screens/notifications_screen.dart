@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../core/widgets/time_picker_24h.dart';
 import '../../providers/notification_settings_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 
@@ -85,7 +86,7 @@ class NotificationsScreen extends ConsumerWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 onTap: () async {
-                  final picked = await showTimePicker(
+                  final picked = await showTimePicker24h(
                     context: context,
                     initialTime: TimeOfDay(
                       hour: minutes ~/ 60,

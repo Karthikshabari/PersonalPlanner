@@ -75,7 +75,7 @@ void main() {
     expect(
       insights.changes.map((change) => change.detail),
       containsAll(<String>[
-        'Moved → Tomorrow · 10:00 AM',
+        'Moved → Tomorrow · 10:00',
         '1h planned → 1h 30m tracked',
       ]),
     );

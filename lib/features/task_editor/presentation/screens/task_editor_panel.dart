@@ -142,6 +142,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   TaskStatus _status = TaskStatus.planned;
   bool _saving = false;
   String? _errorMessage;
+
+  /// Validation message for the Actual duration field, shown under it (DAY-008).
+  String? _actualError;
+  final GlobalKey _actualFieldKey = GlobalKey();
   Task? _activeTask;
   bool _synchronizingControllers = false;
   _TitleSaveIntent? _pendingTitleSaveIntent;
@@ -526,6 +530,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       recurrenceSignature: persisted.recurrenceSignature,
     );
     _errorMessage = null;
+    _actualError = null;
     _pendingTitleSaveIntent = null;
   }
 
@@ -627,15 +632,15 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       return;
     }
     if (actualText.isNotEmpty && actual == null) {
-      _showValidationError('Actual duration must be a whole number');
+      _showActualError('Actual duration must be a whole number');
       return;
     }
     if (actualWasEdited && actualText.isEmpty) {
-      _showValidationError('Enter total minutes, or 0');
+      _showActualError('Enter total minutes, or 0');
       return;
     }
     if (actual != null && actual < 0) {
-      _showValidationError('Actual duration must not be negative');
+      _showActualError('Actual duration must not be negative');
       return;
     }
     if (_scheduleDirty && start != null && end != null && !end.isAfter(start)) {
@@ -645,6 +650,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     setState(() {
       _saving = true;
       _errorMessage = null;
+      _actualError = null;
     });
 
     // --- Recurring scope handling (planner.md Chunk 4 #7/#8) ---
@@ -1052,6 +1058,25 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Shows an Actual duration problem under its field and scrolls the field
+  /// into view, instead of in the error panel at the top of the panel.
+  void _showActualError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = null;
+      _actualError = message;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final fieldContext = _actualFieldKey.currentContext;
+      if (!mounted || fieldContext == null) return;
+      Scrollable.ensureVisible(
+        fieldContext,
+        duration: const Duration(milliseconds: 200),
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    });
+  }
+
   Future<void> _applyTemplate(TaskTemplate template, Task task) async {
     setState(() {
       _titleController.text = template.name;
@@ -1391,7 +1416,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                 const SizedBox(height: AppSpacing.md),
                 DropdownButtonFormField<TaskStatus>(
                   initialValue: _status,
-                  decoration: const InputDecoration(labelText: 'Status'),
+                  decoration: InputDecoration(
+                    labelText: 'Status',
+                    // The one real difference: overlap checks skip Cancelled.
+                    helperText: _status == TaskStatus.cancelled
+                        ? 'Ignored by overlap checks.'
+                        : null,
+                  ),
                   isExpanded: true,
                   items: [
                     for (final s in {
@@ -1464,13 +1495,22 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                       ?.copyWith(color: tokens.textMuted),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                TextField(
-                  key: const ValueKey('actual-duration-field'),
-                  controller: _actualController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Actual duration (minutes)',
-                    helperText: 'Auto-tracked by the timer; editable',
+                KeyedSubtree(
+                  key: _actualFieldKey,
+                  child: TextField(
+                    key: const ValueKey('actual-duration-field'),
+                    controller: _actualController,
+                    keyboardType: TextInputType.number,
+                    onChanged: (_) {
+                      if (_actualError != null) {
+                        setState(() => _actualError = null);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Actual duration (minutes)',
+                      helperText: 'Auto-tracked by the timer; editable',
+                      errorText: _actualError,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),

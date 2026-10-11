@@ -93,6 +93,27 @@ class _TagFieldState extends ConsumerState<TagField> {
   /// because the option list had not arrived yet.
   bool _awaitingName = false;
 
+  /// Scrolling that follows typing or focus (the field revealing its own
+  /// caret) must not close the suggestions; only a later scroll does.
+  DateTime _scrollGraceUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  void _startScrollGrace() =>
+      _scrollGraceUntil = DateTime.now().add(const Duration(milliseconds: 600));
+
+  /// A context under the autocomplete's own `Actions`; the suggestions
+  /// overlay is not, so it dismisses itself through this one.
+  BuildContext? _fieldContext;
+
+  void _closeSuggestionsOnScroll() {
+    final fieldContext = _fieldContext;
+    if (!DateTime.now().isAfter(_scrollGraceUntil) ||
+        fieldContext == null ||
+        !fieldContext.mounted) {
+      return;
+    }
+    Actions.maybeInvoke(fieldContext, const DismissIntent());
+  }
+
   static String? _blankToNull(String? value) =>
       value == null || value.trim().isEmpty ? null : value;
 
@@ -175,7 +196,10 @@ class _TagFieldState extends ConsumerState<TagField> {
   /// Once the user leaves the field, show a matched tag under its stored
   /// spelling ("learn c" becomes "Learn C").
   void _onFocusChanged() {
-    if (_focusNode.hasFocus) return;
+    if (_focusNode.hasFocus) {
+      _startScrollGrace();
+      return;
+    }
     final id = _knownId;
     if (id == null) return;
     for (final option in _options) {
@@ -210,6 +234,7 @@ class _TagFieldState extends ConsumerState<TagField> {
   }
 
   void _onTextChanged(String text) {
+    _startScrollGrace();
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       _report(null, null);
@@ -265,6 +290,10 @@ class _TagFieldState extends ConsumerState<TagField> {
       return const Center(child: CircularProgressIndicator());
     }
     final hasValue = _knownId != null || _knownPending != null;
+    // The suggestions float in the app overlay, not inside the editor's
+    // scroll view, so they cannot scroll or clip with the field. They close
+    // when that scroll view scrolls instead of being left behind.
+    final scrollPosition = Scrollable.maybeOf(context)?.position;
     return RawAutocomplete<_TagChoice>(
       textEditingController: _controller,
       focusNode: _focusNode,
@@ -273,60 +302,123 @@ class _TagFieldState extends ConsumerState<TagField> {
       optionsBuilder: (value) => _choicesFor(value.text),
       onSelected: _onSelected,
       fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-        return TextField(
-          key: const ValueKey('task-tag-field'),
-          controller: controller,
-          focusNode: focusNode,
-          enabled: widget.enabled,
-          inputFormatters: const [
-            Utf16LengthLimitingTextInputFormatter(maxTagNameUnits),
-          ],
-          onChanged: _onTextChanged,
-          decoration: InputDecoration(
-            labelText: 'Tag',
-            helperText: _knownPending != null
-                ? 'A new tag is created when you save.'
-                : null,
-            suffixIcon: hasValue && widget.enabled
-                ? IconButton(
-                    key: const ValueKey('task-tag-clear'),
-                    tooltip: 'Clear tag',
-                    icon: const Icon(Icons.close),
-                    onPressed: _clear,
-                  )
-                : null,
-          ),
+        return Builder(
+          builder: (fieldContext) {
+            _fieldContext = fieldContext;
+            return TextField(
+              key: const ValueKey('task-tag-field'),
+              controller: controller,
+              focusNode: focusNode,
+              enabled: widget.enabled,
+              inputFormatters: const [
+                Utf16LengthLimitingTextInputFormatter(maxTagNameUnits),
+              ],
+              onChanged: _onTextChanged,
+              decoration: InputDecoration(
+                labelText: 'Tag',
+                helperText: _knownPending != null
+                    ? 'A new tag is created when you save.'
+                    : null,
+                suffixIcon: hasValue && widget.enabled
+                    ? IconButton(
+                        key: const ValueKey('task-tag-clear'),
+                        tooltip: 'Clear tag',
+                        icon: const Icon(Icons.close),
+                        onPressed: _clear,
+                      )
+                    : null,
+              ),
+            );
+          },
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
         final choices = options.toList(growable: false);
         final tokens = AppThemeTokens.of(context);
         final highlighted = AutocompleteHighlightedOption.of(context);
-        return Material(
-          elevation: 4,
-          color: tokens.surfaceRaised,
-          borderRadius: BorderRadius.circular(tokens.radiusMedium),
-          clipBehavior: Clip.antiAlias,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              shrinkWrap: true,
-              itemCount: choices.length,
-              itemBuilder: (context, index) {
-                final choice = choices[index];
-                return _TagOptionTile(
-                  choice: choice,
-                  highlighted: index == highlighted,
-                  onTap: () => onSelected(choice),
-                );
-              },
+        return _CloseOnScroll(
+          position: scrollPosition,
+          onScroll: _closeSuggestionsOnScroll,
+          child: Material(
+            elevation: 4,
+            color: tokens.surfaceRaised,
+            borderRadius: BorderRadius.circular(tokens.radiusMedium),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: choices.length,
+                itemBuilder: (context, index) {
+                  final choice = choices[index];
+                  return _TagOptionTile(
+                    choice: choice,
+                    highlighted: index == highlighted,
+                    onTap: () => onSelected(choice),
+                  );
+                },
+              ),
             ),
           ),
         );
       },
     );
   }
+}
+
+/// Calls [onScroll] when [position] scrolls. Lives only while the suggestions
+/// are shown, so [onScroll] only ever closes an open list.
+class _CloseOnScroll extends StatefulWidget {
+  const _CloseOnScroll({
+    required this.position,
+    required this.onScroll,
+    required this.child,
+  });
+
+  final ScrollPosition? position;
+  final VoidCallback onScroll;
+  final Widget child;
+
+  @override
+  State<_CloseOnScroll> createState() => _CloseOnScrollState();
+}
+
+class _CloseOnScrollState extends State<_CloseOnScroll> {
+  double? _lastPixels;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastPixels = widget.position?.pixels;
+    widget.position?.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(_CloseOnScroll oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.position != widget.position) {
+      oldWidget.position?.removeListener(_onScroll);
+      _lastPixels = widget.position?.pixels;
+      widget.position?.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.position?.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final pixels = widget.position?.pixels;
+    if (pixels == null || pixels == _lastPixels) return;
+    _lastPixels = pixels;
+    if (mounted) widget.onScroll();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _TagOptionTile extends StatelessWidget {

@@ -370,15 +370,15 @@ void main() {
       );
       expect(
         formatSyncTimestamp(DateTime(2026, 9, 19, 9, 47), now: now),
-        'Today at 9:47 AM',
+        'Today at 09:47',
       );
       expect(
         formatSyncTimestamp(DateTime(2026, 9, 18, 21, 47), now: now),
-        'Yesterday at 9:47 PM',
+        'Yesterday at 21:47',
       );
       expect(
         formatSyncTimestamp(DateTime(2026, 9, 10, 21, 47), now: now),
-        '2026-09-10 at 9:47 PM',
+        '2026-09-10 at 21:47',
       );
     });
 
@@ -393,9 +393,9 @@ void main() {
     });
 
     test('the sync panel clock form is absolute', () {
-      expect(formatSyncClockTime(DateTime(2026, 9, 19, 23, 51)), '11:51 PM');
-      expect(formatSyncClockTime(DateTime(2026, 9, 19, 0, 5)), '12:05 AM');
-      expect(formatSyncClockTime(DateTime(2026, 9, 19, 12, 0)), '12:00 PM');
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 23, 51)), '23:51');
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 0, 5)), '00:05');
+      expect(formatSyncClockTime(DateTime(2026, 9, 19, 12, 0)), '12:00');
     });
   });
 }

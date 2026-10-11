@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
+import '../../../../core/widgets/time_picker_24h.dart';
 
 /// Full calendar/date-time controls shared by scheduled creation and the
 /// editor. Date-only controls operate on planner-local components; they never
@@ -75,7 +76,7 @@ class ScheduleFields extends StatelessWidget {
     required ValueChanged<DateTime?> onChanged,
   }) async {
     final local = value == null ? null : PlannerTimeZone.toPlannerLocal(value);
-    final picked = await showTimePicker(
+    final picked = await showTimePicker24h(
       context: context,
       initialTime: local == null
           ? const TimeOfDay(hour: 9, minute: 0)

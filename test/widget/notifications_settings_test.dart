@@ -44,11 +44,10 @@ void main() {
     // Change the time via the system time picker (text-input mode).
     await tester.tap(find.byKey(const ValueKey('reminder-time-tile')));
     await settle(tester);
-    // Input mode; the dialog inherits PM from the 21:00 default.
+    // Input mode; the picker is 24-hour, so there is no AM/PM to choose.
     await tester.tap(find.byIcon(Icons.keyboard_outlined));
     await settle(tester);
-    await tester.tap(find.text('AM'));
-    await settle(tester);
+    expect(find.text('AM'), findsNothing);
     final fields = find.descendant(
         of: find.byType(TimePickerDialog), matching: find.byType(TextField));
     await tester.enterText(fields.first, '08');
