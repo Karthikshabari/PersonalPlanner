@@ -15,6 +15,8 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/theme/theme_mode_provider.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../analytics/domain/analytics_models.dart';
+import '../../../analytics/domain/follow_through_target.dart';
 import '../../../analytics/providers/analytics_providers.dart';
 import '../../../categories/providers/category_providers.dart';
 import '../../../inbox/providers/inbox_provider.dart';
@@ -143,6 +145,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     const ReviewPresetEditor(),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              key: const ValueKey('settings-follow-through-target'),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    const Icon(Icons.flag_outlined),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Follow-through target',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            'Share of planned time a day needs to count '
+                            'toward the Insights streak',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    DropdownButton<double>(
+                      key: const ValueKey('follow-through-target-dropdown'),
+                      value:
+                          ref.watch(followThroughTargetProvider).value ??
+                          defaultFollowThroughTarget,
+                      items: [
+                        for (final target in followThroughTargetChoices)
+                          DropdownMenuItem(
+                            value: target,
+                            child: Text(
+                              '${followThroughTargetPercent(target)}%',
+                            ),
+                          ),
+                      ],
+                      onChanged: (target) {
+                        if (target == null) return;
+                        _runPreferenceChange(
+                          () => ref
+                              .read(followThroughTargetProvider.notifier)
+                              .setTarget(target),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),

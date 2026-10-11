@@ -32,10 +32,22 @@ TaskOutcome resolveTaskOutcome(TaskStatus status, {required int trackedMinutes})
 int? completionPercent(int completed, int total) =>
     total <= 0 ? null : (completed * 100 / total).round();
 
+/// Only a block whose end has passed is asked "Why was this not done?" and
+/// counted as without a reason (REV-002). Completed blocks never are; a row
+/// without a known end is treated as ended.
+bool awaitsReason(
+  TaskOutcome outcome,
+  DateTime? endTime, {
+  required DateTime now,
+}) =>
+    outcome != TaskOutcome.completed &&
+    (endTime == null || !endTime.isAfter(now));
+
 class TaskOutcomeRow {
   final String taskId;
   final String title;
   final DateTime? startTime;
+  final DateTime? endTime;
   final int plannedMinutes;
   final int trackedMinutes;
   final TaskOutcome outcome;
@@ -45,6 +57,7 @@ class TaskOutcomeRow {
     required this.taskId,
     required this.title,
     required this.startTime,
+    this.endTime,
     required this.plannedMinutes,
     required this.trackedMinutes,
     required this.outcome,

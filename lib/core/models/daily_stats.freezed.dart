@@ -14,7 +14,11 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$DailyStats {
 
- DateTime get date; int get totalTasks; int get completedTasks; int get plannedTasks; int get inProgressTasks; int get missedTasks; int get skippedTasks; int get cancelledTasks; int get rescheduledTasks; int get plannedDurationMin; int get actualDurationMin; int get focusDurationMin; int? get energyLevel; int? get productivityRating; double? get planningAccuracyPct; DateTime get computedAt;
+ DateTime get date; int get totalTasks; int get completedTasks; int get plannedTasks; int get inProgressTasks; int get missedTasks; int get skippedTasks; int get cancelledTasks; int get rescheduledTasks; int get plannedDurationMin;/// Minutes [plannedDurationMin] left out because blocks overlap (it is
+/// clock time). Not in `daily_stats_cache`.
+ int get plannedOverlapMin;/// Minutes of [plannedDurationMin] from blocks that started the day
+/// before. Not in `daily_stats_cache`.
+ int get plannedSpillInMin; int get actualDurationMin; int get focusDurationMin; int? get energyLevel; int? get productivityRating; double? get planningAccuracyPct; DateTime get computedAt;
 /// Create a copy of DailyStats
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +29,16 @@ $DailyStatsCopyWith<DailyStats> get copyWith => _$DailyStatsCopyWithImpl<DailySt
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is DailyStats&&(identical(other.date, date) || other.date == date)&&(identical(other.totalTasks, totalTasks) || other.totalTasks == totalTasks)&&(identical(other.completedTasks, completedTasks) || other.completedTasks == completedTasks)&&(identical(other.plannedTasks, plannedTasks) || other.plannedTasks == plannedTasks)&&(identical(other.inProgressTasks, inProgressTasks) || other.inProgressTasks == inProgressTasks)&&(identical(other.missedTasks, missedTasks) || other.missedTasks == missedTasks)&&(identical(other.skippedTasks, skippedTasks) || other.skippedTasks == skippedTasks)&&(identical(other.cancelledTasks, cancelledTasks) || other.cancelledTasks == cancelledTasks)&&(identical(other.rescheduledTasks, rescheduledTasks) || other.rescheduledTasks == rescheduledTasks)&&(identical(other.plannedDurationMin, plannedDurationMin) || other.plannedDurationMin == plannedDurationMin)&&(identical(other.actualDurationMin, actualDurationMin) || other.actualDurationMin == actualDurationMin)&&(identical(other.focusDurationMin, focusDurationMin) || other.focusDurationMin == focusDurationMin)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyPct, planningAccuracyPct) || other.planningAccuracyPct == planningAccuracyPct)&&(identical(other.computedAt, computedAt) || other.computedAt == computedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is DailyStats&&(identical(other.date, date) || other.date == date)&&(identical(other.totalTasks, totalTasks) || other.totalTasks == totalTasks)&&(identical(other.completedTasks, completedTasks) || other.completedTasks == completedTasks)&&(identical(other.plannedTasks, plannedTasks) || other.plannedTasks == plannedTasks)&&(identical(other.inProgressTasks, inProgressTasks) || other.inProgressTasks == inProgressTasks)&&(identical(other.missedTasks, missedTasks) || other.missedTasks == missedTasks)&&(identical(other.skippedTasks, skippedTasks) || other.skippedTasks == skippedTasks)&&(identical(other.cancelledTasks, cancelledTasks) || other.cancelledTasks == cancelledTasks)&&(identical(other.rescheduledTasks, rescheduledTasks) || other.rescheduledTasks == rescheduledTasks)&&(identical(other.plannedDurationMin, plannedDurationMin) || other.plannedDurationMin == plannedDurationMin)&&(identical(other.plannedOverlapMin, plannedOverlapMin) || other.plannedOverlapMin == plannedOverlapMin)&&(identical(other.plannedSpillInMin, plannedSpillInMin) || other.plannedSpillInMin == plannedSpillInMin)&&(identical(other.actualDurationMin, actualDurationMin) || other.actualDurationMin == actualDurationMin)&&(identical(other.focusDurationMin, focusDurationMin) || other.focusDurationMin == focusDurationMin)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyPct, planningAccuracyPct) || other.planningAccuracyPct == planningAccuracyPct)&&(identical(other.computedAt, computedAt) || other.computedAt == computedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,date,totalTasks,completedTasks,plannedTasks,inProgressTasks,missedTasks,skippedTasks,cancelledTasks,rescheduledTasks,plannedDurationMin,actualDurationMin,focusDurationMin,energyLevel,productivityRating,planningAccuracyPct,computedAt);
+int get hashCode => Object.hash(runtimeType,date,totalTasks,completedTasks,plannedTasks,inProgressTasks,missedTasks,skippedTasks,cancelledTasks,rescheduledTasks,plannedDurationMin,plannedOverlapMin,plannedSpillInMin,actualDurationMin,focusDurationMin,energyLevel,productivityRating,planningAccuracyPct,computedAt);
 
 @override
 String toString() {
-  return 'DailyStats(date: $date, totalTasks: $totalTasks, completedTasks: $completedTasks, plannedTasks: $plannedTasks, inProgressTasks: $inProgressTasks, missedTasks: $missedTasks, skippedTasks: $skippedTasks, cancelledTasks: $cancelledTasks, rescheduledTasks: $rescheduledTasks, plannedDurationMin: $plannedDurationMin, actualDurationMin: $actualDurationMin, focusDurationMin: $focusDurationMin, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyPct: $planningAccuracyPct, computedAt: $computedAt)';
+  return 'DailyStats(date: $date, totalTasks: $totalTasks, completedTasks: $completedTasks, plannedTasks: $plannedTasks, inProgressTasks: $inProgressTasks, missedTasks: $missedTasks, skippedTasks: $skippedTasks, cancelledTasks: $cancelledTasks, rescheduledTasks: $rescheduledTasks, plannedDurationMin: $plannedDurationMin, plannedOverlapMin: $plannedOverlapMin, plannedSpillInMin: $plannedSpillInMin, actualDurationMin: $actualDurationMin, focusDurationMin: $focusDurationMin, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyPct: $planningAccuracyPct, computedAt: $computedAt)';
 }
 
 
@@ -45,7 +49,7 @@ abstract mixin class $DailyStatsCopyWith<$Res>  {
   factory $DailyStatsCopyWith(DailyStats value, $Res Function(DailyStats) _then) = _$DailyStatsCopyWithImpl;
 @useResult
 $Res call({
- DateTime date, int totalTasks, int completedTasks, int plannedTasks, int inProgressTasks, int missedTasks, int skippedTasks, int cancelledTasks, int rescheduledTasks, int plannedDurationMin, int actualDurationMin, int focusDurationMin, int? energyLevel, int? productivityRating, double? planningAccuracyPct, DateTime computedAt
+ DateTime date, int totalTasks, int completedTasks, int plannedTasks, int inProgressTasks, int missedTasks, int skippedTasks, int cancelledTasks, int rescheduledTasks, int plannedDurationMin, int plannedOverlapMin, int plannedSpillInMin, int actualDurationMin, int focusDurationMin, int? energyLevel, int? productivityRating, double? planningAccuracyPct, DateTime computedAt
 });
 
 
@@ -62,7 +66,7 @@ class _$DailyStatsCopyWithImpl<$Res>
 
 /// Create a copy of DailyStats
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? date = null,Object? totalTasks = null,Object? completedTasks = null,Object? plannedTasks = null,Object? inProgressTasks = null,Object? missedTasks = null,Object? skippedTasks = null,Object? cancelledTasks = null,Object? rescheduledTasks = null,Object? plannedDurationMin = null,Object? actualDurationMin = null,Object? focusDurationMin = null,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyPct = freezed,Object? computedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? date = null,Object? totalTasks = null,Object? completedTasks = null,Object? plannedTasks = null,Object? inProgressTasks = null,Object? missedTasks = null,Object? skippedTasks = null,Object? cancelledTasks = null,Object? rescheduledTasks = null,Object? plannedDurationMin = null,Object? plannedOverlapMin = null,Object? plannedSpillInMin = null,Object? actualDurationMin = null,Object? focusDurationMin = null,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyPct = freezed,Object? computedAt = null,}) {
   return _then(_self.copyWith(
 date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as DateTime,totalTasks: null == totalTasks ? _self.totalTasks : totalTasks // ignore: cast_nullable_to_non_nullable
@@ -74,6 +78,8 @@ as int,skippedTasks: null == skippedTasks ? _self.skippedTasks : skippedTasks //
 as int,cancelledTasks: null == cancelledTasks ? _self.cancelledTasks : cancelledTasks // ignore: cast_nullable_to_non_nullable
 as int,rescheduledTasks: null == rescheduledTasks ? _self.rescheduledTasks : rescheduledTasks // ignore: cast_nullable_to_non_nullable
 as int,plannedDurationMin: null == plannedDurationMin ? _self.plannedDurationMin : plannedDurationMin // ignore: cast_nullable_to_non_nullable
+as int,plannedOverlapMin: null == plannedOverlapMin ? _self.plannedOverlapMin : plannedOverlapMin // ignore: cast_nullable_to_non_nullable
+as int,plannedSpillInMin: null == plannedSpillInMin ? _self.plannedSpillInMin : plannedSpillInMin // ignore: cast_nullable_to_non_nullable
 as int,actualDurationMin: null == actualDurationMin ? _self.actualDurationMin : actualDurationMin // ignore: cast_nullable_to_non_nullable
 as int,focusDurationMin: null == focusDurationMin ? _self.focusDurationMin : focusDurationMin // ignore: cast_nullable_to_non_nullable
 as int,energyLevel: freezed == energyLevel ? _self.energyLevel : energyLevel // ignore: cast_nullable_to_non_nullable
@@ -165,10 +171,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int plannedOverlapMin,  int plannedSpillInMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _DailyStats() when $default != null:
-return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
+return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.plannedOverlapMin,_that.plannedSpillInMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
   return orElse();
 
 }
@@ -186,10 +192,10 @@ return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTa
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int plannedOverlapMin,  int plannedSpillInMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)  $default,) {final _that = this;
 switch (_that) {
 case _DailyStats():
-return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
+return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.plannedOverlapMin,_that.plannedSpillInMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +212,10 @@ return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTa
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( DateTime date,  int totalTasks,  int completedTasks,  int plannedTasks,  int inProgressTasks,  int missedTasks,  int skippedTasks,  int cancelledTasks,  int rescheduledTasks,  int plannedDurationMin,  int plannedOverlapMin,  int plannedSpillInMin,  int actualDurationMin,  int focusDurationMin,  int? energyLevel,  int? productivityRating,  double? planningAccuracyPct,  DateTime computedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _DailyStats() when $default != null:
-return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
+return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTasks,_that.inProgressTasks,_that.missedTasks,_that.skippedTasks,_that.cancelledTasks,_that.rescheduledTasks,_that.plannedDurationMin,_that.plannedOverlapMin,_that.plannedSpillInMin,_that.actualDurationMin,_that.focusDurationMin,_that.energyLevel,_that.productivityRating,_that.planningAccuracyPct,_that.computedAt);case _:
   return null;
 
 }
@@ -221,7 +227,7 @@ return $default(_that.date,_that.totalTasks,_that.completedTasks,_that.plannedTa
 
 
 class _DailyStats implements DailyStats {
-  const _DailyStats({required this.date, this.totalTasks = 0, this.completedTasks = 0, this.plannedTasks = 0, this.inProgressTasks = 0, this.missedTasks = 0, this.skippedTasks = 0, this.cancelledTasks = 0, this.rescheduledTasks = 0, this.plannedDurationMin = 0, this.actualDurationMin = 0, this.focusDurationMin = 0, this.energyLevel, this.productivityRating, this.planningAccuracyPct, required this.computedAt});
+  const _DailyStats({required this.date, this.totalTasks = 0, this.completedTasks = 0, this.plannedTasks = 0, this.inProgressTasks = 0, this.missedTasks = 0, this.skippedTasks = 0, this.cancelledTasks = 0, this.rescheduledTasks = 0, this.plannedDurationMin = 0, this.plannedOverlapMin = 0, this.plannedSpillInMin = 0, this.actualDurationMin = 0, this.focusDurationMin = 0, this.energyLevel, this.productivityRating, this.planningAccuracyPct, required this.computedAt});
   
 
 @override final  DateTime date;
@@ -234,6 +240,12 @@ class _DailyStats implements DailyStats {
 @override@JsonKey() final  int cancelledTasks;
 @override@JsonKey() final  int rescheduledTasks;
 @override@JsonKey() final  int plannedDurationMin;
+/// Minutes [plannedDurationMin] left out because blocks overlap (it is
+/// clock time). Not in `daily_stats_cache`.
+@override@JsonKey() final  int plannedOverlapMin;
+/// Minutes of [plannedDurationMin] from blocks that started the day
+/// before. Not in `daily_stats_cache`.
+@override@JsonKey() final  int plannedSpillInMin;
 @override@JsonKey() final  int actualDurationMin;
 @override@JsonKey() final  int focusDurationMin;
 @override final  int? energyLevel;
@@ -251,16 +263,16 @@ _$DailyStatsCopyWith<_DailyStats> get copyWith => __$DailyStatsCopyWithImpl<_Dai
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DailyStats&&(identical(other.date, date) || other.date == date)&&(identical(other.totalTasks, totalTasks) || other.totalTasks == totalTasks)&&(identical(other.completedTasks, completedTasks) || other.completedTasks == completedTasks)&&(identical(other.plannedTasks, plannedTasks) || other.plannedTasks == plannedTasks)&&(identical(other.inProgressTasks, inProgressTasks) || other.inProgressTasks == inProgressTasks)&&(identical(other.missedTasks, missedTasks) || other.missedTasks == missedTasks)&&(identical(other.skippedTasks, skippedTasks) || other.skippedTasks == skippedTasks)&&(identical(other.cancelledTasks, cancelledTasks) || other.cancelledTasks == cancelledTasks)&&(identical(other.rescheduledTasks, rescheduledTasks) || other.rescheduledTasks == rescheduledTasks)&&(identical(other.plannedDurationMin, plannedDurationMin) || other.plannedDurationMin == plannedDurationMin)&&(identical(other.actualDurationMin, actualDurationMin) || other.actualDurationMin == actualDurationMin)&&(identical(other.focusDurationMin, focusDurationMin) || other.focusDurationMin == focusDurationMin)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyPct, planningAccuracyPct) || other.planningAccuracyPct == planningAccuracyPct)&&(identical(other.computedAt, computedAt) || other.computedAt == computedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _DailyStats&&(identical(other.date, date) || other.date == date)&&(identical(other.totalTasks, totalTasks) || other.totalTasks == totalTasks)&&(identical(other.completedTasks, completedTasks) || other.completedTasks == completedTasks)&&(identical(other.plannedTasks, plannedTasks) || other.plannedTasks == plannedTasks)&&(identical(other.inProgressTasks, inProgressTasks) || other.inProgressTasks == inProgressTasks)&&(identical(other.missedTasks, missedTasks) || other.missedTasks == missedTasks)&&(identical(other.skippedTasks, skippedTasks) || other.skippedTasks == skippedTasks)&&(identical(other.cancelledTasks, cancelledTasks) || other.cancelledTasks == cancelledTasks)&&(identical(other.rescheduledTasks, rescheduledTasks) || other.rescheduledTasks == rescheduledTasks)&&(identical(other.plannedDurationMin, plannedDurationMin) || other.plannedDurationMin == plannedDurationMin)&&(identical(other.plannedOverlapMin, plannedOverlapMin) || other.plannedOverlapMin == plannedOverlapMin)&&(identical(other.plannedSpillInMin, plannedSpillInMin) || other.plannedSpillInMin == plannedSpillInMin)&&(identical(other.actualDurationMin, actualDurationMin) || other.actualDurationMin == actualDurationMin)&&(identical(other.focusDurationMin, focusDurationMin) || other.focusDurationMin == focusDurationMin)&&(identical(other.energyLevel, energyLevel) || other.energyLevel == energyLevel)&&(identical(other.productivityRating, productivityRating) || other.productivityRating == productivityRating)&&(identical(other.planningAccuracyPct, planningAccuracyPct) || other.planningAccuracyPct == planningAccuracyPct)&&(identical(other.computedAt, computedAt) || other.computedAt == computedAt));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,date,totalTasks,completedTasks,plannedTasks,inProgressTasks,missedTasks,skippedTasks,cancelledTasks,rescheduledTasks,plannedDurationMin,actualDurationMin,focusDurationMin,energyLevel,productivityRating,planningAccuracyPct,computedAt);
+int get hashCode => Object.hash(runtimeType,date,totalTasks,completedTasks,plannedTasks,inProgressTasks,missedTasks,skippedTasks,cancelledTasks,rescheduledTasks,plannedDurationMin,plannedOverlapMin,plannedSpillInMin,actualDurationMin,focusDurationMin,energyLevel,productivityRating,planningAccuracyPct,computedAt);
 
 @override
 String toString() {
-  return 'DailyStats(date: $date, totalTasks: $totalTasks, completedTasks: $completedTasks, plannedTasks: $plannedTasks, inProgressTasks: $inProgressTasks, missedTasks: $missedTasks, skippedTasks: $skippedTasks, cancelledTasks: $cancelledTasks, rescheduledTasks: $rescheduledTasks, plannedDurationMin: $plannedDurationMin, actualDurationMin: $actualDurationMin, focusDurationMin: $focusDurationMin, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyPct: $planningAccuracyPct, computedAt: $computedAt)';
+  return 'DailyStats(date: $date, totalTasks: $totalTasks, completedTasks: $completedTasks, plannedTasks: $plannedTasks, inProgressTasks: $inProgressTasks, missedTasks: $missedTasks, skippedTasks: $skippedTasks, cancelledTasks: $cancelledTasks, rescheduledTasks: $rescheduledTasks, plannedDurationMin: $plannedDurationMin, plannedOverlapMin: $plannedOverlapMin, plannedSpillInMin: $plannedSpillInMin, actualDurationMin: $actualDurationMin, focusDurationMin: $focusDurationMin, energyLevel: $energyLevel, productivityRating: $productivityRating, planningAccuracyPct: $planningAccuracyPct, computedAt: $computedAt)';
 }
 
 
@@ -271,7 +283,7 @@ abstract mixin class _$DailyStatsCopyWith<$Res> implements $DailyStatsCopyWith<$
   factory _$DailyStatsCopyWith(_DailyStats value, $Res Function(_DailyStats) _then) = __$DailyStatsCopyWithImpl;
 @override @useResult
 $Res call({
- DateTime date, int totalTasks, int completedTasks, int plannedTasks, int inProgressTasks, int missedTasks, int skippedTasks, int cancelledTasks, int rescheduledTasks, int plannedDurationMin, int actualDurationMin, int focusDurationMin, int? energyLevel, int? productivityRating, double? planningAccuracyPct, DateTime computedAt
+ DateTime date, int totalTasks, int completedTasks, int plannedTasks, int inProgressTasks, int missedTasks, int skippedTasks, int cancelledTasks, int rescheduledTasks, int plannedDurationMin, int plannedOverlapMin, int plannedSpillInMin, int actualDurationMin, int focusDurationMin, int? energyLevel, int? productivityRating, double? planningAccuracyPct, DateTime computedAt
 });
 
 
@@ -288,7 +300,7 @@ class __$DailyStatsCopyWithImpl<$Res>
 
 /// Create a copy of DailyStats
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? date = null,Object? totalTasks = null,Object? completedTasks = null,Object? plannedTasks = null,Object? inProgressTasks = null,Object? missedTasks = null,Object? skippedTasks = null,Object? cancelledTasks = null,Object? rescheduledTasks = null,Object? plannedDurationMin = null,Object? actualDurationMin = null,Object? focusDurationMin = null,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyPct = freezed,Object? computedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? date = null,Object? totalTasks = null,Object? completedTasks = null,Object? plannedTasks = null,Object? inProgressTasks = null,Object? missedTasks = null,Object? skippedTasks = null,Object? cancelledTasks = null,Object? rescheduledTasks = null,Object? plannedDurationMin = null,Object? plannedOverlapMin = null,Object? plannedSpillInMin = null,Object? actualDurationMin = null,Object? focusDurationMin = null,Object? energyLevel = freezed,Object? productivityRating = freezed,Object? planningAccuracyPct = freezed,Object? computedAt = null,}) {
   return _then(_DailyStats(
 date: null == date ? _self.date : date // ignore: cast_nullable_to_non_nullable
 as DateTime,totalTasks: null == totalTasks ? _self.totalTasks : totalTasks // ignore: cast_nullable_to_non_nullable
@@ -300,6 +312,8 @@ as int,skippedTasks: null == skippedTasks ? _self.skippedTasks : skippedTasks //
 as int,cancelledTasks: null == cancelledTasks ? _self.cancelledTasks : cancelledTasks // ignore: cast_nullable_to_non_nullable
 as int,rescheduledTasks: null == rescheduledTasks ? _self.rescheduledTasks : rescheduledTasks // ignore: cast_nullable_to_non_nullable
 as int,plannedDurationMin: null == plannedDurationMin ? _self.plannedDurationMin : plannedDurationMin // ignore: cast_nullable_to_non_nullable
+as int,plannedOverlapMin: null == plannedOverlapMin ? _self.plannedOverlapMin : plannedOverlapMin // ignore: cast_nullable_to_non_nullable
+as int,plannedSpillInMin: null == plannedSpillInMin ? _self.plannedSpillInMin : plannedSpillInMin // ignore: cast_nullable_to_non_nullable
 as int,actualDurationMin: null == actualDurationMin ? _self.actualDurationMin : actualDurationMin // ignore: cast_nullable_to_non_nullable
 as int,focusDurationMin: null == focusDurationMin ? _self.focusDurationMin : focusDurationMin // ignore: cast_nullable_to_non_nullable
 as int,energyLevel: freezed == energyLevel ? _self.energyLevel : energyLevel // ignore: cast_nullable_to_non_nullable

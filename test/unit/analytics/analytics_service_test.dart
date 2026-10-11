@@ -64,7 +64,7 @@ void main() {
         monday: monday,
         tasks: [
           _task('short', monday, 15, status: TaskStatus.completed),
-          _task('long', monday, 180),
+          _task('long', monday, 180, hour: 12),
         ],
       );
       final day = snapshot.consistencyDays.first;
@@ -84,7 +84,7 @@ void main() {
         monday: monday,
         tasks: [
           _task('done', monday, 30, status: TaskStatus.completed),
-          _task('open', monday, 30),
+          _task('open', monday, 30, hour: 12),
         ],
       ).consistencyDays.first;
       final complete = _calculate(
@@ -138,7 +138,7 @@ void main() {
         monday: monday,
         tasks: [
           _task('completed', monday, 60, status: TaskStatus.completed),
-          _task('incomplete', monday, 180),
+          _task('incomplete', monday, 180, hour: 12),
         ],
       );
 
@@ -195,11 +195,11 @@ void main() {
       isFuture: future,
     );
 
-    test('successes continue and an eligible failure breaks the streak', () {
+    test('successes continue and a Missed day breaks the streak', () {
       final streaks = InsightsCalculator.calculateStreaks([
         day(0, 80),
         day(1, 100),
-        day(2, 50),
+        day(2, 0),
         day(3, 75),
       ]);
       expect(streaks.current, 1);
@@ -223,7 +223,7 @@ void main() {
       () {
         final snapshot = _calculate(
           monday: monday,
-          now: monday.add(const Duration(days: 2, hours: 12)),
+          now: monday.add(const Duration(days: 3, hours: 12)),
           tasks: [
             _task('success-one', monday, 100, status: TaskStatus.completed),
             _task(
@@ -236,11 +236,17 @@ void main() {
           ],
         );
 
-        expect(snapshot.consistencyDays.map((day) => day.isSuccessful), [
-          true,
-          true,
-          false,
-        ]);
+        expect(
+          snapshot.consistencyDays.map(
+            (day) => classifyDay(day, target: snapshot.followThroughTarget),
+          ),
+          [
+            DayResult.success,
+            DayResult.success,
+            DayResult.missed,
+            DayResult.empty,
+          ],
+        );
         expect(snapshot.streaks.current, 0);
         expect(snapshot.streaks.best, 2);
       },
@@ -513,11 +519,12 @@ Task _task(
   int minutes, {
   TaskStatus status = TaskStatus.planned,
   String? categoryId,
+  int hour = 9,
 }) => Task(
   id: id,
   title: id,
-  startTime: date.add(const Duration(hours: 9)),
-  endTime: date.add(Duration(hours: 9, minutes: minutes)),
+  startTime: date.add(Duration(hours: hour)),
+  endTime: date.add(Duration(hours: hour, minutes: minutes)),
   categoryId: categoryId,
   status: status,
   createdAt: date,

@@ -78,8 +78,8 @@ void main() {
     expect(find.text('Review'), findsWidgets);
     expect(find.text('Next week (optional)'), findsOneWidget);
     expect(find.text('Week at a glance'), findsOneWidget);
-    expect(find.text('33% completed'), findsOneWidget);
-    expect(find.text('1 of 3 tasks · 1 skipped'), findsOneWidget);
+    expect(find.text('33% tasks done'), findsOneWidget);
+    expect(find.text('1 of 3 tasks done · 1 skipped'), findsOneWidget);
     expect(find.text('What got in the way'), findsOneWidget);
     expect(find.text('Task outcomes'), findsOneWidget);
     expect(find.text('How was the week?'), findsOneWidget);

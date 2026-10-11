@@ -29,6 +29,7 @@ class TaskOutcomeService {
           taskId: task.id,
           title: task.title,
           startTime: start,
+          endTime: task.endTime,
           plannedMinutes: task.plannedDurationMinutes ?? 0,
           trackedMinutes: tracked,
           outcome: resolveTaskOutcome(task.status, trackedMinutes: tracked),

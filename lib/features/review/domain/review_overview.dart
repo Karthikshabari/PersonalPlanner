@@ -92,7 +92,7 @@ class ReviewOverviewService {
   }
 }
 
-/// `{Wd} {Mon d} · {context} · {Mood | no mood saved} · {pct}% done (c / t)`.
+/// `{Wd} {Mon d} · {context} · {Mood | no mood saved} · {pct}% tasks done (c of t)`.
 /// The context part is omitted when absent; `No tasks` replaces the last
 /// part when the day had no tasks (D21).
 String overviewDetailLine(ReviewOverviewDay day) {
@@ -102,7 +102,7 @@ String overviewDetailLine(ReviewOverviewDay day) {
     day.mood == null ? 'no mood saved' : reviewMoodLabel(day.mood!),
     day.percent == null
         ? 'No tasks'
-        : '${day.percent}% done (${day.completedTasks} / ${day.totalTasks})',
+        : '${day.percent}% tasks done (${day.completedTasks} of ${day.totalTasks})',
   ];
   return parts.join(' · ');
 }

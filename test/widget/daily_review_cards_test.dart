@@ -89,7 +89,7 @@ void main() {
         _stats(completed: 1, total: 3, skipped: 1, cancelled: 1, planned: 180),
         moved: 2,
       );
-      expect(find.text('1 / 3 completed'), findsOneWidget);
+      expect(find.text('1 of 3 tasks done'), findsOneWidget);
       final bar = tester.widget<LinearProgressIndicator>(
         find.byType(LinearProgressIndicator),
       );

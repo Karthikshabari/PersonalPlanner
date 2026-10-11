@@ -33,7 +33,7 @@ void main() {
               '5 tasks done',
             ],
             subline:
-                '5 of 14 tasks · 2 skipped · 3 rescheduled · 1 plan changed',
+                '5 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
             reasons: [
               'Low energy ×3',
               'Ran out of time ×2',
@@ -54,7 +54,7 @@ void main() {
               '7 tasks done',
             ],
             subline:
-                '7 of 14 tasks · 2 skipped · 3 rescheduled · 1 plan changed',
+                '7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
             reasons: ['Low energy ×3', 'Interrupted ×2', 'Blocked ×1'],
             blocker: 'Most common blocker this week: Low energy (3 times).',
             dayTypes: ['Office 3 days 5 of 10', 'Leave 2 days 2 of 4'],
@@ -70,7 +70,7 @@ void main() {
               'Every missed task has a reason',
             ],
             subline:
-                '10 of 14 tasks · 1 skipped · 1 rescheduled · 1 plan changed',
+                '10 of 14 tasks done · 1 skipped · 1 rescheduled · 1 plan changed',
             reasons: ['Low energy ×2', 'Interrupted ×1'],
             blocker: 'Most common blocker this week: Low energy (2 times).',
             dayTypes: ['Office 3 days 8 of 10', 'Leave 2 days 2 of 4'],
@@ -85,7 +85,7 @@ void main() {
               '4 days above 60%',
               'Reviewed 4 days',
             ],
-            subline: '13 of 14 tasks · 1 plan changed',
+            subline: '13 of 14 tasks done · 1 plan changed',
             reasons: [],
             blocker: 'No blockers recorded this week.',
             dayTypes: ['Office 3 days 10 of 10', 'Leave 2 days 3 of 4'],

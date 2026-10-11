@@ -7,6 +7,7 @@ import '../../../core/models/category.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/planned_clock_time.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../day_context/data/day_context_repository.dart';
 import '../../timeline/data/task_repository.dart';
@@ -25,6 +26,7 @@ class InsightsService {
   Future<InsightsSnapshot> compute({
     required DateTime weekStart,
     DateTime? now,
+    double followThroughTarget = defaultFollowThroughTarget,
     // Retained for source compatibility with older callers. The consistency
     // history is now always the rolling year on every form factor.
     int desktopMonthCount = 12,
@@ -219,6 +221,7 @@ class InsightsService {
       now: effectiveNow,
       selectedWeekStart: selectedWeek,
       consistencyStart: consistencyStart,
+      followThroughTarget: followThroughTarget,
     );
   }
 }
@@ -230,6 +233,7 @@ abstract final class InsightsCalculator {
     required DateTime now,
     required DateTime selectedWeekStart,
     required DateTime consistencyStart,
+    double followThroughTarget = defaultFollowThroughTarget,
   }) {
     final today = startOfDay(now);
     final consistencyEnd = addDays(today, 1);
@@ -271,13 +275,14 @@ abstract final class InsightsCalculator {
           actualMinutes: actualByDate[isoDateString(date)] ?? 0,
           context: contexts[isoDateString(date)],
           isFuture: date.isAfter(today),
+          isToday: isSameDay(date, today),
         ),
       );
     }
     final visibleDays = allDays
         .where((day) => !day.date.isBefore(consistencyStart))
         .toList(growable: false);
-    final streaks = calculateStreaks(allDays);
+    final streaks = calculateStreaks(allDays, target: followThroughTarget);
     final weekRange = InsightDateRange(weekStart, weekEnd);
     final weekPlanned = _plannedTotals(source.plannedTasks, weekRange);
     final weekActual = _actualTotal(source.actualSlices, weekRange);
@@ -300,21 +305,29 @@ abstract final class InsightsCalculator {
       completedPlannedMinutes: weekPlanned.completed,
       categories: categories,
       notable: notable.take(2).toList(growable: false),
+      followThroughTarget: followThroughTarget,
     );
   }
 
-  static StreakSummary calculateStreaks(Iterable<ConsistencyDay> days) {
+  /// Success adds one, Missed resets to zero, Started and Empty keep the
+  /// streak as it is. Today counts only once it is a Success ([classifyDay]).
+  static StreakSummary calculateStreaks(
+    Iterable<ConsistencyDay> days, {
+    double target = defaultFollowThroughTarget,
+  }) {
     final ordered = days.where((day) => !day.isFuture).toList()
       ..sort((left, right) => left.date.compareTo(right.date));
     var current = 0;
     var best = 0;
     for (final day in ordered) {
-      if (day.isNeutral) continue;
-      if (day.isSuccessful) {
-        current++;
-        best = math.max(best, current);
-      } else {
-        current = 0;
+      switch (classifyDay(day, target: target)) {
+        case DayResult.success:
+          current++;
+          best = math.max(best, current);
+        case DayResult.missed:
+          current = 0;
+        case DayResult.started || DayResult.empty || null:
+          break;
       }
     }
     return StreakSummary(current: current, best: best);
@@ -381,10 +394,10 @@ abstract final class InsightsCalculator {
   }
 
   /// [_plannedTotals] for every one-day range `[date, date + 1)` of [dates]
-  /// (ascending planner days) in a single pass over [tasks]: each task adds its
-  /// overlap to the days it touches, with the same arithmetic per task and day
-  /// as [_plannedTotals]. Looping every day over every task cost O(days x
-  /// tasks) (about 4 million overlap tests for two years of history).
+  /// (ascending planner days) in a single pass over [tasks]: each task adds
+  /// its clipped interval to the days it touches, then each day takes the
+  /// union. Looping every day over every task cost O(days x tasks) (about 4
+  /// million overlap tests for two years of history).
   static ({List<int> planned, List<int> completed}) _plannedTotalsByDay(
     Iterable<Task> tasks,
     List<DateTime> dates,
@@ -392,8 +405,11 @@ abstract final class InsightsCalculator {
     final ranges = [
       for (final date in dates) InsightDateRange(date, addDays(date, 1)),
     ];
-    final planned = List<int>.filled(dates.length, 0);
-    final completed = List<int>.filled(dates.length, 0);
+    final plannedSpans = List.generate(dates.length, (_) => <PlannedSpan>[]);
+    final completedSpans = List.generate(
+      dates.length,
+      (_) => <PlannedSpan>[],
+    );
     for (final task in tasks) {
       final start = task.startTime;
       final end = task.endTime;
@@ -410,41 +426,61 @@ abstract final class InsightsCalculator {
         }
       }
       for (var index = low; index < ranges.length; index++) {
-        final range = ranges[index];
-        if (!range.start.isBefore(end)) break;
-        final overlapStart = start.isAfter(range.start) ? start : range.start;
-        final overlapEnd = end.isBefore(range.endExclusive)
-            ? end
-            : range.endExclusive;
-        if (!overlapEnd.isAfter(overlapStart)) continue;
-        final minutes = overlapEnd.difference(overlapStart).inMinutes;
-        planned[index] += minutes;
-        if (task.status == TaskStatus.completed) completed[index] += minutes;
+        if (!ranges[index].start.isBefore(end)) break;
+        final span = (start: start, end: end);
+        plannedSpans[index].add(span);
+        if (task.status == TaskStatus.completed) {
+          completedSpans[index].add(span);
+        }
       }
+    }
+    final planned = List<int>.filled(dates.length, 0);
+    final completed = List<int>.filled(dates.length, 0);
+    for (var index = 0; index < ranges.length; index++) {
+      final range = ranges[index];
+      if (plannedSpans[index].isEmpty) continue;
+      planned[index] = PlannedClockTime.unionMinutes(
+        plannedSpans[index],
+        range.start,
+        range.endExclusive,
+      );
+      completed[index] = PlannedClockTime.unionMinutes(
+        completedSpans[index],
+        range.start,
+        range.endExclusive,
+      );
     }
     return (planned: planned, completed: completed);
   }
 
+  /// Clock time of [range]: the union of the planned blocks, and the union of
+  /// the completed ones (so completed never exceeds planned).
   static ({int planned, int completed}) _plannedTotals(
     Iterable<Task> tasks,
     InsightDateRange range,
   ) {
-    var planned = 0;
-    var completed = 0;
+    final planned = <PlannedSpan>[];
+    final completed = <PlannedSpan>[];
     for (final task in tasks) {
       final start = task.startTime;
       final end = task.endTime;
       if (start == null || end == null) continue;
-      final overlapStart = start.isAfter(range.start) ? start : range.start;
-      final overlapEnd = end.isBefore(range.endExclusive)
-          ? end
-          : range.endExclusive;
-      if (!overlapEnd.isAfter(overlapStart)) continue;
-      final minutes = overlapEnd.difference(overlapStart).inMinutes;
-      planned += minutes;
-      if (task.status == TaskStatus.completed) completed += minutes;
+      final span = (start: start, end: end);
+      planned.add(span);
+      if (task.status == TaskStatus.completed) completed.add(span);
     }
-    return (planned: planned, completed: completed);
+    return (
+      planned: PlannedClockTime.unionMinutes(
+        planned,
+        range.start,
+        range.endExclusive,
+      ),
+      completed: PlannedClockTime.unionMinutes(
+        completed,
+        range.start,
+        range.endExclusive,
+      ),
+    );
   }
 
   static int _actualTotal(

@@ -89,7 +89,7 @@ void main() {
     expect(tester.getSize(card(lastWeek)), tester.getSize(card(thisWeek())));
     expect(
       tester.getSemantics(card(lastWeek)).label,
-      endsWith(', Excellent, 75% done'),
+      endsWith(', Excellent, 75% tasks done'),
     );
     expect(
       tester.getSemantics(card(thisWeek())).label,

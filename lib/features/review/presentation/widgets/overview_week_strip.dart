@@ -42,7 +42,7 @@ class OverviewWeekTile {
     range,
     if (isCurrent) 'this week',
     status,
-    week.percent == null ? 'No tasks' : '${week.percent}% done',
+    week.percent == null ? 'No tasks' : '${week.percent}% tasks done',
   ].join(', ');
 }
 

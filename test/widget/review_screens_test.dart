@@ -32,6 +32,13 @@ void main() {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// A day that is over, so its unfinished blocks are asked for a reason
+  /// whatever the time of day the test runs (REV-002).
+  DateTime yesterday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day - 1);
+  }
+
   Future<void> seedTwoTasks(
     WidgetTester tester,
     ProviderContainer container,
@@ -84,17 +91,26 @@ void main() {
     await settle(tester);
   }
 
+  Future<void> showReviewForYesterday(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
+    await showReviewForToday(tester, container);
+    container.read(selectedReviewDateProvider.notifier).state = yesterday();
+    await settle(tester);
+  }
+
   testWidgets(
     'daily review shows factual summary without a duplicate timeline',
     (tester) async {
       final container = await pumpReview(tester);
-      await seedTwoTasks(tester, container, today());
-      await showReviewForToday(tester, container);
+      await seedTwoTasks(tester, container, yesterday());
+      await showReviewForYesterday(tester, container);
 
       expect(find.text('Daily Review'), findsOneWidget);
       expect(find.text('Day at a glance'), findsOneWidget);
       // Factual completion summary: 1 completed out of 2 planned items.
-      expect(find.text('1 / 2 completed'), findsOneWidget);
+      expect(find.text('1 of 2 tasks done'), findsOneWidget);
       // Planned total: 1h + 1h30m.
       expect(find.textContaining('2h 30m planned'), findsOneWidget);
       expect(find.textContaining('tracked'), findsNothing);
@@ -229,12 +245,12 @@ void main() {
     tester,
   ) async {
     final container = await pumpReview(tester);
-    await seedTwoTasks(tester, container, today());
-    await showReviewForToday(tester, container);
+    await seedTwoTasks(tester, container, yesterday());
+    await showReviewForYesterday(tester, container);
     final notStarted = (await tasksOn(
       tester,
       container,
-      today(),
+      yesterday(),
     )).firstWhere((t) => t.title == 'Deep work');
     final field = find.byKey(ValueKey('review-reason-${notStarted.id}'));
 
@@ -277,9 +293,9 @@ void main() {
 
   testWidgets('completed rows have no reason field', (tester) async {
     final container = await pumpReview(tester);
-    await seedTwoTasks(tester, container, today());
-    await showReviewForToday(tester, container);
-    final tasks = await tasksOn(tester, container, today());
+    await seedTwoTasks(tester, container, yesterday());
+    await showReviewForYesterday(tester, container);
+    final tasks = await tasksOn(tester, container, yesterday());
     final completed = tasks.firstWhere((t) => t.title == 'Morning run');
     final open = tasks.firstWhere((t) => t.title == 'Deep work');
 
@@ -438,7 +454,7 @@ void main() {
 
     expect(find.text('Weekly Review'), findsOneWidget);
     expect(find.text('Week at a glance'), findsOneWidget);
-    expect(find.text('50% completed'), findsOneWidget);
+    expect(find.text('50% tasks done'), findsOneWidget);
     expect(find.text('What changed this week'), findsNothing);
     expect(find.text('Nothing carried forward.'), findsNothing);
 

@@ -41,7 +41,7 @@ class WeeklyGlanceCard extends StatelessWidget {
         ? 'This week has not happened yet.'
         : percent == null
         ? 'No tasks this week'
-        : '$percent% completed';
+        : '$percent% tasks done';
     return AppSurface(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -155,7 +155,7 @@ class WeeklyDayStrip extends StatelessWidget {
   }
 }
 
-/// `Mon Sep 28: 50% done, Good, Office` or `Sat Oct 3: No tasks`.
+/// `Mon Sep 28: 50% tasks done, Good, Office` or `Sat Oct 3: No tasks`.
 String weeklyDayCardLabel(WeeklyDayStats day) {
   final date =
       '${DateFormat('EEE').format(day.date)} '
@@ -163,7 +163,7 @@ String weeklyDayCardLabel(WeeklyDayStats day) {
   if (day.total == 0) return '$date: No tasks';
   final mood = day.mood;
   final parts = <String>[
-    '${day.percent}% done',
+    '${day.percent}% tasks done',
     mood != null
         ? reviewMoodLabel(mood)
         : (day.reviewed ? 'Reviewed' : 'Not reviewed'),

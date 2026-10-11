@@ -50,12 +50,12 @@ class OverviewDayTile {
   final String status;
   final String? contextLabel;
 
-  /// `Fri Oct 9, Good, 33% done` (the screen reader adds "selected").
+  /// `Fri Oct 9, Good, 33% tasks done` (the screen reader adds "selected").
   late final String semanticsLabel = [
     '${_weekdayFormat.format(date)} $dateLabel',
     if (isToday) 'today',
     status,
-    day.percent == null ? 'No tasks' : '${day.percent}% done',
+    day.percent == null ? 'No tasks' : '${day.percent}% tasks done',
     ?contextLabel,
   ].join(', ');
 }

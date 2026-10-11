@@ -615,7 +615,7 @@ void main() {
       final tile = dayTile(day.date);
       final label = tester.getSemantics(tile).label;
       expect(label, contains('Excellent'));
-      expect(label, contains('33% done'));
+      expect(label, contains('33% tasks done'));
       expect(
         tester.getSemantics(dayTile(today)),
         isSemantics(isButton: true, isSelected: true, hasTapAction: true),

@@ -17,6 +17,14 @@ abstract class DailyStats with _$DailyStats {
     @Default(0) int cancelledTasks,
     @Default(0) int rescheduledTasks,
     @Default(0) int plannedDurationMin,
+
+    /// Minutes [plannedDurationMin] left out because blocks overlap (it is
+    /// clock time). Not in `daily_stats_cache`.
+    @Default(0) int plannedOverlapMin,
+
+    /// Minutes of [plannedDurationMin] from blocks that started the day
+    /// before. Not in `daily_stats_cache`.
+    @Default(0) int plannedSpillInMin,
     @Default(0) int actualDurationMin,
     @Default(0) int focusDurationMin,
     int? energyLevel,

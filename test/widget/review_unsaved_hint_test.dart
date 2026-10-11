@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/features/review/providers/review_providers.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 
 import '../helpers/test_container.dart';
@@ -25,8 +26,10 @@ void main() {
   }) async {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
+    // Yesterday: every block has ended, so each one has a reason field.
+    final day = DateTime(now.year, now.month, now.day - 1);
     for (var i = 0; i < tasks; i++) {
-      final start = DateTime(now.year, now.month, now.day, 6 + i);
+      final start = DateTime(day.year, day.month, day.day, 6 + i);
       await runDb(
         tester,
         () => container
@@ -49,10 +52,11 @@ void main() {
           .read(appDatabaseProvider)
           .taskDao
           .getTasksBetween(
-            DateTime(now.year, now.month, now.day),
-            DateTime(now.year, now.month, now.day + 1),
+            day,
+            DateTime(day.year, day.month, day.day + 1),
           ),
     );
+    container.read(selectedReviewDateProvider.notifier).state = day;
     appRouter.go('/review');
     await pumpApp(tester, container, surface: surface);
     return (

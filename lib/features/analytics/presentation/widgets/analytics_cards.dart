@@ -282,7 +282,22 @@ class ConsistencyGrid extends StatelessWidget {
           isFuture: date.isAfter(startOfDay(snapshot.generatedFor)),
         );
     final tokens = AppThemeTokens.of(context);
-    final color = switch (effectiveDay.intensity) {
+    final result = classifyDay(
+      effectiveDay,
+      target: snapshot.followThroughTarget,
+    );
+    // Success keeps the follow-through shades; Started (and today once some
+    // planned time is done) gets the lowest filled shade; Missed stays unfilled.
+    final intensity = switch (result) {
+      DayResult.success => effectiveDay.intensity,
+      DayResult.started => ConsistencyIntensity.low,
+      DayResult.missed || DayResult.empty => ConsistencyIntensity.neutral,
+      null =>
+        effectiveDay.completedPlannedMinutes > 0
+            ? ConsistencyIntensity.low
+            : ConsistencyIntensity.neutral,
+    };
+    final color = switch (intensity) {
       ConsistencyIntensity.neutral => tokens.surfaceSubtle,
       ConsistencyIntensity.low => Color.alphaBlend(
         tokens.success.withValues(alpha: 0.18),
@@ -298,15 +313,16 @@ class ConsistencyGrid extends StatelessWidget {
       ),
       ConsistencyIntensity.strong => tokens.success,
     };
+    final tooltip = _dayTooltip(effectiveDay, result);
     return Tooltip(
-      message: _dayTooltip(effectiveDay),
+      message: tooltip,
       child: Semantics(
         button: true,
-        label: _dayTooltip(effectiveDay),
+        label: tooltip,
         child: InkWell(
           key: ValueKey('consistency-day-${isoDateString(date)}'),
           borderRadius: BorderRadius.circular(3),
-          onTap: () => _showDayDetails(context, effectiveDay),
+          onTap: () => _showDayDetails(context, effectiveDay, result),
           child: SizedBox(
             width: size,
             height: size,
@@ -328,17 +344,30 @@ class ConsistencyGrid extends StatelessWidget {
     );
   }
 
-  String _dayTooltip(ConsistencyDay day) {
+  String _dayTooltip(ConsistencyDay day, DayResult? result) {
     final context = day.excludedByContext
         ? ' · ${day.context!.shortLabel}'
         : '';
     final follow = day.followThroughPercent == null
         ? 'Neutral'
-        : '${day.followThroughPercent}% follow-through';
+        : '${_resultLabel(day, result)} · ${day.followThroughPercent}% time done';
     return '${DateFormat('MMM d, yyyy').format(day.date)}$context · $follow';
   }
 
-  Future<void> _showDayDetails(BuildContext context, ConsistencyDay day) =>
+  static String _resultLabel(ConsistencyDay day, DayResult? result) =>
+      switch (result) {
+        DayResult.success => 'Success',
+        DayResult.started => 'Started',
+        DayResult.missed => 'Missed',
+        DayResult.empty => 'Neutral',
+        null => day.isToday ? 'Today so far' : 'Neutral',
+      };
+
+  Future<void> _showDayDetails(
+    BuildContext context,
+    ConsistencyDay day,
+    DayResult? result,
+  ) =>
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
@@ -366,10 +395,11 @@ class ConsistencyGrid extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 _DetailRow(
-                  label: 'Follow-through',
+                  label: 'Time done',
                   value: day.followThroughPercent == null
                       ? 'Neutral'
-                      : '${day.followThroughPercent}%',
+                      : '${day.followThroughPercent}% · '
+                            '${_resultLabel(day, result)}',
                 ),
               ],
             ),

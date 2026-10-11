@@ -13,6 +13,7 @@ import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../domain/analytics_models.dart';
 import '../domain/analytics_service.dart';
+import '../domain/follow_through_target.dart';
 
 typedef InsightsClockFactory = Stream<DateTime> Function();
 typedef InsightsNowFactory = DateTime Function();
@@ -43,6 +44,50 @@ final insightsNowProvider = Provider.autoDispose<DateTime>((ref) {
 final insightsServiceProvider = Provider<InsightsService>((ref) {
   return InsightsService(ref.watch(appDatabaseProvider));
 });
+
+/// Settings "Follow-through target": the share of planned time a day needs
+/// to count as a Success. Stored per device in `app_settings`; not synced and
+/// not part of portable backup.
+final followThroughTargetProvider =
+    AsyncNotifierProvider<FollowThroughTargetNotifier, double>(
+      FollowThroughTargetNotifier.new,
+    );
+
+class FollowThroughTargetNotifier extends AsyncNotifier<double> {
+  @override
+  Future<double> build() async {
+    final db = ref.watch(appDatabaseProvider);
+    final raw = await db.syncDao.getSetting(followThroughTargetSettingKey);
+    return decodeFollowThroughTarget(raw);
+  }
+
+  Future<void> setTarget(double target) async {
+    final previous = state.value ?? defaultFollowThroughTarget;
+    state = AsyncData(target);
+    try {
+      await ref
+          .read(appDatabaseProvider)
+          .syncDao
+          .setSetting(
+            followThroughTargetSettingKey,
+            encodeFollowThroughTarget(target),
+          );
+    } catch (_) {
+      state = AsyncData(previous);
+      rethrow;
+    }
+  }
+}
+
+/// The target while the stored one loads is the default; a different stored
+/// value then recalculates once.
+final _selectedFollowThroughTargetProvider = Provider.autoDispose<double>(
+  (ref) => ref.watch(
+    followThroughTargetProvider.select(
+      (value) => value.value ?? defaultFollowThroughTarget,
+    ),
+  ),
+);
 
 final selectedInsightsWeekProvider = StateProvider<DateTime>((ref) {
   // This is initialization only. The selected week must not follow later
@@ -131,8 +176,10 @@ final insightsCachedSnapshotProvider = Provider.autoDispose<InsightsSnapshot?>((
   final today = ref.watch(
     insightsNowProvider.select((now) => isoDateString(now)),
   );
+  final target = ref.watch(_selectedFollowThroughTargetProvider);
   if (entry == null) return null;
-  return entry.isCurrent(revision: revision, weekStart: weekStart, today: today)
+  return entry.isCurrent(revision: revision, weekStart: weekStart, today: today) &&
+          entry.snapshot.followThroughTarget == target
       ? entry.snapshot
       : null;
 });
@@ -152,6 +199,7 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
   final today = ref.watch(
     insightsNowProvider.select((now) => isoDateString(now)),
   );
+  final target = ref.watch(_selectedFollowThroughTargetProvider);
   final now = ref.read(insightsNowProvider);
   final database = ref.read(appDatabaseProvider);
   final cacheNotifier = ref.read(insightsSnapshotCacheProvider.notifier);
@@ -162,7 +210,8 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
             revision: ref.read(insightsSourceRevisionProvider),
             weekStart: weekStart,
             today: today,
-          )
+          ) &&
+          cached.snapshot.followThroughTarget == target
       ? cached.snapshot
       : null;
   return watchReactiveStats(
@@ -172,7 +221,13 @@ final insightsSnapshotProvider = StreamProvider.autoDispose<InsightsSnapshot>((
       // makes the stored entry older than the current revision, so it is not
       // reused.
       final revision = ref.read(insightsSourceRevisionProvider);
-      final snapshot = await service.compute(weekStart: weekStart, now: now);
+      // The stored target, not the default shown while it loads.
+      final storedTarget = await ref.read(followThroughTargetProvider.future);
+      final snapshot = await service.compute(
+        weekStart: weekStart,
+        now: now,
+        followThroughTarget: storedTarget,
+      );
       if (ref.mounted) {
         cacheNotifier.store(
           InsightsSnapshotCacheEntry(

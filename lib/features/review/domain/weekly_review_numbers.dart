@@ -11,6 +11,7 @@ class WeeklyTaskInput {
     required this.taskId,
     required this.title,
     required this.outcome,
+    this.endTime,
     this.reason,
     this.planChange,
   });
@@ -18,6 +19,9 @@ class WeeklyTaskInput {
   final String taskId;
   final String title;
   final TaskOutcome outcome;
+
+  /// Scheduled end; reasons are only asked for once it has passed.
+  final DateTime? endTime;
 
   /// Trimmed reason saved in that day's review; null when none.
   final String? reason;
@@ -137,7 +141,7 @@ class WeeklyNumbers {
   /// Most frequent first; ties keep the order the reasons first appear.
   final List<WeeklyReasonCount> reasonCounts;
 
-  /// Not-completed tasks without a reason (any day).
+  /// Ended, not-completed tasks without a reason (any day).
   final int noReasonCount;
   final List<WeeklyDayType> dayTypes;
 
@@ -153,9 +157,9 @@ class WeeklyNumbers {
   /// Tasks that are not completed (any outcome but Completed).
   bool get hasMissedTasks => reasonCounts.isNotEmpty || noReasonCount > 0;
 
-  /// `7 of 14 tasks · 2 skipped · 3 rescheduled · 1 plan changed`.
+  /// `7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed`.
   String get glanceSubline => [
-    '$completed of $total tasks',
+    '$completed of $total tasks done',
     if (skipped > 0) '$skipped skipped',
     if (rescheduled > 0) '$rescheduled rescheduled',
     if (planChanged > 0) '$planChanged plan changed',
@@ -170,8 +174,13 @@ class WeeklyNumbers {
   }
 }
 
-/// Pure port of the prototype's `compute()` and `highlights()`.
-WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days) {
+/// Pure port of the prototype's `compute()` and `highlights()`. Reasons and
+/// "No reason given" only cover blocks that have ended by [now] (REV-002).
+WeeklyNumbers computeWeeklyNumbers(
+  List<WeeklyDayInput> days, {
+  DateTime? now,
+}) {
+  final at = now ?? DateTime.now();
   final stats = <WeeklyDayStats>[];
   final outcomeRows = <WeeklyOutcomeRow>[];
   final counts = <String, int>{};
@@ -199,15 +208,17 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days) {
       if (task.outcome == TaskOutcome.skipped) skipped++;
       if (task.outcome == TaskOutcome.rescheduled) rescheduled++;
       final reason = task.reason;
-      if (reason == null) {
-        noReason++;
-      } else {
-        firstSeen.putIfAbsent(reason, () => firstSeen.length);
-        counts[reason] = (counts[reason] ?? 0) + 1;
-      }
-      if (day.reviewed) {
-        missedOnReviewedDays++;
-        if (reason != null) missedOnReviewedDaysWithReason++;
+      if (awaitsReason(task.outcome, task.endTime, now: at)) {
+        if (reason == null) {
+          noReason++;
+        } else {
+          firstSeen.putIfAbsent(reason, () => firstSeen.length);
+          counts[reason] = (counts[reason] ?? 0) + 1;
+        }
+        if (day.reviewed) {
+          missedOnReviewedDays++;
+          if (reason != null) missedOnReviewedDaysWithReason++;
+        }
       }
       if (task.outcome == TaskOutcome.skipped ||
           task.outcome == TaskOutcome.rescheduled) {

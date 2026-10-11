@@ -44,7 +44,7 @@ void main() {
         seeds: [const DailySeed('Only task', status: TaskStatus.skipped)],
         onSeeded: (v) => ids = v,
       );
-      expect(find.text('0 / 1 completed'), findsOneWidget);
+      expect(find.text('0 of 1 tasks done'), findsOneWidget);
       expect(find.text('1 without a reason'), findsOneWidget);
       expect(find.text('1 skipped'), findsNothing, reason: 'in the caption');
       expect(find.textContaining('1 skipped'), findsOneWidget);
@@ -72,7 +72,7 @@ void main() {
         ],
         onSeeded: (v) => ids = v,
       );
-      expect(find.text('2 / 2 completed'), findsOneWidget);
+      expect(find.text('2 of 2 tasks done'), findsOneWidget);
       expect(find.text('All reasons added'), findsOneWidget);
       for (final id in ids) {
         expect(reason(id), findsNothing);
@@ -102,7 +102,7 @@ void main() {
           ],
           onSeeded: (v) => ids = v,
         );
-        expect(find.text('0 / 15 completed'), findsNothing);
+        expect(find.text('0 of 15 tasks done'), findsNothing);
         expect(find.byType(ActionChip), findsWidgets);
 
         // The long title keeps its two lines, then ellipsizes with a tooltip.
@@ -217,7 +217,7 @@ void main() {
         ],
       );
       expect(find.byKey(const ValueKey('review-glance-today')), findsNothing);
-      expect(find.text('1 / 3 completed'), findsOneWidget);
+      expect(find.text('1 of 3 tasks done'), findsOneWidget);
       expect(find.textContaining('1 skipped'), findsOneWidget);
       expect(find.textContaining('1 cancelled'), findsOneWidget);
       final bar = tester.widget<LinearProgressIndicator>(

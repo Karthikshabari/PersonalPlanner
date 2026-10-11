@@ -183,13 +183,15 @@ void main() {
       find.byKey(const ValueKey('consistency-cell-2026-09-13')),
     );
     expect((strongCell.decoration as BoxDecoration).color, lightTokens.success);
-    final mediumCell = tester.widget<DecoratedBox>(
+    // 43% is below the 60% target with some time done: Started, which gets
+    // the lowest filled shade.
+    final startedCell = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('consistency-cell-2026-09-14')),
     );
     expect(
-      (mediumCell.decoration as BoxDecoration).color,
+      (startedCell.decoration as BoxDecoration).color,
       Color.alphaBlend(
-        lightTokens.success.withValues(alpha: 0.42),
+        lightTokens.success.withValues(alpha: 0.18),
         lightTokens.surfaceRaised,
       ),
     );
@@ -198,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('5h'), findsOneWidget);
     expect(find.text('30m'), findsOneWidget);
-    expect(find.text('80%'), findsOneWidget);
+    expect(find.text('80% · Success'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     await tester.tap(find.text('Close'));
     await tester.pumpAndSettle();

@@ -22,7 +22,9 @@ void main() {
   }) async {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 11);
+    // Yesterday: the block has ended, so it is asked for a reason (REV-002).
+    final day = DateTime(now.year, now.month, now.day - 1);
+    final start = DateTime(day.year, day.month, day.day, 11);
     await runDb(
       tester,
       () => container
@@ -44,8 +46,8 @@ void main() {
           .read(appDatabaseProvider)
           .taskDao
           .getTasksBetween(
-            DateTime(now.year, now.month, now.day),
-            DateTime(now.year, now.month, now.day + 1),
+            day,
+            DateTime(day.year, day.month, day.day + 1),
           ),
     );
     final id = TaskRepository.fromRow(rows.single).id;
@@ -55,13 +57,14 @@ void main() {
         () => container
             .read(reviewRepositoryProvider)
             .saveReviewDraft(
-              date: DateTime(now.year, now.month, now.day),
+              date: day,
               mood: 1,
               note: '',
               taskReasons: {id: savedReason},
             ),
       );
     }
+    container.read(selectedReviewDateProvider.notifier).state = day;
     appRouter.go('/review');
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     return (container, find.byKey(ValueKey('review-reason-$id')));

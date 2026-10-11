@@ -56,6 +56,7 @@ bool _sameOutcomeRow(TaskOutcomeRow a, TaskOutcomeRow b) =>
     a.taskId == b.taskId &&
     a.title == b.title &&
     a.startTime == b.startTime &&
+    a.endTime == b.endTime &&
     a.plannedMinutes == b.plannedMinutes &&
     a.trackedMinutes == b.trackedMinutes &&
     a.outcome == b.outcome &&
@@ -63,6 +64,7 @@ bool _sameOutcomeRow(TaskOutcomeRow a, TaskOutcomeRow b) =>
 
 bool _sameWeeklyTask(WeeklyTaskInput a, WeeklyTaskInput b) =>
     a.taskId == b.taskId &&
+    a.endTime == b.endTime &&
     a.title == b.title &&
     a.outcome == b.outcome &&
     a.reason == b.reason &&

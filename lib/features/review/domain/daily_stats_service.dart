@@ -4,6 +4,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/models/daily_stats.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../../core/utils/planned_clock_time.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
 
@@ -86,6 +87,7 @@ class DailyStatsService {
     );
     final reviewByDate = {for (final review in reviews) review.date: review};
     final now = DateTime.now();
+    final spans = _spans(tasks);
     final result = <DailyStats>[];
     for (
       var day = startInclusive;
@@ -100,7 +102,6 @@ class DailyStatsService {
                 !task.startTime!.isBefore(day),
           )
           .toList(growable: false);
-      var plannedMin = 0;
       var focusMin = 0;
       var completed = 0;
       var planned = 0;
@@ -145,7 +146,6 @@ class DailyStatsService {
               : dayEnd;
           if (overlapEnd.isAfter(overlapStart)) {
             final minutes = overlapEnd.difference(overlapStart).inMinutes;
-            plannedMin += minutes;
             if (task.categoryId != null && focusIds[task.categoryId!] == true) {
               focusMin += minutes;
             }
@@ -165,7 +165,13 @@ class DailyStatsService {
           skippedTasks: skipped,
           cancelledTasks: cancelled,
           rescheduledTasks: rescheduled,
-          plannedDurationMin: plannedMin,
+          plannedDurationMin: PlannedClockTime.unionMinutes(spans, day, dayEnd),
+          plannedOverlapMin: PlannedClockTime.overlapMinutes(
+            spans,
+            day,
+            dayEnd,
+          ),
+          plannedSpillInMin: PlannedClockTime.spillInMinutes(spans, day),
           actualDurationMin: actualByDate[isoDateString(day)] ?? 0,
           focusDurationMin: focusMin,
           energyLevel: review?.energyLevel,
@@ -209,7 +215,6 @@ class DailyStatsService {
       startInclusive,
       endExclusive,
     );
-    var plannedMin = 0;
     var actualMin = 0;
     var focusMin = 0;
     var completed = 0;
@@ -254,13 +259,14 @@ class DailyStatsService {
         final minutes = overlapEnd.isAfter(overlapStart)
             ? overlapEnd.difference(overlapStart).inMinutes
             : 0;
-        plannedMin += minutes;
         final isFocus = t.categoryId != null && focusIds[t.categoryId!] == true;
         if (isFocus) focusMin += minutes;
       }
     }
 
     actualMin = actualByDate.values.fold<int>(0, (sum, value) => sum + value);
+    // Clock time: the union over the range equals the sum of each day's union.
+    final spans = _spans(tasks);
 
     final review = await _db.reviewDao.getDailyReviewByDate(
       isoDateString(startInclusive),
@@ -276,7 +282,17 @@ class DailyStatsService {
       skippedTasks: skipped,
       cancelledTasks: cancelled,
       rescheduledTasks: rescheduled,
-      plannedDurationMin: plannedMin,
+      plannedDurationMin: PlannedClockTime.unionMinutes(
+        spans,
+        startInclusive,
+        endExclusive,
+      ),
+      plannedOverlapMin: PlannedClockTime.overlapMinutes(
+        spans,
+        startInclusive,
+        endExclusive,
+      ),
+      plannedSpillInMin: PlannedClockTime.spillInMinutes(spans, startInclusive),
       actualDurationMin: actualMin,
       focusDurationMin: focusMin,
       energyLevel: review?.energyLevel,
@@ -291,6 +307,12 @@ class DailyStatsService {
     );
   }
 
+  static List<PlannedSpan> _spans(Iterable<TaskRow> tasks) => [
+    for (final task in tasks)
+      if (task.startTime != null && task.endTime != null)
+        (start: task.startTime!, end: task.endTime!),
+  ];
+
   /// Loads each relevant Task's complete finished history once, then delegates
   /// all day/range allocation to the canonical R12 algorithm. This avoids the
   /// old wall-span and per-day-floor paths diverging from Task Actual totals.
@@ -298,19 +320,20 @@ class DailyStatsService {
     DateTime startInclusive,
     DateTime endExclusive,
   ) async {
-    final overlapping = await (_db.select(_db.timerSessions)..where(
-          (session) =>
-              session.deletedAt.isNull() &
-              session.state.equals('finished') &
-              session.endedAt.isNotNull() &
-              session.startedAt.isSmallerThanValue(
-                endExclusive.toUtc().toIso8601String(),
-              ) &
-              session.endedAt.isBiggerThanValue(
-                startInclusive.toUtc().toIso8601String(),
-              ),
-        ))
-        .get();
+    final overlapping =
+        await (_db.select(_db.timerSessions)..where(
+              (session) =>
+                  session.deletedAt.isNull() &
+                  session.state.equals('finished') &
+                  session.endedAt.isNotNull() &
+                  session.startedAt.isSmallerThanValue(
+                    endExclusive.toUtc().toIso8601String(),
+                  ) &
+                  session.endedAt.isBiggerThanValue(
+                    startInclusive.toUtc().toIso8601String(),
+                  ),
+            ))
+            .get();
     final sessionTaskIds = <String>{
       for (final session in overlapping) session.taskId,
     };
@@ -339,17 +362,20 @@ class DailyStatsService {
       }
     }
     if (ids.isEmpty) return const <String, int>{};
-    final history = await (_db.select(_db.timerSessions)..where(
-          (session) =>
-              session.deletedAt.isNull() &
-              session.state.equals('finished') &
-              session.endedAt.isNotNull() &
-              session.taskId.isIn(ids),
-        ))
-        .get();
+    final history =
+        await (_db.select(_db.timerSessions)..where(
+              (session) =>
+                  session.deletedAt.isNull() &
+                  session.state.equals('finished') &
+                  session.endedAt.isNotNull() &
+                  session.taskId.isIn(ids),
+            ))
+            .get();
     final byTask = <String, List<TimerSessionRow>>{};
     for (final session in history) {
-      byTask.putIfAbsent(session.taskId, () => <TimerSessionRow>[]).add(session);
+      byTask
+          .putIfAbsent(session.taskId, () => <TimerSessionRow>[])
+          .add(session);
     }
     final result = <String, int>{};
     for (final task in taskRows.where((row) => ids.contains(row.id))) {

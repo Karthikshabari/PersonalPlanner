@@ -13,6 +13,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planned_clock_time.dart';
 import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -581,7 +582,12 @@ class _WeekHeaderCell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tasksAsync = ref.watch(activeDayTasksForDateProvider(date));
-    final tasks = tasksAsync.value ?? const <Task>[];
+    // A block crossing midnight draws on both days but counts once, on the
+    // day it starts (same rule as Review).
+    final tasks = [
+      for (final task in tasksAsync.value ?? const <Task>[])
+        if (PlannedClockTime.startsOnDay(task.startTime, date)) task,
+    ];
     final completed = tasks
         .where((task) => task.status.dbValue == 'completed')
         .length;

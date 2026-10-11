@@ -37,18 +37,27 @@ class DailyGlanceCard extends StatelessWidget {
     final completed = stats.completedTasks;
     final total = stats.totalTasks;
     final tracked = stats.actualDurationMin;
-    final planned = Duration(minutes: stats.plannedDurationMin).shortLabel;
+    // Planned time is clock time; say what it includes and what it leaves out.
+    final plannedNotes = [
+      if (stats.plannedSpillInMin > 0)
+        '+${Duration(minutes: stats.plannedSpillInMin).shortLabel} from yesterday',
+      if (stats.plannedOverlapMin > 0)
+        '${Duration(minutes: stats.plannedOverlapMin).shortLabel} overlap',
+    ];
+    final planned =
+        '${Duration(minutes: stats.plannedDurationMin).shortLabel} planned'
+        '${plannedNotes.isEmpty ? '' : ' (${plannedNotes.join(', ')})'}';
     final noTasks = !future && total == 0;
     final headline = future
         ? '$total planned'
         : noTasks
         ? 'No tasks planned'
-        : '$completed / $total completed';
+        : '$completed of $total tasks done';
     final facts = <String>[
       if (tracked > 0)
-        '$planned planned · ${Duration(minutes: tracked).shortLabel} tracked'
+        '$planned · ${Duration(minutes: tracked).shortLabel} tracked'
       else if (stats.plannedDurationMin > 0)
-        '$planned planned'
+        planned
       else
         'No planned time',
       if (!future && insights.movedCount > 0) '${insights.movedCount} moved',
@@ -89,7 +98,7 @@ class DailyGlanceCard extends StatelessWidget {
                 minHeight: 4,
                 color: ReviewColors.of(context).success,
                 backgroundColor: tokens.outline,
-                semanticsLabel: '$completed of $total tasks completed',
+                semanticsLabel: '$completed of $total tasks done',
               ),
             ),
           ],

@@ -41,9 +41,9 @@ void main() {
       await _pumpAt(tester, WeeklyGlanceCard(numbers: numbers, future: false));
 
       expect(find.text('Week at a glance'), findsOneWidget);
-      expect(find.text('50% completed'), findsOneWidget);
+      expect(find.text('50% tasks done'), findsOneWidget);
       expect(
-        find.text('7 of 14 tasks · 2 skipped · 3 rescheduled · 1 plan changed'),
+        find.text('7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed'),
         findsOneWidget,
       );
       for (var i = 0; i < 7; i++) {
@@ -64,11 +64,11 @@ void main() {
 
       expect(
         tester.getSemantics(find.byKey(const ValueKey('weekly-day-0'))),
-        isSemantics(label: 'Mon Sep 28: 50% done, Good, Office'),
+        isSemantics(label: 'Mon Sep 28: 50% tasks done, Good, Office'),
       );
       expect(
         tester.getSemantics(find.byKey(const ValueKey('weekly-day-4'))),
-        isSemantics(label: 'Fri Oct 2: 50% done, Not reviewed, Leave'),
+        isSemantics(label: 'Fri Oct 2: 50% tasks done, Not reviewed, Leave'),
       );
       expect(
         tester.getSemantics(find.byKey(const ValueKey('weekly-day-5'))),

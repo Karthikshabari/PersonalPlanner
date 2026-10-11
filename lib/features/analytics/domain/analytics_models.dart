@@ -51,6 +51,36 @@ InsightDateRange consistencyCalendarRange(
 
 enum ConsistencyIntensity { neutral, low, medium, high, strong }
 
+/// The Settings "Follow-through target" choices, as fractions.
+const List<double> followThroughTargetChoices = [0.5, 0.6, 0.7, 0.8];
+const double defaultFollowThroughTarget = 0.6;
+
+/// What one day counts as for the streak and the heatmap (INS-003).
+enum DayResult {
+  /// Time done is at or above the target.
+  success,
+
+  /// Below the target, but at least one planned block was completed.
+  started,
+
+  /// Planned time, nothing completed, and the day is over.
+  missed,
+
+  /// Nothing planned, or a Holiday / Leave day.
+  empty,
+}
+
+/// The one rule that classifies a day. Returns null while the day is not
+/// decided yet: a future day, or today before it is a Success (today only
+/// becomes Started or Missed once it is over).
+DayResult? classifyDay(ConsistencyDay day, {required double target}) {
+  if (day.excludedByContext || day.plannedMinutes <= 0) return DayResult.empty;
+  if (day.isFuture) return null;
+  if (day.followThrough! >= target) return DayResult.success;
+  if (day.isToday) return null;
+  return day.completedPlannedMinutes > 0 ? DayResult.started : DayResult.missed;
+}
+
 class ConsistencyDay {
   const ConsistencyDay({
     required this.date,
@@ -59,14 +89,22 @@ class ConsistencyDay {
     required this.actualMinutes,
     this.context,
     required this.isFuture,
+    this.isToday = false,
   });
 
   final DateTime date;
+  /// Clock time: the union of the day's blocks, so an overlap counts once.
   final int plannedMinutes;
+
+  /// Clock time of the completed blocks (same union rule), never more than
+  /// [plannedMinutes].
   final int completedPlannedMinutes;
   final int actualMinutes;
   final DayContextKind? context;
   final bool isFuture;
+
+  /// The day is today: not over yet, so it is only decided once a Success.
+  final bool isToday;
 
   bool get excludedByContext =>
       context == DayContextKind.holiday || context == DayContextKind.leave;
@@ -80,8 +118,6 @@ class ConsistencyDay {
 
   int? get followThroughPercent =>
       followThrough == null ? null : (followThrough! * 100).round();
-
-  bool get isSuccessful => !isNeutral && followThrough! >= 0.75;
 
   ConsistencyIntensity get intensity {
     final value = followThrough;
@@ -167,6 +203,7 @@ class InsightsSnapshot {
     required this.completedPlannedMinutes,
     required this.categories,
     required this.notable,
+    this.followThroughTarget = defaultFollowThroughTarget,
   });
 
   final DateTime generatedFor;
@@ -180,6 +217,9 @@ class InsightsSnapshot {
   final int completedPlannedMinutes;
   final List<CategoryTime> categories;
   final List<NotableInsight> notable;
+
+  /// The Settings target the streaks and heatmap results were computed with.
+  final double followThroughTarget;
 
   double? get weeklyFollowThrough => plannedMinutes <= 0
       ? null
@@ -201,6 +241,7 @@ bool sameInsightsSnapshot(InsightsSnapshot a, InsightsSnapshot b) {
   // The screen only uses the planner day of `generatedFor`, not the instant.
   if (startOfDay(a.generatedFor) != startOfDay(b.generatedFor) ||
       a.consistencyStart != b.consistencyStart ||
+      a.followThroughTarget != b.followThroughTarget ||
       a.streaks.current != b.streaks.current ||
       a.streaks.best != b.streaks.best ||
       a.weekStart != b.weekStart ||
@@ -221,7 +262,8 @@ bool sameInsightsSnapshot(InsightsSnapshot a, InsightsSnapshot b) {
         x.completedPlannedMinutes != y.completedPlannedMinutes ||
         x.actualMinutes != y.actualMinutes ||
         x.context != y.context ||
-        x.isFuture != y.isFuture) {
+        x.isFuture != y.isFuture ||
+        x.isToday != y.isToday) {
       return false;
     }
   }

@@ -25,15 +25,18 @@ import 'review_theme.dart';
 import 'task_outcome_visuals.dart';
 import 'weekly_review_style.dart';
 
-/// Tasks that can take a reason (not Completed) and have none typed yet.
-int _missingReasons(List<TaskOutcomeRow> rows, Map<String, String> reasons) =>
-    rows
-        .where(
-          (row) =>
-              row.outcome != TaskOutcome.completed &&
-              (reasons[row.taskId]?.trim().isEmpty ?? true),
-        )
-        .length;
+/// Tasks that can take a reason (ended, not Completed) and have none typed.
+int _missingReasons(
+  List<TaskOutcomeRow> rows,
+  Map<String, String> reasons,
+  DateTime now,
+) => rows
+    .where(
+      (row) =>
+          awaitsReason(row.outcome, row.endTime, now: now) &&
+          (reasons[row.taskId]?.trim().isEmpty ?? true),
+    )
+    .length;
 
 /// "Task outcomes": a header (title, reasons status, Edit presets) and one row
 /// per task. The card itself listens to nothing that changes while typing;
@@ -80,7 +83,18 @@ class _TaskOutcomesCardState extends ConsumerState<TaskOutcomesCard> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text('Task outcomes', style: textTheme.titleMedium),
-        if (!widget.future && rows != null && rows.isNotEmpty)
+        // Hidden while the only unfinished blocks are still to come.
+        if (!widget.future &&
+            rows != null &&
+            rows.isNotEmpty &&
+            (rows.every((row) => row.outcome == TaskOutcome.completed) ||
+                rows.any(
+                  (row) => awaitsReason(
+                    row.outcome,
+                    row.endTime,
+                    now: DateTime.now(),
+                  ),
+                )))
           _ReasonStatusPill(date: widget.date, rows: rows),
       ],
     );
@@ -217,9 +231,11 @@ class _ReasonStatusPill extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final now = DateTime.now();
     final missing = ref.watch(
-      reviewDraftProvider(date)
-          .select((draft) => _missingReasons(rows, draft.reasons)),
+      reviewDraftProvider(
+        date,
+      ).select((draft) => _missingReasons(rows, draft.reasons, now)),
     );
     final tokens = AppThemeTokens.of(context);
     final success = ReviewColors.of(context).success;
@@ -444,7 +460,11 @@ class _TaskOutcomeRowViewState extends ConsumerState<TaskOutcomeRowView> {
                     Text(meta, style: caption),
                   ],
                 ),
-                if (row.outcome != TaskOutcome.completed) ...[
+                if (awaitsReason(
+                  row.outcome,
+                  row.endTime,
+                  now: DateTime.now(),
+                )) ...[
                   const SizedBox(height: AppSpacing.sm),
                   Semantics(
                     label: 'Reason for ${row.title}',

@@ -93,7 +93,7 @@ void main() {
     );
     expect(
       overviewDetailLine(withAll),
-      'Wed Oct 7 · Office · Great · 20% done (1 / 5)',
+      'Wed Oct 7 · Office · Great · 20% tasks done (1 of 5)',
     );
     final bare = ReviewOverviewDay(date: date, totalTasks: 0, completedTasks: 0);
     expect(overviewDetailLine(bare), 'Wed Oct 7 · no mood saved · No tasks');

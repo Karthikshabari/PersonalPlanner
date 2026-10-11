@@ -73,6 +73,7 @@ class WeeklyReviewService {
                   return WeeklyTaskInput(
                     taskId: task.id,
                     title: task.title,
+                    endTime: task.endTime,
                     outcome: resolveTaskOutcome(
                       task.status,
                       trackedMinutes: tracked,
