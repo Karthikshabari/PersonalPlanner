@@ -8,6 +8,7 @@ import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/analytics/providers/analytics_providers.dart';
+import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 
 import 'sqlite_setup.dart';
 
@@ -24,6 +25,8 @@ Future<ProviderContainer> buildTestContainer(
     container = ProviderContainer(
       overrides: [
         appDatabaseProvider.overrideWithValue(database),
+        // The midnight timer would outlive tests that tear down in addTearDown.
+        selectedDateRolloverProvider.overrideWith((ref) {}),
         if (minuteClockFactory != null)
           minuteClockProvider.overrideWithValue(minuteClockFactory),
         if (insightsNowFactory != null)

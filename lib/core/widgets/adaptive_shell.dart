@@ -11,7 +11,7 @@ import '../utils/date_utils.dart';
 
 typedef _Destination = (String, IconData, IconData, String);
 
-class AdaptiveShell extends StatelessWidget {
+class AdaptiveShell extends ConsumerWidget {
   final Widget child;
 
   const AdaptiveShell({super.key, required this.child});
@@ -44,7 +44,9 @@ class AdaptiveShell extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Keeps the Day selection following midnight while the app is open.
+    ref.watch(selectedDateRolloverProvider);
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = isDesktopWidth(constraints.maxWidth);

@@ -1,3 +1,5 @@
+import '../providers/double_click_tip_provider.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -1050,11 +1052,24 @@ class _EmptyDayState extends StatelessWidget {
     return IgnorePointer(
       ignoring: false,
       child: Center(
-        child: TextButton.icon(
-          key: const ValueKey('empty-day-add'),
-          onPressed: onAdd,
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text('Add block'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Tooltip(
+              message: 'Add block (or ${doubleClickVerb()} an empty slot)',
+              child: TextButton.icon(
+                key: const ValueKey('empty-day-add'),
+                onPressed: onAdd,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add block'),
+              ),
+            ),
+            Text(
+              'or ${doubleClickVerb()} an empty slot',
+              key: const ValueKey('empty-day-hint'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ),
       ),
     );

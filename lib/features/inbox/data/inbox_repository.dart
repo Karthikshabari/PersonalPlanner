@@ -64,6 +64,9 @@ class InboxRepository {
       // Explicit inbox first, then overdue by original date.
       items.sort((a, b) {
         if (a.isOverdue != b.isOverdue) return a.isOverdue ? 1 : -1;
+        if (a.isOverdue) {
+          return a.task.startTime!.compareTo(b.task.startTime!);
+        }
         return a.task.createdAt.compareTo(b.task.createdAt);
       });
       return items;

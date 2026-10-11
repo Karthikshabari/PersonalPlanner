@@ -233,8 +233,13 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Flexible(
-              fit: FlexFit.loose,
+            // Not a Flexible: a flex-1 header would split the free height 50/50
+            // with the grid's Expanded even when it needs far less. Cap it at
+            // half the screen and let it scroll when taller.
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+              ),
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
                 child: _buildHeader(context, weekStart, selectedDate, days),

@@ -1,3 +1,5 @@
+import '../providers/double_click_tip_provider.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -71,6 +73,7 @@ class _DayViewScreenState extends ConsumerState<DayViewScreen> {
         final timeline = Column(
           children: [
             const _DayMaterializationStatus(),
+            const _DayCreateTip(),
             Expanded(
               child: TimelineWidget(
                 onEditTask: (task) => _requestEdit(task, desktop: isDesktop),
@@ -155,6 +158,46 @@ class _DayMaterializationStatus extends ConsumerWidget {
     return ErrorPanel(
       message: friendlyErrorMessage(materialization.error!),
       onRetry: () => ref.invalidate(dayMaterializationProvider(date)),
+    );
+  }
+}
+
+/// One-time tip that an empty slot can be double-clicked to add a block.
+class _DayCreateTip extends ConsumerWidget {
+  const _DayCreateTip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dismissed = ref.watch(dayCreateTipDismissedProvider).value;
+    // Hidden while loading so it never flashes for a user who already
+    // dismissed it.
+    if (dismissed != false) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xs,
+        AppSpacing.md,
+        0,
+      ),
+      child: Row(
+        key: const ValueKey('day-create-tip'),
+        children: [
+          const Icon(Icons.lightbulb_outline, size: 16),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              'Tip: ${doubleClickVerb()} an empty slot to add a block.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('day-create-tip-dismiss'),
+            onPressed: () =>
+                ref.read(dayCreateTipDismissedProvider.notifier).dismiss(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
     );
   }
 }
