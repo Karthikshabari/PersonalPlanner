@@ -24,7 +24,9 @@ abstract final class ReviewReasonPresets {
         return List.of(defaultReviewReasonPresets);
       }
       return [
-        for (final value in decoded.cast<String>().take(maxReviewReasonPresets))
+        for (final value in clean(
+          decoded.cast<String>(),
+        ).take(maxReviewReasonPresets))
           value.length > maxReviewReasonPresetLength
               ? value.substring(0, maxReviewReasonPresetLength)
               : value,
@@ -34,7 +36,14 @@ abstract final class ReviewReasonPresets {
     }
   }
 
-  static String encode(List<String> presets) => jsonEncode(presets);
+  /// Trims every entry and drops the empty ones.
+  static List<String> clean(Iterable<String> presets) => [
+    for (final preset in presets)
+      if (preset.trim().isNotEmpty) preset.trim(),
+  ];
+
+  /// Stored form: always [clean], so the JSON never holds a blank entry.
+  static String encode(List<String> presets) => jsonEncode(clean(presets));
 
   /// The chips shown under a reason field: non-blank, trimmed.
   static List<String> chips(List<String> presets) => [

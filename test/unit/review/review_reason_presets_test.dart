@@ -20,6 +20,15 @@ void main() {
       );
     });
 
+    test('clean trims entries and drops empty ones', () {
+      expect(
+        ReviewReasonPresets.clean(['  opo ', '', '   ', 'Blocked']),
+        ['opo', 'Blocked'],
+      );
+      expect(ReviewReasonPresets.decode('["opo",""]'), ['opo']);
+      expect(ReviewReasonPresets.encode(['opo', ' ']), '["opo"]');
+    });
+
     test('decode keeps a stored empty list empty', () {
       expect(ReviewReasonPresets.decode('[]'), isEmpty);
     });

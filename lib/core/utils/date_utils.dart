@@ -52,12 +52,58 @@ bool isValidIsoDate(String value) {
       parsed.day == day;
 }
 
-/// Local midnight of the Monday of the week containing [dateTime]
-/// (Mon–Sun weeks, planner.md Chunk 5 #6).
-DateTime startOfWeek(DateTime dateTime) {
+/// First day of the planner week, chosen in Settings.
+enum WeekStartDay {
+  monday,
+  sunday;
+
+  static WeekStartDay parse(String? value) =>
+      value == 'sunday' ? WeekStartDay.sunday : WeekStartDay.monday;
+}
+
+/// The week start every week boundary in the app reads. Set only by the
+/// week-start setting provider; Monday until it loads.
+WeekStartDay plannerWeekStartDay = WeekStartDay.monday;
+
+/// Local midnight of the first day of the week containing [dateTime] under
+/// [weekStart].
+DateTime startOfWeekFor(DateTime dateTime, WeekStartDay weekStart) {
   final local = PlannerTimeZone.toPlannerLocal(dateTime);
+  final offset = switch (weekStart) {
+    WeekStartDay.monday => local.weekday - DateTime.monday,
+    WeekStartDay.sunday => local.weekday % 7,
+  };
   return addDays(
     PlannerTimeZone.calendarDate(local.year, local.month, local.day),
-    -(local.weekday - 1),
+    -offset,
   );
+}
+
+/// Local midnight of the first day of the week containing [dateTime], per the
+/// week-start setting (Monday by default).
+DateTime startOfWeek(DateTime dateTime) =>
+    startOfWeekFor(dateTime, plannerWeekStartDay);
+
+/// 1-based position of [dateTime]'s day inside its planner week (1 = first
+/// day of the week per the setting, 7 = last).
+int dayOfPlannerWeek(DateTime dateTime) {
+  final local = PlannerTimeZone.toPlannerLocal(dateTime);
+  return switch (plannerWeekStartDay) {
+    WeekStartDay.monday => local.weekday,
+    WeekStartDay.sunday => local.weekday % 7 + 1,
+  };
+}
+
+/// Local midnight of the Monday of the week containing [dateTime], whatever
+/// the week-start setting. For rules that are defined on ISO weeks.
+DateTime startOfIsoWeek(DateTime dateTime) =>
+    startOfWeekFor(dateTime, WeekStartDay.monday);
+
+/// The canonical Monday under which the weekly review of the week containing
+/// [dateTime] is stored. Saved reviews keep this Monday key whatever the
+/// week-start setting, so switching it never orphans or moves a review: a
+/// Sunday-start week is keyed by the Monday that falls inside it.
+DateTime weeklyReviewKey(DateTime dateTime) {
+  final start = startOfWeek(dateTime);
+  return plannerWeekStartDay == WeekStartDay.sunday ? addDays(start, 1) : start;
 }

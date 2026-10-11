@@ -168,7 +168,7 @@ int keptExpectedByTodayMin(
 /// The Mondays of the 9 weeks ending with the one that contains [today],
 /// oldest first.
 List<String> keptWeekStarts(String today) {
-  final thisWeek = startOfWeek(parseIsoDate(today));
+  final thisWeek = startOfIsoWeek(parseIsoDate(today));
   return [
     for (var i = keptWeekBarCount - 1; i >= 0; i--)
       isoDateString(addDays(thisWeek, -7 * i)),
@@ -266,7 +266,7 @@ KeptExperimentView buildKeptExperimentView({
   );
   final remainingMin = math.max(0, targetMin - doneMin);
   final startWeek = isoDateString(
-    startOfWeek(parseIsoDate(experiment.startDate)),
+    startOfIsoWeek(parseIsoDate(experiment.startDate)),
   );
   final startLabel = DateFormat('MMM d');
 

@@ -139,15 +139,18 @@ class ConsistencyGrid extends StatelessWidget {
                     width: labelWidth,
                     child: Column(
                       children: [
-                        for (final label in const [
-                          'Mon',
-                          '',
-                          'Wed',
-                          '',
-                          'Fri',
-                          '',
-                          'Sun',
-                        ])
+                        for (final label
+                            in plannerWeekStartDay == WeekStartDay.sunday
+                                ? const ['Sun', '', 'Tue', '', 'Thu', '', 'Sat']
+                                : const [
+                                    'Mon',
+                                    '',
+                                    'Wed',
+                                    '',
+                                    'Fri',
+                                    '',
+                                    'Sun',
+                                  ])
                           SizedBox(
                             height: cellSize + gap,
                             child: Align(

@@ -87,6 +87,7 @@ class WeeklyReviewHistoryService {
       }
     }
     final byWeek = {
+      // Reviews are stored under a canonical Monday key (weeklyReviewKey).
       for (final review in reviews) isoDateString(review.weekStartDate): review,
     };
     return [
@@ -98,7 +99,7 @@ class WeeklyReviewHistoryService {
             weekStart: week,
             totalTasks: totals[key] ?? 0,
             completedTasks: completed[key] ?? 0,
-            review: byWeek[key],
+            review: byWeek[isoDateString(weeklyReviewKey(week))],
             allBreak: (breakDaysByWeek[key] ?? 0) == 7,
           );
         }(),

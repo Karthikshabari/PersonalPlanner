@@ -32,6 +32,8 @@ import '../../../templates/providers/template_providers.dart';
 import '../../../timeline/presentation/providers/day_tasks_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../../timeline/presentation/providers/grid_settings_provider.dart';
+import '../../providers/week_start_provider.dart';
+import '../../../../core/utils/date_utils.dart' show WeekStartDay;
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -266,6 +268,62 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             () => ref
                                 .read(gridIntervalProvider.notifier)
                                 .setInterval(minutes),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.view_week_outlined),
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: Text(
+                            'Week starts on',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'First day of the Week view, reviews and Insights',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: DropdownButton<WeekStartDay>(
+                        key: const ValueKey('week-start-dropdown'),
+                        value:
+                            ref.watch(weekStartDayProvider).value ??
+                            WeekStartDay.monday,
+                        items: const [
+                          DropdownMenuItem(
+                            value: WeekStartDay.monday,
+                            child: Text('Monday'),
+                          ),
+                          DropdownMenuItem(
+                            value: WeekStartDay.sunday,
+                            child: Text('Sunday'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          _runPreferenceChange(
+                            () => ref
+                                .read(weekStartDayProvider.notifier)
+                                .setWeekStart(value),
                           );
                         },
                       ),

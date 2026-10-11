@@ -8,6 +8,10 @@ import '../theme/app_theme_tokens.dart';
 import '../../features/review/providers/review_providers.dart';
 import '../../features/timeline/presentation/providers/selected_date_provider.dart';
 import '../utils/date_utils.dart';
+import '../../features/settings/providers/week_start_provider.dart';
+import '../../features/sync/domain/runtime_backend.dart';
+import '../../features/sync/providers/runtime_backend_providers.dart';
+import '../../features/sync/providers/sync_providers.dart';
 
 typedef _Destination = (String, IconData, IconData, String);
 
@@ -47,6 +51,8 @@ class AdaptiveShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Keeps the Day selection following midnight while the app is open.
     ref.watch(selectedDateRolloverProvider);
+    // Loads the week-start setting before any week screen reads it.
+    ref.watch(weekStartDayProvider);
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = isDesktopWidth(constraints.maxWidth);
@@ -56,18 +62,25 @@ class AdaptiveShell extends ConsumerWidget {
               children: [
                 _buildRail(context),
                 const VerticalDivider(width: 1),
-                Expanded(child: child),
+                Expanded(child: _withBanner(child)),
               ],
             ),
           );
         }
         return Scaffold(
-          body: child,
+          body: _withBanner(child),
           bottomNavigationBar: _buildBottomBar(context),
         );
       },
     );
   }
+
+  Widget _withBanner(Widget content) => Column(
+    children: [
+      const SignedOutBanner(),
+      Expanded(child: content),
+    ],
+  );
 
   int? _selectedIndex(BuildContext context, List<_Destination> destinations) {
     final location = GoRouterState.of(context).uri.path;
@@ -171,5 +184,43 @@ class AdaptiveShell extends ConsumerWidget {
       }
     }
     context.go(location);
+  }
+}
+
+/// Slim notice shown while a cloud backend is configured but nobody is signed
+/// in, so the empty local-only data is not mistaken for lost data.
+class SignedOutBanner extends ConsumerWidget {
+  const SignedOutBanner({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final backend = ref.watch(runtimeBackendProvider);
+    final session = ref.watch(authSessionProvider);
+    if (backend is LocalOnlyRuntimeBackend ||
+        !session.hasValue ||
+        session.requireValue != null) {
+      return const SizedBox.shrink();
+    }
+    final tokens = AppThemeTokens.of(context);
+    return Material(
+      color: tokens.pending.withValues(alpha: 0.16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_outlined, size: 16),
+            const SizedBox(width: AppSpacing.sm),
+            const Expanded(
+              child: Text('Signed out. You are seeing local-only data.'),
+            ),
+            TextButton(
+              key: const ValueKey('signed-out-banner-sign-in'),
+              onPressed: () => context.go('/settings/sync'),
+              child: const Text('Sign in'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

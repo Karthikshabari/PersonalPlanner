@@ -8,6 +8,7 @@ import '../../../core/providers/brief_keep_alive.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../settings/providers/week_start_provider.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/review_repository.dart';
 import '../domain/daily_stats_service.dart';
@@ -38,8 +39,10 @@ final selectedReviewDateProvider = StateProvider<DateTime>((ref) {
   return startOfDay(now);
 });
 
-/// Monday of the week shown on the Weekly Review / Week View screens.
+/// First day of the week shown on the Weekly Review / Week View screens.
 final selectedWeekStartProvider = StateProvider<DateTime>((ref) {
+  // Re-derived when the week-start setting changes.
+  ref.watch(weekStartDayProvider);
   return startOfWeek(DateTime.now());
 });
 
@@ -156,6 +159,7 @@ final weeklyReviewHistoryProvider = FutureProvider.autoDispose
 final reviewOverviewWeekWindowProvider = FutureProvider.autoDispose
     .family<List<WeeklyHistoryWeek>, int>((ref, weekCount) async {
       ref.watch(breakDayRuleProvider);
+      ref.watch(weekStartDayProvider);
       return ref
           .watch(weeklyReviewHistoryServiceProvider)
           .window(

@@ -192,7 +192,7 @@ class ExperimentRepository {
         expectedRevision,
         retired: false,
       );
-      final currentWeekStart = isoDateString(startOfWeek(parseIsoDate(today)));
+      final currentWeekStart = isoDateString(startOfIsoWeek(parseIsoDate(today)));
       final changes = applyKeptTargetChange(
         experiment: fromRow(row, ''),
         draft: (weekdayMin: weekdayTargetMin, weekendMin: weekendTargetMin),

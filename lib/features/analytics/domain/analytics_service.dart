@@ -571,9 +571,7 @@ abstract final class InsightsCalculator {
     final today = startOfDay(now);
     final currentWeek = startOfWeek(today);
     final selectedIsCurrent = isSameDay(selectedWeekStart, currentWeek);
-    final comparableDayCount = selectedIsCurrent
-        ? PlannerTimeZone.toPlannerLocal(today).weekday
-        : 7;
+    final comparableDayCount = selectedIsCurrent ? dayOfPlannerWeek(today) : 7;
     InsightDateRange window(DateTime start) =>
         InsightDateRange(start, addDays(start, comparableDayCount));
     final selectedRange = window(selectedWeekStart);

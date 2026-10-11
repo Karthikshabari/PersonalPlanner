@@ -126,7 +126,7 @@ class ReviewRepository {
   /// Inserts or updates the review for the Mon–Sun week starting at
   /// [review.weekStartDate] (one row per week).
   Future<WeeklyReview> saveWeeklyReview(WeeklyReview review) async {
-    final weekIso = isoDateString(startOfWeek(review.weekStartDate));
+    final weekIso = isoDateString(weeklyReviewKey(review.weekStartDate));
     final existing = await _dao.getAnyWeeklyReviewByWeekStart(weekIso);
     final now = DateTime.now();
     final effective = review.copyWith(
@@ -135,7 +135,7 @@ class ReviewRepository {
           (review.id.isEmpty
               ? generateDeterministicUuid('weekly-review:$weekIso')
               : review.id),
-      weekStartDate: startOfWeek(review.weekStartDate),
+      weekStartDate: weeklyReviewKey(review.weekStartDate),
       overallRating: _clampRating(review.overallRating),
       mood: review.mood?.clamp(1, 4),
       feeling: normalizeWeeklyFeeling(review.feeling),
@@ -169,7 +169,7 @@ class ReviewRepository {
     return saveWeeklyReview(
       WeeklyReview(
         id: existing?.id ?? '',
-        weekStartDate: startOfWeek(weekStart),
+        weekStartDate: weeklyReviewKey(weekStart),
         reflection: trimmedNote.isEmpty ? null : trimmedNote,
         overallRating: existing?.overallRating,
         goalsMet: existing?.goalsMet ?? const [],
@@ -189,19 +189,19 @@ class ReviewRepository {
     DateTime end,
   ) async {
     final rows = await _dao.getWeeklyReviewsBetween(
-      isoDateString(startOfWeek(start)),
-      isoDateString(startOfWeek(end)),
+      isoDateString(weeklyReviewKey(start)),
+      isoDateString(weeklyReviewKey(end)),
     );
     return rows.map(ReviewRepository.fromWeeklyRow).toList(growable: false);
   }
 
   Stream<WeeklyReview?> watchWeeklyReviewForWeek(DateTime weekStart) => _dao
-      .watchWeeklyReviewForWeek(isoDateString(startOfWeek(weekStart)))
+      .watchWeeklyReviewForWeek(isoDateString(weeklyReviewKey(weekStart)))
       .map((row) => row == null ? null : fromWeeklyRow(row));
 
   Future<WeeklyReview?> getWeeklyReviewForWeek(DateTime weekStart) async {
     final row = await _dao.getWeeklyReviewByWeekStart(
-      isoDateString(startOfWeek(weekStart)),
+      isoDateString(weeklyReviewKey(weekStart)),
     );
     return row == null ? null : fromWeeklyRow(row);
   }

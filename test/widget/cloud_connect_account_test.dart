@@ -216,6 +216,8 @@ void main() {
 
     await tester.tap(find.text('Log out'));
     await settle(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await settle(tester);
 
     expect(find.text('Cloud account connected'), findsNothing);
     expect(find.byKey(const ValueKey('sync-email')), findsOneWidget);

@@ -10,6 +10,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../settings/providers/week_start_provider.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../day_context/domain/break_day.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
@@ -94,6 +95,8 @@ final _selectedFollowThroughTargetProvider = Provider.autoDispose<double>(
 final selectedInsightsWeekProvider = StateProvider<DateTime>((ref) {
   // This is initialization only. The selected week must not follow later
   // clock emissions, because those must preserve deliberate history browsing.
+  // Only a change of the week-start setting re-derives it.
+  ref.watch(weekStartDayProvider);
   return startOfWeek(ref.read(insightsNowFactoryProvider)());
 });
 

@@ -63,6 +63,49 @@ void main() {
     if (directory.existsSync()) directory.deleteSync(recursive: true);
   });
 
+  testWidgets('Log out asks first; Cancel keeps the session, Sign out ends it', (
+    tester,
+  ) async {
+    final harness = await _pump(
+      tester,
+      backend: testProvisionedBackend(),
+      profileStore: profileStore,
+      capabilities: capabilities,
+      api: api,
+      signedIn: true,
+      initialSyncPhase: InitialSyncPhase.complete,
+    );
+    final logOut = find.byKey(const ValueKey('cloud-sign-out-action'));
+
+    await tester.ensureVisible(logOut);
+    await tester.tap(logOut);
+    await settle(tester);
+    expect(find.text('Sign out?'), findsOneWidget);
+    expect(
+      find.text(
+        'Your planner data stays on this device but is hidden until you sign '
+        'in again.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Cancel'));
+    await settle(tester);
+    expect(find.text('Sign out?'), findsNothing);
+    expect(harness.client.signOutCalls, 0);
+
+    await tester.tap(logOut);
+    await settle(tester);
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await settle(tester);
+    expect(harness.client.signOutCalls, 1);
+
+    await _teardown(tester, harness);
+  });
+
   testWidgets('Cloud Sync can be switched off before the baseline exists', (
     tester,
   ) async {

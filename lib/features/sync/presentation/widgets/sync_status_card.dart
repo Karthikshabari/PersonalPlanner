@@ -217,7 +217,7 @@ SyncStatusView syncStatusView(
       return SyncStatusView(
         icon: Icons.warning_amber,
         color: tokens.pending,
-        title: 'Conflicts need a decision',
+        title: 'Sync is waiting on a conflict',
         subtitle:
             status.message ??
             'Choose which copy to keep for the records listed below.',
