@@ -63,6 +63,7 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
                 ),
                 const Spacer(),
                 IconButton(
+                  tooltip: _expanded ? 'Collapse inbox' : 'Expand inbox',
                   key: const ValueKey('inbox-collapse'),
                   icon: Icon(
                     _expanded

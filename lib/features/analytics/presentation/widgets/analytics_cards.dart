@@ -397,13 +397,17 @@ class StreakSummaryView extends StatelessWidget {
       _StreakChip(
         key: const ValueKey('current-streak'),
         icon: Icons.local_fire_department_outlined,
-        label: 'Current streak: ${streaks.current} days',
+        label:
+            'Current streak: ${streaks.current} '
+            '${streaks.current == 1 ? 'day' : 'days'}',
         color: AppThemeTokens.of(context).success,
       ),
       _StreakChip(
         key: const ValueKey('best-streak'),
         icon: Icons.emoji_events_outlined,
-        label: 'Best streak: ${streaks.best} days',
+        label:
+            'Best streak: ${streaks.best} '
+            '${streaks.best == 1 ? 'day' : 'days'}',
         color: AppThemeTokens.of(context).warning,
       ),
     ],

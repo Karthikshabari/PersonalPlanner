@@ -179,6 +179,11 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
                       // and Save explains the limit instead of truncating.
                       maxLength: AppConstants.maxTaskTitleLength,
                       maxLengthEnforcement: MaxLengthEnforcement.none,
+                      onChanged: (_) {
+                        if (_titleError != null) {
+                          setState(() => _titleError = null);
+                        }
+                      },
                       decoration: InputDecoration(
                         labelText: 'Title',
                         helperText: widget.conversionMode
@@ -206,8 +211,14 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
                       end: _end,
                       enabled: !_saving,
                       errorText: _scheduleError,
-                      onStartChanged: (value) => setState(() => _start = value),
-                      onEndChanged: (value) => setState(() => _end = value),
+                      onStartChanged: (value) => setState(() {
+                        _start = value;
+                        _scheduleError = null;
+                      }),
+                      onEndChanged: (value) => setState(() {
+                        _end = value;
+                        _scheduleError = null;
+                      }),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                     Text(

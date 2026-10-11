@@ -123,6 +123,7 @@ class CategoriesScreen extends ConsumerWidget {
                       onPressed: () => _showEditDialog(context, ref, category),
                     ),
                     IconButton(
+                      tooltip: 'Delete category',
                       key: ValueKey('delete-category-${category.name}'),
                       icon: const Icon(Icons.delete_outline, size: 18),
                       onPressed: () => _confirmDelete(context, ref, category),
@@ -232,11 +233,20 @@ class CategoriesScreen extends ConsumerWidget {
                 }
                 try {
                   if (existing == null) {
+                    final current =
+                        ref.read(categoriesProvider).value ??
+                        const <Category>[];
                     await repo.insertCategory(
                       Category(
                         id: '',
                         name: name,
                         colorHex: selectedColor,
+                        sortOrder: current.isEmpty
+                            ? 0
+                            : current
+                                      .map((c) => c.sortOrder)
+                                      .reduce((a, b) => a > b ? a : b) +
+                                  1,
                         createdAt: DateTime.now(),
                         updatedAt: DateTime.now(),
                       ),

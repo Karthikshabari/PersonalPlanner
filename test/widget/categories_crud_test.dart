@@ -202,6 +202,43 @@ void main() {
     await finish(tester, container);
   });
 
+  // UAT 2026-10-11 CAT-001: a new category must land after the existing ones,
+  // not tie with the first one (sort_order 0).
+  testWidgets('a new category is appended after the existing categories', (
+    tester,
+  ) async {
+    final container = await pumpCategories(tester);
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).first, 'Appended');
+    await tester.tap(find.byKey(const ValueKey('save-category')));
+    await settle(tester);
+
+    final all = await runDb(
+      tester,
+      () => container.read(categoryRepositoryProvider).getAllCategories(),
+    );
+    expect(all.last.name, 'Appended');
+    final maxOther = all
+        .where((c) => c.name != 'Appended')
+        .map((c) => c.sortOrder)
+        .reduce((a, b) => a > b ? a : b);
+    expect(all.last.sortOrder, greaterThan(maxOther));
+    await finish(tester, container);
+  });
+
+  // UAT 2026-10-11 XC: the icon-only delete button needs an accessible name.
+  testWidgets('delete button is named for assistive tech', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final container = await pumpCategories(tester);
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('delete-category-Work'))),
+      isSemantics(tooltip: 'Delete category', isButton: true),
+    );
+    semantics.dispose();
+    await finish(tester, container);
+  });
+
   // UAT F-013: the FAB and the colour swatches are named for assistive tech.
   testWidgets('add FAB and colour swatches expose names and selection', (
     tester,
