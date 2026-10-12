@@ -29,6 +29,7 @@ void main() {
         '20261008000000_weekly_review_mood_feeling.sql',
         '20261009000000_experiments.sql',
         '20261010000000_kept_experiments.sql',
+        '20261012000000_inbox_sessions.sql',
       ]),
     );
   });
@@ -44,7 +45,7 @@ void main() {
       r'name: "([0-9a-z_]+)",\s*\n\s*query: [A-Za-z0-9]+,\s*\n\s*sha256: "([0-9a-f]{64})"',
     ).allMatches(manifest).toList();
 
-    expect(entries, hasLength(12));
+    expect(entries, hasLength(13));
     for (final entry in entries) {
       final name = entry.group(1)!;
       final expected = entry.group(2)!;
@@ -71,6 +72,7 @@ void main() {
         '20261008000000_weekly_review_mood_feeling',
         '20261009000000_experiments',
         '20261010000000_kept_experiments',
+        '20261012000000_inbox_sessions',
       ]),
     );
   });
@@ -566,5 +568,164 @@ void main() {
       sql.lastIndexOf('insert into public.sync_changes'),
       lessThan(sql.lastIndexOf('commit;')),
     );
+  });
+  group('inbox sessions migration (13)', () {
+    const applyHeader =
+        'create or replace function public.planner_apply_sync_operation_internal(';
+    const returnLine =
+        '\n  return public.planner_apply_sync_operation_internal_pre_experiments(';
+
+    late String sql;
+    late String previous;
+
+    setUpAll(() {
+      sql = File('supabase/migrations/20261012000000_inbox_sessions.sql')
+          .readAsStringSync();
+      previous = File('supabase/migrations/20261010000000_kept_experiments.sql')
+          .readAsStringSync();
+    });
+
+    String applyFunction(String source) {
+      final start = source.indexOf(applyHeader);
+      expect(start, greaterThanOrEqualTo(0));
+      final end = source.indexOf('\n\$\$;', start);
+      expect(end, greaterThan(start));
+      return source.substring(start, end + '\n\$\$;'.length);
+    }
+
+    test(
+      'the apply function is migration 12 plus only the Inbox additions',
+      () {
+        final function = applyFunction(sql);
+        final blockStart = function.indexOf(
+          '\n  -- Inbox: an absent inbox_item_id',
+        );
+        final blockEnd = function.indexOf(returnLine);
+        expect(blockStart, greaterThan(0));
+        expect(blockEnd, greaterThan(blockStart));
+
+        // The block comes after the tag_id block (it reads the rebuilt
+        // canonical payload) and before the final delegating return.
+        expect(
+          function.indexOf("canonical := jsonb_set(p_payload, '{tag_id}'"),
+          lessThan(blockStart),
+        );
+        expect(
+          function.substring(blockStart, blockEnd),
+          contains(
+            "raise exception using errcode = '22023', "
+            "message = 'Invalid inbox payload'",
+          ),
+        );
+
+        const declarations =
+            '  stored_inbox_item jsonb;\n  stored_inbox_history jsonb;\n';
+        expect(function, contains(declarations));
+        final withoutAdditions =
+            (function.substring(0, blockStart) + function.substring(blockEnd))
+                .replaceFirst(declarations, '');
+        expect(withoutAdditions, applyFunction(previous));
+      },
+    );
+
+    test('the revoke on the apply function is unchanged', () {
+      const revoke =
+          'revoke all on function public.planner_apply_sync_operation_internal(\n'
+          '  uuid, text, text, text, bigint, jsonb, integer, integer\n'
+          ') from public, anon, authenticated;';
+      expect(previous, contains(revoke));
+      expect(sql, contains(revoke));
+      expect(
+        sql,
+        contains(
+          'revoke all on function public.planner_inbox_history_valid(text)\n'
+          '  from public, anon, authenticated;',
+        ),
+      );
+    });
+
+    test('every statement is idempotent by construction', () {
+      expect(sql.trimLeft(), startsWith('begin;'));
+      expect(sql.trimRight(), endsWith('commit;'));
+      expect(RegExp(r'add column(?! if not exists)').hasMatch(sql), isFalse);
+      expect(
+        RegExp(r'create (unique )?index(?! if not exists)').hasMatch(sql),
+        isFalse,
+      );
+      expect(RegExp(r'create function').hasMatch(sql), isFalse);
+      // Additive only: no DROP statement (the copied function names the
+      // experiment outcome 'drop', which is a value, not a statement).
+      expect(
+        RegExp(
+          r'\bdrop\s+(table|column|index|constraint|function|trigger|policy)\b',
+          caseSensitive: false,
+        ).hasMatch(sql),
+        isFalse,
+      );
+      // Every constraint is added only when it is not already there.
+      expect(
+        RegExp(r'add constraint').allMatches(sql).length,
+        RegExp(r'if not exists \(select 1 from pg_constraint')
+            .allMatches(sql)
+            .length,
+      );
+      expect(
+        sql,
+        contains(
+          '20261010000000_kept_experiments.sql must be applied before '
+          '20261012000000_inbox_sessions.sql',
+        ),
+      );
+    });
+
+    test('the capability body is the baseline body plus inbox_sessions', () {
+      String body(String source) {
+        final start = source.lastIndexOf(
+          'create or replace function public.planner_sync_capabilities()',
+        );
+        final open = source.indexOf(r'as $$', start) + r'as $$'.length;
+        return source.substring(open, source.indexOf(r'$$;', open));
+      }
+
+      final baseline = body(
+        File('supabase/migrations/20260917000000_initial_sync_baseline.sql')
+            .readAsStringSync(),
+      );
+      final next = body(sql);
+      expect(next, contains("'inbox_sessions', true,"));
+      expect(next.replaceFirst("    'inbox_sessions', true,\n", ''), baseline);
+    });
+
+    test('history times are pattern-checked before they are cast', () {
+      final start = sql.indexOf(
+        'create or replace function public.planner_inbox_history_valid(',
+      );
+      final end = sql.indexOf(r'$$;', sql.indexOf(r'as $$', start));
+      final helper = sql.substring(start, end);
+      // timestamptz input alone accepts now, tomorrow, yesterday, epoch and
+      // date-only text, so each cast must be preceded by the instant check.
+      final check = helper.indexOf("(entry->>'at') !~ instant_pattern");
+      final reopenedCheck = helper.indexOf(
+        "(entry->>'reopened_at') !~ instant_pattern",
+      );
+      final cast = helper.indexOf("(entry->>'at')::timestamptz");
+      expect(check, greaterThan(0));
+      expect(reopenedCheck, greaterThan(0));
+      expect(cast, greaterThan(check));
+      expect(cast, greaterThan(reopenedCheck));
+      expect(helper, contains('instant_pattern constant text'));
+    });
+
+    test('the pgTAP plan matches the number of assertions', () {
+      final test = File('supabase/tests/database/inbox_sessions_test.sql')
+          .readAsStringSync();
+      final planned = RegExp(r'select plan\((\d+)\);').firstMatch(test);
+      expect(planned, isNotNull);
+      final assertions = RegExp(
+        r'^select (?:is|ok|throws_ok|has_column)\(',
+        multiLine: true,
+      ).allMatches(test).length;
+      expect(int.parse(planned!.group(1)!), assertions);
+    });
   });
 }

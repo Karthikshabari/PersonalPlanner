@@ -43,6 +43,12 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
           .toList() ??
       const <PlanTitleChange>[],
   displayPlanChangeId: json['displayPlanChangeId'] as String?,
+  inboxItemId: json['inboxItemId'] as String?,
+  inboxHistory:
+      (json['inboxHistory'] as List<dynamic>?)
+          ?.map((e) => InboxClosure.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <InboxClosure>[],
   planChangeReasons:
       (json['planChangeReasons'] as Map<String, dynamic>?)?.map(
         (k, e) => MapEntry(k, e as String),
@@ -80,6 +86,8 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'missedAt': instance.missedAt,
   'planTitleHistory': instance.planTitleHistory,
   'displayPlanChangeId': instance.displayPlanChangeId,
+  'inboxItemId': instance.inboxItemId,
+  'inboxHistory': instance.inboxHistory,
   'planChangeReasons': instance.planChangeReasons,
   'createdAt': instance.createdAt.toIso8601String(),
   'updatedAt': instance.updatedAt.toIso8601String(),

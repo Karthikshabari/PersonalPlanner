@@ -15,6 +15,7 @@ import '../../../core/utils/task_time_metrics.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
 import '../../timer/data/timer_repository.dart';
 import '../../timer/domain/timer_service.dart';
+import '../../inbox/domain/inbox_history.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 
 class TaskRepository {
@@ -63,6 +64,7 @@ class TaskRepository {
     await _db.transaction(() async {
       await _validateHistoryLinks(effective);
       await _validateTagExists(effective);
+      await _validateInboxItemExists(effective);
       await _dao.insertTask(_toCompanion(effective));
       await TaskActualDurationService(_db)
           .recomputeTaskInTransaction(effective.id);
@@ -122,6 +124,9 @@ class TaskRepository {
       }
       await _validateHistoryLinks(canonical, previous: row);
       await _validateTagExists(canonical);
+      if (canonical.inboxItemId != current.inboxItemId) {
+        await _validateInboxItemExists(canonical);
+      }
       if (ownerDeviceId != null) {
         await TimerService(_db)
             .stopOwnedTaskInTransaction(canonical.id, ownerDeviceId, now);
@@ -310,6 +315,8 @@ class TaskRepository {
     missedAt: row.missedAt,
     planTitleHistory: PlanTitleHistory.decodeJson(row.planTitleHistoryJson),
     displayPlanChangeId: row.displayPlanChangeId,
+    inboxItemId: row.inboxItemId,
+    inboxHistory: InboxHistory.decodeJson(row.inboxHistoryJson),
     planChangeReasons: JsonMapUtils.decode(row.planChangeReasonsJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -343,6 +350,8 @@ class TaskRepository {
       PlanTitleHistory.encodeJson(t.planTitleHistory),
     ),
     displayPlanChangeId: Value(t.displayPlanChangeId),
+    inboxItemId: Value(t.inboxItemId),
+    inboxHistoryJson: Value(InboxHistory.encodeJson(t.inboxHistory)),
     planChangeReasonsJson: Value(JsonMapUtils.encode(t.planChangeReasons)),
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -403,6 +412,42 @@ class TaskRepository {
     } on FormatException catch (error) {
       throw ArgumentError(error.message);
     }
+    final inboxItemId = task.inboxItemId;
+    if (inboxItemId != null) {
+      if (inboxItemId.isEmpty) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'must not be blank',
+        );
+      }
+      if (task.isInbox) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'is only for a session, not for an Inbox idea',
+        );
+      }
+      if (inboxItemId == task.id) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'must not point at the task itself',
+        );
+      }
+    }
+    if (task.inboxHistory.isNotEmpty && !task.isInbox) {
+      throw ArgumentError.value(
+        task.inboxHistory,
+        'inboxHistory',
+        'is only for an Inbox idea',
+      );
+    }
+    try {
+      InboxHistory.validate(task.inboxHistory);
+    } on FormatException catch (error) {
+      throw ArgumentError(error.message);
+    }
     if (task.endTime != null && task.startTime == null) {
       throw ArgumentError('endTime requires startTime');
     }
@@ -443,6 +488,20 @@ class TaskRepository {
       _db.tags,
     )..where((t) => t.id.equals(tagId))).getSingleOrNull();
     if (tag == null) throw StateError('Tag $tagId not found');
+  }
+
+  /// A session may only point at an existing, non-deleted Inbox idea. Checked
+  /// when the link is set or changed, so a later edit of a session whose idea
+  /// was since deleted is not blocked.
+  Future<void> _validateInboxItemExists(Task proposed) async {
+    final itemId = proposed.inboxItemId;
+    if (itemId == null) return;
+    final item = await (_db.select(
+      _db.tasks,
+    )..where((t) => t.id.equals(itemId))).getSingleOrNull();
+    if (item == null || item.deletedAt != null || !item.isInbox) {
+      throw StateError('Inbox idea $itemId not found');
+    }
   }
 
   /// History links form a single directed successor chain. Check the
@@ -512,6 +571,8 @@ class TaskRepository {
         missedAt: t.missedAt,
         planTitleHistoryJson: PlanTitleHistory.encodeJson(t.planTitleHistory),
         displayPlanChangeId: t.displayPlanChangeId,
+        inboxItemId: t.inboxItemId,
+        inboxHistoryJson: InboxHistory.encodeJson(t.inboxHistory),
         planChangeReasonsJson: JsonMapUtils.encode(t.planChangeReasons),
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,

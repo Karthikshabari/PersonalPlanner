@@ -54,7 +54,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 14);
+        expect(await userVersion(db), 15);
         expect(await columns(db, 'experiments'), containsAll(keptColumns));
         expect(await syncTriggerCount(db), 40);
         expect(
@@ -104,7 +104,7 @@ void main() {
 
       final db = AppDatabase(NativeDatabase(file));
       try {
-        expect(await userVersion(db), 14);
+        expect(await userVersion(db), 15);
         expect(await columns(db, 'experiments'), containsAll(keptColumns));
         final row = await db.experimentDao.getExperimentById(experimentId);
         expect(row, isNotNull);
@@ -172,7 +172,7 @@ void main() {
     }
   });
 
-  test('(d) the sync trigger version is 6', () {
-    expect(AppDatabase.syncTriggerVersion, 6);
+  test('(d) the sync trigger version is 7', () {
+    expect(AppDatabase.syncTriggerVersion, 7);
   });
 }

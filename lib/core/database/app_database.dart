@@ -184,7 +184,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Bump whenever a sync trigger body changes. Triggers are recreated only
   /// when the stored `schema.sync_trigger_version` differs or one is missing.
-  static const int syncTriggerVersion = 6;
+  static const int syncTriggerVersion = 7;
 
   /// 13 synced tables x insert/update/delete, plus `sync_log_assign_seq`.
   static const int _expectedSyncTriggerCount = 40;
@@ -207,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -270,6 +270,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 14) {
         await _migrateToV14(m);
+      }
+      if (from < 15) {
+        await _migrateToV15(m);
       }
       // Some development v8 clients opened before every Foundation table and
       // column was present. Restore the coordinated v8 shape idempotently.
@@ -642,6 +645,8 @@ class AppDatabase extends _$AppDatabase {
           tasks.planChangeReasonsJson,
           tasks.recurrenceRemovalReason,
           tasks.tagId,
+          tasks.inboxItemId,
+          tasks.inboxHistoryJson,
           tasks.serverVersion,
         ],
       ),
@@ -939,6 +944,8 @@ class AppDatabase extends _$AppDatabase {
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.displayPlanChangeId);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.planChangeReasonsJson);
     await _addColumnIfMissing(m, 'tasks', tasks, tasks.tagId);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxItemId);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxHistoryJson);
     await _addColumnIfMissing(
       m,
       'timer_sessions',
@@ -1050,6 +1057,15 @@ class AppDatabase extends _$AppDatabase {
       experiments,
       experiments.targetChangesJson,
     );
+  }
+
+  /// Schema-v15 adds the Inbox session link and the idea history. Additive:
+  /// every existing row gets `inbox_item_id = NULL` and
+  /// `inbox_history_json = '[]'`; no row is rewritten and no task is created,
+  /// so it is idempotent and safe on every device.
+  Future<void> _migrateToV15(Migrator m) async {
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxItemId);
+    await _addColumnIfMissing(m, 'tasks', tasks, tasks.inboxHistoryJson);
   }
 
   /// Re-populates `tasks_fts` with exactly the rows its installed triggers
@@ -1716,6 +1732,10 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tasks_rescheduled_from_fk ON tasks (rescheduled_from_id) WHERE rescheduled_from_id IS NOT NULL',
     );
+    // Includes tombstones so the trail can show dropped sessions.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_inbox_item_fk ON tasks (inbox_item_id) WHERE inbox_item_id IS NOT NULL',
+    );
     await customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tasks_rescheduled_to_fk ON tasks (rescheduled_to_id) WHERE rescheduled_to_id IS NOT NULL',
     );
@@ -1908,10 +1928,10 @@ END;
       recordIdOld: 'OLD.id',
       // estimated_duration_min is a compatibility projection. Updating it
       // alone must not create a semantic sync operation.
-      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, plan_change_reasons_json, tag_id, created_at, updated_at, deleted_at',
+      updateColumns: 'id, title, description, start_time, end_time, manual_duration_adjustment_min, manual_actual_set, category_id, priority, status, notes, recurring_rule_id, recurrence_removal_reason, rescheduled_from_id, rescheduled_to_id, is_inbox, inbox_content_version, due_date, missed_at, plan_title_history_json, display_plan_change_id, plan_change_reasons_json, tag_id, inbox_item_id, inbox_history_json, created_at, updated_at, deleted_at',
       // Rule-exclusion tombstones need their full payload on the server.
       deleteOperationWhen: 'NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL AND NEW.recurrence_removal_reason IS NULL',
-      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'plan_change_reasons_json', NEW.plan_change_reasons_json, 'tag_id', NEW.tag_id, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
+      jsonNew: "json_object('id', NEW.id, 'title', NEW.title, 'description', NEW.description, 'start_time', NEW.start_time, 'end_time', NEW.end_time, 'estimated_duration_min', NEW.estimated_duration_min, 'actual_duration_min', NEW.actual_duration_min, 'manual_duration_adjustment_min', NEW.manual_duration_adjustment_min, 'manual_actual_set', NEW.manual_actual_set, 'category_id', NEW.category_id, 'priority', NEW.priority, 'status', NEW.status, 'notes', NEW.notes, 'recurring_rule_id', NEW.recurring_rule_id, 'recurrence_removal_reason', NEW.recurrence_removal_reason, 'rescheduled_from_id', NEW.rescheduled_from_id, 'rescheduled_to_id', NEW.rescheduled_to_id, 'is_inbox', NEW.is_inbox, 'inbox_content_version', NEW.inbox_content_version, 'due_date', NEW.due_date, 'missed_at', NEW.missed_at, 'plan_title_history_json', NEW.plan_title_history_json, 'display_plan_change_id', NEW.display_plan_change_id, 'plan_change_reasons_json', NEW.plan_change_reasons_json, 'tag_id', NEW.tag_id, 'inbox_item_id', NEW.inbox_item_id, 'inbox_history_json', NEW.inbox_history_json, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at, 'deleted_at', NEW.deleted_at, 'server_version', NEW.server_version)",
       jsonOld:
           "json_object('id', OLD.id, 'deleted_at', $now, 'server_version', OLD.server_version)",
     );

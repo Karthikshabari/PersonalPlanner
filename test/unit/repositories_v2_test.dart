@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/category.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/inbox_closure.dart';
 import 'package:personal_planner/core/models/subtask.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
@@ -650,5 +651,183 @@ void main() {
       expect(ordered.first.id, c2.id);
       expect(ordered.last.id, c1.id);
     });
+  });
+
+  group('TaskRepository Inbox session fields', () {
+    final start = DateTime.utc(2026, 10, 14, 9);
+
+    Future<Task> insertSession({String id = '', String? itemId}) =>
+        tasks.insertTask(
+          Task(
+            id: id,
+            title: 'Session',
+            startTime: start,
+            endTime: start.add(const Duration(hours: 1)),
+            inboxItemId: itemId,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        );
+
+    InboxClosure closed({String reason = 'Bought it elsewhere'}) =>
+        InboxClosure(
+          kind: InboxCloseKind.closed,
+          at: DateTime.utc(2026, 10, 12, 9, 30),
+          reason: reason,
+        );
+
+    test('a session keeps its link to an existing idea', () async {
+      final idea = await seedTask(title: 'Idea', inboxItem: true);
+      final session = await insertSession(itemId: idea.id);
+
+      final stored = await tasks.getTaskById(session.id);
+      expect(stored!.inboxItemId, idea.id);
+      expect(stored.inboxHistory, isEmpty);
+      expect((await tasks.getTaskById(idea.id))!.inboxItemId, isNull);
+    });
+
+    test('an idea keeps its history and the history round-trips', () async {
+      final idea = await tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Idea',
+          isInbox: true,
+          inboxHistory: [closed()],
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        ),
+      );
+
+      final stored = await tasks.getTaskById(idea.id);
+      expect(stored!.inboxHistory, [closed()]);
+      final row = await db.taskDao.getTaskById(idea.id);
+      expect(row!.inboxHistoryJson, contains('"Bought it elsewhere"'));
+    });
+
+    test('an Inbox idea cannot carry an inbox_item_id', () async {
+      final other = await seedTask(title: 'Other idea', inboxItem: true);
+      await expectLater(
+        tasks.insertTask(
+          Task(
+            id: '',
+            title: 'Idea',
+            isInbox: true,
+            inboxItemId: other.id,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('a task cannot be its own idea', () async {
+      await expectLater(
+        insertSession(id: 'self-session', itemId: 'self-session'),
+        throwsArgumentError,
+      );
+    });
+
+    test('a blank inbox_item_id is refused', () async {
+      await expectLater(insertSession(itemId: ''), throwsArgumentError);
+    });
+
+    test(
+      'pointing at a missing, non-Inbox or deleted row is refused',
+      () async {
+        await expectLater(insertSession(itemId: 'missing'), throwsStateError);
+
+        final ordinary = await seedTask(title: 'Ordinary');
+        await expectLater(insertSession(itemId: ordinary.id), throwsStateError);
+
+        final idea = await seedTask(title: 'Idea', inboxItem: true);
+        await tasks.deleteTask(idea.id);
+        await expectLater(insertSession(itemId: idea.id), throwsStateError);
+      },
+    );
+
+    test('history on a row that is not an Inbox idea is refused', () async {
+      await expectLater(
+        tasks.insertTask(
+          Task(
+            id: '',
+            title: 'Block',
+            startTime: start,
+            endTime: start.add(const Duration(hours: 1)),
+            inboxHistory: [closed()],
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('an invalid history is refused', () async {
+      await expectLater(
+        tasks.insertTask(
+          Task(
+            id: '',
+            title: 'Idea',
+            isInbox: true,
+            inboxHistory: [
+              InboxClosure(
+                kind: InboxCloseKind.closed,
+                at: DateTime.utc(2026, 10, 12),
+              ),
+            ],
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('an update cannot move a session onto a non-Inbox row', () async {
+      final idea = await seedTask(title: 'Idea', inboxItem: true);
+      final ordinary = await seedTask(title: 'Ordinary');
+      final session = await insertSession(itemId: idea.id);
+
+      await expectLater(
+        tasks.updateTask(session.copyWith(inboxItemId: ordinary.id)),
+        throwsStateError,
+      );
+      expect((await tasks.getTaskById(session.id))!.inboxItemId, idea.id);
+    });
+
+    test('an update cannot put history on a session', () async {
+      final idea = await seedTask(title: 'Idea', inboxItem: true);
+      final session = await insertSession(itemId: idea.id);
+
+      await expectLater(
+        tasks.updateTask(session.copyWith(inboxHistory: [closed()])),
+        throwsArgumentError,
+      );
+    });
+
+    test('an update can record a closure on an idea', () async {
+      final idea = await seedTask(title: 'Idea', inboxItem: true);
+
+      await tasks.updateTask(idea.copyWith(inboxHistory: [closed()]));
+
+      expect((await tasks.getTaskById(idea.id))!.inboxHistory, [closed()]);
+    });
+
+    test(
+      'editing a session whose idea was since deleted is not blocked',
+      () async {
+        final idea = await seedTask(title: 'Idea', inboxItem: true);
+        final session = await insertSession(itemId: idea.id);
+        await tasks.deleteTask(idea.id);
+
+        final updated = await tasks.updateTask(
+          session.copyWith(title: 'Renamed session'),
+        );
+
+        expect(updated.title, 'Renamed session');
+        expect(updated.inboxItemId, idea.id);
+      },
+    );
   });
 }

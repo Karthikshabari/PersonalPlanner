@@ -1196,7 +1196,7 @@ void main() {
 
     final source = await BackupService(database).exportJson();
     final document = jsonDecode(source) as Map<String, dynamic>;
-    expect(document['schema_version'], 7);
+    expect(document['schema_version'], 8);
     final data =
         (document['content'] as Map<String, dynamic>)['data']
             as Map<String, dynamic>;
@@ -1286,6 +1286,8 @@ void _convertEnvelopeToV1(Map<String, dynamic> document) {
     row.remove('plan_title_history');
     row.remove('display_plan_change_id');
     row.remove('plan_change_reasons');
+    row.remove('inbox_item_id');
+    row.remove('inbox_history');
   }
   for (final raw in data['daily_reviews'] as List) {
     final row = raw as Map<String, dynamic>;

@@ -7,6 +7,7 @@ import '../../../core/utils/json_list_utils.dart';
 import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
+import '../../inbox/domain/inbox_history.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import 'backup_format.dart';
 import 'backup_merge_planner.dart';
@@ -216,6 +217,14 @@ class BackupDatabaseApplier {
                 ),
                 displayPlanChangeId: Value(
                   BackupValidator.nullableId(row, 'display_plan_change_id'),
+                ),
+                inboxItemId: Value(
+                  BackupValidator.nullableId(row, 'inbox_item_id'),
+                ),
+                inboxHistoryJson: Value(
+                  InboxHistory.encodeJson(
+                    BackupValidator.inboxHistory(row, 'inbox_history'),
+                  ),
                 ),
                 planChangeReasonsJson: Value(
                   JsonMapUtils.encode(

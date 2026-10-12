@@ -213,6 +213,7 @@ class BackupMergePlanner {
         for (final field in const [
           'rescheduled_from_id',
           'rescheduled_to_id',
+          'inbox_item_id',
         ]) {
           final task = nullable(field);
           if (task != null) yield key('tasks', task);

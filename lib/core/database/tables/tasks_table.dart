@@ -59,6 +59,20 @@ class Tasks extends Table {
   /// The block's optional tag (an id in `tags`). No foreign-key clause: see
   /// the experiments plan, ED40.
   TextColumn get tagId => text().nullable()();
+
+  /// Set on a session: the id of the Inbox idea (an `is_inbox = 1` row) it was
+  /// planned from. Null on every other row.
+  TextColumn get inboxItemId =>
+      text().nullable().references(Tasks, #id, onDelete: KeyAction.setNull)();
+
+  /// On an Inbox idea: its close / let go / experiment / bring-back events, a
+  /// JSON array, oldest first. '[]' on every other row.
+  TextColumn get inboxHistoryJson => text()
+      .withDefault(const Constant('[]'))
+      .customConstraint(
+        "NOT NULL DEFAULT '[]' CHECK (json_valid(inbox_history_json) "
+        "AND json_type(inbox_history_json) = 'array')",
+      )();
   TextColumn get createdAt => text().map(const DateTimeUtcConverter())();
   TextColumn get updatedAt => text().map(const DateTimeUtcConverter())();
   TextColumn get deletedAt =>

@@ -80,13 +80,13 @@ void main() {
   Map<String, dynamic> experimentRow(Map<String, dynamic> data) =>
       (data['experiments'] as List).first as Map<String, dynamic>;
 
-  test('the format version is 7', () {
-    expect(plannerBackupSchemaVersion, 7);
+  test('the format version is 8', () {
+    expect(plannerBackupSchemaVersion, 8);
   });
 
   test('export carries the three kept keys on every experiments row', () async {
     final document = await exported();
-    expect(document['schema_version'], 7);
+    expect(document['schema_version'], 8);
     final rows = (dataOf(document)['experiments'] as List).cast<Map>();
     expect(rows, hasLength(1));
     for (final key in keptKeys) {

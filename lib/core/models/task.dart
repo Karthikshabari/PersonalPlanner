@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'inbox_closure.dart';
 import 'plan_title_change.dart';
 import 'enums/priority.dart';
 import 'enums/task_status.dart';
@@ -42,6 +43,12 @@ abstract class Task with _$Task {
     String? missedAt,
     @Default(<PlanTitleChange>[]) List<PlanTitleChange> planTitleHistory,
     String? displayPlanChangeId,
+
+    /// A session's Inbox idea (the `is_inbox` row it was planned from).
+    String? inboxItemId,
+
+    /// An Inbox idea's close and bring-back events, oldest first.
+    @Default(<InboxClosure>[]) List<InboxClosure> inboxHistory,
 
     /// Reasons typed in the plan-change dialog, keyed by PlanTitleChange ID.
     @Default(<String, String>{}) Map<String, String> planChangeReasons,

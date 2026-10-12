@@ -7,6 +7,7 @@ import '../../../core/models/timer_session.dart';
 import '../../../core/utils/json_list_utils.dart';
 import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/task_time_metrics.dart';
+import '../../inbox/domain/inbox_history.dart';
 import '../../task_editor/domain/plan_title_history.dart';
 import '../../timer/domain/task_actual_duration_service.dart';
 import 'backup_format.dart';
@@ -215,6 +216,11 @@ class BackupCodec {
       for (final raw in tasks) {
         if (raw is! Map<String, dynamic>) continue;
         if (!raw.containsKey('tag_id')) raw['tag_id'] = null;
+        // v1-v7 documents predate the Inbox session fields.
+        if (!raw.containsKey('inbox_item_id')) raw['inbox_item_id'] = null;
+        if (!raw.containsKey('inbox_history')) {
+          raw['inbox_history'] = <dynamic>[];
+        }
         final isInbox =
             raw['is_inbox'] == true ||
             raw['is_inbox'] == 1 ||
@@ -420,6 +426,10 @@ class BackupCodec {
         .map((event) => event.toJson())
         .toList(growable: false),
     'display_plan_change_id': row.displayPlanChangeId,
+    'inbox_item_id': row.inboxItemId,
+    'inbox_history': InboxHistory.toJsonList(
+      InboxHistory.decodeJson(row.inboxHistoryJson),
+    ),
     'plan_change_reasons': JsonMapUtils.decode(row.planChangeReasonsJson),
     'created_at': _iso(row.createdAt),
     'updated_at': _iso(row.updatedAt),

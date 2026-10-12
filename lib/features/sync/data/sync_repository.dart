@@ -46,6 +46,10 @@ class SyncRepository {
   bool _cycleRunning = false;
   bool _v2CapabilityVerified = false;
 
+  /// Set once the server has advertised `inbox_sessions` (migration 13). It
+  /// is never cleared: a server does not lose a migration.
+  bool _inboxSessionsSupported = false;
+
   /// Most operations one push attempts. Held rows do not count.
   static const _pushBatchSize = 100;
 
@@ -152,6 +156,10 @@ class SyncRepository {
     // table: its migration has not been applied yet, so every other operation
     // of those two tables waits for a later push (ED19).
     var experimentTablesHeld = false;
+    // Read at most once per push, and only when an operation needs it (C15):
+    // null until then. A server without migration 13 silently drops the two
+    // Inbox keys, so such operations wait instead of being sent.
+    bool? inboxSessionsReady = _inboxSessionsSupported ? true : null;
     while (budget > 0) {
       late final List<SyncLogRow> page;
       late final List<SyncLogRow> operations;
@@ -197,6 +205,13 @@ class SyncRepository {
               _isExperimentTable(operation.entityTableName)) {
             held++;
             continue;
+          }
+          if (_carriesInboxSessionData(operation)) {
+            inboxSessionsReady ??= await _inboxSessionsAvailable();
+            if (!inboxSessionsReady) {
+              held++;
+              continue;
+            }
           }
           budget--;
           final now = DateTime.now().toUtc();
@@ -314,6 +329,41 @@ class SyncRepository {
 
   static bool _isExperimentTable(String table) =>
       table == 'experiments' || table == 'experiment_check_ins';
+
+  /// True for a tasks write that a server without migration 13 would apply
+  /// while silently dropping Inbox data: a session link, or an idea history
+  /// other than the default `'[]'`. Everything else syncs regardless.
+  static bool _carriesInboxSessionData(SyncLogRow operation) {
+    if (operation.entityTableName != 'tasks' ||
+        operation.operation == 'delete') {
+      return false;
+    }
+    final Map<String, dynamic> payload;
+    try {
+      payload = _clientPayload(operation.payload, 'tasks');
+    } on Object {
+      // A payload that cannot be read is reported by the normal send path.
+      return false;
+    }
+    final itemId = payload['inbox_item_id'];
+    final history = payload['inbox_history_json'];
+    return (itemId != null && '$itemId'.isNotEmpty) ||
+        (history != null && history != '[]');
+  }
+
+  /// Whether the server advertises `inbox_sessions`. A failed read counts as
+  /// "not yet": unknown is never treated as supported, so the operation waits
+  /// for the next push instead of risking silent loss.
+  Future<bool> _inboxSessionsAvailable() async {
+    if (_inboxSessionsSupported) return true;
+    try {
+      final raw = await _gateway.getCapabilities();
+      _inboxSessionsSupported = raw is Map && raw['inbox_sessions'] == true;
+    } on Object {
+      return false;
+    }
+    return _inboxSessionsSupported;
+  }
 
   /// Requeues only permanent task operations whose retained diagnostic is the
   /// former server-side F03 transition error. The original operation ID,
@@ -2124,6 +2174,7 @@ class SyncRepository {
         integerFlag('is_inbox');
         integerFlag('manual_actual_set');
         jsonList('plan_title_history', 'plan_title_history_json');
+        jsonList('inbox_history', 'inbox_history_json');
         jsonMap('plan_change_reasons', 'plan_change_reasons_json');
       case 'categories':
         integerFlag('is_focus');
@@ -2407,6 +2458,7 @@ class SyncRepository {
         for (final field in const [
           'rescheduled_from_id',
           'rescheduled_to_id',
+          'inbox_item_id',
         ]) {
           final taskId = value(field);
           if (taskId != null && taskId.isNotEmpty) {
@@ -2665,7 +2717,11 @@ class SyncRepository {
       for (final entry in fields.entries)
         (table: entry.value, id: payload[entry.key]?.toString()),
       if (operation.entityTableName == 'tasks')
-        for (final field in const ['rescheduled_from_id', 'rescheduled_to_id'])
+        for (final field in const [
+          'rescheduled_from_id',
+          'rescheduled_to_id',
+          'inbox_item_id',
+        ])
           (table: 'tasks', id: payload[field]?.toString()),
     ];
     for (final reference in references) {

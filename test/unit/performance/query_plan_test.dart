@@ -58,6 +58,22 @@ void main() {
               ),
             );
       }
+      for (var i = 0; i < 40; i++) {
+        final start = DateTime.utc(2026, 8, 26, 8).add(Duration(hours: i));
+        await db
+            .into(db.tasks)
+            .insert(
+              TasksCompanion.insert(
+                id: 'session-$i',
+                title: 'Session $i',
+                startTime: Value(start),
+                endTime: Value(start.add(const Duration(minutes: 30))),
+                inboxItemId: Value('inbox-${i % 5}'),
+                createdAt: now,
+                updatedAt: now,
+              ),
+            );
+      }
       await db
           .into(db.recurringRules)
           .insert(
@@ -149,6 +165,9 @@ void main() {
             AND start_time < '2026-08-25T00:00:00.000Z'
           ORDER BY start_time
         """,
+        'inbox-sessions': """
+          SELECT id FROM tasks WHERE inbox_item_id IS NOT NULL
+        """,
         'pending-sync': """
           SELECT operation_id FROM sync_log
           WHERE state IN ('pending', 'error', 'in_flight')
@@ -165,6 +184,7 @@ void main() {
         'analytics': 'idx_tasks_category_date',
         'timer': 'idx_timer_sessions_task',
         'recurrence': 'idx_tasks_recurring',
+        'inbox-sessions': 'idx_tasks_inbox_item_fk',
         'pending-sync': 'idx_sync_log_state_seq',
       };
 

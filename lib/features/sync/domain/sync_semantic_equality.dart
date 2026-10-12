@@ -27,6 +27,7 @@ const Map<String, Set<String>> _instantKeys = {
 
 const Set<String> _jsonTextKeys = {
   'plan_title_history_json',
+  'inbox_history_json',
   'work_intervals_json',
   'tags_json',
   'exceptions_json',
@@ -48,6 +49,8 @@ const Set<String> _preservedWhenNullKeys = {
   'task_reasons_json',
   'plan_change_reasons_json',
   'target_changes_json',
+  // A snapshot from a server without migration 13 has no history key.
+  'inbox_history_json',
 };
 
 /// True when [local] and [remote] describe the same state of one [table] row.

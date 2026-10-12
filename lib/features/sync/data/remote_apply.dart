@@ -237,6 +237,8 @@ class SyncRemoteApplier {
                 column.jsonKey != 'display_plan_change_id' &&
                 column.jsonKey != 'plan_change_reasons_json' &&
                 column.jsonKey != 'tag_id' &&
+                column.jsonKey != 'inbox_item_id' &&
+                column.jsonKey != 'inbox_history_json' &&
                 column.jsonKey != 'recurrence_removal_reason',
           )
           .every((column) => change.payload.containsKey(column.jsonKey));
@@ -319,6 +321,15 @@ class SyncRemoteApplier {
     // key. Absence keeps the local tag; only an explicit null clears it.
     if (!payload.containsKey('tag_id')) {
       payload['tag_id'] = current?.tagId;
+    }
+    // The same for the Inbox session link and the idea history (servers
+    // without migration 13 and older clients omit both). Only an explicit
+    // null clears the link.
+    if (!payload.containsKey('inbox_item_id')) {
+      payload['inbox_item_id'] = current?.inboxItemId;
+    }
+    if (!payload.containsKey('inbox_history_json')) {
+      payload['inbox_history_json'] = current?.inboxHistoryJson ?? '[]';
     }
     // Servers without the review migration, and older clients, omit this
     // field or send NULL. Absence never clears local reasons.
@@ -605,6 +616,8 @@ final _definitions = <String, _SyncTableDefinition>{
       _SyncColumn('display_plan_change_id'),
       _SyncColumn('plan_change_reasons_json'),
       _SyncColumn('tag_id'),
+      _SyncColumn('inbox_item_id'),
+      _SyncColumn('inbox_history_json'),
       _SyncColumn('created_at'),
       _SyncColumn('updated_at'),
       _SyncColumn('deleted_at'),

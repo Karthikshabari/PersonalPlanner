@@ -6,6 +6,7 @@ import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/missed_at.dart';
 import '../../experiments/domain/experiment_target_changes.dart';
+import '../../inbox/domain/inbox_history.dart';
 import '../../recurring/domain/rrule_utils.dart';
 import '../../review/domain/weekly_review_text.dart';
 import '../../task_editor/domain/plan_title_history.dart';
@@ -120,6 +121,30 @@ abstract final class SyncPayloadValidator {
         // Older builds send no tag_id key; the applier then keeps the local
         // value. An explicit null is valid and clears the tag.
         if (p.containsKey('tag_id')) _nullableId(p, 'tag_id');
+        // Older builds and servers without migration 13 send neither Inbox
+        // key; the applier then keeps the local values. Shape only: the
+        // is_inbox pairing rule is a write-time rule of the repository.
+        if (p.containsKey('inbox_item_id')) {
+          _nullableId(p, 'inbox_item_id');
+          if (p['inbox_item_id'] == change.recordId) {
+            throw const SyncValidationException(
+              'inbox_item_id must not point at the task itself',
+            );
+          }
+        }
+        if (p.containsKey('inbox_history_json')) {
+          final inboxHistory = p['inbox_history_json'];
+          if (inboxHistory is! String) {
+            throw const SyncValidationException(
+              'inbox_history_json must be JSON text',
+            );
+          }
+          try {
+            InboxHistory.decodeJson(inboxHistory);
+          } on FormatException catch (error) {
+            throw SyncValidationException(error.message);
+          }
+        }
         _nullableId(p, 'recurring_rule_id');
         final removalReason = p['recurrence_removal_reason'];
         if (removalReason != null &&

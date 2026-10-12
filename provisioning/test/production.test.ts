@@ -56,6 +56,7 @@ const verificationRow = Object.fromEntries(
     "weekly_review_mood_present",
     "experiments_present",
     "kept_experiments_present",
+    "inbox_sessions_present",
     "relationships_owner_scoped",
     "direct_authenticated_writes_revoked",
     "anon_access_revoked",
@@ -999,9 +1000,9 @@ describe("migration and verification recovery", () => {
       return Response.json(history);
     };
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(12);
+    expect(posts).toHaveLength(13);
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(12);
+    expect(posts).toHaveLength(13);
     // Our own migrations appearing out of order remain a terminal failure.
     expect(await runCanonicalMigrations(ref, async () => Response.json([{ name: "20260910000000_real_use_v2" }]))).toEqual({ kind: "failed", code: "migration_history_mismatch" });
     // A history the Worker cannot advance through stays retryable, never terminal.
@@ -1061,7 +1062,7 @@ describe("migration and verification recovery", () => {
     };
 
     expect(await runCanonicalMigrations(ref, management)).toEqual({ kind: "complete" });
-    expect(posts).toHaveLength(12);
+    expect(posts).toHaveLength(13);
   });
 
   it("accepts version and short-name history rows and applies only what is missing", async () => {
@@ -1093,6 +1094,7 @@ describe("migration and verification recovery", () => {
       "20261008000000_weekly_review_mood_feeling",
       "20261009000000_experiments",
       "20261010000000_kept_experiments",
+      "20261012000000_inbox_sessions",
     ]);
   });
 
@@ -1103,11 +1105,30 @@ describe("migration and verification recovery", () => {
   });
 
   it("distinguishes fixed verification assertion failure from a passed result", async () => {
-    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","review_outcomes_present","weekly_review_mood_present","experiments_present","kept_experiments_present","relationships_owner_scoped","direct_authenticated_writes_revoked","anon_access_revoked","security_definer_helpers_private","capability_payload_current"];
+    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","review_outcomes_present","weekly_review_mood_present","experiments_present","kept_experiments_present","inbox_sessions_present","relationships_owner_scoped","direct_authenticated_writes_revoked","anon_access_revoked","security_definer_helpers_private","capability_payload_current"];
     const passed = Object.fromEntries(keys.map(key => [key, true]));
     expect(await runFixedVerification(ref, async () => Response.json([passed]))).toBe("passed");
     expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, rls_enabled: false }]))).toBe("assertion_failed");
     expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, initial_sync_fencing_present: false }]))).toBe("assertion_failed");
+  });
+
+  it("verifies the Inbox sessions migration: columns, foreign key, apply body, private helper and capability", async () => {
+    expect(SCHEMA_VERIFICATION_SQL).toContain("as inbox_sessions_present");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("a.attname = 'inbox_item_id'");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("a.attname = 'inbox_history_json'");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("k.conname = 'tasks_inbox_item_fk'");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("pg_catalog.strpos(definition, 'inbox_history_json') > 0");
+    expect(SCHEMA_VERIFICATION_SQL).toContain("'planner_inbox_history_valid'");
+    // The expected capability body is read from the newest migration, so the
+    // advertised key is part of the exact-body check.
+    expect(SCHEMA_VERIFICATION_SQL).toContain("''inbox_sessions'', true");
+    const keys = ["required_tables_exist","rls_enabled","required_rpcs_exist","protocol_v2_authenticated_execute","capability_grants_correct","f03_helper_private","f03_validates_branch_before_union","f03_wrappers_active","initial_sync_fencing_present","recurrence_provenance_present","review_outcomes_present","weekly_review_mood_present","experiments_present","kept_experiments_present","inbox_sessions_present","relationships_owner_scoped","direct_authenticated_writes_revoked","anon_access_revoked","security_definer_helpers_private","capability_payload_current"];
+    const passed = Object.fromEntries(keys.map(key => [key, true]));
+    expect(await runFixedVerification(ref, async () => Response.json([passed]))).toBe("passed");
+    expect(await runFixedVerification(ref, async () => Response.json([{ ...passed, inbox_sessions_present: false }]))).toBe("assertion_failed");
+    // A server that predates the check (no key at all) is not trusted.
+    const { inbox_sessions_present: _omitted, ...withoutKey } = passed;
+    expect(await runFixedVerification(ref, async () => Response.json([withoutKey]))).toBe("indeterminate");
   });
 
   it("submits the fixed SQL to the dedicated read-only endpoint with the documented 201 contract", async () => {
@@ -3038,7 +3059,7 @@ describe("migration history validation", () => {
       ]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
-      expect(api.posts).toHaveLength(11);
+      expect(api.posts).toHaveLength(12);
       expect(api.posts[0]).toBe(canonicalTwo);
     });
 
@@ -3046,7 +3067,7 @@ describe("migration history validation", () => {
       const api = advancingMigrationApi([{ name: canonicalOne, version: "20260827000000" }]);
 
       expect(await runCanonicalMigrations(ref, api.call)).toEqual({ kind: "complete" });
-      expect(api.posts).toHaveLength(11);
+      expect(api.posts).toHaveLength(12);
       expect(api.posts[0]).toBe(canonicalTwo);
     });
 

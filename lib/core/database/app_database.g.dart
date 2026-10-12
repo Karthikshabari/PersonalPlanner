@@ -2057,6 +2057,34 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _inboxItemIdMeta = const VerificationMeta(
+    'inboxItemId',
+  );
+  @override
+  late final GeneratedColumn<String> inboxItemId = GeneratedColumn<String>(
+    'inbox_item_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tasks (id) ON DELETE SET NULL',
+    ),
+  );
+  static const VerificationMeta _inboxHistoryJsonMeta = const VerificationMeta(
+    'inboxHistoryJson',
+  );
+  @override
+  late final GeneratedColumn<String> inboxHistoryJson = GeneratedColumn<String>(
+    'inbox_history_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    $customConstraints:
+        'NOT NULL DEFAULT \'[]\' CHECK (json_valid(inbox_history_json) AND json_type(inbox_history_json) = \'array\')',
+    defaultValue: const CustomExpression('\'[]\''),
+  );
   @override
   late final GeneratedColumnWithTypeConverter<DateTime, String> createdAt =
       GeneratedColumn<String>(
@@ -2146,6 +2174,8 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     displayPlanChangeId,
     planChangeReasonsJson,
     tagId,
+    inboxItemId,
+    inboxHistoryJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2343,6 +2373,24 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
       );
     }
+    if (data.containsKey('inbox_item_id')) {
+      context.handle(
+        _inboxItemIdMeta,
+        inboxItemId.isAcceptableOrUnknown(
+          data['inbox_item_id']!,
+          _inboxItemIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('inbox_history_json')) {
+      context.handle(
+        _inboxHistoryJsonMeta,
+        inboxHistoryJson.isAcceptableOrUnknown(
+          data['inbox_history_json']!,
+          _inboxHistoryJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('sync_status')) {
       context.handle(
         _syncStatusMeta,
@@ -2477,6 +2525,14 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         DriftSqlType.string,
         data['${effectivePrefix}tag_id'],
       ),
+      inboxItemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}inbox_item_id'],
+      ),
+      inboxHistoryJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}inbox_history_json'],
+      )!,
       createdAt: $TasksTable.$convertercreatedAt.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -2562,6 +2618,14 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   /// The block's optional tag (an id in `tags`). No foreign-key clause: see
   /// the experiments plan, ED40.
   final String? tagId;
+
+  /// Set on a session: the id of the Inbox idea (an `is_inbox = 1` row) it was
+  /// planned from. Null on every other row.
+  final String? inboxItemId;
+
+  /// On an Inbox idea: its close / let go / experiment / bring-back events, a
+  /// JSON array, oldest first. '[]' on every other row.
+  final String inboxHistoryJson;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -2596,6 +2660,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     this.displayPlanChangeId,
     required this.planChangeReasonsJson,
     this.tagId,
+    this.inboxItemId,
+    required this.inboxHistoryJson,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -2669,6 +2735,10 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     if (!nullToAbsent || tagId != null) {
       map['tag_id'] = Variable<String>(tagId);
     }
+    if (!nullToAbsent || inboxItemId != null) {
+      map['inbox_item_id'] = Variable<String>(inboxItemId);
+    }
+    map['inbox_history_json'] = Variable<String>(inboxHistoryJson);
     {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt),
@@ -2749,6 +2819,10 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       tagId: tagId == null && nullToAbsent
           ? const Value.absent()
           : Value(tagId),
+      inboxItemId: inboxItemId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(inboxItemId),
+      inboxHistoryJson: Value(inboxHistoryJson),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -2809,6 +2883,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         json['planChangeReasonsJson'],
       ),
       tagId: serializer.fromJson<String?>(json['tagId']),
+      inboxItemId: serializer.fromJson<String?>(json['inboxItemId']),
+      inboxHistoryJson: serializer.fromJson<String>(json['inboxHistoryJson']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -2850,6 +2926,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'displayPlanChangeId': serializer.toJson<String?>(displayPlanChangeId),
       'planChangeReasonsJson': serializer.toJson<String>(planChangeReasonsJson),
       'tagId': serializer.toJson<String?>(tagId),
+      'inboxItemId': serializer.toJson<String?>(inboxItemId),
+      'inboxHistoryJson': serializer.toJson<String>(inboxHistoryJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -2885,6 +2963,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     Value<String?> displayPlanChangeId = const Value.absent(),
     String? planChangeReasonsJson,
     Value<String?> tagId = const Value.absent(),
+    Value<String?> inboxItemId = const Value.absent(),
+    String? inboxHistoryJson,
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -2932,6 +3012,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         : this.displayPlanChangeId,
     planChangeReasonsJson: planChangeReasonsJson ?? this.planChangeReasonsJson,
     tagId: tagId.present ? tagId.value : this.tagId,
+    inboxItemId: inboxItemId.present ? inboxItemId.value : this.inboxItemId,
+    inboxHistoryJson: inboxHistoryJson ?? this.inboxHistoryJson,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -2996,6 +3078,12 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? data.planChangeReasonsJson.value
           : this.planChangeReasonsJson,
       tagId: data.tagId.present ? data.tagId.value : this.tagId,
+      inboxItemId: data.inboxItemId.present
+          ? data.inboxItemId.value
+          : this.inboxItemId,
+      inboxHistoryJson: data.inboxHistoryJson.present
+          ? data.inboxHistoryJson.value
+          : this.inboxHistoryJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -3037,6 +3125,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
           ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
           ..write('tagId: $tagId, ')
+          ..write('inboxItemId: $inboxItemId, ')
+          ..write('inboxHistoryJson: $inboxHistoryJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -3074,6 +3164,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     displayPlanChangeId,
     planChangeReasonsJson,
     tagId,
+    inboxItemId,
+    inboxHistoryJson,
     createdAt,
     updatedAt,
     deletedAt,
@@ -3111,6 +3203,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.displayPlanChangeId == this.displayPlanChangeId &&
           other.planChangeReasonsJson == this.planChangeReasonsJson &&
           other.tagId == this.tagId &&
+          other.inboxItemId == this.inboxItemId &&
+          other.inboxHistoryJson == this.inboxHistoryJson &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
@@ -3145,6 +3239,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<String?> displayPlanChangeId;
   final Value<String> planChangeReasonsJson;
   final Value<String?> tagId;
+  final Value<String?> inboxItemId;
+  final Value<String> inboxHistoryJson;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -3178,6 +3274,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.displayPlanChangeId = const Value.absent(),
     this.planChangeReasonsJson = const Value.absent(),
     this.tagId = const Value.absent(),
+    this.inboxItemId = const Value.absent(),
+    this.inboxHistoryJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3212,6 +3310,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.displayPlanChangeId = const Value.absent(),
     this.planChangeReasonsJson = const Value.absent(),
     this.tagId = const Value.absent(),
+    this.inboxItemId = const Value.absent(),
+    this.inboxHistoryJson = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -3249,6 +3349,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? displayPlanChangeId,
     Expression<String>? planChangeReasonsJson,
     Expression<String>? tagId,
+    Expression<String>? inboxItemId,
+    Expression<String>? inboxHistoryJson,
     Expression<String>? createdAt,
     Expression<String>? updatedAt,
     Expression<String>? deletedAt,
@@ -3290,6 +3392,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (planChangeReasonsJson != null)
         'plan_change_reasons_json': planChangeReasonsJson,
       if (tagId != null) 'tag_id': tagId,
+      if (inboxItemId != null) 'inbox_item_id': inboxItemId,
+      if (inboxHistoryJson != null) 'inbox_history_json': inboxHistoryJson,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -3326,6 +3430,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<String?>? displayPlanChangeId,
     Value<String>? planChangeReasonsJson,
     Value<String?>? tagId,
+    Value<String?>? inboxItemId,
+    Value<String>? inboxHistoryJson,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -3363,6 +3469,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       planChangeReasonsJson:
           planChangeReasonsJson ?? this.planChangeReasonsJson,
       tagId: tagId ?? this.tagId,
+      inboxItemId: inboxItemId ?? this.inboxItemId,
+      inboxHistoryJson: inboxHistoryJson ?? this.inboxHistoryJson,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -3465,6 +3573,12 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     if (tagId.present) {
       map['tag_id'] = Variable<String>(tagId.value);
     }
+    if (inboxItemId.present) {
+      map['inbox_item_id'] = Variable<String>(inboxItemId.value);
+    }
+    if (inboxHistoryJson.present) {
+      map['inbox_history_json'] = Variable<String>(inboxHistoryJson.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(
         $TasksTable.$convertercreatedAt.toSql(createdAt.value),
@@ -3523,6 +3637,8 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('displayPlanChangeId: $displayPlanChangeId, ')
           ..write('planChangeReasonsJson: $planChangeReasonsJson, ')
           ..write('tagId: $tagId, ')
+          ..write('inboxItemId: $inboxItemId, ')
+          ..write('inboxHistoryJson: $inboxHistoryJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -14182,6 +14298,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         'tasks',
         limitUpdateKind: UpdateKind.delete,
       ),
+      result: [TableUpdate('tasks', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tasks',
+        limitUpdateKind: UpdateKind.delete,
+      ),
       result: [TableUpdate('subtasks', kind: UpdateKind.delete)],
     ),
     WritePropagation(
@@ -15572,6 +15695,8 @@ typedef $$TasksTableCreateCompanionBuilder =
       Value<String?> displayPlanChangeId,
       Value<String> planChangeReasonsJson,
       Value<String?> tagId,
+      Value<String?> inboxItemId,
+      Value<String> inboxHistoryJson,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -15607,6 +15732,8 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<String?> displayPlanChangeId,
       Value<String> planChangeReasonsJson,
       Value<String?> tagId,
+      Value<String?> inboxItemId,
+      Value<String> inboxHistoryJson,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -15686,6 +15813,23 @@ final class $$TasksTableReferences
       $_db.tasks,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_rescheduledToIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TasksTable _inboxItemIdTable(_$AppDatabase db) => db.tasks
+      .createAlias($_aliasNameGenerator(db.tasks.inboxItemId, db.tasks.id));
+
+  $$TasksTableProcessedTableManager? get inboxItemId {
+    final $_column = $_itemColumn<String>('inbox_item_id');
+    if ($_column == null) return null;
+    final manager = $$TasksTableTableManager(
+      $_db,
+      $_db.tasks,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_inboxItemIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -15862,6 +16006,11 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get inboxHistoryJson => $composableBuilder(
+    column: $table.inboxHistoryJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnWithTypeConverterFilters<DateTime, DateTime, String> get createdAt =>
       $composableBuilder(
         column: $table.createdAt,
@@ -15968,6 +16117,29 @@ class $$TasksTableFilterComposer extends Composer<_$AppDatabase, $TasksTable> {
     final $$TasksTableFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.rescheduledToId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableFilterComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TasksTableFilterComposer get inboxItemId {
+    final $$TasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.inboxItemId,
       referencedTable: $db.tasks,
       getReferencedColumn: (t) => t.id,
       builder:
@@ -16177,6 +16349,11 @@ class $$TasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get inboxHistoryJson => $composableBuilder(
+    column: $table.inboxHistoryJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -16298,6 +16475,29 @@ class $$TasksTableOrderingComposer
     );
     return composer;
   }
+
+  $$TasksTableOrderingComposer get inboxItemId {
+    final $$TasksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.inboxItemId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableOrderingComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TasksTableAnnotationComposer
@@ -16391,6 +16591,11 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumn<String> get tagId =>
       $composableBuilder(column: $table.tagId, builder: (column) => column);
+
+  GeneratedColumn<String> get inboxHistoryJson => $composableBuilder(
+    column: $table.inboxHistoryJson,
+    builder: (column) => column,
+  );
 
   GeneratedColumnWithTypeConverter<DateTime, String> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -16506,6 +16711,29 @@ class $$TasksTableAnnotationComposer
     return composer;
   }
 
+  $$TasksTableAnnotationComposer get inboxItemId {
+    final $$TasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.inboxItemId,
+      referencedTable: $db.tasks,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   Expression<T> subtasksRefs<T extends Object>(
     Expression<T> Function($$SubtasksTableAnnotationComposer a) f,
   ) {
@@ -16600,6 +16828,7 @@ class $$TasksTableTableManager
             bool recurringRuleId,
             bool rescheduledFromId,
             bool rescheduledToId,
+            bool inboxItemId,
             bool subtasksRefs,
             bool taskTagsRefs,
             bool timerSessionsRefs,
@@ -16643,6 +16872,8 @@ class $$TasksTableTableManager
                 Value<String?> displayPlanChangeId = const Value.absent(),
                 Value<String> planChangeReasonsJson = const Value.absent(),
                 Value<String?> tagId = const Value.absent(),
+                Value<String?> inboxItemId = const Value.absent(),
+                Value<String> inboxHistoryJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -16676,6 +16907,8 @@ class $$TasksTableTableManager
                 displayPlanChangeId: displayPlanChangeId,
                 planChangeReasonsJson: planChangeReasonsJson,
                 tagId: tagId,
+                inboxItemId: inboxItemId,
+                inboxHistoryJson: inboxHistoryJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -16711,6 +16944,8 @@ class $$TasksTableTableManager
                 Value<String?> displayPlanChangeId = const Value.absent(),
                 Value<String> planChangeReasonsJson = const Value.absent(),
                 Value<String?> tagId = const Value.absent(),
+                Value<String?> inboxItemId = const Value.absent(),
+                Value<String> inboxHistoryJson = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -16744,6 +16979,8 @@ class $$TasksTableTableManager
                 displayPlanChangeId: displayPlanChangeId,
                 planChangeReasonsJson: planChangeReasonsJson,
                 tagId: tagId,
+                inboxItemId: inboxItemId,
+                inboxHistoryJson: inboxHistoryJson,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -16764,6 +17001,7 @@ class $$TasksTableTableManager
                 recurringRuleId = false,
                 rescheduledFromId = false,
                 rescheduledToId = false,
+                inboxItemId = false,
                 subtasksRefs = false,
                 taskTagsRefs = false,
                 timerSessionsRefs = false,
@@ -16839,6 +17077,19 @@ class $$TasksTableTableManager
                                         ._rescheduledToIdTable(db),
                                     referencedColumn: $$TasksTableReferences
                                         ._rescheduledToIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+                        if (inboxItemId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.inboxItemId,
+                                    referencedTable: $$TasksTableReferences
+                                        ._inboxItemIdTable(db),
+                                    referencedColumn: $$TasksTableReferences
+                                        ._inboxItemIdTable(db)
                                         .id,
                                   )
                                   as T;
@@ -16936,6 +17187,7 @@ typedef $$TasksTableProcessedTableManager =
         bool recurringRuleId,
         bool rescheduledFromId,
         bool rescheduledToId,
+        bool inboxItemId,
         bool subtasksRefs,
         bool taskTagsRefs,
         bool timerSessionsRefs,

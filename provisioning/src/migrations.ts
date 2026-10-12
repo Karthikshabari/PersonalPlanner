@@ -18,6 +18,7 @@ import reviewOutcomes from "../../supabase/migrations/20261007000000_review_outc
 import weeklyReviewMoodFeeling from "../../supabase/migrations/20261008000000_weekly_review_mood_feeling.sql";
 import experiments from "../../supabase/migrations/20261009000000_experiments.sql";
 import keptExperiments from "../../supabase/migrations/20261010000000_kept_experiments.sql";
+import inboxSessions from "../../supabase/migrations/20261012000000_inbox_sessions.sql";
 
 /** Canonical, ordered migration bundle applied to a provisioned project. */
 export const MIGRATIONS = [
@@ -81,10 +82,15 @@ export const MIGRATIONS = [
     query: keptExperiments,
     sha256: "6c4d20a601417f4290d6489cdcd7457bd65f2a484b08501ad06b109237e65579",
   },
+  {
+    name: "20261012000000_inbox_sessions",
+    query: inboxSessions,
+    sha256: "8d119361967bb687bdc6a7603b5e46d2cf17b1568033e1f6bc1b657937fa33e3",
+  },
 ] as const;
 
 /** Inspect the canonical static capability body without invoking the RPC. */
-const capabilityBody = /create or replace function public\.planner_sync_capabilities\(\)[\s\S]*?\bas \$\$([\s\S]*?)\$\$;/iu.exec(initialSyncBaseline)?.[1];
+const capabilityBody = /create or replace function public\.planner_sync_capabilities\(\)[\s\S]*?\bas \$\$([\s\S]*?)\$\$;/iu.exec(inboxSessions)?.[1];
 if (!capabilityBody) throw new Error("canonical capability definition missing");
 const capabilityBodyLiteral = `'${capabilityBody.replaceAll("'", "''")}'`;
 
@@ -289,6 +295,24 @@ select
   ) and coalesce((select pg_catalog.strpos(definition, 'target_changes_json') > 0
     from function_definitions where proname = 'planner_apply_sync_operation_internal'
       and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4']), false) as kept_experiments_present,
+  exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'inbox_item_id' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_attribute a
+    join pg_catalog.pg_class c on c.oid = a.attrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where a.attname = 'inbox_history_json' and a.attnum > 0 and not a.attisdropped
+  ) and exists (
+    select 1 from pg_catalog.pg_constraint k
+    join pg_catalog.pg_class c on c.oid = k.conrelid and c.relname = 'tasks'
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+    where k.conname = 'tasks_inbox_item_fk'
+  ) and coalesce((select pg_catalog.strpos(definition, 'inbox_history_json') > 0
+    from function_definitions where proname = 'planner_apply_sync_operation_internal'
+      and argument_types = array['uuid','text','text','text','int8','jsonb','int4','int4']), false) as inbox_sessions_present,
   not exists (
     select 1
     from pg_catalog.pg_constraint fk
@@ -323,7 +347,8 @@ select
     where proname in ('apply_sync_operation_v1_unsafe','apply_sync_operation_v1_hardened',
       'apply_sync_operation_v1_prebaseline_base','apply_sync_operation_v2_prebaseline_base',
       'planner_apply_sync_operation_internal',
-      'planner_apply_sync_operation_internal_pre_experiments','planner_recompute_task_actual',
+      'planner_apply_sync_operation_internal_pre_experiments','planner_inbox_history_valid',
+      'planner_recompute_task_actual',
       'planner_validate_timer_payload','planner_validate_plan_title_history',
       'planner_normalize_task_title_history','planner_account_has_history')), false)
     as security_definer_helpers_private,

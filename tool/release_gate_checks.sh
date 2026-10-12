@@ -30,6 +30,7 @@ CANONICAL_MIGRATIONS=(
   20261008000000_weekly_review_mood_feeling
   20261009000000_experiments
   20261010000000_kept_experiments
+  20261012000000_inbox_sessions
 )
 
 # Secret shapes that must never be committed: Supabase secret/service-role

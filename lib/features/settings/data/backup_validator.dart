@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:personal_planner/features/settings/data/backup_format.dart';
+import 'package:personal_planner/core/models/inbox_closure.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dart';
 import 'package:personal_planner/core/utils/json_map_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
 import 'package:personal_planner/features/experiments/domain/experiment_target_changes.dart';
+import 'package:personal_planner/features/inbox/domain/inbox_history.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_text.dart';
 import 'package:personal_planner/features/task_editor/domain/plan_title_history.dart';
 
@@ -71,6 +73,8 @@ class BackupValidator {
       'missed_at',
       'plan_title_history',
       'display_plan_change_id',
+      'inbox_item_id',
+      'inbox_history',
       'plan_change_reasons',
       'created_at',
       'updated_at',
@@ -235,6 +239,8 @@ class BackupValidator {
           'plan_title_history',
           'display_plan_change_id',
           'plan_change_reasons',
+          'inbox_item_id',
+          'inbox_history',
         });
       } else if (table == 'daily_reviews') {
         expected.removeAll(const {'mood', 'task_reasons'});
@@ -507,6 +513,24 @@ class BackupValidator {
     }
   }
 
+  /// The portable history of an Inbox idea. Goes through the same strict
+  /// validator as the repository and sync, so a restore cannot bring in a
+  /// history a local write would refuse.
+  static List<InboxClosure> inboxHistory(
+    Map<String, dynamic> row,
+    String field,
+  ) {
+    final value = row[field];
+    if (value is! List) {
+      throw BackupValidationException('$field must be an array.');
+    }
+    try {
+      return InboxHistory.fromJsonList(value);
+    } on FormatException catch (error) {
+      throw BackupValidationException(error.message);
+    }
+  }
+
   static List<String> idList(Map<String, dynamic> row, String field) {
     final values = stringList(row, field);
     final seen = <String>{};
@@ -587,6 +611,25 @@ class BackupValidator {
           throw BackupValidationException(error.message);
         }
         reasonMap(row, 'plan_change_reasons');
+        final inboxItemId = nullableId(row, 'inbox_item_id');
+        final inboxHistory = BackupValidator.inboxHistory(row, 'inbox_history');
+        if (inboxItemId != null) {
+          if (inboxItemId == row['id']) {
+            throw const BackupValidationException(
+              'A session cannot point at itself as its Inbox idea.',
+            );
+          }
+          if (boolean(row, 'is_inbox')) {
+            throw const BackupValidationException(
+              'An Inbox idea cannot be a session.',
+            );
+          }
+        }
+        if (inboxHistory.isNotEmpty && !boolean(row, 'is_inbox')) {
+          throw const BackupValidationException(
+            'Inbox history belongs only to an Inbox idea.',
+          );
+        }
         if (boolean(row, 'is_inbox') && (start != null || end != null)) {
           throw const BackupValidationException(
             'Inbox tasks must not have a schedule.',
@@ -952,6 +995,7 @@ class BackupValidator {
         'recurring_rule_id',
         'rescheduled_from_id',
         'rescheduled_to_id',
+        'inbox_item_id',
       ]) {
         final value = nullableId(row, field);
         final table = field == 'category_id'
