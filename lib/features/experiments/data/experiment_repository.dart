@@ -59,6 +59,7 @@ class ExperimentRepository {
     required int weekdayTargetMin,
     required int weekendTargetMin,
     required int checkInEveryDays,
+    Future<void> Function(Experiment created)? inSameTransaction,
   }) async {
     final tagName = name.trim();
     if (tagName.isEmpty || tagName.length > _maxTagNameUnits) {
@@ -102,7 +103,10 @@ class ExperimentRepository {
           revision: const Value(1),
         ),
       );
-      return _load(id);
+      final created = await _load(id);
+      // Runs in this transaction: if it throws, the experiment is rolled back.
+      await inSameTransaction?.call(created);
+      return created;
     });
   }
 
@@ -192,7 +196,9 @@ class ExperimentRepository {
         expectedRevision,
         retired: false,
       );
-      final currentWeekStart = isoDateString(startOfIsoWeek(parseIsoDate(today)));
+      final currentWeekStart = isoDateString(
+        startOfIsoWeek(parseIsoDate(today)),
+      );
       final changes = applyKeptTargetChange(
         experiment: fromRow(row, ''),
         draft: (weekdayMin: weekdayTargetMin, weekendMin: weekendTargetMin),

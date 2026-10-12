@@ -6,30 +6,37 @@ import '../../timeline/domain/commands/scheduling_command.dart';
 import '../../timeline/domain/commands/task_aggregate_snapshot.dart';
 import '../data/inbox_repository.dart';
 
-/// Converts an explicit Inbox row into a scheduled task in place. Undo owns
-/// only the fields changed by conversion, preserving later task metadata.
+/// Plans one session of an Inbox idea on Day (drag and drop, or the tile's
+/// Schedule). The idea row is not converted: a new Day task linked to it by
+/// `inbox_item_id` is created, with an id generated up front so Undo and Redo
+/// refer to the same row. Undo soft-deletes only that session, and only while
+/// it is as this command left it.
 class ScheduleInboxItemCommand
     implements SchedulingCommand, MutationAwareSchedulingCommand {
   final InboxRepository repository;
-  final String taskId;
+
+  /// The idea's id.
+  final String itemId;
   final DateTime start;
   final DateTime end;
   final String? title;
   final String? descriptionText;
-  final bool replaceDescription;
 
-  Task? _before;
-  Task? _after;
+  /// The session this command creates.
+  final String sessionId = generateUuidV7();
+
+  TaskAggregateSnapshot? _snapshot;
+  Task? _created;
+  String? _dueDateBefore;
   bool _didMutate = true;
 
   ScheduleInboxItemCommand({
     required this.repository,
-    required this.taskId,
+    required this.itemId,
     required this.start,
     required this.end,
     this.title,
     String? description,
-    this.replaceDescription = false,
   }) : descriptionText = description;
 
   @override
@@ -41,33 +48,47 @@ class ScheduleInboxItemCommand
   @override
   Future<void> execute() async {
     final tasks = TaskRepository(repository.database);
-    final snapshot = await tasks.getTaskWithRevision(taskId);
-    if (snapshot == null) throw StateError('Task $taskId not found');
-    _before ??= snapshot.$1;
-    final result = await repository.scheduleItemDetailed(
-      taskId,
+    final snapshot = _snapshot;
+    if (snapshot != null) {
+      // Redo: bring the same session back and clear the legacy due date again.
+      await repository.database.writeTransaction(() async {
+        await snapshot.restore(repository.database);
+        await _setIdeaDueDate(tasks, null, onlyIf: _dueDateBefore);
+      });
+      return;
+    }
+    final idea = await tasks.getTaskById(itemId);
+    _dueDateBefore = idea?.dueDate;
+    final session = await repository.createSession(
+      itemId,
       start,
       end,
+      now: DateTime.now(),
       title: title,
       description: descriptionText,
-      replaceDescription: replaceDescription,
+      sessionId: sessionId,
     );
-    _after = result.after;
-    _didMutate = result.changed;
+    // Read back, so the guarded Undo compares with what is stored.
+    _created = await tasks.getTaskById(session.id) ?? session;
+    _didMutate = true;
+    _snapshot = await TaskAggregateSnapshot.capture(
+      repository.database,
+      sessionId,
+    );
   }
 
   @override
   Future<void> undo() async {
-    final before = _before;
-    final after = _after;
-    if (before == null || after == null || !_didMutate) return;
+    final created = _created;
+    final snapshot = _snapshot;
+    if (created == null || snapshot == null || !_didMutate) return;
     final tasks = TaskRepository(repository.database);
-    await repository.database.transaction(() async {
-      final snapshot = await tasks.getTaskWithRevision(taskId);
-      final current = snapshot?.$1;
-      final revision = snapshot?.$2;
-      if (current == null || revision == null || current.deletedAt != null) {
-        throw StateError('Cannot undo scheduling: the task is no longer available.');
+    await repository.database.writeTransaction(() async {
+      final current = await tasks.getTaskById(sessionId);
+      if (current == null || current.deletedAt != null) {
+        throw StateError(
+          'Cannot undo scheduling: the task is no longer available.',
+        );
       }
       if (current.status != TaskStatus.planned &&
           current.status != TaskStatus.inProgress) {
@@ -75,39 +96,54 @@ class ScheduleInboxItemCommand
           'Undo the later task status change before undoing this scheduling change.',
         );
       }
-      if (await repository.database.timerDao.getActiveTimerForTask(taskId) !=
+      if (await repository.database.timerDao.getActiveTimerForTask(sessionId) !=
           null) {
         throw StateError(
           'Stop the active timer before undoing this scheduling change.',
         );
       }
-      if (!_sameOwnedFields(current, after)) {
+      if (!_sameOwnedFields(current, created)) {
         throw StateError(
           'Cannot undo scheduling because the task changed after it was scheduled.',
         );
       }
-      await tasks.updateTask(
-        current.copyWith(
-          title: before.title,
-          description: before.description,
-          isInbox: before.isInbox,
-          startTime: before.startTime,
-          endTime: before.endTime,
-          inboxContentVersion: before.inboxContentVersion,
-        ),
-        expectedRevision: revision,
-        allowStatusTransition: true,
-      );
+      await snapshot.softDelete(repository.database);
+      // Put back the legacy due date this command cleared, unless the user
+      // has set another one since.
+      await _setIdeaDueDate(tasks, _dueDateBefore, onlyIf: null);
     });
+  }
+
+  /// Sets the idea's due date to [value] when its current value is [onlyIf]
+  /// and the idea is still a live Inbox idea.
+  Future<void> _setIdeaDueDate(
+    TaskRepository tasks,
+    String? value, {
+    required String? onlyIf,
+  }) async {
+    if (value == onlyIf) return;
+    final snapshot = await tasks.getTaskWithRevision(itemId);
+    final idea = snapshot?.$1;
+    if (idea == null ||
+        !idea.isInbox ||
+        idea.deletedAt != null ||
+        idea.dueDate != onlyIf) {
+      return;
+    }
+    await tasks.updateTask(
+      idea.copyWith(dueDate: value),
+      expectedRevision: snapshot!.$2,
+    );
   }
 
   bool _sameOwnedFields(Task left, Task right) =>
       left.title == right.title &&
       left.description == right.description &&
-      left.isInbox == right.isInbox &&
-      left.startTime == right.startTime &&
-      left.endTime == right.endTime &&
-      left.inboxContentVersion == right.inboxContentVersion;
+      _sameInstant(left.startTime, right.startTime) &&
+      _sameInstant(left.endTime, right.endTime);
+
+  static bool _sameInstant(DateTime? a, DateTime? b) =>
+      a == null || b == null ? a == b : a.isAtSameMomentAs(b);
 }
 
 class RescheduleOverdueCommand implements SchedulingCommand {
@@ -169,9 +205,8 @@ class RescheduleOverdueCommand implements SchedulingCommand {
     final snapshot = _successorSnapshot;
     if (before == null || snapshot == null) return;
     await snapshot.softDelete(repository.database);
-    final current = await TaskRepository(repository.database).getTaskById(
-      originalId,
-    );
+    final current = await TaskRepository(repository.database)
+        .getTaskById(originalId);
     if (current != null) {
       await TaskRepository(repository.database).updateTask(
         current.copyWith(

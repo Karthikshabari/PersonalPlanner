@@ -207,10 +207,11 @@ void main() {
         tester,
         () => container
             .read(inboxRepositoryProvider)
-            .scheduleItem(
+            .createSession(
               item.id,
               DateTime(2027, 3, 15, 10),
               DateTime(2027, 3, 15, 11),
+              now: DateTime.now(),
               title: 'Prepare proposal',
             ),
       );

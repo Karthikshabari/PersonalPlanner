@@ -2,11 +2,19 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/models/experiment.dart';
+import '../../../core/models/inbox_closure.dart';
 import '../../../core/models/inbox_item.dart';
 import '../../../core/models/task.dart';
+import '../../../core/utils/json_map_utils.dart';
 import '../../../core/utils/uuid.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../timeline/data/task_repository.dart';
+import '../domain/inbox_dates.dart';
+import '../domain/inbox_history.dart';
+import '../domain/inbox_session_text.dart';
+import '../domain/inbox_source.dart';
+import '../domain/inbox_status.dart';
 
 /// Inbox data access per architecture.md §3 "Inbox representation" and the
 /// Inbox Overdue Surfacing data flow.
@@ -51,6 +59,8 @@ class InboxRepository {
       for (final row in rows) {
         final task = TaskRepository.fromRow(row);
         if (task.isInbox && task.startTime == null) {
+          // A closed idea is history, not a decision for Day's panel.
+          if (InboxHistory.isClosed(task.inboxHistory)) continue;
           items.add(InboxItem.explicit(task));
         } else if (!task.isInbox &&
             task.startTime != null &&
@@ -122,93 +132,507 @@ class InboxRepository {
     );
   }
 
-  /// Schedules an explicit inbox item at the drop position (Flow 5).
-  /// Duration comes from the caller (one grid slot).
-  Future<Task> scheduleItem(
-    String taskId,
-    DateTime start,
-    DateTime end, {
-    String? title,
-    String? description,
-    bool replaceDescription = false,
-    int? expectedRevision,
-  }) async => (await scheduleItemDetailed(
-    taskId,
-    start,
-    end,
-    title: title,
-    description: description,
-    replaceDescription: replaceDescription,
-    expectedRevision: expectedRevision,
-  )).after;
+  // ---------------------------------------------------------------------
+  // Reads
+  // ---------------------------------------------------------------------
 
-  /// Reads, validates and converts an explicit Inbox row in the same
-  /// transaction as its update. The result is also used by the scheduling
-  /// command to retain an owned-field snapshot for guarded Undo.
-  Future<InboxScheduleResult> scheduleItemDetailed(
-    String taskId,
-    DateTime start,
-    DateTime end, {
-    String? title,
-    String? description,
-    bool replaceDescription = false,
-    int? expectedRevision,
-  }) {
+  /// Everything the Inbox board is derived from, in one read transaction with
+  /// four light queries (no typed full-row mapping).
+  Future<InboxSource> readSource() {
     return _db.transaction(() async {
-      final currentSnapshot = await _tasks.getTaskWithRevision(taskId);
-      final current = currentSnapshot?.$1;
-      final currentRevision = currentSnapshot?.$2;
-      if (current == null || currentRevision == null) {
-        throw StateError('Task $taskId not found');
+      final ideaRows = await _db
+          .customSelect(
+            'SELECT id, description, created_at, due_date, inbox_history_json '
+            'FROM tasks WHERE is_inbox = 1 AND deleted_at IS NULL '
+            "AND status IN ('planned', 'in_progress')",
+            readsFrom: {_db.tasks},
+          )
+          .get();
+      final items = <InboxItemFacts>[];
+      final experimentIds = <String>{};
+      for (final row in ideaRows) {
+        var history = const <InboxClosure>[];
+        try {
+          history = InboxHistory.decodeJson(
+            row.read<String>('inbox_history_json'),
+          );
+        } on FormatException {
+          // Sync and backup validate the history; a bad value here is shown
+          // as an idea with no history rather than breaking the whole list.
+        }
+        for (final event in history) {
+          final id = event.experimentId;
+          if (id != null) experimentIds.add(id);
+        }
+        items.add(
+          InboxItemFacts(
+            id: row.read<String>('id'),
+            text: row.readNullable<String>('description') ?? '',
+            createdAt: _parseInstant(row.read<String>('created_at'))!,
+            dueDate: row.readNullable<String>('due_date'),
+            history: history,
+          ),
+        );
       }
-      final desiredTitle = title ?? current.title;
-      final desiredDescription = replaceDescription
-          ? description
-          : current.description;
-      if (current.deletedAt != null) {
-        throw StateError('Inbox item $taskId is no longer available');
+
+      final sessionRows = await _db
+          .customSelect(
+            'SELECT id, inbox_item_id, title, start_time, end_time, status, '
+            'deleted_at, created_at FROM tasks WHERE inbox_item_id IS NOT NULL',
+            readsFrom: {_db.tasks},
+          )
+          .get();
+      final sessions = <InboxSessionFacts>[];
+      final datesToRead = <String>{};
+      final sessionDates = <String, String>{};
+      for (final row in sessionRows) {
+        final start = _parseInstant(row.readNullable<String>('start_time'));
+        final status = TaskStatus.fromDb(row.read<String>('status'));
+        final deletedAt = _parseInstant(row.readNullable<String>('deleted_at'));
+        final id = row.read<String>('id');
+        sessions.add(
+          InboxSessionFacts(
+            id: id,
+            itemId: row.read<String>('inbox_item_id'),
+            title: row.read<String>('title'),
+            start: start,
+            end: _parseInstant(row.readNullable<String>('end_time')),
+            status: status,
+            deletedAt: deletedAt,
+            createdAt: _parseInstant(row.read<String>('created_at'))!,
+          ),
+        );
+        // A reason can only exist for a session that is not done.
+        if (deletedAt == null &&
+            start != null &&
+            status != TaskStatus.completed) {
+          final date = isoDateString(start);
+          datesToRead.add(date);
+          sessionDates[id] = date;
+        }
       }
-      if (!current.isInbox) {
-        final sameRequest =
-            current.title == desiredTitle &&
-            current.description == desiredDescription &&
-            current.startTime == start &&
-            current.endTime == end;
-        if (sameRequest) {
-          return InboxScheduleResult(
-            before: current,
-            after: current,
-            changed: false,
+
+      final reasons = <String, String>{};
+      if (datesToRead.isNotEmpty) {
+        final dates = datesToRead.toList(growable: false);
+        final reviewRows = await _db
+            .customSelect(
+              'SELECT date, task_reasons_json FROM daily_reviews '
+              'WHERE deleted_at IS NULL AND date IN '
+              '(${List.filled(dates.length, '?').join(', ')})',
+              variables: [for (final date in dates) Variable<String>(date)],
+              readsFrom: {_db.dailyReviews},
+            )
+            .get();
+        final byDate = {
+          for (final row in reviewRows)
+            row.read<String>('date'): JsonMapUtils.decode(
+              row.readNullable<String>('task_reasons_json'),
+            ),
+        };
+        sessionDates.forEach((id, date) {
+          final reason = byDate[date]?[id]?.trim();
+          if (reason != null && reason.isNotEmpty) reasons[id] = reason;
+        });
+      }
+
+      final experiments = <String, InboxExperimentFacts>{};
+      if (experimentIds.isNotEmpty) {
+        final ids = experimentIds.toList(growable: false);
+        final rows = await _db
+            .customSelect(
+              'SELECT e.id, e.start_date, e.end_date, e.status, e.outcome, '
+              'e.concluded_on, e.retired_at, e.deleted_at, t.name '
+              'FROM experiments e JOIN tags t ON t.id = e.tag_id '
+              'WHERE e.id IN (${List.filled(ids.length, '?').join(', ')})',
+              variables: [for (final id in ids) Variable<String>(id)],
+              readsFrom: {_db.experiments, _db.tags},
+            )
+            .get();
+        for (final row in rows) {
+          final id = row.read<String>('id');
+          experiments[id] = InboxExperimentFacts(
+            id: id,
+            name: row.read<String>('name'),
+            startDate: row.read<String>('start_date'),
+            endDate: row.read<String>('end_date'),
+            status: ExperimentStatus.fromDb(row.read<String>('status')),
+            outcome: ExperimentOutcome.fromDb(
+              row.readNullable<String>('outcome'),
+            ),
+            concludedOn: row.readNullable<String>('concluded_on'),
+            retiredAt: _parseInstant(row.readNullable<String>('retired_at')),
+            deletedAt: _parseInstant(row.readNullable<String>('deleted_at')),
           );
         }
-        throw StateError(
-          'This item was already scheduled; open the task to review.',
-        );
       }
-      if (current.status == TaskStatus.completed ||
-          current.status == TaskStatus.cancelled ||
-          current.status == TaskStatus.skipped ||
-          current.status == TaskStatus.rescheduled) {
-        throw StateError('Only an active Inbox capture can be scheduled');
-      }
-      if (expectedRevision != null && expectedRevision != currentRevision) {
-        throw StateError(
-          'Inbox item $taskId changed while it was being scheduled; retry the same draft.',
-        );
-      }
-      final after = await _tasks.updateTask(
-        current.copyWith(
-          title: desiredTitle,
-          description: desiredDescription,
-          isInbox: false,
-          startTime: start,
-          endTime: end,
-        ),
-        expectedRevision: currentRevision,
+
+      return InboxSource(
+        items: items,
+        sessions: sessions,
+        reasons: reasons,
+        experiments: experiments,
       );
-      return InboxScheduleResult(before: current, after: after, changed: true);
     });
   }
+
+  // ---------------------------------------------------------------------
+  // Writes. Every one is a single write transaction; task writes go through
+  // TaskRepository (validation, timers, stats invalidation, triggers). `now`
+  // is always passed in.
+  // ---------------------------------------------------------------------
+
+  /// Plans one session of an idea on Day (the drag path). The idea row is not
+  /// converted; it stays an idea and its legacy due date is cleared.
+  Future<Task> createSession(
+    String itemId,
+    DateTime start,
+    DateTime end, {
+    required DateTime now,
+    String? title,
+    String? description,
+    String? sessionId,
+  }) {
+    return _db.writeTransaction(() async {
+      final idea = await _requireOpenIdea(itemId);
+      final text = inboxSessionText(idea.$1.description ?? '');
+      final desiredTitle = title ?? text.title;
+      final desiredDescription = description == null
+          ? text.description
+          : (description.trim().isEmpty ? null : description);
+      final id = sessionId ?? generateUuidV7();
+      final existing = await _tasks.getTaskById(id);
+      if (existing != null) {
+        final sameRequest =
+            existing.deletedAt == null &&
+            existing.inboxItemId == itemId &&
+            existing.title == desiredTitle &&
+            existing.description == desiredDescription &&
+            existing.startTime == start &&
+            existing.endTime == end;
+        if (sameRequest) return existing;
+        throw StateError(
+          'This session id already exists with different values.',
+        );
+      }
+      final session = await _tasks.insertTask(
+        Task(
+          id: id,
+          title: desiredTitle.isEmpty ? 'Inbox idea' : desiredTitle,
+          description: desiredDescription,
+          startTime: start,
+          endTime: end,
+          inboxItemId: itemId,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await _clearLegacyDueDate(idea);
+      return session;
+    });
+  }
+
+  /// Replaces the idea's upcoming sessions with [slots] and decides its
+  /// missed ones (plan section 9.A). Everything in one transaction.
+  Future<InboxSaveSummary> saveDates(
+    String itemId,
+    List<InboxSlot> slots,
+    DateTime now,
+  ) {
+    return _db.writeTransaction(() async {
+      // 1. The idea must be open.
+      final idea = await _requireOpenIdea(itemId);
+      // 2. Every slot is valid; at most 14, one per date.
+      validateInboxSlots(slots, now);
+      final ordered = [...slots]..sort((a, b) => a.start.compareTo(b.start));
+
+      final rows = await _sessionsOf(itemId);
+      final byId = {for (final row in rows) row.$1.id: row};
+      final facts = [for (final row in rows) _factsOf(row.$1)];
+      // 3. Replaceable sessions; the rest are never touched.
+      final replaceable = replaceableInboxSessions(facts, now);
+      final replaceableByDate = <String, List<InboxSessionFacts>>{};
+      for (final session in replaceable) {
+        (replaceableByDate[isoDateString(session.start!)] ??= []).add(session);
+      }
+
+      var created = 0;
+      var moved = 0;
+      var dropped = 0;
+      final text = inboxSessionText(idea.$1.description ?? '');
+      final sessionForDate = <String, String>{};
+
+      // 4. One session per picked date: move the existing one or insert.
+      for (final slot in ordered) {
+        final existing = replaceableByDate[slot.date];
+        if (existing != null && existing.isNotEmpty) {
+          final keep = existing.first;
+          sessionForDate[slot.date] = keep.id;
+          final (task, revision) = byId[keep.id]!;
+          if (!task.startTime!.isAtSameMomentAs(slot.start) ||
+              !task.endTime!.isAtSameMomentAs(slot.end)) {
+            await _tasks.updateTask(
+              task.copyWith(startTime: slot.start, endTime: slot.end),
+              expectedRevision: revision,
+            );
+            moved++;
+          }
+          for (final extra in existing.skip(1)) {
+            await _tasks.deleteTask(extra.id);
+            dropped++;
+          }
+        } else {
+          final session = await _tasks.insertTask(
+            Task(
+              id: generateUuidV7(),
+              title: text.title.isEmpty ? 'Inbox idea' : text.title,
+              description: text.description,
+              startTime: slot.start,
+              endTime: slot.end,
+              inboxItemId: itemId,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+          sessionForDate[slot.date] = session.id;
+          created++;
+        }
+      }
+
+      // 5. Replaceable sessions on dates that were not picked are dropped.
+      for (final entry in replaceableByDate.entries) {
+        if (sessionForDate.containsKey(entry.key)) continue;
+        for (final session in entry.value) {
+          await _tasks.deleteTask(session.id);
+          dropped++;
+        }
+      }
+
+      // 6. Missed sessions: carried when any slot exists, else skipped.
+      final missed = [
+        for (final session in facts)
+          if (sessionStatusOf(session, now) == InboxSessionStatus.missed)
+            session,
+      ]..sort((a, b) => a.start!.compareTo(b.start!));
+      var carried = 0;
+      var skipped = 0;
+      if (missed.isNotEmpty) {
+        if (ordered.isNotEmpty) {
+          final targetId = sessionForDate[ordered.first.date]!;
+          for (final session in missed) {
+            await _tasks.markRescheduled(session.id, targetId);
+            carried++;
+          }
+          final target = await _tasks.getTaskById(targetId);
+          if (target != null && target.rescheduledFromId == null) {
+            await _tasks.updateTask(
+              target.copyWith(rescheduledFromId: missed.last.id),
+            );
+          }
+        } else {
+          for (final session in missed) {
+            final (task, revision) = byId[session.id]!;
+            await _tasks.updateTask(
+              task.copyWith(status: TaskStatus.skipped),
+              expectedRevision: revision,
+            );
+            skipped++;
+          }
+        }
+      }
+
+      // 7. The legacy due date has done its job.
+      await _clearLegacyDueDate(idea);
+
+      return InboxSaveSummary(
+        created: created,
+        moved: moved,
+        dropped: dropped,
+        carried: carried,
+        skipped: skipped,
+      );
+    });
+  }
+
+  /// Closes an idea with a required reason (trimmed, at most 200 characters).
+  Future<void> closeItem(String itemId, String reason, DateTime now) async {
+    final trimmed = reason.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Write why you are closing this idea.');
+    }
+    if (trimmed.runes.length > InboxHistory.maxReasonLength) {
+      throw ArgumentError('Keep the reason to 200 characters or fewer.');
+    }
+    return await _closeIdea(
+      itemId,
+      now,
+      kind: InboxCloseKind.closed,
+      reason: trimmed,
+    );
+  }
+
+  /// Lets an idea go, with an optional reason. Refused while the idea has any
+  /// session that is not dropped; close it instead.
+  Future<void> letGo(String itemId, String? reason, DateTime now) async {
+    final trimmed = reason?.trim();
+    if (trimmed != null &&
+        trimmed.runes.length > InboxHistory.maxReasonLength) {
+      throw ArgumentError('Keep the reason to 200 characters or fewer.');
+    }
+    return await _closeIdea(
+      itemId,
+      now,
+      kind: InboxCloseKind.letGo,
+      reason: trimmed == null || trimmed.isEmpty ? null : trimmed,
+    );
+  }
+
+  /// Records that the idea became experiment [experimentId]. Called from the
+  /// experiment start form inside the transaction that creates the experiment.
+  Future<void> markBecameExperiment(
+    String itemId,
+    String experimentId,
+    DateTime now,
+  ) async {
+    if (experimentId.trim().isEmpty) {
+      throw ArgumentError('An experiment id is required.');
+    }
+    return await _closeIdea(
+      itemId,
+      now,
+      kind: InboxCloseKind.experiment,
+      experimentId: experimentId,
+    );
+  }
+
+  /// Reverses the open closure. The event stays in the history with its
+  /// reason; sessions are untouched, so the idea lands in Ideas.
+  Future<void> bringBack(String itemId, DateTime now) {
+    return _db.writeTransaction(() async {
+      final idea = await _requireIdea(itemId);
+      if (!InboxHistory.isClosed(idea.$1.inboxHistory)) {
+        throw StateError('This idea is not closed.');
+      }
+      await _tasks.updateTask(
+        idea.$1.copyWith(
+          inboxHistory: InboxHistory.reopen(idea.$1.inboxHistory, now),
+        ),
+        expectedRevision: idea.$2,
+      );
+    });
+  }
+
+  Future<void> _closeIdea(
+    String itemId,
+    DateTime now, {
+    required InboxCloseKind kind,
+    String? reason,
+    String? experimentId,
+  }) {
+    return _db.writeTransaction(() async {
+      final idea = await _requireOpenIdea(itemId);
+      final rows = await _sessionsOf(itemId);
+      final facts = [for (final row in rows) _factsOf(row.$1)];
+      if (kind == InboxCloseKind.letGo &&
+          facts.any(
+            (session) =>
+                sessionStatusOf(session, now) != InboxSessionStatus.dropped,
+          )) {
+        throw StateError(
+          'This idea has sessions. Close it instead of letting it go.',
+        );
+      }
+      final history = InboxHistory.close(
+        idea.$1.inboxHistory,
+        kind: kind,
+        at: now,
+        reason: reason,
+        experimentId: experimentId,
+      );
+      await _tasks.updateTask(
+        idea.$1.copyWith(inboxHistory: history),
+        expectedRevision: idea.$2,
+      );
+      // Sessions that have not started are dropped; missed ones are skipped
+      // so Day stops asking about them; one in progress is left to Day.
+      for (final (task, revision) in rows) {
+        if (task.deletedAt != null ||
+            (task.status != TaskStatus.planned &&
+                task.status != TaskStatus.inProgress) ||
+            task.startTime == null ||
+            task.endTime == null) {
+          continue;
+        }
+        if (task.startTime!.isAfter(now)) {
+          await _tasks.deleteTask(task.id);
+        } else if (!task.endTime!.isAfter(now)) {
+          await _tasks.updateTask(
+            task.copyWith(status: TaskStatus.skipped),
+            expectedRevision: revision,
+          );
+        }
+      }
+    });
+  }
+
+  /// The idea row and its revision; throws unless it is a live Inbox idea.
+  Future<(Task, int)> _requireIdea(String itemId) async {
+    final snapshot = await _tasks.getTaskWithRevision(itemId);
+    final task = snapshot?.$1;
+    if (task == null || !task.isInbox || task.deletedAt != null) {
+      throw StateError(_ideaChanged);
+    }
+    return snapshot!;
+  }
+
+  /// Like [_requireIdea], and the idea must not be closed.
+  Future<(Task, int)> _requireOpenIdea(String itemId) async {
+    final idea = await _requireIdea(itemId);
+    if (InboxHistory.isClosed(idea.$1.inboxHistory)) {
+      throw StateError(_ideaChanged);
+    }
+    return idea;
+  }
+
+  static const _ideaChanged =
+      'This idea changed elsewhere. Close it and open it again.';
+
+  Future<Task?> _liveIdea(String itemId) async {
+    final task = await _tasks.getTaskById(itemId);
+    return task != null && task.isInbox && task.deletedAt == null ? task : null;
+  }
+
+  Future<void> _clearLegacyDueDate((Task, int) idea) async {
+    if (idea.$1.dueDate == null) return;
+    await _tasks.updateTask(
+      idea.$1.copyWith(dueDate: null),
+      expectedRevision: idea.$2,
+    );
+  }
+
+  /// Every row linked to [itemId] (deleted ones too) with its revision.
+  Future<List<(Task, int)>> _sessionsOf(String itemId) async {
+    final rows = await (_db.select(
+      _db.tasks,
+    )..where((t) => t.inboxItemId.equals(itemId))).get();
+    return [
+      for (final row in rows) (TaskRepository.fromRow(row), row.revision),
+    ];
+  }
+
+  static InboxSessionFacts _factsOf(Task task) => InboxSessionFacts(
+    id: task.id,
+    itemId: task.inboxItemId!,
+    title: task.title,
+    start: task.startTime?.toUtc(),
+    end: task.endTime?.toUtc(),
+    status: task.status,
+    deletedAt: task.deletedAt?.toUtc(),
+    createdAt: task.createdAt.toUtc(),
+  );
+
+  static DateTime? _parseInstant(String? value) =>
+      value == null ? null : DateTime.parse(value).toUtc();
 
   /// Marks an inbox/overdue item as skipped without scheduling it
   /// (Flow 6 "Mark as Skipped").
@@ -240,9 +664,14 @@ class InboxRepository {
       }
 
       final now = DateTime.now();
+      // A carried session stays linked to its idea; a link to an idea that
+      // is gone would be refused, so the successor is then a plain Day task.
+      final itemId = original.inboxItemId;
+      final keepLink = itemId != null && await _liveIdea(itemId) != null;
       final newTask = await _tasks.insertTask(
         original.copyWith(
           id: successorId ?? generateUuidV7(),
+          inboxItemId: keepLink ? itemId : null,
           title: title ?? original.title,
           description: replaceDescription ? description : original.description,
           isInbox: false,
@@ -311,14 +740,36 @@ class InboxRepository {
   static String _utcIso(DateTime local) => local.toUtc().toIso8601String();
 }
 
-class InboxScheduleResult {
-  final Task before;
-  final Task after;
-  final bool changed;
-
-  const InboxScheduleResult({
-    required this.before,
-    required this.after,
-    required this.changed,
+/// What Save dates did, for the confirmation line and tests.
+class InboxSaveSummary {
+  const InboxSaveSummary({
+    this.created = 0,
+    this.moved = 0,
+    this.dropped = 0,
+    this.carried = 0,
+    this.skipped = 0,
   });
+
+  final int created;
+  final int moved;
+  final int dropped;
+  final int carried;
+  final int skipped;
+
+  @override
+  bool operator ==(Object other) =>
+      other is InboxSaveSummary &&
+      other.created == created &&
+      other.moved == moved &&
+      other.dropped == dropped &&
+      other.carried == carried &&
+      other.skipped == skipped;
+
+  @override
+  int get hashCode => Object.hash(created, moved, dropped, carried, skipped);
+
+  @override
+  String toString() =>
+      'InboxSaveSummary(created: $created, moved: $moved, dropped: $dropped, '
+      'carried: $carried, skipped: $skipped)';
 }

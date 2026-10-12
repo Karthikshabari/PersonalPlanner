@@ -2,6 +2,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/experiment.dart';
+import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/features/experiments/data/experiment_repository.dart';
@@ -147,6 +149,80 @@ void main() {
       await create();
       final list = await repo.watchExperiments().first;
       expect(list.single.tagName, 'Learn C');
+    });
+  });
+
+  group('createExperiment hook (inSameTransaction)', () {
+    Future<Experiment> createWithHook(
+      Future<void> Function(Experiment created) hook,
+    ) => repo.createExperiment(
+      name: 'Learn C',
+      startDate: '2026-10-01',
+      endDate: '2026-10-30',
+      weekdayTargetMin: 60,
+      weekendTargetMin: 90,
+      checkInEveryDays: 7,
+      inSameTransaction: hook,
+    );
+
+    Future<void> insertTaskRow(String title) => TaskRepository(db).insertTask(
+      Task(
+        id: '',
+        title: title,
+        isInbox: true,
+        createdAt: DateTime.utc(2026, 10, 1),
+        updatedAt: DateTime.utc(2026, 10, 1),
+      ),
+    );
+
+    test('receives the created experiment and both writes commit', () async {
+      Experiment? seen;
+      final created = await createWithHook((e) async {
+        seen = e;
+        // A repository write that opens its own (nested) transaction.
+        await insertTaskRow('written by the hook');
+      });
+      expect(seen?.id, created.id);
+      expect(await db.select(db.experiments).get(), hasLength(1));
+      expect(await db.select(db.tasks).get(), hasLength(1));
+    });
+
+    test('a throwing hook rolls back the experiment, the tag and the '
+        'nested write (R5: nested transactions act as savepoints)', () async {
+      await expectLater(
+        createWithHook((_) async {
+          await insertTaskRow('must be rolled back');
+          throw StateError('hook failed');
+        }),
+        throwsA(isA<StateError>()),
+      );
+      expect(await db.select(db.experiments).get(), isEmpty);
+      expect(await db.select(db.tags).get(), isEmpty);
+      expect(await db.select(db.tasks).get(), isEmpty);
+    });
+
+    test('a nested transaction that fails inside the hook also rolls back '
+        'the outer experiment', () async {
+      await expectLater(
+        createWithHook((_) async {
+          await db.writeTransaction(() async {
+            await insertTaskRow('inner');
+            throw StateError('inner failed');
+          });
+        }),
+        throwsA(isA<StateError>()),
+      );
+      expect(await db.select(db.experiments).get(), isEmpty);
+      expect(await db.select(db.tasks).get(), isEmpty);
+    });
+
+    test('the database is usable after a rolled-back create', () async {
+      await expectLater(
+        createWithHook((_) async => throw StateError('no')),
+        throwsA(isA<StateError>()),
+      );
+      expect((await create()).tagName, 'Learn C');
+      expect(await db.select(db.experiments).get(), hasLength(1));
     });
   });
 

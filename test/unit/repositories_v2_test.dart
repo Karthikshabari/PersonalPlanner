@@ -131,21 +131,18 @@ void main() {
       expect(t1.id, generateDeterministicUuid('tag:deep-work'));
     });
 
-    test(
-      'rename then recreate of the original deterministic name creates a fresh identity',
-      () async {
-        final original = await tags.getOrCreateByName('deep-work');
-        await tags.updateTag(original.copyWith(name: 'focused'));
+    test('rename then recreate of the original deterministic name creates a fresh identity', () async {
+      final original = await tags.getOrCreateByName('deep-work');
+      await tags.updateTag(original.copyWith(name: 'focused'));
 
-        final recreated = await tags.getOrCreateByName('deep-work');
-        expect(recreated.id, isNot(original.id));
-        expect(recreated.name, 'deep-work');
-        expect(
-          (await tags.watchAllTags().first).map((t) => t.name),
-          unorderedEquals(['focused', 'deep-work']),
-        );
-      },
-    );
+      final recreated = await tags.getOrCreateByName('deep-work');
+      expect(recreated.id, isNot(original.id));
+      expect(recreated.name, 'deep-work');
+      expect(
+        (await tags.watchAllTags().first).map((t) => t.name),
+        unorderedEquals(['focused', 'deep-work']),
+      );
+    });
 
     test('old name of a renamed tag can be created again', () async {
       final first = await tags.getOrCreateByName('work');
@@ -373,32 +370,42 @@ void main() {
       );
     });
 
-    test('due date is independent, editable, removable, and retained on schedule', () async {
-      final item = await inbox.addToInbox('Raw content', dueDate: '2026-09-12');
-      final withDue = await tasks.getTaskWithRevision(item.id);
-      await tasks.updateTask(
-        item.copyWith(dueDate: null),
-        expectedRevision: withDue!.$2,
-      );
-      expect((await tasks.getTaskById(item.id))!.dueDate, isNull);
+    test(
+      'due date is independent, editable and removable; a session clears it',
+      () async {
+        final item = await inbox.addToInbox(
+          'Raw content',
+          dueDate: '2026-09-12',
+        );
+        final withDue = await tasks.getTaskWithRevision(item.id);
+        await tasks.updateTask(
+          item.copyWith(dueDate: null),
+          expectedRevision: withDue!.$2,
+        );
+        expect((await tasks.getTaskById(item.id))!.dueDate, isNull);
 
-      final restored = await tasks.getTaskWithRevision(item.id);
-      await tasks.updateTask(
-        (await tasks.getTaskById(item.id))!.copyWith(dueDate: '2026-09-12'),
-        expectedRevision: restored!.$2,
-      );
-      final day = addDays(DateTime.now(), 1);
-      final scheduled = await inbox.scheduleItem(
-        item.id,
-        DateTime(day.year, day.month, day.day, 10),
-        DateTime(day.year, day.month, day.day, 11),
-        title: 'Deliberate title',
-        description: 'Raw content',
-        replaceDescription: true,
-      );
-      expect(scheduled.dueDate, '2026-09-12');
-      expect(scheduled.isInbox, isFalse);
-    });
+        final restored = await tasks.getTaskWithRevision(item.id);
+        await tasks.updateTask(
+          (await tasks.getTaskById(item.id))!.copyWith(dueDate: '2026-09-12'),
+          expectedRevision: restored!.$2,
+        );
+        final day = addDays(DateTime.now(), 1);
+        final session = await inbox.createSession(
+          item.id,
+          DateTime(day.year, day.month, day.day, 10),
+          DateTime(day.year, day.month, day.day, 11),
+          now: DateTime.now(),
+          title: 'Deliberate title',
+          description: 'Raw content',
+        );
+        expect(session.dueDate, isNull);
+        expect(session.isInbox, isFalse);
+        expect(session.inboxItemId, item.id);
+        final idea = (await tasks.getTaskById(item.id))!;
+        expect(idea.isInbox, isTrue);
+        expect(idea.dueDate, isNull);
+      },
+    );
 
     test(
       'overdue scheduled tasks surface alongside inbox items with stamping',
@@ -450,21 +457,29 @@ void main() {
       },
     );
 
-    test('scheduleItem clears the inbox flag and sets times', () async {
+    test('createSession plans a linked Day task and leaves the idea', () async {
       final item = await inbox.addToInbox('Schedule me');
-      // Tomorrow, so the scheduled block never counts as overdue
-      // (a past-day planned task would surface in the inbox again).
+      // Tomorrow, so the session never counts as overdue (a past-day planned
+      // task would surface in the inbox again).
       final day = addDays(DateTime.now(), 1);
       final start = DateTime(day.year, day.month, day.day, 10);
-      final result = await inbox.scheduleItem(
+      final result = await inbox.createSession(
         item.id,
         start,
         start.add(const Duration(hours: 1)),
+        now: DateTime.now(),
       );
       expect(result.isInbox, isFalse);
+      expect(result.inboxItemId, item.id);
+      expect(result.title, 'Schedule me');
       expect(result.startTime, start.toLocal());
       expect(result.status, TaskStatus.planned);
-      expect(await inbox.watchInboxItems().first, isEmpty);
+      final idea = (await tasks.getTaskById(item.id))!;
+      expect(idea.isInbox, isTrue);
+      expect(idea.startTime, isNull);
+      // The idea is still listed for Day's panel; the session is not.
+      final listed = await inbox.watchInboxItems().first;
+      expect(listed.map((i) => i.task.id), [item.id]);
     });
 
     test('rescheduleOverdue creates linked copy and marks original', () async {

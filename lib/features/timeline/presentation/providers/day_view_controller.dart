@@ -14,6 +14,7 @@ import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../inbox/domain/inbox_commands.dart';
+import '../../../inbox/domain/inbox_session_text.dart';
 import '../../../inbox/providers/inbox_provider.dart';
 import '../../data/task_repository.dart';
 import '../../domain/commands/batch_command.dart';
@@ -109,8 +110,9 @@ abstract final class TimelineActions {
     anchorDate: anchorDate,
   );
 
-  /// Schedules/reschedules an Inbox item through the same conflict-aware
-  /// command path used by timeline drops.
+  /// Plans a session of an Inbox idea (or reschedules an overdue task)
+  /// through the same conflict-aware command path used by timeline drops. An
+  /// idea is not converted: a new Day task linked to it is created.
   static Future<bool> scheduleInboxItem(
     BuildContext context,
     WidgetRef ref,
@@ -122,51 +124,59 @@ abstract final class TimelineActions {
     bool replaceDescription = false,
   }) async {
     final repository = ref.read(inboxRepositoryProvider);
-    final current = await repository.database.taskDao.getTaskById(item.task.id);
-    if (current != null && !current.isInbox) {
-      final sameRequest =
-          current.startTime == start &&
-          current.endTime == end &&
-          (title == null || current.title == title) &&
-          (!replaceDescription || current.description == description);
-      if (sameRequest) return true;
-    }
     if (!context.mounted) return false;
-    final command = item.isOverdue
-        ? RescheduleOverdueCommand(
-            repository: repository,
-            originalId: item.task.id,
-            start: start,
-            end: end,
-            title: title,
-            description: description,
-            replaceDescription: replaceDescription,
-          )
-        : ScheduleInboxItemCommand(
-            repository: repository,
-            taskId: item.task.id,
-            start: start,
-            end: end,
-            title: title,
-            description: description,
-            replaceDescription: replaceDescription,
-          );
-    final hypothetical = item.task.copyWith(
-      id: item.isOverdue ? 'reschedule-preview-${item.task.id}' : item.task.id,
-      isInbox: false,
-      startTime: start,
-      endTime: end,
-      actualDurationMin: item.isOverdue ? null : item.task.actualDurationMin,
-      status: item.isOverdue ? TaskStatus.planned : item.task.status,
-      recurringRuleId: item.task.recurringRuleId,
-      rescheduledFromId: item.isOverdue
-          ? item.task.id
-          : item.task.rescheduledFromId,
-      rescheduledToId: null,
-      missedAt: null,
-      title: title ?? item.task.title,
-      description: replaceDescription ? description : item.task.description,
-    );
+    final SchedulingCommand command;
+    final Task hypothetical;
+    if (item.isOverdue) {
+      command = RescheduleOverdueCommand(
+        repository: repository,
+        originalId: item.task.id,
+        start: start,
+        end: end,
+        title: title,
+        description: description,
+        replaceDescription: replaceDescription,
+      );
+      hypothetical = item.task.copyWith(
+        id: 'reschedule-preview-${item.task.id}',
+        isInbox: false,
+        startTime: start,
+        endTime: end,
+        actualDurationMin: null,
+        status: TaskStatus.planned,
+        recurringRuleId: item.task.recurringRuleId,
+        rescheduledFromId: item.task.id,
+        rescheduledToId: null,
+        missedAt: null,
+        title: title ?? item.task.title,
+        description: replaceDescription ? description : item.task.description,
+      );
+    } else {
+      final session = ScheduleInboxItemCommand(
+        repository: repository,
+        itemId: item.task.id,
+        start: start,
+        end: end,
+        title: title,
+        description: description,
+      );
+      command = session;
+      final text = inboxSessionText(item.task.description ?? '');
+      // Overlap highlighting and `keepOverlapIdsProvider` point at the session.
+      hypothetical = item.task.copyWith(
+        id: session.sessionId,
+        isInbox: false,
+        inboxItemId: item.task.id,
+        inboxHistory: const [],
+        startTime: start,
+        endTime: end,
+        status: TaskStatus.planned,
+        title: title ?? text.title,
+        description: description == null
+            ? text.description
+            : (description.trim().isEmpty ? null : description),
+      );
+    }
     return commitScheduledChange(
       context,
       ref,
@@ -176,8 +186,9 @@ abstract final class TimelineActions {
     );
   }
 
-  /// Opens the shared full scheduling form for every Inbox conversion entry
-  /// point, including drag/drop. Explicit captures start with a blank title;
+  /// Opens the shared full scheduling form for every Inbox scheduling entry
+  /// point, including drag/drop. An idea's session starts with the idea's
+  /// first line as its title and the remaining lines as its description;
   /// overdue tasks retain their meaningful title and linked-copy semantics.
   static Future<bool> showInboxSchedulingForm(
     BuildContext context,
@@ -186,6 +197,7 @@ abstract final class TimelineActions {
     DateTime start,
     DateTime end,
   ) async {
+    final sessionText = inboxSessionText(item.task.description ?? '');
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -196,8 +208,10 @@ abstract final class TimelineActions {
             taskId: item.task.id,
             initialStart: start,
             initialEnd: end,
-            initialTitle: item.isOverdue ? item.task.title : '',
-            initialDescription: item.task.description ?? '',
+            initialTitle: item.isOverdue ? item.task.title : sessionText.title,
+            initialDescription: item.isOverdue
+                ? item.task.description ?? ''
+                : sessionText.description ?? '',
             heading: item.isOverdue
                 ? 'Reschedule overdue task'
                 : 'Schedule Inbox capture',

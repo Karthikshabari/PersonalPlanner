@@ -182,7 +182,7 @@ ExperimentProgress computeExperimentProgress({
         : null,
     fillFraction: _fraction(done, total),
     tickFraction: _fraction(expected, total),
-    statusChip: _statusChip(experiment, days.length, today),
+    statusChip: experimentStatusLabel(experiment, days.length, today),
     headline: expected == 0 && done == 0
         ? 'Nothing is expected yet. Complete a block with the tag '
               '${experiment.tagName} and it shows up here.'
@@ -195,7 +195,13 @@ ExperimentProgress computeExperimentProgress({
 double _fraction(int part, int total) =>
     total <= 0 ? 0.0 : math.min(1.0, part / total);
 
-String _statusChip(Experiment experiment, int windowDays, String today) {
+/// The status chip text: "Running · Day X of N", "Starts Oct 3" or
+/// "Concluded Oct 30". [windowDays] is the length of the experiment window.
+String experimentStatusLabel(
+  Experiment experiment,
+  int windowDays,
+  String today,
+) {
   if (experiment.status == ExperimentStatus.concluded) {
     return 'Concluded ${_monthDay(experiment.concludedOn ?? experiment.endDate)}';
   }

@@ -334,91 +334,117 @@ void main() {
     });
   });
 
-  group('Inbox conversion commands', () {
-    test(
-      'converts in place and guarded undo/redo preserve unrelated work',
-      () async {
-        final inbox = InboxRepository(db);
-        final capture = await inbox.addToInbox(
-          '  Raw capture\n\nwith indentation  ',
-          dueDate: '2026-07-30',
-        );
-        final start = day.add(const Duration(hours: 16));
-        final end = day.add(const Duration(hours: 17, minutes: 30));
-        final command = ScheduleInboxItemCommand(
-          repository: inbox,
-          taskId: capture.id,
-          start: start,
-          end: end,
-          title: 'Prepare proposal',
-          description: capture.description,
-          replaceDescription: true,
-        );
-
-        await command.execute();
-        var scheduled = await repo.getTaskById(capture.id);
-        expect(scheduled!.isInbox, isFalse);
-        expect(scheduled.title, 'Prepare proposal');
-        expect(scheduled.description, capture.description);
-        expect(scheduled.scheduledDuration, const Duration(minutes: 90));
-        expect(scheduled.dueDate, '2026-07-30');
-
-        // Manual Actual is an owned timer/accounting source, not an ordinary
-        // task field. It remains intentionally independent of the Inbox undo
-        // and verifies that the conversion does not erase unrelated work.
-        await TimerService(db).setManualActual(capture.id, 10);
-        await command.undo();
-        var restored = await repo.getTaskById(capture.id);
-        expect(restored!.isInbox, isTrue);
-        expect(restored.title, 'Inbox capture');
-        expect(restored.description, capture.description);
-        expect(restored.startTime, isNull);
-        expect(restored.manualDurationAdjustmentMin, 10);
-        expect(restored.dueDate, '2026-07-30');
-
-        await command.execute();
-        scheduled = await repo.getTaskById(capture.id);
-        expect(scheduled!.id, capture.id);
-        expect(scheduled.isInbox, isFalse);
-        expect(scheduled.title, 'Prepare proposal');
-      },
-    );
-
-    test('exact retry is a no-op and guarded undo refuses completed or timed tasks', () async {
+  group('Inbox scheduling commands', () {
+    test('creates a session, keeps the idea, and guarded undo/redo preserve unrelated work', () async {
       final inbox = InboxRepository(db);
-      final capture = await inbox.addToInbox('Retry me');
-      final start = day.add(const Duration(hours: 11));
-      final end = day.add(const Duration(hours: 12));
+      final capture = await inbox.addToInbox(
+        '  Raw capture\n\nwith indentation  ',
+        dueDate: '2026-07-30',
+      );
+      final start = day.add(const Duration(hours: 16));
+      final end = day.add(const Duration(hours: 17, minutes: 30));
       final command = ScheduleInboxItemCommand(
         repository: inbox,
-        taskId: capture.id,
+        itemId: capture.id,
         start: start,
         end: end,
+        title: 'Prepare proposal',
+        description: 'with indentation',
+      );
+
+      await command.execute();
+      final session = await repo.getTaskById(command.sessionId);
+      expect(session!.isInbox, isFalse);
+      expect(session.inboxItemId, capture.id);
+      expect(session.title, 'Prepare proposal');
+      expect(session.description, 'with indentation');
+      expect(session.scheduledDuration, const Duration(minutes: 90));
+      expect(session.status, TaskStatus.planned);
+      // The idea is not converted; only its legacy due date is cleared.
+      var idea = await repo.getTaskById(capture.id);
+      expect(idea!.isInbox, isTrue);
+      expect(idea.title, 'Inbox capture');
+      expect(idea.description, capture.description);
+      expect(idea.startTime, isNull);
+      expect(idea.dueDate, isNull);
+
+      // Manual Actual is an owned timer/accounting source, not an ordinary
+      // task field, so it is independent of the guarded undo.
+      await TimerService(db).setManualActual(command.sessionId, 10);
+      await command.undo();
+      final undone = await repo.getTaskById(command.sessionId);
+      expect(undone!.deletedAt, isNotNull);
+      expect(undone.manualDurationAdjustmentMin, 10);
+      // Undo leaves the idea as it was before the command, due date too.
+      idea = await repo.getTaskById(capture.id);
+      expect(idea!.isInbox, isTrue);
+      expect(idea.deletedAt, isNull);
+      expect(idea.dueDate, '2026-07-30');
+
+      await command.execute();
+      final redone = await repo.getTaskById(command.sessionId);
+      expect(redone!.deletedAt, isNull);
+      expect(redone.inboxItemId, capture.id);
+      expect(redone.title, 'Prepare proposal');
+      expect((await repo.getTaskById(capture.id))!.dueDate, isNull);
+    });
+
+    test('the session title and description default from the idea', () async {
+      final inbox = InboxRepository(db);
+      final capture = await inbox.addToInbox('First line\nsecond\nthird');
+      final command = ScheduleInboxItemCommand(
+        repository: inbox,
+        itemId: capture.id,
+        start: day.add(const Duration(hours: 11)),
+        end: day.add(const Duration(hours: 12)),
+      );
+      await command.execute();
+      final session = await repo.getTaskById(command.sessionId);
+      expect(session!.title, 'First line');
+      expect(session.description, 'second\nthird');
+    });
+
+    test('guarded undo refuses completed, timed or edited sessions', () async {
+      final inbox = InboxRepository(db);
+      final capture = await inbox.addToInbox('Retry me');
+      final command = ScheduleInboxItemCommand(
+        repository: inbox,
+        itemId: capture.id,
+        start: day.add(const Duration(hours: 11)),
+        end: day.add(const Duration(hours: 12)),
         title: 'Retried task',
-        description: 'Retry me',
-        replaceDescription: true,
       );
       await command.execute();
       expect(command.didMutate, isTrue);
-      final retry = ScheduleInboxItemCommand(
-        repository: inbox,
-        taskId: capture.id,
-        start: start,
-        end: end,
-        title: 'Retried task',
-        description: 'Retry me',
-        replaceDescription: true,
-      );
-      await retry.execute();
-      expect(retry.didMutate, isFalse);
-      expect((await repo.getTaskById(capture.id))!.id, capture.id);
 
+      final created = (await repo.getTaskById(command.sessionId))!;
+      await repo.updateTask(created.copyWith(title: 'Renamed in Day'));
+      await expectLater(command.undo(), throwsStateError);
       await repo.updateTask(
-        (await repo.getTaskById(capture.id))!
-            .copyWith(status: TaskStatus.completed),
+        (await repo.getTaskById(command.sessionId))!
+            .copyWith(title: 'Retried task', status: TaskStatus.completed),
       );
       await expectLater(command.undo(), throwsStateError);
-      expect((await repo.getTaskById(capture.id))!.isInbox, isFalse);
+      expect((await repo.getTaskById(command.sessionId))!.deletedAt, isNull);
+      expect((await repo.getTaskById(capture.id))!.isInbox, isTrue);
+    });
+
+    test('an idea that was closed in the meantime is refused', () async {
+      final inbox = InboxRepository(db);
+      final capture = await inbox.addToInbox('Closed before the drop');
+      await inbox.closeItem(
+        capture.id,
+        'Not needed',
+        DateTime.utc(2026, 7, 23),
+      );
+      final command = ScheduleInboxItemCommand(
+        repository: inbox,
+        itemId: capture.id,
+        start: day.add(const Duration(hours: 11)),
+        end: day.add(const Duration(hours: 12)),
+      );
+      await expectLater(command.execute(), throwsStateError);
+      expect(await repo.getTaskById(command.sessionId), isNull);
     });
   });
 

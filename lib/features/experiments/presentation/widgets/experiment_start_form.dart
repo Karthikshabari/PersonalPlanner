@@ -33,6 +33,7 @@ const _purposeLabel =
 Future<void> showExperimentStartForm(
   BuildContext context, {
   String initialName = '',
+  Future<void> Function(Experiment created)? onCreated,
 }) {
   final desktop =
       MediaQuery.sizeOf(context).width >= AppConstants.desktopBreakpoint;
@@ -43,7 +44,10 @@ Future<void> showExperimentStartForm(
       builder: (_) => Dialog(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: ExperimentStartForm(initialName: initialName),
+          child: ExperimentStartForm(
+            initialName: initialName,
+            onCreated: onCreated,
+          ),
         ),
       ),
     );
@@ -58,7 +62,10 @@ Future<void> showExperimentStartForm(
       padding: EdgeInsets.only(
         bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
       ),
-      child: ExperimentStartForm(initialName: initialName),
+      child: ExperimentStartForm(
+        initialName: initialName,
+        onCreated: onCreated,
+      ),
     ),
   );
 }
@@ -66,9 +73,13 @@ Future<void> showExperimentStartForm(
 /// The "New experiment" form. It closes itself (pops its route) after the
 /// experiment is created or when cancelled.
 class ExperimentStartForm extends ConsumerStatefulWidget {
-  const ExperimentStartForm({super.key, this.initialName = ''});
+  const ExperimentStartForm({super.key, this.initialName = '', this.onCreated});
 
   final String initialName;
+
+  /// Runs inside the transaction that creates the experiment; if it throws,
+  /// nothing is created.
+  final Future<void> Function(Experiment created)? onCreated;
 
   @override
   ConsumerState<ExperimentStartForm> createState() =>
@@ -173,6 +184,7 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
             weekdayTargetMin: parseExperimentTarget(_weekday.text)!,
             weekendTargetMin: parseExperimentTarget(_weekend.text)!,
             checkInEveryDays: _every,
+            inSameTransaction: widget.onCreated,
           );
       if (!mounted) return;
       Navigator.of(context).pop();

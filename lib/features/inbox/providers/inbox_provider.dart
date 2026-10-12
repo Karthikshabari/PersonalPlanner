@@ -1,10 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/models/inbox_item.dart';
+import '../../../core/providers/reactive_stats_stream.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/inbox_repository.dart';
+import '../domain/inbox_board.dart';
+import '../domain/inbox_source.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
@@ -155,3 +160,120 @@ bool isInboxItemVisibleInToday(InboxItem item, DateTime now) {
   final due = parseIsoDate(dueDate);
   return !due.isBefore(weekStart) && due.isBefore(weekEnd);
 }
+
+// ---------------------------------------------------------------------------
+// The new Inbox board. The providers above stay for Day's Needs-attention
+// panel; these are auto-dispose, so nothing runs while the screen is closed.
+// ---------------------------------------------------------------------------
+
+/// The clock the Inbox board reads. Overridable in tests.
+final inboxNowFactoryProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
+/// Ideas, sessions, saved Review reasons and experiments, re-read when one of
+/// the tables behind them changes. An unchanged result is not emitted.
+final inboxSourceProvider = StreamProvider.autoDispose<InboxSource>((ref) {
+  final repo = ref.watch(inboxRepositoryProvider);
+  return watchReactiveStats<InboxSource>(
+    repo.database,
+    repo.readSource,
+    tables: [
+      repo.database.tasks,
+      repo.database.dailyReviews,
+      repo.database.experiments,
+      repo.database.tags,
+    ],
+    isSame: (a, b) => a == b,
+  );
+});
+
+/// "Now" for the Inbox board. One one-shot timer fires at the next moment any
+/// status can change (a session starting or ending, or planner midnight) and
+/// is re-armed each time; an app-resume check catches a timer that did not run
+/// while the app was in the background. Alive only while the board is watched.
+final inboxScreenClockProvider =
+    NotifierProvider.autoDispose<InboxScreenClock, DateTime>(
+      InboxScreenClock.new,
+    );
+
+class InboxScreenClock extends Notifier<DateTime> {
+  Timer? _timer;
+  late final _ResumeObserver _observer = _ResumeObserver(_refresh);
+
+  @override
+  DateTime build() {
+    final nowFactory = ref.read(inboxNowFactoryProvider);
+    final now = nowFactory();
+    // A write that adds or moves a session changes the next boundary.
+    ref.listen(inboxSourceProvider, (_, _) => _arm());
+    WidgetsBinding.instance.addObserver(_observer);
+    ref.onDispose(() {
+      _timer?.cancel();
+      WidgetsBinding.instance.removeObserver(_observer);
+    });
+    _arm(now);
+    return now;
+  }
+
+  void _refresh() {
+    state = ref.read(inboxNowFactoryProvider)();
+    _arm(state);
+  }
+
+  void _arm([DateTime? from]) {
+    _timer?.cancel();
+    final now = from ?? ref.read(inboxNowFactoryProvider)();
+    final source = ref.read(inboxSourceProvider).value;
+    final boundary = source == null ? null : nextInboxBoundary(source, now);
+    if (boundary == null) return;
+    final delay = boundary.difference(now);
+    _timer = Timer(delay.isNegative ? Duration.zero : delay, () {
+      // Move past the boundary even if the timer fired a few ms early.
+      final fired = ref.read(inboxNowFactoryProvider)();
+      state = fired.isBefore(boundary) ? boundary : fired;
+      _arm(state);
+    });
+  }
+}
+
+class _ResumeObserver with WidgetsBindingObserver {
+  _ResumeObserver(this.onResumed);
+
+  final VoidCallback onResumed;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) onResumed();
+  }
+}
+
+/// The board: sections, counts, the Review line and the next boundary.
+final inboxBoardProvider = Provider.autoDispose<AsyncValue<InboxBoard>>((ref) {
+  final source = ref.watch(inboxSourceProvider);
+  final breakDates = ref.watch(breakDatesProvider);
+  final now = ref.watch(inboxScreenClockProvider);
+  if (source.hasError) {
+    return AsyncError(source.error!, source.stackTrace ?? StackTrace.empty);
+  }
+  if (breakDates.hasError) {
+    return AsyncError(
+      breakDates.error!,
+      breakDates.stackTrace ?? StackTrace.empty,
+    );
+  }
+  final sourceValue = source.value;
+  final breakValue = breakDates.value;
+  if (sourceValue == null || breakValue == null) {
+    return const AsyncLoading<InboxBoard>();
+  }
+  return AsyncData(
+    buildInboxBoard(sourceValue, now: now, breakDates: breakValue),
+  );
+});
+
+/// The idea whose trail is open; only one at a time.
+final inboxExpandedItemProvider = StateProvider<String?>((ref) => null);
+
+/// Set by Search to open the Inbox with this idea expanded.
+final inboxFocusItemProvider = StateProvider<String?>((ref) => null);

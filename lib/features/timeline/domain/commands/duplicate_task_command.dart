@@ -55,6 +55,8 @@ class DuplicateTaskCommand implements SchedulingCommand {
         rescheduledFromId: null,
         rescheduledToId: null,
         isInbox: false,
+        // A duplicate is a plain Day task, not another session of the idea.
+        inboxItemId: null,
         dueDate: null,
         missedAt: null,
         createdAt: now,
