@@ -53,6 +53,10 @@ class TaskOutcomeRow {
   final TaskOutcome outcome;
   final ReviewPlanChange? planChange;
 
+  /// The block is a session planned from an Inbox idea. Only the caption of the
+  /// Daily Review row reads it.
+  final bool fromInbox;
+
   const TaskOutcomeRow({
     required this.taskId,
     required this.title,
@@ -62,6 +66,7 @@ class TaskOutcomeRow {
     required this.trackedMinutes,
     required this.outcome,
     this.planChange,
+    this.fromInbox = false,
   });
 }
 

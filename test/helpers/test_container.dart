@@ -17,6 +17,7 @@ Future<ProviderContainer> buildTestContainer(
   AppDatabase? db,
   MinuteClockFactory? minuteClockFactory,
   InsightsNowFactory? insightsNowFactory,
+  DateTime Function()? inboxNowFactory,
 }) async {
   setupSqliteForTests();
   late ProviderContainer container;
@@ -31,6 +32,8 @@ Future<ProviderContainer> buildTestContainer(
           minuteClockProvider.overrideWithValue(minuteClockFactory),
         if (insightsNowFactory != null)
           insightsNowFactoryProvider.overrideWithValue(insightsNowFactory),
+        if (inboxNowFactory != null)
+          inboxNowFactoryProvider.overrideWithValue(inboxNowFactory),
       ],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();

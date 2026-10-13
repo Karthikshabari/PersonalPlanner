@@ -14,6 +14,7 @@ import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/day_context/data/day_context_repository.dart';
 import 'package:personal_planner/features/experiments/data/experiment_repository.dart';
 import 'package:personal_planner/features/experiments/presentation/widgets/experiment_chart.dart';
+import 'package:personal_planner/features/experiments/providers/experiment_providers.dart';
 import 'package:personal_planner/features/task_editor/data/tag_repository.dart';
 
 import '../helpers/test_container.dart';
@@ -745,5 +746,106 @@ void main() {
     await tapKey(tester, 'experiment-start-cancel');
     await settle(tester);
     await teardownApp(tester, container);
+  });
+
+  group('focus request from the Inbox (See in Insights)', () {
+    String segmentName(WidgetTester tester) => tester
+        .widget<SegmentedButton<dynamic>>(
+          find.byKey(const ValueKey('experiments-filter')),
+        )
+        .selected
+        .single
+        .toString();
+
+    Future<({Experiment running, Experiment concluded, Experiment kept})> seed(
+      WidgetTester tester,
+      ProviderContainer container,
+    ) async {
+      final running = await createExperiment(tester, container);
+      Future<Experiment> past(String name, ExperimentOutcome outcome) async {
+        final created = await createExperiment(
+          tester,
+          container,
+          name: name,
+          start: '2026-08-01',
+          end: '2026-08-07',
+        );
+        return runDb(
+          tester,
+          () => ExperimentRepository(dbOf(container)).concludeExperiment(
+            created.id,
+            outcome: outcome,
+            today: '2026-10-07',
+            expectedRevision: created.revision,
+          ),
+        );
+      }
+
+      final concluded = await past('Stopped one', ExperimentOutcome.drop);
+      final kept = await past('Kept one', ExperimentOutcome.keep);
+      return (running: running, concluded: concluded, kept: kept);
+    }
+
+    testWidgets('a request while the card is shown picks the segment', (
+      tester,
+    ) async {
+      final container = await open(tester);
+      final e = await seed(tester, container);
+      await settle(tester);
+      expect(segmentName(tester), contains('running'));
+
+      container.read(experimentFocusProvider.notifier).state = e.kept.id;
+      await settle(tester);
+      expect(segmentName(tester), contains('kept'));
+      expect(container.read(experimentFocusProvider), isNull);
+
+      container.read(experimentFocusProvider.notifier).state = e.concluded.id;
+      await settle(tester);
+      expect(segmentName(tester), contains('concluded'));
+      expect(
+        find.byKey(ValueKey('experiment-row-${e.concluded.id}')),
+        findsOneWidget,
+      );
+
+      container.read(experimentFocusProvider.notifier).state = e.running.id;
+      await settle(tester);
+      expect(segmentName(tester), contains('running'));
+      expect(container.read(experimentFocusProvider), isNull);
+      await teardownApp(tester, container);
+    });
+
+    testWidgets('a request made before Insights opens is used and cleared', (
+      tester,
+    ) async {
+      final container = await open(tester);
+      final e = await seed(tester, container);
+      await goTo(tester, '/day');
+
+      container.read(experimentFocusProvider.notifier).state = e.concluded.id;
+      await goTo(tester, '/analytics');
+      await settle(tester);
+      expect(segmentName(tester), contains('concluded'));
+      expect(
+        find.byKey(ValueKey('experiment-row-${e.concluded.id}')),
+        findsOneWidget,
+      );
+      expect(container.read(experimentFocusProvider), isNull);
+      await teardownApp(tester, container);
+    });
+
+    testWidgets('an experiment that is not there only clears the request', (
+      tester,
+    ) async {
+      final container = await open(tester);
+      await seed(tester, container);
+      await settle(tester);
+
+      container.read(experimentFocusProvider.notifier).state =
+          'experiment:missing';
+      await settle(tester);
+      expect(segmentName(tester), contains('running'));
+      expect(container.read(experimentFocusProvider), isNull);
+      await teardownApp(tester, container);
+    });
   });
 }

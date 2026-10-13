@@ -99,21 +99,80 @@ class _StartButton extends StatelessWidget {
 
 enum _Segment { running, kept, concluded }
 
-class _Body extends StatefulWidget {
+class _Body extends ConsumerStatefulWidget {
   const _Body({required this.dashboard});
 
   final ExperimentDashboard dashboard;
 
   @override
-  State<_Body> createState() => _BodyState();
+  ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<_Body> {
-  // Local, not saved: the card always opens on Running.
+class _BodyState extends ConsumerState<_Body> {
+  // Local, not saved: the card opens on Running, unless the Inbox asked to see
+  // one experiment (`experimentFocusProvider`).
   _Segment _segment = _Segment.running;
 
   @override
+  void initState() {
+    super.initState();
+    _applyFocus(ref.read(experimentFocusProvider), inInit: true);
+  }
+
+  /// Opens the segment the experiment is in, scrolls its row into view and
+  /// clears the request. An experiment that is not on the dashboard (it can
+  /// not be reached from here) just clears the request.
+  void _applyFocus(String? id, {bool inInit = false}) {
+    if (id == null) return;
+    ExperimentView? target;
+    for (final view in widget.dashboard.views) {
+      if (view.experiment.id == id) target = view;
+    }
+    final segment = target == null
+        ? null
+        : target.experiment.status == ExperimentStatus.running
+        ? _Segment.running
+        : target.experiment.isKept
+        ? _Segment.kept
+        : _Segment.concluded;
+    if (segment != null) {
+      if (inInit) {
+        _segment = segment;
+      } else {
+        setState(() => _segment = segment);
+      }
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(experimentFocusProvider.notifier).state = null;
+      if (segment == null) return;
+      final row = _findRow(
+        segment == _Segment.kept ? 'kept-row-$id' : 'experiment-row-$id',
+      );
+      if (row != null) Scrollable.ensureVisible(row, alignment: 0.05);
+    });
+  }
+
+  /// The element of the row keyed [key] under this card, if it is built.
+  BuildContext? _findRow(String key) {
+    BuildContext? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element.widget.key == ValueKey(key)) {
+        found = element;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    (context as Element).visitChildren(visit);
+    return found;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // A request made while the card is already shown.
+    ref.listen(experimentFocusProvider, (_, next) => _applyFocus(next));
     final dashboard = widget.dashboard;
     final styles = ExperimentStyles.of(context);
     final mutedBody = styles.body.copyWith(color: styles.muted);

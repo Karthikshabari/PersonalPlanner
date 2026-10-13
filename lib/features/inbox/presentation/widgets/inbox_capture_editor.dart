@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
-import '../../../../core/utils/date_utils.dart';
-import '../../../../core/utils/planner_time_zone.dart';
 
 /// Shared raw-content editor for new Inbox captures and explicit capture edits.
 /// The widget owns the draft until [onSubmit] completes successfully.
+///
+/// A capture has no date: dates are given later as sessions. [initialDueDate]
+/// and the second [onSubmit] argument are kept so callers compile; the value is
+/// ignored and [onSubmit] always receives null.
 class InboxCaptureEditor extends StatefulWidget {
   final String initialContent;
   final String? initialDueDate;
@@ -36,7 +38,6 @@ class InboxCaptureEditor extends StatefulWidget {
 
 class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
   late final TextEditingController _contentController;
-  String? _dueDate;
   bool _busy = false;
   DateTime? _lastSuccessAt;
   String? _error;
@@ -45,7 +46,6 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
   void initState() {
     super.initState();
     _contentController = TextEditingController(text: widget.initialContent);
-    _dueDate = widget.initialDueDate;
   }
 
   @override
@@ -73,12 +73,11 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
       _error = null;
     });
     try {
-      await widget.onSubmit(content, _dueDate);
+      await widget.onSubmit(content, null);
       _lastSuccessAt = DateTime.now();
       if (!mounted) return;
       if (widget.clearOnSuccess) {
         _contentController.clear();
-        setState(() => _dueDate = null);
       }
       widget.onCommitted?.call();
     } catch (error) {
@@ -86,20 +85,6 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  Future<void> _pickDueDate() async {
-    final current = _dueDate == null
-        ? PlannerTimeZone.toPlannerLocal(DateTime.now())
-        : parseIsoDate(_dueDate!);
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-      initialDate: DateTime(current.year, current.month, current.day),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _dueDate = isoDateString(picked));
   }
 
   String _friendlyError(Object error) =>
@@ -137,10 +122,6 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
           const SizedBox(height: AppSpacing.md),
         ],
         field,
-        if (!widget.compact) ...[
-          const SizedBox(height: AppSpacing.sm),
-          _dueDateControl(),
-        ],
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
@@ -153,19 +134,6 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (widget.compact) ...[
-              _dueDateControl(compact: true),
-              if (_dueDate != null)
-                IconButton(
-                  key: const ValueKey('inbox-clear-due-date'),
-                  tooltip: 'Clear due date',
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() => _dueDate = null),
-                  icon: const Icon(Icons.clear),
-                ),
-              const Spacer(),
-            ],
             if (widget.onCancel != null)
               TextButton(
                 onPressed: _busy ? null : widget.onCancel,
@@ -209,11 +177,4 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
       ),
     );
   }
-
-  Widget _dueDateControl({bool compact = false}) => OutlinedButton.icon(
-    key: const ValueKey('inbox-due-date'),
-    onPressed: _busy ? null : _pickDueDate,
-    icon: const Icon(Icons.event_outlined, size: 18),
-    label: Text(_dueDate == null ? 'Add due date' : 'Due $_dueDate'),
-  );
 }

@@ -117,17 +117,20 @@ void main() {
       expect(board.comingUp, ['soon-early', 'soon-late']);
       expect(board.leftOver, ['left-new', 'left-old']);
       expect(board.done, [
-        'closed-mid', // closed yesterday 10:00
         'fin-new', // last done session ended 3 days ago
-        'let-go', // closed 4 days ago
         'fin-old', // ended 6 days ago
+      ]);
+      expect(board.dropped, [
+        'closed-mid', // closed yesterday 10:00
+        'let-go', // closed 4 days ago
       ]);
     });
 
-    test('counts: open = left + ideas + coming up; done = done list', () {
+    test('counts: open = left + ideas + coming up; done, dropped = lists', () {
       final board = build(source);
       expect(board.openCount, 6);
-      expect(board.doneCount, 4);
+      expect(board.doneCount, 2);
+      expect(board.droppedCount, 2);
       expect(board.byId.keys.toSet(), {for (final i in source.items) i.id});
     });
 

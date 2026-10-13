@@ -316,10 +316,11 @@ mixin _$InboxIdeaView {
 
  InboxItemFacts get item; InboxItemStatus get status;/// Sessions, soonest first, deleted ones included (status dropped).
  List<InboxSessionView> get sessions;/// The event that holds the idea closed now; null unless closed.
- InboxClosure? get closure;/// The Done chip: Finished, Closed, Let go or an Experiment chip.
+ InboxClosure? get closure;/// The outcome chip: Finished or an Experiment chip (Done), Closed or Let
+/// go (Dropped).
  String? get chip;/// The experiment named by the open closure, when it is an experiment.
  String? get experimentId;/// True when the open closure names an experiment whose row is gone.
- bool get experimentMissing;/// When the idea reached Done (closure time, or its latest done end).
+ bool get experimentMissing;/// When the idea left Open (closure time, or its latest done end).
  DateTime? get resolvedAt;/// Start of the soonest upcoming session.
  DateTime? get nextStart;/// Start of the most recent missed session.
  DateTime? get lastMissedStart;/// End of the most recent missed session; Left over is ordered by it.
@@ -557,13 +558,14 @@ class _InboxIdeaView implements InboxIdeaView {
 @override@JsonKey() final  List<InboxSessionView> sessions;
 /// The event that holds the idea closed now; null unless closed.
 @override final  InboxClosure? closure;
-/// The Done chip: Finished, Closed, Let go or an Experiment chip.
+/// The outcome chip: Finished or an Experiment chip (Done), Closed or Let
+/// go (Dropped).
 @override final  String? chip;
 /// The experiment named by the open closure, when it is an experiment.
 @override final  String? experimentId;
 /// True when the open closure names an experiment whose row is gone.
 @override@JsonKey() final  bool experimentMissing;
-/// When the idea reached Done (closure time, or its latest done end).
+/// When the idea left Open (closure time, or its latest done end).
 @override final  DateTime? resolvedAt;
 /// Start of the soonest upcoming session.
 @override final  DateTime? nextStart;
@@ -929,7 +931,7 @@ as String?,
 /// @nodoc
 mixin _$InboxBoard {
 
- List<String> get leftOver; List<String> get ideas; List<String> get comingUp; List<String> get done; int get openCount; int get doneCount; InboxReasonsMissing get reasonsMissing; Map<String, InboxIdeaView> get byId;/// The next moment any status can change.
+ List<String> get leftOver; List<String> get ideas; List<String> get comingUp; List<String> get done; List<String> get dropped; int get openCount; int get doneCount; int get droppedCount; InboxReasonsMissing get reasonsMissing; Map<String, InboxIdeaView> get byId;/// The next moment any status can change.
  DateTime get nextBoundary;
 /// Create a copy of InboxBoard
 /// with the given fields replaced by the non-null parameter values.
@@ -941,16 +943,16 @@ $InboxBoardCopyWith<InboxBoard> get copyWith => _$InboxBoardCopyWithImpl<InboxBo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is InboxBoard&&const DeepCollectionEquality().equals(other.leftOver, leftOver)&&const DeepCollectionEquality().equals(other.ideas, ideas)&&const DeepCollectionEquality().equals(other.comingUp, comingUp)&&const DeepCollectionEquality().equals(other.done, done)&&(identical(other.openCount, openCount) || other.openCount == openCount)&&(identical(other.doneCount, doneCount) || other.doneCount == doneCount)&&(identical(other.reasonsMissing, reasonsMissing) || other.reasonsMissing == reasonsMissing)&&const DeepCollectionEquality().equals(other.byId, byId)&&(identical(other.nextBoundary, nextBoundary) || other.nextBoundary == nextBoundary));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is InboxBoard&&const DeepCollectionEquality().equals(other.leftOver, leftOver)&&const DeepCollectionEquality().equals(other.ideas, ideas)&&const DeepCollectionEquality().equals(other.comingUp, comingUp)&&const DeepCollectionEquality().equals(other.done, done)&&const DeepCollectionEquality().equals(other.dropped, dropped)&&(identical(other.openCount, openCount) || other.openCount == openCount)&&(identical(other.doneCount, doneCount) || other.doneCount == doneCount)&&(identical(other.droppedCount, droppedCount) || other.droppedCount == droppedCount)&&(identical(other.reasonsMissing, reasonsMissing) || other.reasonsMissing == reasonsMissing)&&const DeepCollectionEquality().equals(other.byId, byId)&&(identical(other.nextBoundary, nextBoundary) || other.nextBoundary == nextBoundary));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(leftOver),const DeepCollectionEquality().hash(ideas),const DeepCollectionEquality().hash(comingUp),const DeepCollectionEquality().hash(done),openCount,doneCount,reasonsMissing,const DeepCollectionEquality().hash(byId),nextBoundary);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(leftOver),const DeepCollectionEquality().hash(ideas),const DeepCollectionEquality().hash(comingUp),const DeepCollectionEquality().hash(done),const DeepCollectionEquality().hash(dropped),openCount,doneCount,droppedCount,reasonsMissing,const DeepCollectionEquality().hash(byId),nextBoundary);
 
 @override
 String toString() {
-  return 'InboxBoard(leftOver: $leftOver, ideas: $ideas, comingUp: $comingUp, done: $done, openCount: $openCount, doneCount: $doneCount, reasonsMissing: $reasonsMissing, byId: $byId, nextBoundary: $nextBoundary)';
+  return 'InboxBoard(leftOver: $leftOver, ideas: $ideas, comingUp: $comingUp, done: $done, dropped: $dropped, openCount: $openCount, doneCount: $doneCount, droppedCount: $droppedCount, reasonsMissing: $reasonsMissing, byId: $byId, nextBoundary: $nextBoundary)';
 }
 
 
@@ -961,7 +963,7 @@ abstract mixin class $InboxBoardCopyWith<$Res>  {
   factory $InboxBoardCopyWith(InboxBoard value, $Res Function(InboxBoard) _then) = _$InboxBoardCopyWithImpl;
 @useResult
 $Res call({
- List<String> leftOver, List<String> ideas, List<String> comingUp, List<String> done, int openCount, int doneCount, InboxReasonsMissing reasonsMissing, Map<String, InboxIdeaView> byId, DateTime nextBoundary
+ List<String> leftOver, List<String> ideas, List<String> comingUp, List<String> done, List<String> dropped, int openCount, int doneCount, int droppedCount, InboxReasonsMissing reasonsMissing, Map<String, InboxIdeaView> byId, DateTime nextBoundary
 });
 
 
@@ -978,14 +980,16 @@ class _$InboxBoardCopyWithImpl<$Res>
 
 /// Create a copy of InboxBoard
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? leftOver = null,Object? ideas = null,Object? comingUp = null,Object? done = null,Object? openCount = null,Object? doneCount = null,Object? reasonsMissing = null,Object? byId = null,Object? nextBoundary = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? leftOver = null,Object? ideas = null,Object? comingUp = null,Object? done = null,Object? dropped = null,Object? openCount = null,Object? doneCount = null,Object? droppedCount = null,Object? reasonsMissing = null,Object? byId = null,Object? nextBoundary = null,}) {
   return _then(_self.copyWith(
 leftOver: null == leftOver ? _self.leftOver : leftOver // ignore: cast_nullable_to_non_nullable
 as List<String>,ideas: null == ideas ? _self.ideas : ideas // ignore: cast_nullable_to_non_nullable
 as List<String>,comingUp: null == comingUp ? _self.comingUp : comingUp // ignore: cast_nullable_to_non_nullable
 as List<String>,done: null == done ? _self.done : done // ignore: cast_nullable_to_non_nullable
+as List<String>,dropped: null == dropped ? _self.dropped : dropped // ignore: cast_nullable_to_non_nullable
 as List<String>,openCount: null == openCount ? _self.openCount : openCount // ignore: cast_nullable_to_non_nullable
 as int,doneCount: null == doneCount ? _self.doneCount : doneCount // ignore: cast_nullable_to_non_nullable
+as int,droppedCount: null == droppedCount ? _self.droppedCount : droppedCount // ignore: cast_nullable_to_non_nullable
 as int,reasonsMissing: null == reasonsMissing ? _self.reasonsMissing : reasonsMissing // ignore: cast_nullable_to_non_nullable
 as InboxReasonsMissing,byId: null == byId ? _self.byId : byId // ignore: cast_nullable_to_non_nullable
 as Map<String, InboxIdeaView>,nextBoundary: null == nextBoundary ? _self.nextBoundary : nextBoundary // ignore: cast_nullable_to_non_nullable
@@ -1083,10 +1087,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  int openCount,  int doneCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  List<String> dropped,  int openCount,  int doneCount,  int droppedCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _InboxBoard() when $default != null:
-return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openCount,_that.doneCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
+return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.dropped,_that.openCount,_that.doneCount,_that.droppedCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
   return orElse();
 
 }
@@ -1104,10 +1108,10 @@ return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openC
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  int openCount,  int doneCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  List<String> dropped,  int openCount,  int doneCount,  int droppedCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)  $default,) {final _that = this;
 switch (_that) {
 case _InboxBoard():
-return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openCount,_that.doneCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
+return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.dropped,_that.openCount,_that.doneCount,_that.droppedCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1124,10 +1128,10 @@ return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openC
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  int openCount,  int doneCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<String> leftOver,  List<String> ideas,  List<String> comingUp,  List<String> done,  List<String> dropped,  int openCount,  int doneCount,  int droppedCount,  InboxReasonsMissing reasonsMissing,  Map<String, InboxIdeaView> byId,  DateTime nextBoundary)?  $default,) {final _that = this;
 switch (_that) {
 case _InboxBoard() when $default != null:
-return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openCount,_that.doneCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
+return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.dropped,_that.openCount,_that.doneCount,_that.droppedCount,_that.reasonsMissing,_that.byId,_that.nextBoundary);case _:
   return null;
 
 }
@@ -1139,15 +1143,17 @@ return $default(_that.leftOver,_that.ideas,_that.comingUp,_that.done,_that.openC
 
 
 class _InboxBoard implements InboxBoard {
-  const _InboxBoard({this.leftOver = const <String>[], this.ideas = const <String>[], this.comingUp = const <String>[], this.done = const <String>[], this.openCount = 0, this.doneCount = 0, this.reasonsMissing = const InboxReasonsMissing(), this.byId = const <String, InboxIdeaView>{}, required this.nextBoundary});
+  const _InboxBoard({this.leftOver = const <String>[], this.ideas = const <String>[], this.comingUp = const <String>[], this.done = const <String>[], this.dropped = const <String>[], this.openCount = 0, this.doneCount = 0, this.droppedCount = 0, this.reasonsMissing = const InboxReasonsMissing(), this.byId = const <String, InboxIdeaView>{}, required this.nextBoundary});
   
 
 @override@JsonKey() final  List<String> leftOver;
 @override@JsonKey() final  List<String> ideas;
 @override@JsonKey() final  List<String> comingUp;
 @override@JsonKey() final  List<String> done;
+@override@JsonKey() final  List<String> dropped;
 @override@JsonKey() final  int openCount;
 @override@JsonKey() final  int doneCount;
+@override@JsonKey() final  int droppedCount;
 @override@JsonKey() final  InboxReasonsMissing reasonsMissing;
 @override@JsonKey() final  Map<String, InboxIdeaView> byId;
 /// The next moment any status can change.
@@ -1163,16 +1169,16 @@ _$InboxBoardCopyWith<_InboxBoard> get copyWith => __$InboxBoardCopyWithImpl<_Inb
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _InboxBoard&&const DeepCollectionEquality().equals(other.leftOver, leftOver)&&const DeepCollectionEquality().equals(other.ideas, ideas)&&const DeepCollectionEquality().equals(other.comingUp, comingUp)&&const DeepCollectionEquality().equals(other.done, done)&&(identical(other.openCount, openCount) || other.openCount == openCount)&&(identical(other.doneCount, doneCount) || other.doneCount == doneCount)&&(identical(other.reasonsMissing, reasonsMissing) || other.reasonsMissing == reasonsMissing)&&const DeepCollectionEquality().equals(other.byId, byId)&&(identical(other.nextBoundary, nextBoundary) || other.nextBoundary == nextBoundary));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _InboxBoard&&const DeepCollectionEquality().equals(other.leftOver, leftOver)&&const DeepCollectionEquality().equals(other.ideas, ideas)&&const DeepCollectionEquality().equals(other.comingUp, comingUp)&&const DeepCollectionEquality().equals(other.done, done)&&const DeepCollectionEquality().equals(other.dropped, dropped)&&(identical(other.openCount, openCount) || other.openCount == openCount)&&(identical(other.doneCount, doneCount) || other.doneCount == doneCount)&&(identical(other.droppedCount, droppedCount) || other.droppedCount == droppedCount)&&(identical(other.reasonsMissing, reasonsMissing) || other.reasonsMissing == reasonsMissing)&&const DeepCollectionEquality().equals(other.byId, byId)&&(identical(other.nextBoundary, nextBoundary) || other.nextBoundary == nextBoundary));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(leftOver),const DeepCollectionEquality().hash(ideas),const DeepCollectionEquality().hash(comingUp),const DeepCollectionEquality().hash(done),openCount,doneCount,reasonsMissing,const DeepCollectionEquality().hash(byId),nextBoundary);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(leftOver),const DeepCollectionEquality().hash(ideas),const DeepCollectionEquality().hash(comingUp),const DeepCollectionEquality().hash(done),const DeepCollectionEquality().hash(dropped),openCount,doneCount,droppedCount,reasonsMissing,const DeepCollectionEquality().hash(byId),nextBoundary);
 
 @override
 String toString() {
-  return 'InboxBoard(leftOver: $leftOver, ideas: $ideas, comingUp: $comingUp, done: $done, openCount: $openCount, doneCount: $doneCount, reasonsMissing: $reasonsMissing, byId: $byId, nextBoundary: $nextBoundary)';
+  return 'InboxBoard(leftOver: $leftOver, ideas: $ideas, comingUp: $comingUp, done: $done, dropped: $dropped, openCount: $openCount, doneCount: $doneCount, droppedCount: $droppedCount, reasonsMissing: $reasonsMissing, byId: $byId, nextBoundary: $nextBoundary)';
 }
 
 
@@ -1183,7 +1189,7 @@ abstract mixin class _$InboxBoardCopyWith<$Res> implements $InboxBoardCopyWith<$
   factory _$InboxBoardCopyWith(_InboxBoard value, $Res Function(_InboxBoard) _then) = __$InboxBoardCopyWithImpl;
 @override @useResult
 $Res call({
- List<String> leftOver, List<String> ideas, List<String> comingUp, List<String> done, int openCount, int doneCount, InboxReasonsMissing reasonsMissing, Map<String, InboxIdeaView> byId, DateTime nextBoundary
+ List<String> leftOver, List<String> ideas, List<String> comingUp, List<String> done, List<String> dropped, int openCount, int doneCount, int droppedCount, InboxReasonsMissing reasonsMissing, Map<String, InboxIdeaView> byId, DateTime nextBoundary
 });
 
 
@@ -1200,14 +1206,16 @@ class __$InboxBoardCopyWithImpl<$Res>
 
 /// Create a copy of InboxBoard
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? leftOver = null,Object? ideas = null,Object? comingUp = null,Object? done = null,Object? openCount = null,Object? doneCount = null,Object? reasonsMissing = null,Object? byId = null,Object? nextBoundary = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? leftOver = null,Object? ideas = null,Object? comingUp = null,Object? done = null,Object? dropped = null,Object? openCount = null,Object? doneCount = null,Object? droppedCount = null,Object? reasonsMissing = null,Object? byId = null,Object? nextBoundary = null,}) {
   return _then(_InboxBoard(
 leftOver: null == leftOver ? _self.leftOver : leftOver // ignore: cast_nullable_to_non_nullable
 as List<String>,ideas: null == ideas ? _self.ideas : ideas // ignore: cast_nullable_to_non_nullable
 as List<String>,comingUp: null == comingUp ? _self.comingUp : comingUp // ignore: cast_nullable_to_non_nullable
 as List<String>,done: null == done ? _self.done : done // ignore: cast_nullable_to_non_nullable
+as List<String>,dropped: null == dropped ? _self.dropped : dropped // ignore: cast_nullable_to_non_nullable
 as List<String>,openCount: null == openCount ? _self.openCount : openCount // ignore: cast_nullable_to_non_nullable
 as int,doneCount: null == doneCount ? _self.doneCount : doneCount // ignore: cast_nullable_to_non_nullable
+as int,droppedCount: null == droppedCount ? _self.droppedCount : droppedCount // ignore: cast_nullable_to_non_nullable
 as int,reasonsMissing: null == reasonsMissing ? _self.reasonsMissing : reasonsMissing // ignore: cast_nullable_to_non_nullable
 as InboxReasonsMissing,byId: null == byId ? _self.byId : byId // ignore: cast_nullable_to_non_nullable
 as Map<String, InboxIdeaView>,nextBoundary: null == nextBoundary ? _self.nextBoundary : nextBoundary // ignore: cast_nullable_to_non_nullable

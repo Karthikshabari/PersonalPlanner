@@ -67,10 +67,11 @@ void main() {
     expect(board()!.ideas, isEmpty);
 
     await h.inbox.closeItem(idea.id, 'Not needed', fakeNow);
-    await until(() => board()!.done.contains(idea.id));
+    await until(() => board()!.dropped.contains(idea.id));
     expect(board()!.byId[idea.id]!.chip, 'Closed');
     expect(board()!.openCount, 0);
-    expect(board()!.doneCount, 1);
+    expect(board()!.doneCount, 0);
+    expect(board()!.droppedCount, 1);
   });
 
   test(

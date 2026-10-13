@@ -34,6 +34,7 @@ class TaskOutcomeService {
           trackedMinutes: tracked,
           outcome: resolveTaskOutcome(task.status, trackedMinutes: tracked),
           planChange: ReviewPlanChange.forTask(task),
+          fromInbox: task.inboxItemId != null,
         ),
       );
     }

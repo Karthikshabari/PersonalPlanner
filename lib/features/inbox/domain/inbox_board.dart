@@ -48,7 +48,8 @@ abstract class InboxIdeaView with _$InboxIdeaView {
     /// The event that holds the idea closed now; null unless closed.
     InboxClosure? closure,
 
-    /// The Done chip: Finished, Closed, Let go or an Experiment chip.
+    /// The outcome chip: Finished or an Experiment chip (Done), Closed or Let
+    /// go (Dropped).
     String? chip,
 
     /// The experiment named by the open closure, when it is an experiment.
@@ -57,7 +58,7 @@ abstract class InboxIdeaView with _$InboxIdeaView {
     /// True when the open closure names an experiment whose row is gone.
     @Default(false) bool experimentMissing,
 
-    /// When the idea reached Done (closure time, or its latest done end).
+    /// When the idea left Open (closure time, or its latest done end).
     DateTime? resolvedAt,
 
     /// Start of the soonest upcoming session.
@@ -93,8 +94,10 @@ abstract class InboxBoard with _$InboxBoard {
     @Default(<String>[]) List<String> ideas,
     @Default(<String>[]) List<String> comingUp,
     @Default(<String>[]) List<String> done,
+    @Default(<String>[]) List<String> dropped,
     @Default(0) int openCount,
     @Default(0) int doneCount,
+    @Default(0) int droppedCount,
     @Default(InboxReasonsMissing()) InboxReasonsMissing reasonsMissing,
     @Default(<String, InboxIdeaView>{}) Map<String, InboxIdeaView> byId,
 
@@ -296,21 +299,37 @@ InboxBoard buildInboxBoard(
       final byStart = byId[a]!.nextStart!.compareTo(byId[b]!.nextStart!);
       return byStart != 0 ? byStart : a.compareTo(b);
     });
-  final done =
-      [
-        ...idsWhere(InboxItemStatus.closed),
-        ...idsWhere(InboxItemStatus.finished),
-      ]..sort(
-        (a, b) => _compareDesc(byId[a]!.resolvedAt, byId[b]!.resolvedAt, a, b),
-      );
+  // One rule per idea: a finished idea and an experiment closure are Done; a
+  // closed or let-go closure is Dropped. Both are newest resolution first.
+  bool isDropped(String id) {
+    final kind = byId[id]!.closure?.kind;
+    return kind == InboxCloseKind.closed || kind == InboxCloseKind.letGo;
+  }
+
+  int byResolved(String a, String b) =>
+      _compareDesc(byId[a]!.resolvedAt, byId[b]!.resolvedAt, a, b);
+  final resolved = [
+    ...idsWhere(InboxItemStatus.closed),
+    ...idsWhere(InboxItemStatus.finished),
+  ];
+  final done = [
+    for (final id in resolved)
+      if (!isDropped(id)) id,
+  ]..sort(byResolved);
+  final dropped = [
+    for (final id in resolved)
+      if (isDropped(id)) id,
+  ]..sort(byResolved);
 
   return InboxBoard(
     leftOver: leftOver,
     ideas: ideas,
     comingUp: comingUp,
     done: done,
+    dropped: dropped,
     openCount: leftOver.length + ideas.length + comingUp.length,
     doneCount: done.length,
+    droppedCount: dropped.length,
     reasonsMissing: InboxReasonsMissing(
       count: missingCount,
       latestDate: missingLatest,

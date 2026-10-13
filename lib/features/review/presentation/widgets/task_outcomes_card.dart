@@ -395,7 +395,8 @@ class _TaskOutcomeRowViewState extends ConsumerState<TaskOutcomeRowView> {
         .format(PlannerTimeZone.toPlannerLocal(row.startTime!));
     final meta =
         '${Duration(minutes: row.plannedMinutes).shortLabel} planned'
-        '${row.trackedMinutes > 0 ? ' · ${Duration(minutes: row.trackedMinutes).shortLabel} tracked' : ''}';
+        '${row.trackedMinutes > 0 ? ' · ${Duration(minutes: row.trackedMinutes).shortLabel} tracked' : ''}'
+        '${row.fromInbox ? ' · From Inbox' : ''}';
     final chips = ReviewReasonPresets.chips(widget.presets);
     const saveLabel = '+ Save as preset';
     final chipMinWidth =

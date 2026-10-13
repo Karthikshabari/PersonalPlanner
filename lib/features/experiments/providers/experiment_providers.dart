@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../../core/database/daos/tag_dao.dart';
 import '../../../core/providers/database_provider.dart';
@@ -16,6 +17,11 @@ import '../../day_context/domain/break_day.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
 import '../domain/experiment_dashboard.dart';
 import '../domain/kept_experiment.dart';
+
+/// Set by the Inbox ("See in Insights") to the id of the experiment to show.
+/// The Experiments card reads it once, picks the segment the experiment is in
+/// (Running, Kept or Concluded), scrolls its row into view and clears it.
+final experimentFocusProvider = StateProvider<String?>((ref) => null);
 
 final experimentRepositoryProvider = Provider<ExperimentRepository>((ref) {
   return ExperimentRepository(ref.watch(appDatabaseProvider));

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/inbox_item.dart';
 import '../../../../core/models/task.dart';
-import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/layout/adaptive_layout.dart';
@@ -16,7 +15,7 @@ import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../providers/inbox_provider.dart';
 import 'due_date_badge.dart';
-import 'inbox_capture_editor.dart';
+import 'inbox_quick_add.dart';
 import '../widgets/overdue_badge.dart';
 
 /// A draggable row in the inbox list (desktop strip / mobile tab).
@@ -36,41 +35,11 @@ class InboxTaskTile extends ConsumerWidget {
 
   Future<void> _edit(BuildContext context, WidgetRef ref) async {
     if (!item.isOverdue) {
-      final taskId = item.task.id;
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: InboxCaptureEditor(
-              title: 'Edit Inbox capture',
-              initialContent: item.task.description ?? '',
-              initialDueDate: item.task.dueDate,
-              onSubmit: (content, dueDate) async {
-                final repository = ref.read(taskRepositoryProvider);
-                final snapshot = await repository.getTaskWithRevision(taskId);
-                final current = snapshot?.$1;
-                final revision = snapshot?.$2;
-                if (current == null || revision == null || !current.isInbox) {
-                  throw StateError(
-                    'This Inbox capture changed or was scheduled elsewhere; reload and try again.',
-                  );
-                }
-                await repository.updateTask(
-                  current.copyWith(
-                    description: content,
-                    dueDate: dueDate,
-                    inboxContentVersion: 1,
-                  ),
-                  expectedRevision: revision,
-                );
-              },
-              onCommitted: () => Navigator.of(dialogContext).pop(),
-              onCancel: () => Navigator.of(dialogContext).pop(),
-            ),
-          ),
-        ),
+      await showInboxEditDialog(
+        context,
+        ref,
+        taskId: item.task.id,
+        initialContent: item.task.description ?? '',
       );
       return;
     }

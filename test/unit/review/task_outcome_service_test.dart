@@ -5,6 +5,7 @@ import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/features/inbox/data/inbox_repository.dart';
 import 'package:personal_planner/features/review/domain/task_outcome.dart';
 import 'package:personal_planner/features/review/domain/task_outcome_service.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
@@ -145,5 +146,22 @@ void main() {
     expect(rows, hasLength(1));
     expect(rows.single.planChange?.oldValue, 'sample 6');
     expect(rows.single.planChange?.newValue, 'sample 06');
+  });
+
+  test('fromInbox is true only for a session of an Inbox idea', () async {
+    final idea = await InboxRepository(db).addToInbox('Sort the garage');
+    await tasks.insertTask(
+      make(60, 'Garage session', 9).copyWith(inboxItemId: idea.id),
+    );
+    await tasks.insertTask(make(61, 'Plain block', 11));
+
+    final rows = await TaskOutcomeService(db).forDay(day);
+
+    expect(rows.map((r) => (r.title, r.fromInbox)), [
+      ('Garage session', true),
+      ('Plain block', false),
+    ]);
+    // The idea itself is an Inbox row and never listed.
+    expect(rows.any((r) => r.title == 'Inbox capture'), isFalse);
   });
 }

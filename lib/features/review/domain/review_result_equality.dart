@@ -60,6 +60,7 @@ bool _sameOutcomeRow(TaskOutcomeRow a, TaskOutcomeRow b) =>
     a.plannedMinutes == b.plannedMinutes &&
     a.trackedMinutes == b.trackedMinutes &&
     a.outcome == b.outcome &&
+    a.fromInbox == b.fromInbox &&
     _samePlanChange(a.planChange, b.planChange);
 
 bool _sameWeeklyTask(WeeklyTaskInput a, WeeklyTaskInput b) =>

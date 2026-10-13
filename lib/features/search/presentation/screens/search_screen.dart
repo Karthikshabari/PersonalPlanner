@@ -10,6 +10,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../inbox/providers/inbox_provider.dart';
 import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -61,6 +62,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _openResult(SearchResult result) {
+    // An Inbox idea has no editor on Day: open the Inbox with it expanded.
+    // Its sessions are ordinary tasks and still open on Day.
+    if (result.isInbox) {
+      ref.read(inboxFocusItemProvider.notifier).state = result.id;
+      context.go('/inbox');
+      return;
+    }
     final date = result.startTime;
     if (date != null) {
       ref.read(selectedDateProvider.notifier).state = startOfDay(date);
