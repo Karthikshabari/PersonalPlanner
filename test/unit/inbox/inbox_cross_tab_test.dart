@@ -215,9 +215,10 @@ void main() {
         addDays(h.at(offset, 0), 1),
       );
       final rows = await db.taskDao.getTasksBetween(start, end);
+      final live = await db.taskDao.liveSuccessorIds(rows);
       visible[iso(offset)] = [
         for (final row in rows)
-          if (isActiveTimelineTask(TaskRepository.fromRow(row))) row.id,
+          if (isActiveTimelineTask(TaskRepository.fromRow(row), live)) row.id,
       ]..sort();
     }
 
@@ -244,23 +245,33 @@ void main() {
     );
   }
 
-  /// What must be identical whatever happened to the idea.
-  void expectUntouched(Snap before, Snap after) {
-    expect(
-      after.overview,
-      before.overview,
-      reason: 'Review overview (past days)',
-    );
-    expect(
-      after.consistency,
-      before.consistency,
-      reason: 'Consistency, past days',
-    );
-    expect(
-      after.insightsWeeks['previous'],
-      before.insightsWeeks['previous'],
-      reason: 'Insights, previous week',
-    );
+  /// What must be identical whatever happened to the idea. When [carried],
+  /// the missed session was moved to a new block that replaces it
+  /// (`plan_counting.dart`): its day loses that one task and its 60 planned
+  /// minutes, and nothing else changes.
+  void expectUntouched(Snap before, Snap after, {bool carried = false}) {
+    final moved = iso(-2);
+    final tasks = carried ? 1 : 0;
+    final minutes = carried ? 60 : 0;
+    expect(after.overview, {
+      ...before.overview,
+      moved: (before.overview[moved]!.$1 - tasks, before.overview[moved]!.$2),
+    }, reason: 'Review overview (past days)');
+    final movedConsistency = before.consistency[moved]!;
+    expect(after.consistency, {
+      ...before.consistency,
+      moved: (
+        movedConsistency.$1 - minutes,
+        movedConsistency.$2,
+        movedConsistency.$3,
+      ),
+    }, reason: 'Consistency, past days');
+    final previous = before.insightsWeeks['previous']!;
+    expect(after.insightsWeeks['previous'], (
+      previous.$1 - minutes,
+      previous.$2,
+      previous.$3,
+    ), reason: 'Insights, previous week');
     expect(after.experiments, before.experiments, reason: 'Experiments');
     expect(
       after.outcomes[iso(-3)],
@@ -270,7 +281,7 @@ void main() {
     expect(after.visible[iso(-3)], before.visible[iso(-3)]);
     expect(
       after.weeks['previous']!.$1,
-      before.weeks['previous']!.$1,
+      before.weeks['previous']!.$1 - tasks,
       reason: 'previous week total',
     );
     expect(
@@ -366,13 +377,13 @@ void main() {
 
   group('carry', () {
     test(
-      'Save dates: old rows stay as history, the new block is counted once',
+      'Save dates: old rows stay as history, only the new block is counted',
       () async {
         final before = await snap();
         await h.inbox.saveDates(idea.id, [h.slot(3, 9)], h.now);
         final after = await snap();
 
-        expectUntouched(before, after);
+        expectUntouched(before, after, carried: true);
 
         // Review: the old row reads Rescheduled with the same minutes.
         expect(after.outcomes[iso(-2)]![missed.id], startsWith('rescheduled|'));
@@ -380,7 +391,7 @@ void main() {
           after.outcomes[iso(-2)]![missed.id]!.split('|').skip(1).toList(),
           before.outcomes[iso(-2)]![missed.id]!.split('|').skip(1).toList(),
         );
-        expect(after.weeks['previous'], (4, 2, 0, 1));
+        expect(after.weeks['previous'], (3, 2, 0, 1));
 
         // The new session appears once on its own day, as a normal row.
         final carriedTo = (await h.reload(missed.id)).rescheduledToId!;
@@ -401,7 +412,10 @@ void main() {
         expect(before.visible[iso(-2)], contains(missed.id));
         expect(after.visible[iso(-2)], [plainMissed.id]);
         expect(after.visible[iso(3)], [carriedTo]);
-        expect(await h.reload(missed.id).then(isActiveTimelineTask), isFalse);
+        expect(
+          isActiveTimelineTask(await h.reload(missed.id), {carriedTo}),
+          isFalse,
+        );
       },
     );
 
@@ -416,9 +430,9 @@ void main() {
       await command.execute();
       final after = await snap();
 
-      expectUntouched(before, after);
+      expectUntouched(before, after, carried: true);
       expect(after.outcomes[iso(-2)]![missed.id], startsWith('rescheduled|'));
-      expect(after.weeks['previous'], (4, 2, 0, 1));
+      expect(after.weeks['previous'], (3, 2, 0, 1));
       // The successor keeps the link, so the Inbox follows the carried session.
       final successor = await h.reload(command.successorId);
       expect(successor.inboxItemId, idea.id);

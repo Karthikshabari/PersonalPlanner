@@ -9,6 +9,7 @@ IconData taskOutcomeIcon(TaskOutcome o) => switch (o) {
   TaskOutcome.partlyDone => Icons.timelapse_rounded,
   TaskOutcome.notStarted => Icons.radio_button_unchecked_rounded,
   TaskOutcome.skipped => Icons.skip_next_rounded,
+  TaskOutcome.cancelled => Icons.block_rounded,
   TaskOutcome.rescheduled => Icons.event_repeat_rounded,
 };
 
@@ -21,7 +22,8 @@ Color taskOutcomeColor(BuildContext context, TaskOutcome o) {
     TaskOutcome.partlyDone => colors.amber,
     TaskOutcome.rescheduled => colors.blue,
     TaskOutcome.notStarted ||
-    TaskOutcome.skipped => AppThemeTokens.of(context).textMuted,
+    TaskOutcome.skipped ||
+    TaskOutcome.cancelled => AppThemeTokens.of(context).textMuted,
   };
 }
 

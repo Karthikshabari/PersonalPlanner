@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/models/plan_counting.dart';
 import '../../../core/models/weekly_review.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../day_context/data/day_context_repository.dart';
@@ -80,6 +81,13 @@ class WeeklyReviewHistoryService {
       final start = row.start;
       if (start.isBefore(oldest) || !start.isBefore(current)) continue;
       if (breakDates.containsKey(isoDateString(start))) continue;
+      if (!countsAsPlannedTask(
+        TaskStatus.fromDb(row.status),
+        row.rescheduledToId,
+        successorLive: row.successorLive,
+      )) {
+        continue;
+      }
       final key = isoDateString(startOfWeek(start));
       totals[key] = (totals[key] ?? 0) + 1;
       if (row.status == TaskStatus.completed.dbValue) {

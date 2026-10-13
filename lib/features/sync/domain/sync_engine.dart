@@ -42,6 +42,7 @@ class SyncEngine with WidgetsBindingObserver {
     this.authController,
     this.syncingNoticeDelay = syncSyncingNoticeDelay,
     this.cycleTimeout = syncCycleTimeout,
+    this.afterCycle,
   });
 
   final AppDatabase _db;
@@ -54,6 +55,12 @@ class SyncEngine with WidgetsBindingObserver {
 
   /// Upper bound on one cycle; see [syncCycleTimeout].
   final Duration cycleTimeout;
+
+  /// Local follow-up work run after a cycle whose pull did not fail, once
+  /// that cycle has finished (outside it and outside any sync transaction).
+  /// An error is caught and logged: it never fails the cycle, changes the
+  /// sync status or touches the outbox.
+  final Future<void> Function()? afterCycle;
   final _status = StreamController<SyncStatusSnapshot>.broadcast();
   final _subscriptions = <StreamSubscription<dynamic>>[];
   Timer? _writeDebounce;
@@ -108,12 +115,24 @@ class SyncEngine with WidgetsBindingObserver {
     if (active != null) return active;
     final cycle = _runSync();
     _activeCycle = cycle;
-    return cycle.whenComplete(() {
-      if (identical(_activeCycle, cycle)) _activeCycle = null;
-    });
+    return cycle
+        .whenComplete(() {
+          if (identical(_activeCycle, cycle)) _activeCycle = null;
+        })
+        .then<void>((pulled) async {
+          final work = afterCycle;
+          if (!pulled || work == null || _stopping || _disposed) return;
+          try {
+            await work();
+          } catch (error) {
+            debugPrint('Sync after-cycle work failed (${error.runtimeType}).');
+          }
+        });
   }
 
-  Future<void> _runSync() async {
+  /// Runs one cycle; true when it ran and its pull did not fail.
+  Future<bool> _runSync() async {
+    var pulled = false;
     _running = true;
     _syncingVisible = false;
     // A remote feed check can be slow even when it contains no changes. Do not
@@ -127,7 +146,7 @@ class SyncEngine with WidgetsBindingObserver {
         unawaited(authController.requestRefreshIfNeeded());
         _lastError = 'Session refresh is pending; local work is safe.';
         _failureState = SyncEngineState.refreshPaused;
-        return;
+        return false;
       }
       final SyncCycleResult result;
       try {
@@ -140,13 +159,13 @@ class SyncEngine with WidgetsBindingObserver {
       } on TimeoutException {
         _lastError = syncCycleStalledMessage;
         _failureState = SyncEngineState.error;
-        return;
+        return false;
       }
       if (result.skipped) {
         // Another cycle owned this account's transport. Nothing was sent or
         // pulled, so this attempt must neither be recorded as a successful
         // synchronization nor overwrite a verdict that is still current.
-        return;
+        return false;
       }
       // Only a real round trip may supersede the previous verdict.
       _lastError = null;
@@ -154,6 +173,7 @@ class SyncEngine with WidgetsBindingObserver {
       // A successful feed read is direct evidence that the user's own project
       // answered, so the out-of-band unreachable verdict no longer applies.
       if (result.pullFailure == null) _backendReportedUnreachable = false;
+      pulled = result.pullFailure == null;
       if (result.succeeded) {
         // `sync.last_success_at` means "the last time a real synchronization
         // left nothing outstanding". A cycle that skipped queued work (for
@@ -175,6 +195,7 @@ class SyncEngine with WidgetsBindingObserver {
       }
       if (!_stopping) await _refreshStatus();
     } catch (error) {
+      pulled = false;
       _lastError = safeSyncError(error);
       _failureState = SyncEngineState.error;
       if (!_stopping) await _refreshStatus();
@@ -184,6 +205,7 @@ class SyncEngine with WidgetsBindingObserver {
       _running = false;
       if (!_stopping) await _refreshStatus();
     }
+    return pulled;
   }
 
   /// Announces real work only once it has lasted long enough to be true.

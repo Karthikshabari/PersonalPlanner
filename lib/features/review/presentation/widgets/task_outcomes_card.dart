@@ -10,6 +10,7 @@ import '../../../../core/utils/duration_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../domain/reschedule_chain.dart';
 import '../../domain/review_plan_change.dart';
 import '../../domain/review_reason_presets.dart';
 import '../../domain/task_outcome.dart';
@@ -393,8 +394,13 @@ class _TaskOutcomeRowViewState extends ConsumerState<TaskOutcomeRowView> {
     );
     final time = DateFormat('HH:mm')
         .format(PlannerTimeZone.toPlannerLocal(row.startTime!));
+    final move = row.move;
+    // A moved block says where its task is now instead of its planned time.
+    final head = move != null
+        ? movedToText(move)
+        : '${Duration(minutes: row.plannedMinutes).shortLabel} planned';
     final meta =
-        '${Duration(minutes: row.plannedMinutes).shortLabel} planned'
+        '$head'
         '${row.trackedMinutes > 0 ? ' · ${Duration(minutes: row.trackedMinutes).shortLabel} tracked' : ''}'
         '${row.fromInbox ? ' · From Inbox' : ''}';
     final chips = ReviewReasonPresets.chips(widget.presets);

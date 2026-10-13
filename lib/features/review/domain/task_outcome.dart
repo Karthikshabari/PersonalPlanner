@@ -1,9 +1,17 @@
 import 'dart:math' as math;
 
 import '../../../core/models/enums/task_status.dart';
+import 'reschedule_chain.dart';
 import 'review_plan_change.dart';
 
-enum TaskOutcome { completed, partlyDone, skipped, rescheduled, notStarted }
+enum TaskOutcome {
+  completed,
+  partlyDone,
+  skipped,
+  cancelled,
+  rescheduled,
+  notStarted,
+}
 
 extension TaskOutcomeLabel on TaskOutcome {
   String get label => switch (this) {
@@ -11,19 +19,22 @@ extension TaskOutcomeLabel on TaskOutcome {
     TaskOutcome.partlyDone => 'Partly done',
     TaskOutcome.notStarted => 'Not started',
     TaskOutcome.skipped => 'Skipped',
+    TaskOutcome.cancelled => 'Cancelled',
     TaskOutcome.rescheduled => 'Rescheduled',
   };
 }
 
 /// Outcome of one task for its review day. First match wins:
-/// 1 completed, 2 tracked > 0, 3 skipped/cancelled, 4 rescheduled,
-/// 5 everything else.
-TaskOutcome resolveTaskOutcome(TaskStatus status, {required int trackedMinutes}) {
+/// 1 completed, 2 tracked > 0, 3 skipped, 4 cancelled, 5 rescheduled,
+/// 6 everything else.
+TaskOutcome resolveTaskOutcome(
+  TaskStatus status, {
+  required int trackedMinutes,
+}) {
   if (status == TaskStatus.completed) return TaskOutcome.completed;
   if (trackedMinutes > 0) return TaskOutcome.partlyDone;
-  if (status == TaskStatus.skipped || status == TaskStatus.cancelled) {
-    return TaskOutcome.skipped;
-  }
+  if (status == TaskStatus.skipped) return TaskOutcome.skipped;
+  if (status == TaskStatus.cancelled) return TaskOutcome.cancelled;
   if (status == TaskStatus.rescheduled) return TaskOutcome.rescheduled;
   return TaskOutcome.notStarted;
 }
@@ -57,6 +68,9 @@ class TaskOutcomeRow {
   /// Daily Review row reads it.
   final bool fromInbox;
 
+  /// Where a Rescheduled block's task is planned now; display only.
+  final RescheduleMove? move;
+
   const TaskOutcomeRow({
     required this.taskId,
     required this.title,
@@ -67,6 +81,7 @@ class TaskOutcomeRow {
     required this.outcome,
     this.planChange,
     this.fromInbox = false,
+    this.move,
   });
 }
 

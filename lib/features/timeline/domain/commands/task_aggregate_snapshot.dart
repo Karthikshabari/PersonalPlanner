@@ -39,11 +39,13 @@ class TaskAggregateSnapshot {
     );
   }
 
-  Future<void> softDelete(AppDatabase db) async {
+  /// Soft-deletes the aggregate and heals the blocks that were rescheduled to
+  /// this task; returns their ids (`TaskRepository.restorePredecessorsOf`).
+  Future<List<String>> softDelete(AppDatabase db) async {
     final now = DateTime.now().toUtc();
     final nowIso = now.toIso8601String();
     final owner = await TimerRepository(db).localDeviceId();
-    await db.transaction(() async {
+    return db.transaction(() async {
       await TimerService(db).stopOwnedTaskInTransaction(task.id, owner, now);
       await TaskActualDurationService(db).recomputeTaskInTransaction(task.id);
       final actual = (await db.taskDao.getTaskById(task.id))?.actualDurationMin;
@@ -78,6 +80,7 @@ class TaskAggregateSnapshot {
         ],
         updates: {db.taskTags},
       );
+      return TaskRepository(db).restorePredecessorsOf(task.id);
     });
   }
 

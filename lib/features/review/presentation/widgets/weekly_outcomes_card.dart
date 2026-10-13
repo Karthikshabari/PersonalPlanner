@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
+import '../../domain/reschedule_chain.dart';
 import '../../domain/weekly_review_numbers.dart';
 import 'review_theme.dart';
 import 'weekly_review_style.dart';
@@ -42,14 +43,14 @@ class _WeeklyOutcomesCardState extends State<WeeklyOutcomesCard> {
           Text('Task outcomes', style: textTheme.titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Skipped or rescheduled · ${rows.length}',
+            'Skipped, cancelled or rescheduled · ${rows.length}',
             key: const ValueKey('weekly-outcomes-count'),
             style: weeklyCaptionStyle(context),
           ),
           const SizedBox(height: AppSpacing.sm),
           if (rows.isEmpty)
             Text(
-              'Nothing skipped or rescheduled this week.',
+              'Nothing skipped, cancelled or rescheduled this week.',
               style: textTheme.bodyMedium?.copyWith(color: tokens.textMuted),
             )
           else ...[
@@ -91,6 +92,7 @@ class _WeeklyOutcomeRowView extends StatelessWidget {
         row.reason ??
         (row.dayReviewed ? 'No reason given' : 'No reason (day not reviewed)');
     final planChange = row.planChange;
+    final move = row.move;
     return Container(
       decoration: showDivider
           ? BoxDecoration(
@@ -139,6 +141,14 @@ class _WeeklyOutcomeRowView extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   TaskOutcomePill(outcome: row.outcome),
+                ],
+                if (move != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    plannedNowText(move),
+                    key: ValueKey('weekly-moved-${row.taskId}'),
+                    style: textTheme.bodySmall,
+                  ),
                 ],
                 const SizedBox(height: 2),
                 Text(

@@ -253,8 +253,9 @@ void main() {
         expect(stats.skippedTasks, 1);
         expect(stats.cancelledTasks, 1);
         expect(stats.rescheduledTasks, 1);
-        // 90 + 30 + 60 + 30 + 30 + 30
-        expect(stats.plannedDurationMin, 270);
+        // 90 + 30 + 60 + 30 (skipped) + 30 (rescheduled with no new block);
+        // Cancelled adds no planned minutes (plan_counting.dart).
+        expect(stats.plannedDurationMin, 240);
         expect(stats.actualDurationMin, 60);
         // Only the Work (focus) task counts toward focus duration.
         expect(stats.focusDurationMin, 90);

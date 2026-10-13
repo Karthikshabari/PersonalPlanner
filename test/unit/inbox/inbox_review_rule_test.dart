@@ -201,7 +201,7 @@ void main() {
         (
           name: 'a cancelled session',
           expected: 1,
-          outcome: TaskOutcome.skipped,
+          outcome: TaskOutcome.cancelled,
           seed: (h, db) async {
             final idea = await h.idea('Idea');
             await h.session(

@@ -186,7 +186,7 @@ void main() {
       },
     );
 
-    expect(find.text('Skipped or rescheduled · 1'), findsOneWidget);
+    expect(find.text('Skipped, cancelled or rescheduled · 1'), findsOneWidget);
     expect(find.text('Refactor tests'), findsOneWidget);
     expect(find.text('Rescheduled'), findsOneWidget);
     expect(find.textContaining('Added during the week'), findsNothing);

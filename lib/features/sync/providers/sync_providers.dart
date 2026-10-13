@@ -285,11 +285,15 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
 final syncEngineProvider = Provider<SyncEngine?>((ref) {
   final repository = ref.watch(syncRepositoryProvider);
   if (repository == null) return null;
+  final tasks = ref.read(taskRepositoryProvider);
   final engine = SyncEngine(
     ref.watch(appDatabaseProvider),
     repository,
     ref.watch(syncConnectivityMonitorProvider),
     authController: ref.watch(authSessionControllerProvider),
+    // A pull can deliver the deletion of a rescheduled block's new block;
+    // heal the old block once the cycle is over (writes only on a match).
+    afterCycle: () => tasks.restoreDanglingReschedules(),
   );
   ref.onDispose(() => unawaited(engine.stop()));
   unawaited(engine.start());

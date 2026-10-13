@@ -1,13 +1,16 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/database/daos/task_dao.dart';
 import '../../../core/models/day_context.dart';
+import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../day_context/data/day_context_repository.dart';
 import '../../day_context/domain/break_day.dart';
 import '../../timeline/data/task_repository.dart';
 import '../data/review_repository.dart';
+import 'reschedule_chain.dart';
 import 'review_plan_change.dart';
 import 'task_outcome.dart';
 import 'weekly_review_numbers.dart';
@@ -30,6 +33,18 @@ class WeeklyReviewService {
     final startIso = isoDateString(start);
     final endIso = isoDateString(end);
     final taskRows = await _db.taskDao.getTasksBetween(start, end);
+    final live = await _db.taskDao.liveSuccessorIds(taskRows);
+    final uncounted = {
+      for (final row in taskRows)
+        if (!row.countsAsTask(live)) row.id,
+    };
+    final chain = {
+      for (final link in await _db.taskDao.getRescheduleRelatives([
+        for (final row in taskRows)
+          if (row.status == TaskStatus.rescheduled.dbValue) row.id,
+      ]))
+        link.id: link,
+    };
     final reviews = await ReviewRepository(_db)
         .getDailyReviewsBetween(start, end);
     final contextRows =
@@ -86,6 +101,10 @@ class WeeklyReviewService {
                     ),
                     reason: reason == null || reason.isEmpty ? null : reason,
                     planChange: ReviewPlanChange.forTask(task),
+                    counted: !uncounted.contains(task.id),
+                    move: chain.containsKey(task.id)
+                        ? rescheduleMoveOf(task.id, chain)
+                        : null,
                   );
                 }(),
             ],

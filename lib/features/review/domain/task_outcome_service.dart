@@ -1,7 +1,9 @@
 import '../../../core/database/app_database.dart';
+import '../../../core/models/enums/task_status.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../timeline/data/task_repository.dart';
+import 'reschedule_chain.dart';
 import 'review_plan_change.dart';
 import 'task_outcome.dart';
 
@@ -16,6 +18,13 @@ class TaskOutcomeService {
     final day = startOfDay(date);
     final end = addDays(day, 1);
     final rows = await _db.taskDao.getTasksBetween(day, end);
+    final chain = {
+      for (final link in await _db.taskDao.getRescheduleRelatives([
+        for (final row in rows)
+          if (row.status == TaskStatus.rescheduled.dbValue) row.id,
+      ]))
+        link.id: link,
+    };
     final result = <TaskOutcomeRow>[];
     for (final row in rows) {
       final task = TaskRepository.fromRow(row);
@@ -35,6 +44,9 @@ class TaskOutcomeService {
           outcome: resolveTaskOutcome(task.status, trackedMinutes: tracked),
           planChange: ReviewPlanChange.forTask(task),
           fromInbox: task.inboxItemId != null,
+          move: chain.containsKey(task.id)
+              ? rescheduleMoveOf(task.id, chain)
+              : null,
         ),
       );
     }

@@ -2,6 +2,8 @@ import 'package:drift/drift.dart';
 
 import '../app_database.dart';
 import '../tables/tasks_table.dart';
+import '../../models/enums/task_status.dart';
+import '../../models/plan_counting.dart';
 import '../../utils/date_utils.dart';
 
 part 'task_dao.g.dart';
@@ -45,15 +47,24 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   /// reading or decoding the other ~40 columns: 5 800 rows take about 13 ms
   /// this way against about 100 ms for the typed full-row query. For callers
   /// that only count tasks per day or week (Review Overview, Weekly history).
-  /// Order is not specified.
-  Future<List<({DateTime start, String status})>> getStartAndStatusBetween(
-    DateTime start,
-    DateTime end,
-  ) async {
+  /// Order is not specified. [successorLive] tells `plan_counting.dart`
+  /// whether a rescheduled row's new block still exists.
+  Future<
+    List<
+      ({
+        DateTime start,
+        String status,
+        String? rescheduledToId,
+        bool successorLive,
+      })
+    >
+  >
+  getStartAndStatusBetween(DateTime start, DateTime end) async {
     final rows = await customSelect(
-      'SELECT start_time, status FROM tasks WHERE deleted_at IS NULL '
-      'AND is_inbox = 0 AND start_time IS NOT NULL AND end_time IS NOT NULL '
-      'AND start_time < ? AND end_time > ?',
+      'SELECT t.start_time, t.status, t.rescheduled_to_id, $_successorLiveSql '
+      'FROM tasks t WHERE t.deleted_at IS NULL '
+      'AND t.is_inbox = 0 AND t.start_time IS NOT NULL '
+      'AND t.end_time IS NOT NULL AND t.start_time < ? AND t.end_time > ?',
       variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
       readsFrom: {tasks},
     ).get();
@@ -62,6 +73,8 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
         (
           start: DateTime.parse(row.read<String>('start_time')).toLocal(),
           status: row.read<String>('status'),
+          rescheduledToId: row.readNullable<String>('rescheduled_to_id'),
+          successorLive: row.read<bool>('successor_live'),
         ),
     ];
   }
@@ -69,12 +82,23 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
   /// Start, end and status of the same tasks [getTasksBetween] returns, for
   /// callers that only add up planned minutes (Insights). Same reasoning and
   /// filter as [getStartAndStatusBetween]. Order is not specified.
-  Future<List<({DateTime start, DateTime end, String status})>>
+  Future<
+    List<
+      ({
+        DateTime start,
+        DateTime end,
+        String status,
+        String? rescheduledToId,
+        bool successorLive,
+      })
+    >
+  >
   getScheduleSpansBetween(DateTime start, DateTime end) async {
     final rows = await customSelect(
-      'SELECT start_time, end_time, status FROM tasks WHERE deleted_at IS NULL '
-      'AND is_inbox = 0 AND start_time IS NOT NULL AND end_time IS NOT NULL '
-      'AND start_time < ? AND end_time > ?',
+      'SELECT t.start_time, t.end_time, t.status, t.rescheduled_to_id, '
+      '$_successorLiveSql FROM tasks t WHERE t.deleted_at IS NULL '
+      'AND t.is_inbox = 0 AND t.start_time IS NOT NULL '
+      'AND t.end_time IS NOT NULL AND t.start_time < ? AND t.end_time > ?',
       variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
       readsFrom: {tasks},
     ).get();
@@ -84,9 +108,87 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
           start: DateTime.parse(row.read<String>('start_time')).toLocal(),
           end: DateTime.parse(row.read<String>('end_time')).toLocal(),
           status: row.read<String>('status'),
+          rescheduledToId: row.readNullable<String>('rescheduled_to_id'),
+          successorLive: row.read<bool>('successor_live'),
         ),
     ];
   }
+
+  static const _successorLiveSql =
+      'EXISTS (SELECT 1 FROM tasks s WHERE s.id = t.rescheduled_to_id '
+      'AND s.deleted_at IS NULL) AS successor_live';
+
+  /// The ids among [ids] whose rows exist and are not deleted. Callers use it
+  /// to learn whether a rescheduled block's new block still exists.
+  Future<Set<String>> liveTaskIds(Iterable<String> ids) async {
+    final wanted = ids.toSet();
+    if (wanted.isEmpty) return const <String>{};
+    final live = <String>{};
+    // SQLite caps bound variables; chunk large sets.
+    final list = wanted.toList(growable: false);
+    for (var i = 0; i < list.length; i += 500) {
+      final chunk = list.sublist(
+        i,
+        i + 500 > list.length ? list.length : i + 500,
+      );
+      final rows =
+          await (selectOnly(tasks)
+                ..addColumns([tasks.id])
+                ..where(tasks.id.isIn(chunk) & tasks.deletedAt.isNull()))
+              .get();
+      live.addAll(rows.map((row) => row.read(tasks.id)!));
+    }
+    return live;
+  }
+
+  /// Every row linked to [ids] through `rescheduled_to_id`, in either
+  /// direction and including [ids] (deleted rows too), for the review's
+  /// "moved" text (`reschedule_chain.dart`). UNION makes a cycle terminate.
+  Future<
+    List<
+      ({
+        String id,
+        DateTime? start,
+        DateTime? end,
+        String? rescheduledToId,
+        bool deleted,
+      })
+    >
+  >
+  getRescheduleRelatives(Iterable<String> ids) async {
+    final seeds = ids.toSet().toList(growable: false);
+    if (seeds.isEmpty) return const [];
+    final rows = await customSelect(
+      'WITH RECURSIVE chain(id) AS ('
+      'SELECT id FROM tasks WHERE id IN (${List.filled(seeds.length, '?').join(', ')}) '
+      'UNION SELECT t.rescheduled_to_id FROM tasks t JOIN chain c ON t.id = c.id '
+      'WHERE t.rescheduled_to_id IS NOT NULL '
+      'UNION SELECT t.id FROM tasks t JOIN chain c ON t.rescheduled_to_id = c.id) '
+      'SELECT t.id, t.start_time, t.end_time, t.rescheduled_to_id, '
+      't.deleted_at IS NOT NULL AS deleted FROM tasks t JOIN chain c ON t.id = c.id',
+      variables: [for (final id in seeds) Variable<String>(id)],
+      readsFrom: {tasks},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          id: row.read<String>('id'),
+          start: _parseDateTime(row.readNullable<String>('start_time')),
+          end: _parseDateTime(row.readNullable<String>('end_time')),
+          rescheduledToId: row.readNullable<String>('rescheduled_to_id'),
+          deleted: row.read<bool>('deleted'),
+        ),
+    ];
+  }
+
+  /// The new blocks of the rescheduled rows among [rows] that still exist.
+  /// Pass the result to [TaskRowPlanCounting].
+  Future<Set<String>> liveSuccessorIds(Iterable<TaskRow> rows) => liveTaskIds([
+    for (final row in rows)
+      if (row.rescheduledToId != null &&
+          row.status == TaskStatus.rescheduled.dbValue)
+        row.rescheduledToId!,
+  ]);
 
   /// Searches the schema-v6 external-content FTS index. The query is already
   /// normalized to a safe literal expression by [SearchRepository]; the
@@ -187,6 +289,22 @@ class TaskSearchRow {
     required this.categoryId,
     required this.relevance,
   });
+}
+
+/// `plan_counting.dart` applied to a full row; [liveSuccessors] comes from
+/// [TaskDao.liveSuccessorIds].
+extension TaskRowPlanCounting on TaskRow {
+  bool countsAsTask(Set<String> liveSuccessors) => countsAsPlannedTask(
+    TaskStatus.fromDb(status),
+    rescheduledToId,
+    successorLive: liveSuccessors.contains(rescheduledToId),
+  );
+
+  bool countsAsTime(Set<String> liveSuccessors) => countsAsPlannedTime(
+    TaskStatus.fromDb(status),
+    rescheduledToId,
+    successorLive: liveSuccessors.contains(rescheduledToId),
+  );
 }
 
 DateTime? _parseDateTime(String? value) =>

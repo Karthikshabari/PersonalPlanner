@@ -47,6 +47,57 @@ void main() {
     },
   );
 
+  test(
+    'an after-cycle heal that throws leaves the cycle result unchanged',
+    () async {
+      Future<(List<SyncEngineState>, String?, int)> run(
+        Future<void> Function() afterCycle,
+      ) async {
+        final db = AppDatabase(NativeDatabase.memory());
+        final connectivity = _FakeConnectivity()
+          ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+        final engine = SyncEngine(
+          db,
+          SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+          connectivity,
+          afterCycle: afterCycle,
+        );
+        final states = <SyncEngineState>[];
+        final subscription = engine.status.listen(
+          (snapshot) => states.add(snapshot.state),
+        );
+        try {
+          await engine.start();
+          await engine.syncNow();
+          await pumpEventQueue();
+          return (
+            states,
+            await db.syncDao.getSetting('sync.last_success_at'),
+            (await db.select(db.syncLog).get()).length,
+          );
+        } finally {
+          await subscription.cancel();
+          await engine.stop();
+          await connectivity.close();
+          await db.close();
+        }
+      }
+
+      var calls = 0;
+      final failing = await run(() async {
+        calls++;
+        throw StateError('heal failed');
+      });
+      final passing = await run(() async {});
+
+      expect(calls, greaterThan(0));
+      expect(failing.$1.last, passing.$1.last);
+      expect(failing.$1, isNot(contains(SyncEngineState.error)));
+      expect(failing.$2, isA<String>());
+      expect(failing.$3, passing.$3);
+    },
+  );
+
   test('stop waits for startup before closing the status stream', () async {
     final db = AppDatabase(NativeDatabase.memory());
     final connectivity = _FakeConnectivity();

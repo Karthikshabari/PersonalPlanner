@@ -43,7 +43,9 @@ void main() {
       expect(find.text('Week at a glance'), findsOneWidget);
       expect(find.text('50% tasks done'), findsOneWidget);
       expect(
-        find.text('7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed'),
+        find.text(
+          '7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
+        ),
         findsOneWidget,
       );
       for (var i = 0; i < 7; i++) {
@@ -165,6 +167,105 @@ void main() {
     });
   });
 
+  group('What got in the way wording (P-5)', () {
+    final monday = DateTime(2026, 9, 28);
+    final now = DateTime(2026, 9, 28, 12);
+    WeeklyTaskInput task(
+      String id,
+      TaskOutcome outcome,
+      int endHour, {
+      String? reason,
+      bool counted = true,
+    }) => WeeklyTaskInput(
+      taskId: id,
+      title: id,
+      outcome: outcome,
+      endTime: DateTime(2026, 9, 28, endHour),
+      reason: reason,
+      counted: counted,
+    );
+    WeeklyNumbers week(List<WeeklyTaskInput> tasks) => computeWeeklyNumbers([
+      WeeklyDayInput(date: monday, reviewed: false, tasks: tasks),
+    ], now: now);
+
+    testWidgets('(a) an unfinished block that has not ended: "yet"', (
+      tester,
+    ) async {
+      await _pumpAt(
+        tester,
+        WeeklyReasonsCard(
+          numbers: week([task('later', TaskOutcome.notStarted, 18)]),
+        ),
+      );
+      expect(find.text('Nothing to explain yet.'), findsOneWidget);
+      expect(find.textContaining('Everything planned'), findsNothing);
+    });
+
+    testWidgets('(c) "got done" only when done equals the counted total', (
+      tester,
+    ) async {
+      // A replaced block (not counted) beside its completed new block.
+      await _pumpAt(
+        tester,
+        WeeklyReasonsCard(
+          numbers: week([
+            task('moved', TaskOutcome.rescheduled, 18, counted: false),
+            task('new', TaskOutcome.completed, 15),
+          ]),
+        ),
+      );
+      expect(
+        find.text('Nothing to show. Everything planned got done.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('every unfinished block ended: reasons, never "yet"', (
+      tester,
+    ) async {
+      await _pumpAt(
+        tester,
+        WeeklyReasonsCard(
+          numbers: week([
+            task('done', TaskOutcome.completed, 9),
+            task('cancelled', TaskOutcome.cancelled, 10, reason: 'Ill'),
+          ]),
+        ),
+      );
+      expect(find.text('Ill'), findsOneWidget);
+      expect(find.textContaining('Nothing to explain'), findsNothing);
+      expect(find.textContaining('Everything planned'), findsNothing);
+
+      // Nothing to show and nothing still ahead: no "yet".
+      await _pumpAt(
+        tester,
+        WeeklyReasonsCard(
+          numbers: WeeklyNumbers(
+            days: [
+              WeeklyDayStats(
+                date: monday,
+                total: 2,
+                completed: 1,
+                reviewed: false,
+              ),
+            ],
+            total: 2,
+            completed: 1,
+            skipped: 0,
+            rescheduled: 0,
+            planChanged: 0,
+            outcomeRows: const [],
+            reasonCounts: const [],
+            noReasonCount: 0,
+            dayTypes: const [],
+            highlights: const [],
+          ),
+        ),
+      );
+      expect(find.text('Nothing to explain.'), findsOneWidget);
+    });
+  });
+
   group('Task outcomes', () {
     testWidgets('only skipped or rescheduled rows; plan change in its row', (
       tester,
@@ -172,7 +273,10 @@ void main() {
       final numbers = computeWeeklyNumbers(fixtureWeek('good'));
       await _pumpAt(tester, WeeklyOutcomesCard(rows: numbers.outcomeRows));
 
-      expect(find.text('Skipped or rescheduled · 5'), findsOneWidget);
+      expect(
+        find.text('Skipped, cancelled or rescheduled · 5'),
+        findsOneWidget,
+      );
       // Five rows: the first four show, the rest sit behind "Show all 5".
       await tester.tap(find.text('Show all 5'));
       await tester.pump();
@@ -225,9 +329,12 @@ void main() {
 
     testWidgets('empty state', (tester) async {
       await _pumpAt(tester, const WeeklyOutcomesCard(rows: []));
-      expect(find.text('Skipped or rescheduled · 0'), findsOneWidget);
       expect(
-        find.text('Nothing skipped or rescheduled this week.'),
+        find.text('Skipped, cancelled or rescheduled · 0'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Nothing skipped, cancelled or rescheduled this week.'),
         findsOneWidget,
       );
     });

@@ -1068,6 +1068,13 @@ Future<SyncEngine?> _initializeLocalServices(
     FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
   }
   try {
+    // Once per account load: a block whose new block (after a reschedule)
+    // was deleted goes back to Planned. Writes only when a row matches.
+    await container.read(taskRepositoryProvider).restoreDanglingReschedules();
+  } catch (err, stack) {
+    FlutterError.reportError(FlutterErrorDetails(exception: err, stack: stack));
+  }
+  try {
     await initializeTimezone();
     final notifications = container.read(notificationServiceProvider);
     await notifications.init(

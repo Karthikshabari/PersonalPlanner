@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/models/category.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/models/plan_counting.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planned_clock_time.dart';
@@ -70,17 +71,24 @@ class InsightsService {
       PlannerTimeZone.calendarDate(2000, 1, 1),
       plannedRangeEnd,
     );
+    // Planned minutes follow `countsAsPlannedTime` (Cancelled and blocks
+    // replaced by their reschedule add none), like DailyStatsService.
     final plannedTasks = [
       for (final span in plannedSpans)
-        Task(
-          id: '',
-          title: '',
-          startTime: span.start,
-          endTime: span.end,
-          status: TaskStatus.fromDb(span.status),
-          createdAt: _placeholderInstant,
-          updatedAt: _placeholderInstant,
-        ),
+        if (countsAsPlannedTime(
+          TaskStatus.fromDb(span.status),
+          span.rescheduledToId,
+          successorLive: span.successorLive,
+        ))
+          Task(
+            id: '',
+            title: '',
+            startTime: span.start,
+            endTime: span.end,
+            status: TaskStatus.fromDb(span.status),
+            createdAt: _placeholderInstant,
+            updatedAt: _placeholderInstant,
+          ),
     ];
 
     final overlappingSessions =

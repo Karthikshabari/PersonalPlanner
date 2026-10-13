@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/database/app_database.dart';
+import '../../../core/database/daos/task_dao.dart';
 import '../../../core/models/daily_stats.dart';
 import '../../../core/models/enums/task_status.dart';
 import '../../../core/utils/date_utils.dart';
@@ -67,6 +68,7 @@ class DailyStatsService {
       startInclusive,
       endExclusive,
     );
+    final live = await _db.taskDao.liveSuccessorIds(tasks);
     final categories = await (_db.select(_db.categories)).get();
     final focusIds = {for (final c in categories) c.id: c.isFocus};
     final tasksStartingInRange = tasks
@@ -87,7 +89,7 @@ class DailyStatsService {
     );
     final reviewByDate = {for (final review in reviews) review.date: review};
     final now = DateTime.now();
-    final spans = _spans(tasks);
+    final spans = _spans(tasks, live);
     final result = <DailyStats>[];
     for (
       var day = startInclusive;
@@ -137,7 +139,9 @@ class DailyStatsService {
               }
           }
         }
-        if (task.startTime != null && task.endTime != null) {
+        if (task.startTime != null &&
+            task.endTime != null &&
+            task.countsAsTime(live)) {
           final overlapStart = task.startTime!.isAfter(day)
               ? task.startTime!
               : day;
@@ -157,7 +161,9 @@ class DailyStatsService {
       result.add(
         DailyStats(
           date: day,
-          totalTasks: dayTasksStarting.length,
+          totalTasks: dayTasksStarting
+              .where((task) => task.countsAsTask(live))
+              .length,
           completedTasks: completed,
           plannedTasks: planned,
           inProgressTasks: inProgress,
@@ -197,6 +203,7 @@ class DailyStatsService {
       startInclusive,
       endExclusive,
     );
+    final live = await _db.taskDao.liveSuccessorIds(tasks);
     // Keep deleted categories available for historical focus-minute
     // attribution; the category is still user-owned history.
     final categories = await (_db.select(_db.categories)).get();
@@ -249,7 +256,7 @@ class DailyStatsService {
             if (t.endTime != null && t.endTime!.isBefore(now)) missed++;
         }
       }
-      if (t.startTime != null && t.endTime != null) {
+      if (t.startTime != null && t.endTime != null && t.countsAsTime(live)) {
         final overlapStart = t.startTime!.isAfter(startInclusive)
             ? t.startTime!
             : startInclusive;
@@ -266,7 +273,7 @@ class DailyStatsService {
 
     actualMin = actualByDate.values.fold<int>(0, (sum, value) => sum + value);
     // Clock time: the union over the range equals the sum of each day's union.
-    final spans = _spans(tasks);
+    final spans = _spans(tasks, live);
 
     final review = await _db.reviewDao.getDailyReviewByDate(
       isoDateString(startInclusive),
@@ -274,7 +281,9 @@ class DailyStatsService {
 
     return DailyStats(
       date: startInclusive,
-      totalTasks: tasksStartingInRange.length,
+      totalTasks: tasksStartingInRange
+          .where((task) => task.countsAsTask(live))
+          .length,
       completedTasks: completed,
       plannedTasks: planned,
       inProgressTasks: inProgress,
@@ -307,9 +316,17 @@ class DailyStatsService {
     );
   }
 
-  static List<PlannedSpan> _spans(Iterable<TaskRow> tasks) => [
+  /// Planned clock time follows `countsAsPlannedTime`: a Cancelled block or a
+  /// block replaced by its reschedule adds no minutes (and leaves no gap in a
+  /// union it shares with other blocks).
+  static List<PlannedSpan> _spans(
+    Iterable<TaskRow> tasks,
+    Set<String> liveSuccessors,
+  ) => [
     for (final task in tasks)
-      if (task.startTime != null && task.endTime != null)
+      if (task.startTime != null &&
+          task.endTime != null &&
+          task.countsAsTime(liveSuccessors))
         (start: task.startTime!, end: task.endTime!),
   ];
 

@@ -164,7 +164,9 @@ class TaskRepository {
     return persisted;
   }
 
-  Future<void> deleteTask(
+  /// Soft-deletes the task and heals the blocks that were rescheduled to it
+  /// ([restorePredecessorsOf]); returns the healed ids so Undo can re-link.
+  Future<List<String>> deleteTask(
     String taskId, {
     String? recurrenceRemovalReason,
   }) async {
@@ -177,9 +179,10 @@ class TaskRepository {
       );
     }
     final row = await _dao.getTaskById(taskId);
-    if (row == null || row.deletedAt != null) return;
+    if (row == null || row.deletedAt != null) return const <String>[];
     final now = _clock();
     final ownerDeviceId = await TimerRepository(_db).localDeviceId();
+    var healed = const <String>[];
     await _db.transaction(() async {
       await TimerService(_db)
           .stopOwnedTaskInTransaction(taskId, ownerDeviceId, now);
@@ -195,7 +198,73 @@ class TaskRepository {
         ),
       );
       await _invalidateStatsForIntervals([(row.startTime, row.endTime)]);
+      healed = await restorePredecessorsOf(taskId);
     });
+    return healed;
+  }
+
+  /// Heals a block whose new block (after a reschedule) was deleted: it goes
+  /// back to Planned with an empty link, through [updateTask] so the normal
+  /// sync trigger queues it. Writes only when the new block's row exists and
+  /// is deleted. A missing row (for example not pulled yet) is left alone; it
+  /// only shows as active (`plan_counting.dart`). Returns whether it wrote.
+  Future<bool> restoreFromMissingSuccessor(String taskId) async {
+    var healed = false;
+    await _db.transaction(() async {
+      final row = await _dao.getTaskById(taskId);
+      final successorId = row?.rescheduledToId;
+      if (row == null ||
+          successorId == null ||
+          row.deletedAt != null ||
+          row.status != TaskStatus.rescheduled.dbValue) {
+        return;
+      }
+      final successor = await _dao.getTaskById(successorId);
+      if (successor == null || successor.deletedAt == null) return;
+      await updateTask(
+        fromRow(row)
+            .copyWith(status: TaskStatus.planned, rescheduledToId: null),
+        allowStatusTransition: true,
+      );
+      healed = true;
+    });
+    return healed;
+  }
+
+  /// [restoreFromMissingSuccessor] for every block rescheduled to
+  /// [successorId]; returns the ids it healed.
+  Future<List<String>> restorePredecessorsOf(String successorId) async {
+    final rows =
+        await (_db.select(_db.tasks)..where(
+              (t) =>
+                  t.rescheduledToId.equals(successorId) &
+                  t.deletedAt.isNull() &
+                  t.status.equals(TaskStatus.rescheduled.dbValue),
+            ))
+            .get();
+    return [
+      for (final row in rows)
+        if (await restoreFromMissingSuccessor(row.id)) row.id,
+    ];
+  }
+
+  /// Heals every live Rescheduled block whose new block is deleted. One
+  /// read-only query; writes nothing when it finds no row. Runs once per
+  /// account load and after a sync cycle, never on a clock tick.
+  Future<List<String>> restoreDanglingReschedules() async {
+    final rows = await _db
+        .customSelect(
+          'SELECT p.id FROM tasks p JOIN tasks s ON s.id = p.rescheduled_to_id '
+          "WHERE p.deleted_at IS NULL AND p.status = 'rescheduled' "
+          'AND s.deleted_at IS NOT NULL',
+          readsFrom: {_db.tasks},
+        )
+        .get();
+    return [
+      for (final row in rows)
+        if (await restoreFromMissingSuccessor(row.read<String>('id')))
+          row.read<String>('id'),
+    ];
   }
 
   Future<Task> restoreTask(Task task) =>
@@ -239,6 +308,18 @@ class TaskRepository {
   Stream<List<Task>> watchTasksForDay(DateTime date) => _dao
       .watchTasksForDay(date)
       .map((rows) => rows.map(TaskRepository.fromRow).toList());
+
+  /// The day's blocks that count in its plan (`plan_counting.dart`): a block
+  /// replaced by its reschedule is history, but one whose new block is gone
+  /// is active again so it can be seen and acted on.
+  Stream<List<Task>> watchActiveTasksForDay(DateTime date) =>
+      _dao.watchTasksForDay(date).asyncMap((rows) async {
+        final live = await _dao.liveSuccessorIds(rows);
+        return [
+          for (final row in rows)
+            if (row.countsAsTask(live)) fromRow(row),
+        ];
+      });
 
   Future<Task?> getTaskById(String taskId) async {
     final row = await _dao.getTaskById(taskId);

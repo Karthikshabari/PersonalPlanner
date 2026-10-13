@@ -3,6 +3,7 @@ import '../../../core/models/day_context.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/utils/planner_time_zone.dart';
+import 'follow_through_target.dart';
 
 /// One half-open calendar range. Insights uses this consistently for planned
 /// overlap, timer allocation, week comparisons, and database reads.
@@ -75,12 +76,16 @@ enum DayResult {
 
 /// The one rule that classifies a day. Returns null while the day is not
 /// decided yet: a future day, or today before it is a Success (today only
-/// becomes Started or Missed once it is over).
+/// becomes Started or Missed once it is over). It compares the same whole
+/// percent the label shows ([ConsistencyDay.followThroughPercent]), so a day
+/// labelled "60%" is a Success at a 60% target.
 DayResult? classifyDay(ConsistencyDay day, {required double target}) {
   if (day.isBreak) return DayResult.breakDay;
   if (day.plannedMinutes <= 0) return DayResult.empty;
   if (day.isFuture) return null;
-  if (day.followThrough! >= target) return DayResult.success;
+  if (day.followThroughPercent! >= followThroughTargetPercent(target)) {
+    return DayResult.success;
+  }
   if (day.isToday) return null;
   return day.completedPlannedMinutes > 0 ? DayResult.started : DayResult.missed;
 }
@@ -122,6 +127,8 @@ class ConsistencyDay {
     return (completedPlannedMinutes / plannedMinutes).clamp(0.0, 1.0);
   }
 
+  /// The whole percent every label shows and [classifyDay] compares; half
+  /// rounds up.
   int? get followThroughPercent =>
       followThrough == null ? null : (followThrough! * 100).round();
 

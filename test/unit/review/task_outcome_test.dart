@@ -24,7 +24,7 @@ void main() {
       (TaskStatus.cancelled, 5, TaskOutcome.partlyDone),
       (TaskStatus.rescheduled, 10, TaskOutcome.partlyDone),
       (TaskStatus.skipped, 0, TaskOutcome.skipped),
-      (TaskStatus.cancelled, 0, TaskOutcome.skipped),
+      (TaskStatus.cancelled, 0, TaskOutcome.cancelled),
       (TaskStatus.rescheduled, 0, TaskOutcome.rescheduled),
       (TaskStatus.planned, 0, TaskOutcome.notStarted),
       (TaskStatus.inProgress, 0, TaskOutcome.notStarted),

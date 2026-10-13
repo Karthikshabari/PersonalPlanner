@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/features/review/domain/task_outcome.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_numbers.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_text.dart';
@@ -32,8 +33,7 @@ void main() {
               'Reviewed 4 days',
               '5 tasks done',
             ],
-            subline:
-                '5 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
+            subline: '5 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
             reasons: [
               'Low energy ×3',
               'Ran out of time ×2',
@@ -53,8 +53,7 @@ void main() {
               'Reviewed 4 days',
               '7 tasks done',
             ],
-            subline:
-                '7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
+            subline: '7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed',
             reasons: ['Low energy ×3', 'Interrupted ×2', 'Blocked ×1'],
             blocker: 'Most common blocker this week: Low energy (3 times).',
             dayTypes: ['Office 3 days 5 of 10', 'Leave 2 days 2 of 4'],
@@ -69,8 +68,7 @@ void main() {
               '3 days above 60%',
               'Every missed task has a reason',
             ],
-            subline:
-                '10 of 14 tasks done · 1 skipped · 1 rescheduled · 1 plan changed',
+            subline: '10 of 14 tasks done · 1 skipped · 1 rescheduled · 1 plan changed',
             reasons: ['Low energy ×2', 'Interrupted ×1'],
             blocker: 'Most common blocker this week: Low energy (2 times).',
             dayTypes: ['Office 3 days 8 of 10', 'Leave 2 days 2 of 4'],
@@ -344,5 +342,44 @@ void main() {
       expect(lastWeekMoodHint(const []), isNull);
       expect(fromLastWeekNote(fixtureHistory()), isNull);
     });
+  });
+
+  test('Cancelled is its own outcome: "1 skipped" and "1 cancelled"', () {
+    final monday = DateTime(2026, 9, 7);
+    WeeklyTaskInput task(String id, TaskOutcome outcome) => WeeklyTaskInput(
+      taskId: id,
+      title: id,
+      outcome: outcome,
+      endTime: monday.add(const Duration(hours: 10)),
+    );
+    final numbers = computeWeeklyNumbers([
+      WeeklyDayInput(
+        date: monday,
+        reviewed: false,
+        tasks: [
+          task('done', TaskOutcome.completed),
+          task('skip', TaskOutcome.skipped),
+          task('cancel', TaskOutcome.cancelled),
+        ],
+      ),
+    ], now: DateTime(2026, 9, 14));
+
+    expect(numbers.total, 3);
+    expect(numbers.completed, 1);
+    expect(numbers.skipped, 1);
+    expect(numbers.cancelled, 1);
+    expect(
+      numbers.glanceSubline,
+      '1 of 3 tasks done · 1 skipped · 1 cancelled',
+    );
+    expect(numbers.outcomeRows.map((row) => row.outcome), [
+      TaskOutcome.skipped,
+      TaskOutcome.cancelled,
+    ]);
+    expect(
+      resolveTaskOutcome(TaskStatus.cancelled, trackedMinutes: 0),
+      TaskOutcome.cancelled,
+    );
+    expect(TaskOutcome.cancelled.label, 'Cancelled');
   });
 }

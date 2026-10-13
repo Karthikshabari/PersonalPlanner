@@ -33,11 +33,17 @@ class RecurrenceAggregateSnapshot {
   }) async {
     final rule = await db.recurringRuleDao.getRuleById(ruleId);
     if (rule == null) return null;
+    // Also the blocks rescheduled into the series: deleting an occurrence
+    // heals them (Planned again), so Undo restores their link as well.
+    final seriesIds = db.selectOnly(db.tasks)
+      ..addColumns([db.tasks.id])
+      ..where(db.tasks.recurringRuleId.equals(ruleId));
     final tasks =
         await (db.select(db.tasks)..where(
               (task) =>
                   task.recurringRuleId.equals(ruleId) |
-                  task.id.isIn(extraTaskIds),
+                  task.id.isIn(extraTaskIds) |
+                  task.rescheduledToId.isInQuery(seriesIds),
             ))
             .get();
     final taskIds = tasks.map((task) => task.id).toSet();

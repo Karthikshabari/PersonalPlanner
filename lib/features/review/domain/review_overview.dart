@@ -5,6 +5,7 @@ import '../../../core/database/app_database.dart';
 import '../../../core/models/daily_review.dart';
 import '../../../core/models/day_context.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/models/plan_counting.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../day_context/data/day_context_repository.dart';
 import '../../day_context/domain/break_day.dart';
@@ -77,6 +78,13 @@ class ReviewOverviewService {
     for (final row in tasks) {
       final start = row.start;
       if (start.isBefore(oldest) || !start.isBefore(end)) continue;
+      if (!countsAsPlannedTask(
+        TaskStatus.fromDb(row.status),
+        row.rescheduledToId,
+        successorLive: row.successorLive,
+      )) {
+        continue;
+      }
       final key = isoDateString(start);
       totals[key] = (totals[key] ?? 0) + 1;
       if (row.status == TaskStatus.completed.dbValue) {

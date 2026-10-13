@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/models/enums/task_status.dart';
+import '../../../../core/models/plan_counting.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/utils/date_utils.dart';
@@ -13,19 +13,21 @@ final dayTasksProvider = StreamProvider.autoDispose<List<Task>>((ref) {
 });
 
 /// The active calendar projection used by timeline surfaces. A rescheduled
-/// predecessor remains in the repository as durable history, but its linked
-/// successor is the only active block that should occupy the calendar.
-bool isActiveTimelineTask(Task task) =>
-    !(task.status == TaskStatus.rescheduled && task.rescheduledToId != null);
+/// predecessor remains in the repository as durable history, but while its
+/// successor exists that successor is the only active block that should
+/// occupy the calendar (`TaskRepository.watchActiveTasksForDay`, which applies
+/// the same rule to rows; [liveSuccessors] comes from
+/// `TaskDao.liveSuccessorIds`).
+bool isActiveTimelineTask(Task task, Set<String> liveSuccessors) =>
+    countsAsPlannedTask(
+      task.status,
+      task.rescheduledToId,
+      successorLive: liveSuccessors.contains(task.rescheduledToId),
+    );
 
 final activeDayTasksProvider = StreamProvider.autoDispose<List<Task>>((ref) {
   final date = ref.watch(selectedDateProvider);
-  return ref
-      .watch(taskRepositoryProvider)
-      .watchTasksForDay(date)
-      .map(
-        (tasks) => tasks.where(isActiveTimelineTask).toList(growable: false),
-      );
+  return ref.watch(taskRepositoryProvider).watchActiveTasksForDay(date);
 });
 
 /// Tasks for an explicit date, independent of [selectedDateProvider] — used
@@ -42,9 +44,5 @@ final activeDayTasksForDateProvider = StreamProvider.autoDispose
       final normalized = startOfDay(date);
       return ref
           .watch(taskRepositoryProvider)
-          .watchTasksForDay(normalized)
-          .map(
-            (tasks) =>
-                tasks.where(isActiveTimelineTask).toList(growable: false),
-          );
+          .watchActiveTasksForDay(normalized);
     });

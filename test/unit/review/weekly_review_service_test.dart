@@ -122,7 +122,7 @@ void main() {
     expect(days.first.tasks.map((t) => t.title), ['Done', 'Skipped one']);
     expect(days.first.tasks.last.reason, 'Lower priority');
     expect(days[1].reviewed, isFalse);
-    expect(days[1].tasks.first.outcome, TaskOutcome.skipped);
+    expect(days[1].tasks.first.outcome, TaskOutcome.cancelled);
     expect(days[1].tasks.last.planChange!.oldValue, 'Old title');
 
     final numbers = computeWeeklyNumbers(days);

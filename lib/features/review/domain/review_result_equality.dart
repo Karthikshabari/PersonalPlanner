@@ -61,6 +61,7 @@ bool _sameOutcomeRow(TaskOutcomeRow a, TaskOutcomeRow b) =>
     a.trackedMinutes == b.trackedMinutes &&
     a.outcome == b.outcome &&
     a.fromInbox == b.fromInbox &&
+    a.move == b.move &&
     _samePlanChange(a.planChange, b.planChange);
 
 bool _sameWeeklyTask(WeeklyTaskInput a, WeeklyTaskInput b) =>
@@ -69,6 +70,8 @@ bool _sameWeeklyTask(WeeklyTaskInput a, WeeklyTaskInput b) =>
     a.title == b.title &&
     a.outcome == b.outcome &&
     a.reason == b.reason &&
+    a.counted == b.counted &&
+    a.move == b.move &&
     _samePlanChange(a.planChange, b.planChange);
 
 bool _sameWeeklyDay(WeeklyDayInput a, WeeklyDayInput b) =>

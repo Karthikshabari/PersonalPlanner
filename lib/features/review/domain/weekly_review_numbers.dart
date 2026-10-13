@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 
+import 'reschedule_chain.dart';
 import 'review_mood.dart';
 import 'review_plan_change.dart';
 import 'task_outcome.dart';
@@ -14,11 +15,20 @@ class WeeklyTaskInput {
     this.endTime,
     this.reason,
     this.planChange,
+    this.counted = true,
+    this.move,
   });
 
   final String taskId;
   final String title;
   final TaskOutcome outcome;
+
+  /// False for a block replaced by its reschedule (`plan_counting.dart`): it
+  /// still shows as a Rescheduled outcome but is not one of the week's tasks.
+  final bool counted;
+
+  /// Where a Rescheduled block's task is planned now; display only.
+  final RescheduleMove? move;
 
   /// Scheduled end; reasons are only asked for once it has passed.
   final DateTime? endTime;
@@ -82,7 +92,7 @@ class WeeklyDayStats {
   int? get percent => completionPercent(completed, total);
 }
 
-/// A Skipped or Rescheduled task of the week (WD5). Its plan change, if any,
+/// A Skipped, Cancelled or Rescheduled task of the week (WD5). Its plan change, if any,
 /// is part of the same row.
 class WeeklyOutcomeRow {
   const WeeklyOutcomeRow({
@@ -93,6 +103,7 @@ class WeeklyOutcomeRow {
     required this.dayReviewed,
     this.reason,
     this.planChange,
+    this.move,
   });
 
   final DateTime date;
@@ -102,6 +113,7 @@ class WeeklyOutcomeRow {
   final bool dayReviewed;
   final String? reason;
   final ReviewPlanChange? planChange;
+  final RescheduleMove? move;
 }
 
 class WeeklyReasonCount {
@@ -132,11 +144,13 @@ class WeeklyNumbers {
     required this.total,
     required this.completed,
     required this.skipped,
+    this.cancelled = 0,
     required this.rescheduled,
     required this.planChanged,
     required this.outcomeRows,
     required this.reasonCounts,
     required this.noReasonCount,
+    this.notEndedCount = 0,
     required this.dayTypes,
     required this.highlights,
   });
@@ -145,6 +159,7 @@ class WeeklyNumbers {
   final int total;
   final int completed;
   final int skipped;
+  final int cancelled;
   final int rescheduled;
   final int planChanged;
   final List<WeeklyOutcomeRow> outcomeRows;
@@ -154,6 +169,9 @@ class WeeklyNumbers {
 
   /// Ended, not-completed tasks without a reason (any day).
   final int noReasonCount;
+
+  /// Counted, not-completed tasks whose block has not ended yet.
+  final int notEndedCount;
   final List<WeeklyDayType> dayTypes;
 
   /// At most three, in priority order (spec 3.9).
@@ -172,10 +190,12 @@ class WeeklyNumbers {
   /// Tasks that are not completed (any outcome but Completed).
   bool get hasMissedTasks => reasonCounts.isNotEmpty || noReasonCount > 0;
 
-  /// `7 of 14 tasks done · 2 skipped · 3 rescheduled · 1 plan changed`.
+  /// `7 of 14 tasks done · 2 skipped · 1 cancelled · 3 rescheduled · 1 plan
+  /// changed`.
   String get glanceSubline => [
     '$completed of $total tasks done',
     if (skipped > 0) '$skipped skipped',
+    if (cancelled > 0) '$cancelled cancelled',
     if (rescheduled > 0) '$rescheduled rescheduled',
     if (planChanged > 0) '$planChanged plan changed',
   ].join(' · ');
@@ -202,9 +222,11 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
   var total = 0;
   var completed = 0;
   var skipped = 0;
+  var cancelled = 0;
   var rescheduled = 0;
   var planChanged = 0;
   var noReason = 0;
+  var notEnded = 0;
   var missedOnReviewedDays = 0;
   var missedOnReviewedDaysWithReason = 0;
 
@@ -224,8 +246,12 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
       continue;
     }
     var dayCompleted = 0;
+    var dayTotal = 0;
     for (final task in day.tasks) {
-      total++;
+      if (task.counted) {
+        total++;
+        dayTotal++;
+      }
       if (task.planChange != null) planChanged++;
       if (task.outcome == TaskOutcome.completed) {
         completed++;
@@ -233,9 +259,12 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
         continue;
       }
       if (task.outcome == TaskOutcome.skipped) skipped++;
+      if (task.outcome == TaskOutcome.cancelled) cancelled++;
       if (task.outcome == TaskOutcome.rescheduled) rescheduled++;
       final reason = task.reason;
-      if (awaitsReason(task.outcome, task.endTime, now: at)) {
+      final ended = awaitsReason(task.outcome, task.endTime, now: at);
+      if (!ended && task.counted) notEnded++;
+      if (ended) {
         if (reason == null) {
           noReason++;
         } else {
@@ -248,6 +277,7 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
         }
       }
       if (task.outcome == TaskOutcome.skipped ||
+          task.outcome == TaskOutcome.cancelled ||
           task.outcome == TaskOutcome.rescheduled) {
         outcomeRows.add(
           WeeklyOutcomeRow(
@@ -258,13 +288,14 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
             dayReviewed: day.reviewed,
             reason: reason,
             planChange: task.planChange,
+            move: task.move,
           ),
         );
       }
     }
     final dayStats = WeeklyDayStats(
       date: day.date,
-      total: day.tasks.length,
+      total: dayTotal,
       completed: dayCompleted,
       reviewed: day.reviewed,
       mood: day.mood,
@@ -321,11 +352,13 @@ WeeklyNumbers computeWeeklyNumbers(List<WeeklyDayInput> days, {DateTime? now}) {
     total: total,
     completed: completed,
     skipped: skipped,
+    cancelled: cancelled,
     rescheduled: rescheduled,
     planChanged: planChanged,
     outcomeRows: List.unmodifiable(outcomeRows),
     reasonCounts: List.unmodifiable(reasonCounts),
     noReasonCount: noReason,
+    notEndedCount: notEnded,
     dayTypes: List.unmodifiable(dayTypes.values),
     highlights: List.unmodifiable(highlights.take(3)),
   );

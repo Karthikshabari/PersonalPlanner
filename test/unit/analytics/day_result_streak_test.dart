@@ -52,6 +52,21 @@ void main() {
       expect(classifyDay(day(0, 0, future: true), target: target), isNull);
     });
 
+    test('the shown whole percent decides the result', () {
+      // 280 of 470 is 59.57%, shown as 60%: a Success at a 60% target.
+      final shown60 = day(0, 280, planned: 470);
+      expect(shown60.followThroughPercent, 60);
+      expect(classifyDay(shown60, target: 0.6), DayResult.success);
+      // 297 of 500 is 59.4%, shown as 59%: Started, since something was done.
+      final shown59 = day(0, 297, planned: 500);
+      expect(shown59.followThroughPercent, 59);
+      expect(classifyDay(shown59, target: 0.6), DayResult.started);
+      // Exactly half a point rounds up: 119 of 200 is 59.5%, shown as 60%.
+      final half = day(0, 119, planned: 200);
+      expect(half.followThroughPercent, 60);
+      expect(classifyDay(half, target: 0.6), DayResult.success);
+    });
+
     test('the default target is 60%', () {
       expect(defaultFollowThroughTarget, 0.6);
       expect(decodeFollowThroughTarget(null), 0.6);

@@ -52,7 +52,16 @@ class _WeeklyReasonsCardState extends State<WeeklyReasonsCard> {
           else if (numbers.total == 0)
             Text('No tasks this week.', style: muted)
           else if (!numbers.hasMissedTasks)
-            Text('Nothing to show. Everything planned got done.', style: muted)
+            // P-5: "got done" only when every counted task is done; "yet"
+            // only while an unfinished block has not ended.
+            Text(
+              numbers.completed == numbers.total
+                  ? 'Nothing to show. Everything planned got done.'
+                  : numbers.notEndedCount > 0
+                  ? 'Nothing to explain yet.'
+                  : 'Nothing to explain.',
+              style: muted,
+            )
           else ...[
             ...() {
               final bars = <Widget>[
