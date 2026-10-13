@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions, pg_temp;
 
-select plan(71);
+select plan(182);
 
 -- Test-only users, rolled back with the transaction.
 insert into auth.users (
@@ -240,15 +240,136 @@ select is(
 select is(
   public.planner_inbox_history_valid(
     '[{"kind":"let_go","at":"2026-10-12T11:30:00+02:00"}]'),
-  true,
-  'an instant with a numeric offset is valid'
+  false,
+  'an instant with a numeric offset is refused (UTC with Z only)'
 );
 select is(
   public.planner_inbox_history_valid(
-    '[{"kind":"let_go","at":"2026-10-12T09:30:00.123456Z","reopened_at":"2026-10-12T16:30:00+0530"}]'),
+    '[{"kind":"let_go","at":"2026-10-12T09:30:00.123456Z","reopened_at":"2026-10-12T16:30:00.5Z"}]'),
   true,
-  'fractional seconds with Z, and a compact offset, are valid'
+  'fractional seconds with Z are valid'
 );
+
+-- The shared table: the same cases, in the same order, drive the client tests
+-- (test/fixtures/inbox_history_cases.json); test/unit/sync/
+-- sql_migration_contract_test.dart fails if this list and the file differ.
+-- Whitespace characters are written as JSON escapes inside the text.
+select * from (
+  select is(public.planner_inbox_history_valid(c.history), c.expected, c.name)
+  from (values
+    ('an empty history is valid', $j$[]$j$, true),
+    ('an object is not a history', $j${}$j$, false),
+    ('a string is not a history', $j$"nope"$j$, false),
+    ('the documented closed event is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere"}]$j$, true),
+    ('an unknown event key is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere","extra":1}]$j$, false),
+    ('a let go event without a reason is valid', $j$[{"kind":"let_go","at":"2026-10-12T09:30:00.000Z"}]$j$, true),
+    ('an experiment event with an id and no reason is valid', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"experiment:t"}]$j$, true),
+    ('an experiment event with a reason is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","reason":"why","experiment_id":"experiment:t"}]$j$, false),
+    ('a closed event without a reason is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z"}]$j$, false),
+    ('an experiment id on a closed event is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere","experiment_id":"experiment:t"}]$j$, false),
+    ('an experiment id on a let go event is refused', $j$[{"kind":"let_go","at":"2026-10-12T09:30:00.000Z","experiment_id":"experiment:t"}]$j$, false),
+    ('an unknown kind is refused', $j$[{"kind":"paused","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a reopened event is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere","reopened_at":"2026-10-13T09:30:00.000Z"}]$j$, true),
+    ('events out of order are refused', $j$[{"kind":"closed","at":"2026-10-13T09:30:00.000Z","reason":"Bought it elsewhere","reopened_at":"2026-10-13T10:30:00.000Z"},{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('reopened before closed is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere","reopened_at":"2026-10-12T08:30:00.000Z"}]$j$, false),
+    ('only the last event may still be closed', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere"},{"kind":"closed","at":"2026-10-13T09:30:00.000Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('fractional seconds with Z are valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.123456Z","reason":"Bought it elsewhere"}]$j$, true),
+    ('no fractional seconds with Z are valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00Z","reason":"Bought it elsewhere"}]$j$, true),
+    ('a reopened instant with Z is valid', $j$[{"kind":"let_go","at":"2026-10-12T09:30:00.000Z","reopened_at":"2026-10-12T16:30:00Z"}]$j$, true),
+    ('an offset of plus 05:30 is refused', $j$[{"kind":"closed","at":"2026-10-12T15:00:00+05:30","reason":"Bought it elsewhere"}]$j$, false),
+    ('an offset of plus 02:00 is refused', $j$[{"kind":"closed","at":"2026-10-12T11:30:00+02:00","reason":"Bought it elsewhere"}]$j$, false),
+    ('a compact offset is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00+0530","reason":"Bought it elsewhere"}]$j$, false),
+    ('an hour only offset is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00+02","reason":"Bought it elsewhere"}]$j$, false),
+    ('a negative offset is refused', $j$[{"kind":"closed","at":"2026-10-12T01:30:00-08:00","reason":"Bought it elsewhere"}]$j$, false),
+    ('a reopened instant with an offset is refused', $j$[{"kind":"let_go","at":"2026-10-12T09:30:00.000Z","reopened_at":"2026-10-12T16:30:00+05:30"}]$j$, false),
+    ('a space instead of T is refused', $j$[{"kind":"closed","at":"2026-10-12 09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a comma before the fraction is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00,5Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a missing seconds field is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a time of the hour only is refused', $j$[{"kind":"closed","at":"2026-10-12T09Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a lower case z is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a lower case t is refused', $j$[{"kind":"closed","at":"2026-10-12t09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('an instant with no zone is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00","reason":"Bought it elsewhere"}]$j$, false),
+    ('a basic format instant is refused', $j$[{"kind":"closed","at":"20261012T093000Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a date only instant is refused', $j$[{"kind":"closed","at":"2026-10-12","reason":"Bought it elsewhere"}]$j$, false),
+    ('the word now is refused', $j$[{"kind":"closed","at":"now","reason":"Bought it elsewhere"}]$j$, false),
+    ('a fraction with no digits is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('trailing text after Z is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00Z ","reason":"Bought it elsewhere"}]$j$, false),
+    ('a trailing newline after Z is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00Z\n","reason":"Bought it elsewhere"}]$j$, false),
+    ('February 30 is refused', $j$[{"kind":"closed","at":"2026-02-30T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('February 29 in a leap year is valid', $j$[{"kind":"closed","at":"2024-02-29T09:30:00Z","reason":"Bought it elsewhere"}]$j$, true),
+    ('February 29 in a common year is refused', $j$[{"kind":"closed","at":"2026-02-29T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('April 31 is refused', $j$[{"kind":"closed","at":"2026-04-31T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('month 13 is refused', $j$[{"kind":"closed","at":"2026-13-01T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('month 00 is refused', $j$[{"kind":"closed","at":"2026-00-10T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('day 00 is refused', $j$[{"kind":"closed","at":"2026-10-00T09:30:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('hour 24 is refused', $j$[{"kind":"closed","at":"2026-10-12T24:00:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('hour 25 is refused', $j$[{"kind":"closed","at":"2026-10-12T25:00:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('minute 60 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:60:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('second 60 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:60Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('year 0000 is refused', $j$[{"kind":"closed","at":"0000-01-01T00:00:00Z","reason":"Bought it elsewhere"}]$j$, false),
+    ('a plain reason is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"Bought it elsewhere"}]$j$, true),
+    ('an empty reason is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":""}]$j$, false),
+    ('a reason with inner whitespace is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"a b\tc\nd"}]$j$, true),
+    ('a reason with a leading space is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":" lamp"}]$j$, false),
+    ('a reason with a trailing space is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp "}]$j$, false),
+    ('a reason with a leading tab is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\tlamp"}]$j$, false),
+    ('a reason with a trailing newline is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\n"}]$j$, false),
+    ('a reason with a leading U+2003 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2003lamp"}]$j$, false),
+    ('a reason with a trailing U+2003 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\u2003"}]$j$, false),
+    ('a reason with a trailing U+3000 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\u3000"}]$j$, false),
+    ('a reason with a trailing U+FEFF is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\ufeff"}]$j$, false),
+    ('a reason with a trailing U+200B is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\u200b"}]$j$, true),
+    ('a reason with a trailing U+180E is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"lamp\u180e"}]$j$, true),
+    ('a reason with a NUL character is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"a\u0000b"}]$j$, false),
+    ('a reason of only U+0009 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\t"}]$j$, false),
+    ('a reason of only U+000A is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\n"}]$j$, false),
+    ('a reason of only U+000B is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u000b"}]$j$, false),
+    ('a reason of only U+000C is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\f"}]$j$, false),
+    ('a reason of only U+000D is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\r"}]$j$, false),
+    ('a reason of only U+0020 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":" "}]$j$, false),
+    ('a reason of only U+0085 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u0085"}]$j$, false),
+    ('a reason of only U+00A0 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u00a0"}]$j$, false),
+    ('a reason of only U+1680 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u1680"}]$j$, false),
+    ('a reason of only U+2000 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2000"}]$j$, false),
+    ('a reason of only U+2001 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2001"}]$j$, false),
+    ('a reason of only U+2002 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2002"}]$j$, false),
+    ('a reason of only U+2003 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2003"}]$j$, false),
+    ('a reason of only U+2004 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2004"}]$j$, false),
+    ('a reason of only U+2005 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2005"}]$j$, false),
+    ('a reason of only U+2006 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2006"}]$j$, false),
+    ('a reason of only U+2007 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2007"}]$j$, false),
+    ('a reason of only U+2008 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2008"}]$j$, false),
+    ('a reason of only U+2009 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2009"}]$j$, false),
+    ('a reason of only U+200A is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u200a"}]$j$, false),
+    ('a reason of only U+2028 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2028"}]$j$, false),
+    ('a reason of only U+2029 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2029"}]$j$, false),
+    ('a reason of only U+202F is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u202f"}]$j$, false),
+    ('a reason of only U+205F is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u205f"}]$j$, false),
+    ('a reason of only U+3000 is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u3000"}]$j$, false),
+    ('a reason of only U+FEFF is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\ufeff"}]$j$, false),
+    ('a reason of two spaces and a tab is refused', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"  \t"}]$j$, false),
+    ('a reason of only U+0008 is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\b"}]$j$, true),
+    ('a reason of only U+001C is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u001c"}]$j$, true),
+    ('a reason of only U+001F is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u001f"}]$j$, true),
+    ('a reason of only U+007F is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u007f"}]$j$, true),
+    ('a reason of only U+0086 is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u0086"}]$j$, true),
+    ('a reason of only U+180E is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u180e"}]$j$, true),
+    ('a reason of only U+200B is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u200b"}]$j$, true),
+    ('a reason of only U+2060 is valid', $j$[{"kind":"closed","at":"2026-10-12T09:30:00.000Z","reason":"\u2060"}]$j$, true),
+    ('an experiment id of experiment colon t is valid', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"experiment:t"}]$j$, true),
+    ('an empty experiment id is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":""}]$j$, false),
+    ('a missing experiment id is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z"}]$j$, false),
+    ('an experiment id of only U+0020 is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":" "}]$j$, false),
+    ('an experiment id of only U+0009 is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\t"}]$j$, false),
+    ('an experiment id of only U+000A is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\n"}]$j$, false),
+    ('an experiment id of only U+00A0 is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\u00a0"}]$j$, false),
+    ('an experiment id of only U+2003 is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\u2003"}]$j$, false),
+    ('an experiment id of only U+3000 is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\u3000"}]$j$, false),
+    ('an experiment id of only U+FEFF is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\ufeff"}]$j$, false),
+    ('an experiment id of only U+200B is valid', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"\u200b"}]$j$, true),
+    ('an experiment id with a NUL character is refused', $j$[{"kind":"experiment","at":"2026-10-12T09:30:00.000Z","experiment_id":"experiment:\u0000"}]$j$, false)
+  ) as c(name, history, expected)
+) as shared_history_cases;
 
 -- As A: the flow through the v2 entry point.
 select set_config('request.jwt.claims',
@@ -389,17 +510,20 @@ select is(
   'the session can be linked again'
 );
 
--- An instant with a numeric offset is accepted: the server is lenient about
--- the offset, the app writes Z.
-select is(
-  public.apply_sync_operation_v2(
-    'f0000000-0000-4000-8000-000000000020', 'tasks', 'inbox-idea-1', 'update',
-    (select server_version from public.tasks where id = 'inbox-idea-1'),
-    pg_temp.idea_payload('inbox-idea-1', 'Learn C (edited)',
-      '[{"kind":"let_go","at":"2026-10-12T11:30:00+02:00"}]'),
-    2)->>'status',
-  'applied',
-  'an event time with a numeric offset is applied'
+-- An instant with a numeric offset is refused: the canonical form is UTC with
+-- a trailing Z, on the server and in the app alike.
+select throws_ok(
+  $$
+    select public.apply_sync_operation_v2(
+      'f0000000-0000-4000-8000-000000000020', 'tasks', 'inbox-idea-1', 'update',
+      (select server_version from public.tasks where id = 'inbox-idea-1'),
+      pg_temp.idea_payload('inbox-idea-1', 'Learn C (edited)',
+        '[{"kind":"let_go","at":"2026-10-12T11:30:00+02:00"}]'),
+      2)
+  $$,
+  '22023',
+  'Invalid inbox payload',
+  'an event time with a numeric offset is rejected'
 );
 
 -- A history of exactly 100 events is accepted.

@@ -58,16 +58,17 @@ create index if not exists tasks_user_inbox_item_idx
   on public.tasks(user_id, inbox_item_id)
   where inbox_item_id is not null;
 
--- The same rules as InboxHistory.validate in the app: at most 100 events with
--- only the five known keys; kind closed / let_go / experiment; ordered UTC
--- instants; reopened_at not before at and present on every event but the
--- last; reason null or 1-200 characters (required for closed, absent for
--- experiment); experiment_id present only for an experiment. A time must look
--- like an ISO-8601 instant (date, T, time with optional fractional seconds,
--- then Z or a numeric offset) before it is cast: timestamptz input also
--- accepts words such as now, today, tomorrow, yesterday, epoch and infinity,
--- and date-only text, none of which is a recorded instant. Any offset is
--- accepted; the app writes Z.
+-- The same rules as InboxHistory.validate in the app, and the same accepted
+-- set: at most 100 events with only the five known keys; kind closed / let_go
+-- / experiment; ordered UTC instants; reopened_at not before at and present on
+-- every event but the last; reason null or already-trimmed, non-blank text of
+-- 1-200 characters (required for closed, absent for experiment);
+-- experiment_id non-blank (same test) and present only for an experiment. A
+-- time must be exactly yyyy-MM-ddTHH:mm:ss[.fraction]Z (no offset, no space,
+-- no reduced form) before it is cast: timestamptz input also accepts words
+-- such as now, today, tomorrow, yesterday, epoch and infinity, date-only text
+-- and offsets, none of which is the recorded instant. "Whitespace" is the
+-- explicit set below, the same one Dart's String.trim strips.
 create or replace function public.planner_inbox_history_valid(p_history text)
 returns boolean
 language plpgsql
@@ -84,10 +85,27 @@ declare
   at_value timestamptz;
   reopened timestamptz;
   previous_at timestamptz;
+  stripped text;
+  whitespace_class text;
+  trim_pattern text;
+  -- The only accepted instant: UTC with a trailing Z, ranges checked here;
+  -- a day that does not exist in its month fails the cast below. This is the
+  -- same set the client accepts (InboxHistory._instantPattern).
   instant_pattern constant text :=
-    '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?(Z|[+-][0-9]{2}(:?[0-9]{2})?)$';
+    '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]+)?Z$';
 begin
   if p_history is null then return false; end if;
+  -- Whitespace is spelled out, not \s or btrim (which depend on locale or
+  -- strip spaces only): exactly Dart's String.trim set, U+0009 to U+000D,
+  -- U+0020, U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029,
+  -- U+202F, U+205F, U+3000 and U+FEFF.
+  whitespace_class := '[' || (
+    select string_agg(chr(w.code), '')
+    from unnest(array[9, 10, 11, 12, 13, 32, 133, 160, 5760,
+      8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+      8232, 8233, 8239, 8287, 12288, 65279]) as w(code)
+  ) || ']';
+  trim_pattern := '^' || whitespace_class || '+|' || whitespace_class || '+$';
   begin
     doc := p_history::jsonb;
   exception when others then
@@ -128,13 +146,18 @@ begin
     if reopened is not null and reopened < at_value then return false; end if;
     if event_index < total and reopened is null then return false; end if;
     event_reason := entry->>'reason';
-    if event_reason is not null
-       and (char_length(btrim(event_reason)) = 0 or char_length(event_reason) > 200) then
-      return false;
+    if event_reason is not null then
+      -- Already trimmed and not blank: stripping changes nothing and leaves
+      -- something behind.
+      stripped := regexp_replace(event_reason, trim_pattern, '', 'g');
+      if stripped = '' or stripped <> event_reason or char_length(event_reason) > 200 then
+        return false;
+      end if;
     end if;
     if event_kind = 'closed' and event_reason is null then return false; end if;
     if event_kind = 'experiment' then
-      if event_reason is not null or coalesce(btrim(entry->>'experiment_id'), '') = '' then
+      if event_reason is not null
+         or regexp_replace(coalesce(entry->>'experiment_id', ''), trim_pattern, '', 'g') = '' then
         return false;
       end if;
     elsif entry->>'experiment_id' is not null then

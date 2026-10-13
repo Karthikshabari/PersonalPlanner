@@ -745,6 +745,23 @@ void main() {
       },
     );
 
+    test('clock skew: close and bring back succeed when this clock is behind '
+        'the last event', () async {
+      final idea = await h.idea('Skewed idea');
+      final ahead = h.now.add(const Duration(days: 10));
+      await h.inbox.letGo(idea.id, 'Device A closed it', ahead);
+      // This device's clock (h.now) is behind the event device A wrote.
+      await h.inbox.bringBack(idea.id, h.now);
+      var history = (await h.reload(idea.id)).inboxHistory;
+      expect(history.single.reopenedAt, sameInstant(ahead.toUtc()));
+
+      await h.inbox.closeItem(idea.id, 'Closed on the slow clock', h.now);
+      history = (await h.reload(idea.id)).inboxHistory;
+      expect(history, hasLength(2));
+      expect(history.last.at.isBefore(history.first.at), isFalse);
+      expect(InboxHistory.isClosed(history), isTrue);
+    });
+
     test(
       'bring back: sets reopened_at, keeps the event, sessions untouched',
       () async {

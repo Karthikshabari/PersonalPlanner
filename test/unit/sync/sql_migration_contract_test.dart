@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -716,6 +717,12 @@ void main() {
       expect(helper, contains('instant_pattern constant text'));
     });
 
+    // The cases that drive both `planner_inbox_history_valid` (pgTAP) and
+    // InboxHistory (inbox_history_test.dart).
+    List<Map<String, dynamic>> fixtureCases() => (jsonDecode(
+      File('test/fixtures/inbox_history_cases.json').readAsStringSync(),
+    ) as List).cast<Map<String, dynamic>>();
+
     test('the pgTAP plan matches the number of assertions', () {
       final test = File('supabase/tests/database/inbox_sessions_test.sql')
           .readAsStringSync();
@@ -725,7 +732,58 @@ void main() {
         r'^select (?:is|ok|throws_ok|has_column)\(',
         multiLine: true,
       ).allMatches(test).length;
-      expect(int.parse(planned!.group(1)!), assertions);
+      // The shared table is one statement that runs one assertion per case.
+      expect(int.parse(planned!.group(1)!), assertions + fixtureCases().length);
+    });
+
+    test('the pgTAP shared cases are exactly the client fixture', () {
+      final test = File('supabase/tests/database/inbox_sessions_test.sql')
+          .readAsStringSync();
+      final rows = RegExp(
+        r"^    \('([^']*)', \$j\$(.*?)\$j\$, (true|false)\)",
+        multiLine: true,
+      ).allMatches(test).toList();
+      final fixture = fixtureCases();
+      expect(rows.length, fixture.length);
+      for (var i = 0; i < fixture.length; i++) {
+        final row = rows[i];
+        expect(row.group(1), fixture[i]['name'], reason: 'case $i name');
+        expect(
+          jsonEncode(jsonDecode(row.group(2)!)),
+          jsonEncode(fixture[i]['history']),
+          reason: fixture[i]['name'] as String,
+        );
+        expect(
+          row.group(3) == 'true',
+          fixture[i]['valid'],
+          reason: fixture[i]['name'] as String,
+        );
+      }
+    });
+
+    test('the history validator spells out its whitespace and instants', () {
+      final start = sql.indexOf(
+        'create or replace function public.planner_inbox_history_valid(',
+      );
+      final end = sql.indexOf(r'$$;', sql.indexOf(r'as $$', start));
+      final helper = sql.substring(start, end);
+      // Dart's String.trim set, in code points: U+0009 to U+000D, U+0020,
+      // U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F,
+      // U+205F, U+3000, U+FEFF.
+      expect(
+        helper,
+        contains(
+          'array[9, 10, 11, 12, 13, 32, 133, 160, 5760,\n'
+          '      8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,\n'
+          '      8232, 8233, 8239, 8287, 12288, 65279]',
+        ),
+      );
+      // Neither a locale class nor btrim decides what is blank.
+      expect(helper, isNot(contains('btrim(')));
+      expect(helper, isNot(contains(r"'\s'")));
+      // Z only; no numeric offset alternative.
+      expect(helper, contains(r"([.][0-9]+)?Z$'"));
+      expect(helper, isNot(contains('[+-]')));
     });
   });
 }

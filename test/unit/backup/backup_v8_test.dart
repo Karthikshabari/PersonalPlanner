@@ -264,6 +264,38 @@ void main() {
     },
   );
 
+  test(
+    'M1: history on a row that is not an Inbox idea is accepted and kept',
+    () async {
+      // An older build converted an idea in place; the stored history stays on
+      // the Day block (plan 4.1: sync and backup rows are checked for shape).
+      final document = await exported();
+      final history = [
+        {
+          'kind': 'closed',
+          'at': '2026-10-12T09:30:00.000Z',
+          'reason': 'Not needed',
+          'experiment_id': null,
+          'reopened_at': '2026-10-13T09:30:00.000Z',
+        },
+      ];
+      taskRow(dataOf(document), sessionId)['inbox_history'] = history;
+      final target = AppDatabase(NativeDatabase.memory());
+      addTearDown(target.close);
+
+      final result = await BackupService(target)
+          .importJson(reseal(document), ownershipConfirmed: true);
+
+      expect(result.conflicts, isEmpty);
+      final row = await target.taskDao.getTaskById(sessionId);
+      expect(row!.isInbox, isFalse);
+      expect(
+        TaskRepository.fromRow(row).inboxHistory.single.reason,
+        'Not needed',
+      );
+    },
+  );
+
   group('invalid rows are rejected before any write', () {
     Future<void> expectRejected(
       void Function(Map<String, dynamic> data) mutate,
@@ -320,9 +352,19 @@ void main() {
       );
     });
 
-    test('history on a row that is not an Inbox idea', () async {
+    // Changed with M1: well-formed history on a row that is not an Inbox idea
+    // is no longer refused (see the test above this group). Its shape is still
+    // checked.
+    test('malformed history on a row that is not an Inbox idea', () async {
       await expectRejected(
-        (data) => taskRow(data, sessionId)['inbox_history'] = [event()],
+        (data) => taskRow(data, sessionId)['inbox_history'] = [
+          event(extra: {'note': 'x'}),
+        ],
+      );
+      await expectRejected(
+        (data) => taskRow(data, sessionId)['inbox_history'] = [
+          event(reason: '  padded  '),
+        ],
       );
     });
 

@@ -85,7 +85,7 @@ export const MIGRATIONS = [
   {
     name: "20261012000000_inbox_sessions",
     query: inboxSessions,
-    sha256: "8d119361967bb687bdc6a7603b5e46d2cf17b1568033e1f6bc1b657937fa33e3",
+    sha256: "03f1d94d20d012013666915d46ea1c264ccd228a5d03540d71fee8eb1d11342a",
   },
 ] as const;
 

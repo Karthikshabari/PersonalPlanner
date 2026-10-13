@@ -6,6 +6,7 @@ import '../../../core/database/daos/task_dao.dart';
 import '../../../core/models/enums/priority.dart';
 import '../../../core/models/enums/recurrence_removal_reason.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/models/inbox_closure.dart';
 import '../../../core/models/task.dart';
 import '../../../core/utils/acyclic_links.dart';
 import '../../../core/utils/date_utils.dart';
@@ -61,6 +62,7 @@ class TaskRepository {
           : null,
     );
     _validate(effective);
+    _validateInboxPairing(effective);
     await _db.transaction(() async {
       await _validateHistoryLinks(effective);
       await _validateTagExists(effective);
@@ -124,6 +126,13 @@ class TaskRepository {
       }
       await _validateHistoryLinks(canonical, previous: row);
       await _validateTagExists(canonical);
+      if (canonical.inboxItemId != current.inboxItemId ||
+          !_sameInboxHistory(
+            canonical.inboxHistory,
+            InboxHistory.decodeJson(current.inboxHistoryJson),
+          )) {
+        _validateInboxPairing(canonical);
+      }
       if (canonical.inboxItemId != current.inboxItemId) {
         await _validateInboxItemExists(canonical);
       }
@@ -360,6 +369,53 @@ class TaskRepository {
     revision: const Value(1),
   );
 
+  static bool _sameInboxHistory(List<InboxClosure> a, List<InboxClosure> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// The pairing rules of the Inbox fields: `inboxItemId` only on a session,
+  /// `inboxHistory` only on an Inbox idea. These are write-time rules (plan
+  /// 4.1): they apply to a new row and to a field that changes. A row that
+  /// arrived by sync or backup, or that an older build left behind, may hold
+  /// an odd pairing and must stay editable while the fields stay as stored.
+  static void _validateInboxPairing(Task task) {
+    final inboxItemId = task.inboxItemId;
+    if (inboxItemId != null) {
+      if (inboxItemId.isEmpty) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'must not be blank',
+        );
+      }
+      if (task.isInbox) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'is only for a session, not for an Inbox idea',
+        );
+      }
+      if (inboxItemId == task.id) {
+        throw ArgumentError.value(
+          inboxItemId,
+          'inboxItemId',
+          'must not point at the task itself',
+        );
+      }
+    }
+    if (task.inboxHistory.isNotEmpty && !task.isInbox) {
+      throw ArgumentError.value(
+        task.inboxHistory,
+        'inboxHistory',
+        'is only for an Inbox idea',
+      );
+    }
+  }
+
   static void _validate(Task task) {
     if (task.title.trim().isEmpty) {
       throw ArgumentError.value(task.title, 'title', 'must not be blank');
@@ -411,37 +467,6 @@ class TaskRepository {
       JsonMapUtils.parseReasons(task.planChangeReasons);
     } on FormatException catch (error) {
       throw ArgumentError(error.message);
-    }
-    final inboxItemId = task.inboxItemId;
-    if (inboxItemId != null) {
-      if (inboxItemId.isEmpty) {
-        throw ArgumentError.value(
-          inboxItemId,
-          'inboxItemId',
-          'must not be blank',
-        );
-      }
-      if (task.isInbox) {
-        throw ArgumentError.value(
-          inboxItemId,
-          'inboxItemId',
-          'is only for a session, not for an Inbox idea',
-        );
-      }
-      if (inboxItemId == task.id) {
-        throw ArgumentError.value(
-          inboxItemId,
-          'inboxItemId',
-          'must not point at the task itself',
-        );
-      }
-    }
-    if (task.inboxHistory.isNotEmpty && !task.isInbox) {
-      throw ArgumentError.value(
-        task.inboxHistory,
-        'inboxHistory',
-        'is only for an Inbox idea',
-      );
     }
     try {
       InboxHistory.validate(task.inboxHistory);

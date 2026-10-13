@@ -612,7 +612,8 @@ class BackupValidator {
         }
         reasonMap(row, 'plan_change_reasons');
         final inboxItemId = nullableId(row, 'inbox_item_id');
-        final inboxHistory = BackupValidator.inboxHistory(row, 'inbox_history');
+        // Shape only: see the note below about history on a non-Inbox row.
+        BackupValidator.inboxHistory(row, 'inbox_history');
         if (inboxItemId != null) {
           if (inboxItemId == row['id']) {
             throw const BackupValidationException(
@@ -625,11 +626,9 @@ class BackupValidator {
             );
           }
         }
-        if (inboxHistory.isNotEmpty && !boolean(row, 'is_inbox')) {
-          throw const BackupValidationException(
-            'Inbox history belongs only to an Inbox idea.',
-          );
-        }
+        // History on a row that is not an Inbox idea is allowed: an older
+        // build can convert an idea in place and keep its stored history
+        // (plan 4.1). The Inbox ignores it.
         if (boolean(row, 'is_inbox') && (start != null || end != null)) {
           throw const BackupValidationException(
             'Inbox tasks must not have a schedule.',

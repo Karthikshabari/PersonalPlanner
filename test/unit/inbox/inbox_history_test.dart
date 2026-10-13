@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/inbox_closure.dart';
@@ -319,15 +320,22 @@ void main() {
       },
     );
 
-    test('reopen before the close instant is refused', () {
+    test('reopen before the close instant is raised to the close instant', () {
+      // Changed with m4 (clock skew): reopen used to throw here, which
+      // blocked Bring back on a device whose clock was behind. `validate`
+      // still refuses a history whose reopened_at precedes its at (see the
+      // validate group).
       final closedOnce = InboxHistory.close(
         const [],
         kind: InboxCloseKind.closed,
         at: t1,
         reason: 'r',
       );
+      final reopened = InboxHistory.reopen(closedOnce, t0);
+      expect(reopened.single.reopenedAt, t1);
       expect(
-        () => InboxHistory.reopen(closedOnce, t0),
+        () =>
+            InboxHistory.validate([closedOnce.single.copyWith(reopenedAt: t0)]),
         throwsA(isA<FormatException>()),
       );
     });
@@ -356,6 +364,104 @@ void main() {
         ),
         throwsA(isA<FormatException>()),
       );
+    });
+  });
+
+  group('canonical rules shared with the server', () {
+    // The same table drives `planner_inbox_history_valid` in
+    // supabase/tests/database/inbox_sessions_test.sql; the SQL contract test
+    // fails if the two lists differ.
+    final cases = (jsonDecode(
+      File('test/fixtures/inbox_history_cases.json').readAsStringSync(),
+    ) as List).cast<Map<String, dynamic>>();
+
+    test('the table is not empty', () {
+      expect(cases.length, greaterThan(100));
+    });
+
+    for (final c in cases) {
+      final name = c['name'] as String;
+      final valid = c['valid'] as bool;
+      test(name, () {
+        final source = jsonEncode(c['history']);
+        if (valid) {
+          expect(InboxHistory.decodeJson(source), isA<List<InboxClosure>>());
+        } else {
+          expect(
+            () => InboxHistory.decodeJson(source),
+            throwsA(isA<FormatException>()),
+            reason: source,
+          );
+        }
+      });
+    }
+
+    test("Dart's trim() strips exactly the canonical whitespace set", () {
+      const canonical = <int>{
+        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, //
+        0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, //
+        0x2007, 0x2008, 0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, //
+        0x3000, 0xFEFF,
+      };
+      final stripped = <int>{};
+      for (var cp = 0; cp <= 0x10FFFF; cp++) {
+        if (cp >= 0xD800 && cp <= 0xDFFF) continue;
+        if (String.fromCharCode(cp).trim().isEmpty) stripped.add(cp);
+      }
+      expect(stripped, canonical);
+    });
+  });
+
+  group('clock skew (a device whose clock is behind)', () {
+    final future = DateTime.utc(2026, 11, 1, 9, 30);
+    final futureReopen = DateTime.utc(2026, 11, 2, 9, 30);
+    final behind = DateTime.utc(2026, 10, 14, 9, 30);
+
+    test('close clamps to the previous event, never earlier', () {
+      final history = [closed(at: future, reopenedAt: futureReopen)];
+      final next = InboxHistory.close(
+        history,
+        kind: InboxCloseKind.letGo,
+        at: behind,
+      );
+      expect(next, hasLength(2));
+      expect(next.last.at.isBefore(history.single.at), isFalse);
+      // Not before the bring back it follows, either.
+      expect(next.last.at, futureReopen);
+      expect(next.last.reopenedAt, isNull);
+      InboxHistory.validate(next);
+    });
+
+    test('close keeps a later instant exactly', () {
+      final history = [closed(at: t0, reopenedAt: t1)];
+      final next = InboxHistory.close(
+        history,
+        kind: InboxCloseKind.letGo,
+        at: t2,
+      );
+      expect(next.last.at, t2);
+    });
+
+    test('reopen clamps to the event it reverses', () {
+      final history = [closed(at: future)];
+      final next = InboxHistory.reopen(history, behind);
+      expect(next.single.reopenedAt, future);
+      expect(next.single.at, future);
+      InboxHistory.validate(next);
+    });
+
+    test('reopen keeps a later instant exactly', () {
+      final next = InboxHistory.reopen([closed(at: t0)], t2);
+      expect(next.single.reopenedAt, t2);
+    });
+
+    test('a first close is never clamped', () {
+      final next = InboxHistory.close(
+        const [],
+        kind: InboxCloseKind.letGo,
+        at: behind,
+      );
+      expect(next.single.at, behind);
     });
   });
 }

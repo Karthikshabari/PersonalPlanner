@@ -5,10 +5,28 @@ import '../../../core/models/inbox_closure.dart';
 /// Strict, side-effect-free handling for the history stored on an Inbox idea
 /// (`tasks.inbox_history_json`). One validator is shared by the repository,
 /// backup and sync ingress; the server function
-/// `planner_inbox_history_valid` enforces the same rules.
+/// `planner_inbox_history_valid` accepts exactly the same set (both are tested
+/// against `test/fixtures/inbox_history_cases.json`).
+///
+/// Canonical rules:
+/// - `at` / `reopened_at`: `yyyy-MM-ddTHH:mm:ss[.fraction]Z`, a real calendar
+///   instant in UTC, year 0001 or later. No offset, no space, no reduced form.
+/// - A non-null `reason` is already trimmed, not blank, 1 to 200 code points.
+///   "Whitespace" is Dart's `String.trim` set (U+0009 to U+000D, U+0020,
+///   U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F,
+///   U+205F, U+3000, U+FEFF), the same set the server spells out.
+/// - An experiment id is non-blank by the same test.
+/// - Neither text contains U+0000 (`jsonb` cannot hold it).
 abstract final class InboxHistory {
   static const maxEvents = 100;
   static const maxReasonLength = 200;
+
+  /// The only accepted text form of an instant. Ranges are checked here;
+  /// whether the day exists in the month is checked after parsing.
+  static final _instantPattern = RegExp(
+    r'^([0-9]{4})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'
+    r'T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?Z$',
+  );
 
   static const _eventKeys = {
     'kind',
@@ -95,6 +113,7 @@ abstract final class InboxHistory {
       if (reason != null) {
         if (reason.trim().isEmpty ||
             reason != reason.trim() ||
+            reason.contains('\u0000') ||
             reason.runes.length > maxReasonLength) {
           throw const FormatException(
             'An Inbox reason must be trimmed text of 1 to 200 characters.',
@@ -124,7 +143,9 @@ abstract final class InboxHistory {
             );
           }
           final experimentId = event.experimentId;
-          if (experimentId == null || experimentId.trim().isEmpty) {
+          if (experimentId == null ||
+              experimentId.trim().isEmpty ||
+              experimentId.contains('\u0000')) {
             throw const FormatException(
               'An experiment event needs an experiment id.',
             );
@@ -155,6 +176,10 @@ abstract final class InboxHistory {
   }
 
   /// Appends a closing event. Refuses an idea that is already closed.
+  ///
+  /// A device whose clock is behind the one that wrote the last event must
+  /// still be able to close, so [at] is raised to the previous event's `at`
+  /// (or its bring back, if later) instead of failing validation.
   static List<InboxClosure> close(
     List<InboxClosure> history, {
     required InboxCloseKind kind,
@@ -170,7 +195,7 @@ abstract final class InboxHistory {
       ...history,
       InboxClosure(
         kind: kind,
-        at: at.toUtc(),
+        at: _notBeforePrevious(history, at.toUtc()),
         reason: trimmed == null || trimmed.isEmpty ? null : trimmed,
         experimentId: experimentId,
       ),
@@ -179,17 +204,31 @@ abstract final class InboxHistory {
     return List.unmodifiable(next);
   }
 
-  /// Marks the open closure as brought back. The event itself stays.
+  /// Marks the open closure as brought back. The event itself stays. [at] is
+  /// raised to the event's own `at` when this device's clock is behind it.
   static List<InboxClosure> reopen(List<InboxClosure> history, DateTime at) {
     if (!isClosed(history)) {
       throw StateError('The idea is not closed.');
     }
     final next = [
       ...history.sublist(0, history.length - 1),
-      history.last.copyWith(reopenedAt: at.toUtc()),
+      history.last.copyWith(
+        reopenedAt: at.toUtc().isBefore(history.last.at)
+            ? history.last.at
+            : at.toUtc(),
+      ),
     ];
     validate(next);
     return List.unmodifiable(next);
+  }
+
+  /// [at], or the latest instant the previous event reached when [at] is
+  /// earlier (clock skew between devices).
+  static DateTime _notBeforePrevious(List<InboxClosure> history, DateTime at) {
+    if (history.isEmpty) return at;
+    final previous = history.last;
+    final floor = previous.reopenedAt ?? previous.at;
+    return at.isBefore(floor) ? floor : at;
   }
 
   static InboxClosure _parseEvent(Object? raw) {
@@ -231,10 +270,18 @@ abstract final class InboxHistory {
   }
 
   static DateTime _parseInstant(String value) {
-    // `DateTime.parse` turns an offset instant into a UTC value, so the
-    // canonical `Z` form is checked on the text itself.
-    final parsed = value.endsWith('Z') ? DateTime.tryParse(value) : null;
-    if (parsed == null || !parsed.isUtc) {
+    // `DateTime.tryParse` is far looser than the canonical form (a space
+    // separator, a comma, reduced time, basic format) and rolls impossible
+    // dates over (February 30 becomes March 2), so the text is checked first
+    // and the calendar day is checked after.
+    final match = _instantPattern.firstMatch(value);
+    final parsed = match == null ? null : DateTime.tryParse(value);
+    if (match == null ||
+        parsed == null ||
+        !parsed.isUtc ||
+        parsed.year < 1 ||
+        parsed.month != int.parse(match.group(2)!) ||
+        parsed.day != int.parse(match.group(3)!)) {
       throw const FormatException(
         'Inbox history timestamps must be ISO UTC instants.',
       );
