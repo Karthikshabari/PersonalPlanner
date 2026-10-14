@@ -680,9 +680,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                               allTasks: tasks,
                               availableLaneWidth: laneWidth,
                               overlapIndex: overlapIndex[task.id] ?? 0,
-                              hasOverlap:
-                                  overlapIds.contains(task.id) ||
-                                  (geometryById[task.id]?.hasOverlap ?? false),
+                              hasOverlap: overlapIds.contains(task.id),
                               groupedSubtaskCount: subtaskCountsAsync.hasValue
                                   ? subtaskCounts[task.id] ?? ''
                                   : '',
@@ -860,6 +858,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final laneIndex = compactVisualLane?.index ?? displayGeometry.laneIndex;
     final laneWidth = availableLaneWidth / laneCount;
     final dense =
+        hasOverlap &&
         displayGeometry.hasOverlap &&
         laneWidth < 84 * MediaQuery.textScalerOf(context).scale(1);
 

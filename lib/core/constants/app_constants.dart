@@ -27,6 +27,13 @@ abstract final class AppConstants {
   static const String taskTitleTooLongMessage =
       'Title must be $maxTaskTitleLength characters or fewer';
 
+  /// Largest Actual duration (minutes) one block may hold: one day.
+  static const int maxActualDurationMinutes = 1440;
+
+  /// User-facing message for an Actual duration over the cap.
+  static const String actualDurationTooLongMessage =
+      'Actual duration must be $maxActualDurationMinutes minutes or less';
+
   /// Upper bound of `categories.name` (Drift `withLength(max: 100)`).
   static const int maxCategoryNameLength = 100;
 }

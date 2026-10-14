@@ -88,3 +88,12 @@ String plannedNowText(RescheduleMove move) {
       '${slot(move.toStart, move.toEnd)}'
       '${move.pushes >= 2 ? ' · pushed ${move.pushes} times' : ''}';
 }
+
+/// Editor line: `Originally planned Mon Sep 7, 09:00–10:00 - moved 2 times`.
+String originallyPlannedText(RescheduleMove move) {
+  final from = PlannerTimeZone.toPlannerLocal(move.fromStart);
+  final to = PlannerTimeZone.toPlannerLocal(move.fromEnd);
+  return 'Originally planned ${DateFormat('EEE MMM d').format(from)}, '
+      '${formatClock24(from)}–${formatClock24(to)} - moved ${move.pushes} '
+      '${move.pushes == 1 ? 'time' : 'times'}';
+}

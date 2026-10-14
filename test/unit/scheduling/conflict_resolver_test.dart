@@ -274,6 +274,44 @@ void main() {
     });
   });
 
+  group('planShiftAllFollowing end of day', () {
+    test('a push past the end of the day leaves that block and later ones', () {
+      PlannerTimeZone.initialize(identifier: 'UTC');
+      final d = DateTime.utc(2026, 7, 23);
+      DateTime hm(int h, int m) => d.add(Duration(hours: h, minutes: m));
+      final moved = task(
+        'm',
+        0,
+        0,
+      ).copyWith(startTime: hm(21, 0), endTime: hm(22, 0));
+      final a = task(
+        'a',
+        0,
+        0,
+      ).copyWith(startTime: hm(21, 0), endTime: hm(22, 0));
+      final b = task(
+        'b',
+        0,
+        0,
+      ).copyWith(startTime: hm(22, 0), endTime: hm(23, 30));
+
+      final plan = ConflictResolver.planShiftAllFollowing(
+        moved: moved,
+        dayTasks: [a, b],
+      );
+
+      final shiftById = {for (final s in plan.shifts) s.taskId: s};
+      expect(shiftById.keys, ['a']);
+      expect(shiftById['a']!.newStart, hm(22, 0));
+      expect(shiftById['a']!.newEnd, hm(23, 0));
+      expect(plan.keepOverlapIds, {'b', 'm'});
+      final dayEnd = DateTime.utc(2026, 7, 24);
+      for (final s in plan.shifts) {
+        expect(s.newEnd.isAfter(dayEnd), isFalse);
+      }
+    });
+  });
+
   group('findNextAvailableSlot', () {
     test('returns original end when free', () {
       final a = task('a', 540, 600);

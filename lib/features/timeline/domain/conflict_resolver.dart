@@ -46,6 +46,8 @@ abstract final class ConflictResolver {
   /// `overlapDuration = dropped.end - firstConflict.start` and shifts every
   /// active scheduled task starting at/after `firstConflict.start` forward by
   /// that amount (the dropped task itself is excluded — the caller moves it).
+  /// A block whose push would end after its own planner day, and every later
+  /// block, stays in place and is returned in [ResolutionPlan.keepOverlapIds].
   static ResolutionPlan planShiftAllFollowing({
     required Task moved,
     required List<Task> dayTasks,
@@ -60,22 +62,33 @@ abstract final class ConflictResolver {
     if (overlapDuration <= Duration.zero) return const ResolutionPlan();
 
     final shifts = <PlannedShift>[];
+    final keepIds = <String>{};
     for (final task in _sortedActive(dayTasks)) {
       if (task.id == moved.id) continue;
       final start = task.startTime!;
       if (start.isBefore(first.startTime!)) continue;
       final end = task.endTime!;
+      final newEnd = end.add(overlapDuration);
+      // Same end-of-day rule as Shift Only Overlapping: a push past the end of
+      // the block's own day stops here, and this block and every later one
+      // stay where they are.
+      if (keepIds.isNotEmpty ||
+          newEnd.isAfter(PlannerTimeZone.dayBounds(start).$2)) {
+        keepIds.add(task.id);
+        continue;
+      }
       shifts.add(
         PlannedShift(
           taskId: task.id,
           oldStart: start,
           oldEnd: end,
           newStart: start.add(overlapDuration),
-          newEnd: end.add(overlapDuration),
+          newEnd: newEnd,
         ),
       );
     }
-    return ResolutionPlan(shifts: shifts);
+    if (keepIds.isNotEmpty) keepIds.add(moved.id);
+    return ResolutionPlan(shifts: shifts, keepOverlapIds: keepIds);
   }
 
   /// **Shift Only Overlapping**: the moved block stays where it was dropped

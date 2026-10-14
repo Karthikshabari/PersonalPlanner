@@ -27,9 +27,11 @@ import '../../../inbox/providers/inbox_provider.dart';
 import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
+import '../../domain/conflict_detector.dart';
 import '../../domain/timeline_geometry.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/grid_settings_provider.dart';
+import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../widgets/current_time_indicator.dart';
@@ -740,6 +742,11 @@ class _WeekDayGrid extends ConsumerWidget {
     final categoriesById = {
       for (final category in categories) category.id: category,
     };
+    // Cancelled blocks keep their lane but are ignored by the overlap marker.
+    final overlapIds = {
+      ...ConflictDetector.overlappingIdSet(tasks),
+      ...ref.watch(keepOverlapIdsProvider),
+    };
     WidgetsBinding.instance.addPostFrameCallback((_) => onReady());
     return Stack(
       key: ValueKey('week-grid-${isoDateString(date)}'),
@@ -762,6 +769,7 @@ class _WeekDayGrid extends ConsumerWidget {
             onTaskTap,
             tasks,
             compactVisualLanes[geometry.task.id],
+            overlapIds.contains(geometry.task.id),
           ),
       ],
     );
@@ -775,12 +783,13 @@ class _WeekDayGrid extends ConsumerWidget {
     void Function(Task task, DateTime date) onTaskTap,
     List<Task> allTasks,
     ({int index, int count})? compactVisualLane,
+    bool hasOverlap,
   ) {
     final laneCount = compactVisualLane?.count ?? geometry.laneCount;
     final laneIndex = compactVisualLane?.index ?? geometry.laneIndex;
     final laneWidth = availableWidth / laneCount;
     final dense =
-        geometry.hasOverlap &&
+        hasOverlap &&
         laneWidth < 84 * MediaQuery.textScalerOf(context).scale(1);
     final left =
         (showInternalRuler ? rulerWidth : 0) + laneIndex * laneWidth + 2;
@@ -798,7 +807,7 @@ class _WeekDayGrid extends ConsumerWidget {
         category: category,
         compact: true,
         selected: false,
-        hasOverlap: geometry.hasOverlap,
+        hasOverlap: hasOverlap,
         onTap: () => onTaskTap(geometry.task, date),
       ),
     );

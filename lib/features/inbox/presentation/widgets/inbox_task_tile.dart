@@ -7,6 +7,7 @@ import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/layout/adaptive_layout.dart';
+import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/time_picker_24h.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
@@ -48,7 +49,15 @@ class InboxTaskTile extends ConsumerWidget {
     if (!isDesktopWidth(MediaQuery.sizeOf(context).width)) {
       await TaskEditorPanel.showAsBottomSheet(context);
       selected.state = null;
+      return;
     }
+    // Selection alone never opens the desktop editor: show the item's day and
+    // open it, as Search does for a result.
+    final start = item.task.startTime;
+    if (start != null) {
+      ref.read(selectedDateProvider.notifier).state = startOfDay(start);
+    }
+    ref.read(taskEditorOpenProvider.notifier).state = true;
   }
 
   Future<void> _schedule(BuildContext context, WidgetRef ref) async {

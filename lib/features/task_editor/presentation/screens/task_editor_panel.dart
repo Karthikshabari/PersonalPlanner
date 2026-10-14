@@ -45,6 +45,7 @@ import '../widgets/save_as_template_dialog.dart';
 import '../widgets/tag_field.dart';
 import '../widgets/subtask_editor.dart';
 import '../widgets/use_template_dropdown.dart';
+import '../widgets/original_plan_line.dart';
 import '../widgets/plan_change_dialog.dart';
 import '../../../timeline/presentation/widgets/schedule_fields.dart';
 
@@ -641,6 +642,12 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     }
     if (actual != null && actual < 0) {
       _showActualError('Actual duration must not be negative');
+      return;
+    }
+    if (actualWasEdited &&
+        actual != null &&
+        actual > AppConstants.maxActualDurationMinutes) {
+      _showActualError(AppConstants.actualDurationTooLongMessage);
       return;
     }
     if (_scheduleDirty && start != null && end != null && !end.isAfter(start)) {
@@ -1492,6 +1499,8 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     _scheduleDirty = _scheduleInputsChanged;
                   }),
                 ),
+                if (_originalTask case final original?)
+                  OriginalPlanLine(taskId: original.id),
                 const SizedBox(height: AppSpacing.sm),
                 Row(
                   children: [
@@ -1522,14 +1531,26 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   icon: Icons.timer_outlined,
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                Text(
-                  _startInstant == null || _endInstant == null
-                      ? 'Not scheduled'
-                      : 'Planned duration: ${TaskTimeMetrics.plannedMinutes(_startInstant, _endInstant)} minutes',
-                  key: const ValueKey('planned-duration-display'),
-                  style: Theme.of(context).textTheme.bodyMedium
-                      ?.copyWith(color: tokens.textMuted),
-                ),
+                // Hidden while End is not after Start; the time field's own
+                // error already explains it.
+                if (_startInstant == null || _endInstant == null)
+                  Text(
+                    'Not scheduled',
+                    key: const ValueKey('planned-duration-display'),
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: tokens.textMuted),
+                  )
+                else if (TaskTimeMetrics.plannedMinutes(
+                      _startInstant,
+                      _endInstant,
+                    )
+                    case final planned?)
+                  Text(
+                    'Planned duration: $planned minutes',
+                    key: const ValueKey('planned-duration-display'),
+                    style: Theme.of(context).textTheme.bodyMedium
+                        ?.copyWith(color: tokens.textMuted),
+                  ),
                 const SizedBox(height: AppSpacing.md),
                 KeyedSubtree(
                   key: _actualFieldKey,

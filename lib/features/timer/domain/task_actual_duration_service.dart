@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/models/timer_session.dart';
 import '../../../core/utils/date_utils.dart';
@@ -55,6 +56,13 @@ class TaskActualDurationService {
   }) async {
     if (minutes < 0) {
       throw ArgumentError.value(minutes, 'minutes', 'must not be negative');
+    }
+    if (minutes > AppConstants.maxActualDurationMinutes) {
+      throw ArgumentError.value(
+        minutes,
+        'minutes',
+        'must be ${AppConstants.maxActualDurationMinutes} or less',
+      );
     }
     return _db.writeTransaction(() async {
       final task = await _db.taskDao.getTaskById(taskId);
