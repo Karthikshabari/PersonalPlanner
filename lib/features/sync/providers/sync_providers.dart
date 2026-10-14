@@ -304,7 +304,7 @@ final syncStatusProvider = StreamProvider.autoDispose<SyncStatusSnapshot>((
   ref,
 ) {
   final engine = ref.watch(syncEngineProvider);
-  if (engine != null) return engine.status;
+  if (engine != null) return engine.watchStatus();
   // No engine means either no usable runtime Auth, or a provisioned account
   // whose initial synchronization is not complete yet. Both cases are
   // described from durable state, and neither ever claims cloud sync is

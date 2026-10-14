@@ -425,14 +425,12 @@ void main() {
       () => tasksRepo.getTaskById(inserted.id),
     );
     expect(deleted!.deletedAt, isNotNull);
+    // The deleted block is the rule's first occurrence, so the whole rule is
+    // deleted instead of ending before its start (UAT-003).
     final ended = await runDb(tester, () => rulesRepo.getRuleById(rule.id));
     expect(ended!.isActive, isFalse);
-    final expectedEnd = DateTime(
-      inserted.startTime!.year,
-      inserted.startTime!.month,
-      inserted.startTime!.day,
-    ).subtract(const Duration(days: 1));
-    expect(ended.endDate, expectedEnd);
+    expect(ended.deletedAt, isNotNull);
+    expect(ended.endDate, isNull);
     expect(find.text('Recurring series ended'), findsOneWidget);
     await finish(tester, container);
   });

@@ -192,8 +192,7 @@ void main() {
       description: 'End recurring series',
       mutation: () async {
         await tasks.deleteTask(occurrenceId);
-        await rules.setEndDate(rule.id, addDays(monday, -1));
-        await rules.deactivateRule(rule.id);
+        await rules.endSeriesBefore(rule.id, monday);
         await recurrence.deleteMaterializedFuture(
           rule.id,
           monday,

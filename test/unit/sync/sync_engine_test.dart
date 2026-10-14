@@ -661,6 +661,47 @@ void main() {
       }
     },
   );
+
+  test('a late watchStatus subscriber gets the current status at once', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final connectivity = _FakeConnectivity();
+    final engine = SyncEngine(
+      db,
+      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+      connectivity,
+    );
+    try {
+      await engine.start();
+      final current = engine.currentStatus;
+      expect(current?.state, SyncEngineState.offline);
+
+      // Subscribed after the engine emitted; nothing changes meanwhile.
+      final snapshots = <SyncStatusSnapshot>[];
+      var done = false;
+      final subscription = engine.watchStatus().listen(
+        snapshots.add,
+        onDone: () => done = true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots, [same(current)]);
+
+      // Later changes still arrive.
+      connectivity.emit(const [ConnectivityResult.wifi]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(snapshots.length, greaterThan(1));
+      expect(snapshots.last.state, isNot(SyncEngineState.offline));
+
+      // A stopped engine completes the stream instead of leaving it open.
+      await engine.stop();
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+      await subscription.cancel();
+    } finally {
+      await engine.stop();
+      await connectivity.close();
+      await db.close();
+    }
+  });
 }
 
 class _FakeConnectivity implements SyncConnectivityMonitor {

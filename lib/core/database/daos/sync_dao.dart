@@ -311,6 +311,39 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
         );
   }
 
+  /// Corrects the payload of an operation that never reached the server and
+  /// queues it again. The operation ID, `seq` and expected server version
+  /// stay as they are. Only a row that is still pending or parked and still
+  /// carries [fromPayload] is written; returns whether it was.
+  Future<bool> repairOperationPayload(
+    String operationId, {
+    required String fromPayload,
+    required String payload,
+    required DateTime now,
+  }) async {
+    final count =
+        await (update(syncLog)..where(
+              (row) =>
+                  row.operationId.equals(operationId) &
+                  row.payload.equals(fromPayload) &
+                  (row.state.equals('pending') |
+                      (row.state.equals('error') &
+                          row.nextAttemptAt.equals(
+                            permanentRetryAt.toIso8601String(),
+                          ))),
+            ))
+            .write(
+              SyncLogCompanion(
+                payload: Value(payload),
+                state: const Value('pending'),
+                nextAttemptAt: const Value(null),
+                lastError: const Value(null),
+                updatedAt: Value(now),
+              ),
+            );
+    return count > 0;
+  }
+
   /// Cheap outbox change signal: outstanding count and newest sequence.
   /// Consumers compare values instead of loading payload rows.
   Stream<({int outstanding, int newestSeq})> watchOutboxSignal() =>

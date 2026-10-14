@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/database/app_database.dart';
@@ -79,6 +80,14 @@ class SyncRepository {
   static const _unsupportedRemoteTableDiagnostic =
       'Unsupported remote sync table';
 
+  /// What builds before the UAT-003 fix parked when a series was ended at its
+  /// first occurrence (end_date one day before start_date).
+  static const _recurrenceEndBeforeStartDiagnostic =
+      'Recurrence end_date must not precede start_date';
+  static const _recurrenceEndBeforeStartError =
+      '${SyncDao.permanentErrorPrefix}Invalid sync data: '
+      '$_recurrenceEndBeforeStartDiagnostic';
+
   void _assertAccountScope() {
     final current = _currentAccountId?.call();
     if (_currentAccountId != null && current != _accountId) {
@@ -137,6 +146,7 @@ class SyncRepository {
   Future<SyncFailure?> push({String? baselineToken}) async {
     try {
       _assertAccountScope();
+      await repairRecurrenceEndDateOperations();
       await _repairTitleHistoryPermanentOperations();
       await _requeueAuthenticationParkedOperations();
       await _requeueUpgradeParkedOperations();
@@ -363,6 +373,130 @@ class SyncRepository {
       return false;
     }
     return _inboxSessionsSupported;
+  }
+
+  /// Repairs recurring-rule operations parked by the client validator because
+  /// an older build ended a series at its first occurrence (UAT-003). Such an
+  /// operation never reached the server: validation runs before the send.
+  ///
+  /// Per record, in one transaction with outbound triggers suppressed: the
+  /// parked operations (exact diagnostic only) and later pending operations
+  /// whose payload ends before its start get `end_date = start_date`, every
+  /// earlier rewritten payload takes `is_active` from the last one, and the
+  /// parked ones are queued again with the same operation ID, `seq` and
+  /// expected server version. The local rule row gets the same end date. A
+  /// record with an in-flight or conflicted operation, any other outstanding
+  /// state, or a payload that still fails validation is left untouched.
+  /// Repeating it changes nothing: nothing is parked with that diagnostic.
+  @visibleForTesting
+  Future<void> repairRecurrenceEndDateOperations() async {
+    final parked = await _db.syncDao.getPermanentOperationsMatching(
+      'recurring_rules',
+      _recurrenceEndBeforeStartDiagnostic,
+    );
+    final parkedIds = <String>{
+      for (final operation in parked)
+        if (operation.lastError == _recurrenceEndBeforeStartError)
+          operation.operationId,
+    };
+    final recordIds = <String>{
+      for (final operation in parked)
+        if (parkedIds.contains(operation.operationId)) operation.recordId,
+    };
+    for (final recordId in recordIds) {
+      _assertAccountScope();
+      try {
+        await _db.syncDao.runWithoutOutbound(() async {
+          _assertAccountScope();
+          await _repairRecurrenceEndDateRecord(recordId, parkedIds);
+        });
+      } on _SyncAccountScopeChanged {
+        rethrow;
+      } on Object {
+        // Left parked exactly as it was; the transaction rolled back.
+      }
+    }
+  }
+
+  Future<void> _repairRecurrenceEndDateRecord(
+    String recordId,
+    Set<String> parkedIds,
+  ) async {
+    final active = await _db.syncDao.getActiveOperationsForRecord(
+      'recurring_rules',
+      recordId,
+    );
+    final targets = <(SyncLogRow, Map<String, dynamic>)>[];
+    for (final operation in active) {
+      final isParked = parkedIds.contains(operation.operationId);
+      if (!isParked && operation.state != 'pending') return;
+      if (operation.operation == 'delete') {
+        if (isParked) return;
+        continue;
+      }
+      final decoded = jsonDecode(operation.payload);
+      if (decoded is! Map) return;
+      final payload = Map<String, dynamic>.from(decoded);
+      final start = payload['start_date'];
+      final end = payload['end_date'];
+      final endsBeforeStart =
+          start is String && end is String && end.compareTo(start) < 0;
+      if (!endsBeforeStart) {
+        if (isParked) return;
+        continue;
+      }
+      payload['end_date'] = start;
+      targets.add((operation, payload));
+    }
+    if (targets.isEmpty) return;
+    // The rule must never be active on the server between two pushes: an
+    // active rule ending on its (past) start date would materialize there.
+    final last = targets.last.$2;
+    final now = DateTime.now().toUtc();
+    final rewritten = <(SyncLogRow, String)>[];
+    for (final (operation, payload) in targets) {
+      if (last.containsKey('is_active')) {
+        payload['is_active'] = last['is_active'];
+      }
+      final encoded = jsonEncode(payload);
+      final prepared = await _clientPayloadForOperation(
+        operation.copyWith(payload: encoded),
+      );
+      SyncPayloadValidator.validate(
+        SyncRemoteChange(
+          changeId: 0,
+          operationId: operation.operationId,
+          tableName: operation.entityTableName,
+          recordId: operation.recordId,
+          operation: operation.operation,
+          serverVersion: operation.expectedServerVersion ?? 0,
+          serverTimestamp: now,
+          payload: prepared.payload,
+        ),
+      );
+      rewritten.add((operation, encoded));
+    }
+    for (final (operation, encoded) in rewritten) {
+      final written = await _db.syncDao.repairOperationPayload(
+        operation.operationId,
+        fromPayload: operation.payload,
+        payload: encoded,
+        now: now,
+      );
+      if (!written) {
+        throw StateError('Sync operation changed while it was being repaired');
+      }
+    }
+    final rule = await _db.recurringRuleDao.getRuleById(recordId);
+    final ruleEnd = rule?.endDate;
+    if (rule != null &&
+        rule.deletedAt == null &&
+        ruleEnd != null &&
+        ruleEnd.compareTo(rule.startDate) < 0) {
+      await _db.recurringRuleDao.updateRule(
+        rule.copyWith(endDate: Value(rule.startDate)),
+      );
+    }
   }
 
   /// Requeues only permanent task operations whose retained diagnostic is the

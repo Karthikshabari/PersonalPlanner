@@ -352,8 +352,7 @@ abstract final class TimelineActions {
           if (scope == RecurrenceScope.thisOccurrence) {
             await rulesRepo.addException(ruleId, boundary);
           } else {
-            await rulesRepo.setEndDate(ruleId, addDays(boundary, -1));
-            await rulesRepo.deactivateRule(ruleId);
+            await rulesRepo.endSeriesBefore(ruleId, boundary);
             await ref
                 .read(recurrenceServiceProvider)
                 .deleteMaterializedFuture(

@@ -82,6 +82,24 @@ class SyncEngine with WidgetsBindingObserver {
   Future<void>? _stopFuture;
   Stream<SyncStatusSnapshot> get status => _status.stream;
 
+  /// The last status the engine emitted, or null before the first one.
+  SyncStatusSnapshot? get currentStatus => _lastEmittedStatus;
+
+  /// [status], preceded by [currentStatus] when there is one, so a screen
+  /// opened while nothing changes does not wait for the next change
+  /// (UAT-001). Reading the current value and subscribing happen in the same
+  /// synchronous callback, so no emit can fall between them.
+  Stream<SyncStatusSnapshot> watchStatus() => Stream.multi((controller) {
+    final current = _lastEmittedStatus;
+    if (current != null) controller.add(current);
+    final subscription = _status.stream.listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    controller.onCancel = subscription.cancel;
+  }, isBroadcast: true);
+
   Future<void> start() => _startFuture ??= _start();
 
   Future<void> _start() async {

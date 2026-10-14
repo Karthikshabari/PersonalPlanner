@@ -896,8 +896,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
           }
           if (scope == RecurrenceScope.allFuture) {
             if (wantsDetach) {
-              await rulesRepo.setEndDate(ruleId, addDays(boundary, -1));
-              await rulesRepo.deactivateRule(ruleId);
+              await rulesRepo.endSeriesBefore(ruleId, boundary);
               await ref
                   .read(recurrenceServiceProvider)
                   .deleteMaterializedFuture(

@@ -84,11 +84,35 @@ class RecurringRepository {
     ));
   }
 
+  /// Ends the series so it no longer occurs on or after [boundary]
+  /// ("all future occurrences"). When [boundary] is the rule's first day
+  /// there is no valid last date, so the whole rule is deleted instead of
+  /// being given an end date before its start (UAT-003).
+  Future<void> endSeriesBefore(String ruleId, DateTime boundary) async {
+    final row = await _dao.getRuleById(ruleId);
+    if (row == null) return;
+    final lastDay = addDays(startOfDay(boundary), -1);
+    if (isoDateString(lastDay).compareTo(row.startDate) < 0) {
+      await deleteRule(ruleId);
+      return;
+    }
+    await setEndDate(ruleId, lastDay);
+    await deactivateRule(ruleId);
+  }
+
   /// Sets the inclusive last date the rule may occur on
-  /// ("delete all future occurrences").
+  /// ("delete all future occurrences"). A date before the rule's start is
+  /// refused: sync rejects such a rule permanently.
   Future<void> setEndDate(String ruleId, DateTime endDate) async {
     final row = await _dao.getRuleById(ruleId);
     if (row == null) return;
+    if (isoDateString(endDate).compareTo(row.startDate) < 0) {
+      throw ArgumentError.value(
+        isoDateString(endDate),
+        'endDate',
+        'Recurrence end date must not precede its start date',
+      );
+    }
     await _dao.updateRule(row.copyWith(
       endDate: Value(isoDateString(endDate)),
       updatedAt: DateTime.now(),
