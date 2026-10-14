@@ -1,3 +1,5 @@
+import '../../../../core/layout/size_class_scope.dart';
+import '../../../../core/layout/breakpoints.dart';
 import '../providers/double_click_tip_provider.dart';
 
 import 'dart:async';
@@ -175,8 +177,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final start = _dayAxis.instantAt(slot.toDouble());
     final end = start.add(Duration(minutes: grid));
     final taskId = generateUuidV7();
-    final desktop =
-        MediaQuery.sizeOf(context).width >= AppConstants.desktopBreakpoint;
+    final desktop = Breakpoints.hasSidePanel(DaySizeClass.of(context));
     Future<bool> submit(ScheduledTaskDraft draft) async {
       final saved = await TimelineActions.createScheduledTask(
         context,

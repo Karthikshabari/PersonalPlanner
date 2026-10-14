@@ -380,7 +380,7 @@ void main() {
   testWidgets('date navigation prev/next/today updates header', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    final todayLabel = DateFormat('MMM d, yyyy')
+    final todayLabel = DateFormat('EEE, MMM d, yyyy')
         .format(DateTime.now())
         .replaceAll(',', '');
     Finder label(String raw) => find.byWidgetPredicate(
@@ -388,17 +388,19 @@ void main() {
     );
     expect(label(todayLabel), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Next day'));
+    await tester.tap(find.byTooltip('Next day (→)'));
     await settle(tester);
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     expect(
-      label(DateFormat('MMM d, yyyy').format(tomorrow).replaceAll(',', '')),
+      label(
+        DateFormat('EEE, MMM d, yyyy').format(tomorrow).replaceAll(',', ''),
+      ),
       findsOneWidget,
     );
 
-    await tester.tap(find.byTooltip('Previous day'));
+    await tester.tap(find.byTooltip('Previous day (←)'));
     await settle(tester);
-    await tester.tap(find.byTooltip('Previous day'));
+    await tester.tap(find.byTooltip('Previous day (←)'));
     await settle(tester);
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
     expect(

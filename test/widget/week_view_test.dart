@@ -392,7 +392,7 @@ void main() {
     await settle(tester);
 
     expect(
-      find.text(DateFormat('MMM d, yyyy').format(tuesday)),
+      find.text(DateFormat('EEE, MMM d, yyyy').format(tuesday)),
       findsOneWidget,
     );
     expect(isSameDay(container.read(selectedDateProvider), tuesday), isTrue);

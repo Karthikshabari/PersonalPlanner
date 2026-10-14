@@ -4,7 +4,9 @@ import 'package:personal_planner/core/layout/breakpoints.dart';
 import 'package:personal_planner/core/layout/size_class_scope.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/features/timeline/presentation/screens/day_view_screen.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/timeline_widget.dart';
 
+import '../helpers/day_responsive_fixture.dart';
 import '../helpers/test_container.dart';
 
 void main() {
@@ -71,4 +73,52 @@ void main() {
     }
     await teardownApp(tester, container);
   });
+
+  testWidgets(
+    'resizing through every size class keeps the timeline State and scroll',
+    (tester) async {
+      final container = await pumpResponsiveDay(
+        tester,
+        size: const Size(1920, 1080),
+      );
+      final timelineState = tester.state(find.byType(TimelineWidget));
+      ScrollPosition position() => tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('timeline-gestures')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position;
+
+      // Scroll away from the opening position so a remount would show.
+      position().jumpTo(position().pixels + 180);
+      await tester.pump();
+      final offset = position().pixels;
+      expect(offset, greaterThan(0));
+
+      for (final size in const [
+        Size(1000, 1100),
+        Size(800, 1100),
+        Size(360, 1100),
+        Size(800, 1100),
+        Size(1000, 1100),
+        Size(1920, 1080),
+      ]) {
+        tester.view.physicalSize = size;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(
+          tester.state(find.byType(TimelineWidget)),
+          same(timelineState),
+          reason: 'TimelineWidget remounted at $size',
+        );
+        expect(position().pixels, offset, reason: 'scroll moved at $size');
+        expect(tester.takeException(), isNull);
+      }
+      await finish(tester, container);
+    },
+  );
 }

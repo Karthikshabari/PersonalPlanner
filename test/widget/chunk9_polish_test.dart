@@ -81,7 +81,20 @@ void main() {
     await pumpRoute(tester, container, '/day');
     await tester.tap(find.byKey(ValueKey('task-block-${task.id}')));
     await settle(tester);
-    await tester.tap(find.byKey(ValueKey('selected-task-edit-${task.id}')));
+    // The compact "New task" FAB sits over the lower right of the timeline.
+    // Scroll the timeline from its hour ruler so the edit action is clear.
+    await tester.dragFrom(const Offset(20, 300), const Offset(0, -120));
+    await settle(tester);
+    final editAction = find.byKey(ValueKey('selected-task-edit-${task.id}'));
+    expect(
+      tester
+          .getRect(editAction)
+          .overlaps(
+            tester.getRect(find.byKey(const ValueKey('day-new-task-fab'))),
+          ),
+      isFalse,
+    );
+    await tester.tap(editAction);
     await settle(tester);
 
     final sheet = find.byType(BottomSheet);

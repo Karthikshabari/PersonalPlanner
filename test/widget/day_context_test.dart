@@ -48,11 +48,19 @@ void main() {
         () => db.select(db.syncLog).get(),
       )).where((row) => row.entityTableName == 'tasks').length;
 
+      // Compact Day shows a chip only once a context exists; adding one goes
+      // through the overflow menu.
       final action = find.byKey(ValueKey('day-context-action-$dateText'));
-      expect(action, findsOneWidget);
-      expect(find.text('Add day context'), findsOneWidget);
-      await tester.tap(action);
-      await settle(tester);
+      Future<void> openFromOverflow() async {
+        await tester.tap(find.byKey(const ValueKey('day-overflow')));
+        await settle(tester);
+        await tester.tap(find.byKey(const ValueKey('day-overflow-context')));
+        await settle(tester);
+      }
+
+      expect(action, findsNothing);
+      expect(find.text('Add day context'), findsNothing);
+      await openFromOverflow();
 
       // Nothing is chosen yet, so Save is disabled; the presets are listed.
       expect(
@@ -82,6 +90,7 @@ void main() {
       expect(context?.displayLabel, 'Work From Home');
       expect(context?.date, dateText);
       final contextId = context!.id;
+      expect(action, findsOneWidget);
       expect(find.text('Work From Home'), findsOneWidget);
 
       final tasksAfterSave = await runDb(
@@ -114,9 +123,9 @@ void main() {
         )..where((row) => row.id.equals(contextId))).getSingle(),
       );
       expect(tombstone.deletedAt, isNotNull);
+      expect(action, findsNothing);
 
-      await tester.tap(find.byKey(ValueKey('day-context-action-$dateText')));
-      await settle(tester);
+      await openFromOverflow();
       await tester.tap(find.byKey(const ValueKey('day-context-option-Travel')));
       await settle(tester);
       await tester.tap(find.byKey(const ValueKey('day-context-save')));

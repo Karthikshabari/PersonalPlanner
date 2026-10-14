@@ -1,3 +1,5 @@
+import '../../core/layout/breakpoints.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -365,7 +367,7 @@ class _KeyboardShortcutHandlerState
         final task = _selectedTask();
         if (task == null) return;
         ref.read(selectedTaskIdProvider.notifier).state = task.id;
-        if (MediaQuery.sizeOf(context).width < AppConstants.desktopBreakpoint) {
+        if (!Breakpoints.of(MediaQuery.sizeOf(context).width).hasSidePanel) {
           await TaskEditorPanel.showAsBottomSheet(context);
         } else if (_currentPath != '/day') {
           appRouter.go('/day');

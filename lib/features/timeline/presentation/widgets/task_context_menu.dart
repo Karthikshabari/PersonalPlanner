@@ -1,7 +1,9 @@
+import '../../../../core/layout/size_class_scope.dart';
+import '../../../../core/layout/breakpoints.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -62,7 +64,7 @@ Future<void> showTaskContextMenu(
       ref.read(selectedTaskIdProvider.notifier).state = task.id;
       ref.read(taskEditorOpenProvider.notifier).state = true;
       onEdit?.call();
-      if (MediaQuery.sizeOf(context).width < AppConstants.desktopBreakpoint) {
+      if (!Breakpoints.hasSidePanel(DaySizeClass.of(context))) {
         await TaskEditorPanel.showAsBottomSheet(context);
       }
       break;
