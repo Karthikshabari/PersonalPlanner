@@ -139,13 +139,15 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const ValueKey('overdue-badge')), findsOneWidget);
+    // Day's Needs attention shows a relative age; the exact time is in its
+    // tooltip.
     expect(find.text('Overdue thing'), findsOneWidget);
-    // Badge shows the original date (medium date without year part).
+    expect(find.text('Yesterday'), findsOneWidget);
+    // 08:00 (the start) until the overdue stamp lands, 09:00 (the end) after.
+    final exactDay = '${DateFormat('EEE, MMM d').format(yesterday)} · ';
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('overdue-badge')),
-        matching: find.text(DateFormat('MMM d').format(yesterday)),
+      find.byWidgetPredicate(
+        (w) => w is Tooltip && (w.message ?? '').startsWith(exactDay),
       ),
       findsOneWidget,
     );
@@ -189,8 +191,9 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.byKey(const ValueKey('due-date-badge')), findsOneWidget);
-    expect(find.text('Due today'), findsWidgets);
+    // Day shows the capture as a "Due today" row (no overdue age).
+    expect(find.byKey(ValueKey('day-attention-${item.id}')), findsOneWidget);
+    expect(find.text('Due today'), findsOneWidget);
     expect(item.startTime, isNull);
     expect(item.endTime, isNull);
     expect(find.byKey(const ValueKey('overdue-badge')), findsNothing);

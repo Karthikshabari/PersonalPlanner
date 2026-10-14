@@ -109,7 +109,7 @@ void main() {
     await pumpApp(tester, container, surface: const Size(1600, 1000));
     expect(container.read(taskEditorOpenProvider), isFalse);
 
-    await tester.tap(find.byKey(ValueKey('inbox-menu-${overdue.id}')));
+    await tester.tap(find.byKey(ValueKey('day-attention-menu-${overdue.id}')));
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);

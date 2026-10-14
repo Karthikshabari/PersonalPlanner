@@ -8,10 +8,11 @@ import '../../../../../core/theme/app_spacing.dart';
 import '../../../../../core/theme/app_theme_tokens.dart';
 import '../../../../../core/widgets/error_panel.dart';
 import '../../../../inbox/presentation/widgets/day_needs_attention.dart';
-import '../../../../inbox/presentation/widgets/inbox_task_tile.dart';
 import '../../../../inbox/providers/inbox_provider.dart';
 import '../../../../review/presentation/widgets/review_animated_size.dart';
 import '../day_style.dart';
+import 'attention_groups.dart';
+import 'day_attention_list.dart';
 
 export '../../../../inbox/presentation/widgets/day_needs_attention.dart'
     show dayAttentionExpandedProvider;
@@ -25,6 +26,11 @@ const _estimatedRowHeight = 64.0;
 
 const _stripHeaderHeight = 48.0;
 
+/// Heights assumed for the group headings and the "Move all to today" line
+/// when sizing the strip body.
+const _estimatedGroupHeaderHeight = 32.0;
+const _moveAllHeight = 48.0;
+
 /// One tinted surface for the overdue banner and strip: the amber warning
 /// colour at 12% over the surface (no Opacity layer).
 Color _amberTint(BuildContext context) {
@@ -36,6 +42,11 @@ Color _amberTint(BuildContext context) {
 }
 
 String _title(int count) => 'Needs attention · $count';
+
+/// The clock Day's attention list reads, with the test fallback.
+DateTime _watchNow(WidgetRef ref) =>
+    ref.watch(inboxClockProvider.select((clock) => clock.value)) ??
+    ref.read(inboxNowFactoryProvider)();
 
 /// Reads [dayAttentionProvider] the way Day always has: the list is rebuilt
 /// every minute, so rows (and any dialog opened from one) stay mounted while
@@ -75,9 +86,6 @@ class _AttentionSource extends ConsumerWidget {
   }
 }
 
-Widget _row(InboxItem item) =>
-    InboxTaskTile(key: ValueKey('day-attention-${item.task.id}'), item: item);
-
 /// Compact: one amber line ("13 overdue · Review") that opens the list in a
 /// draggable bottom sheet.
 class DayAttentionBanner extends StatelessWidget {
@@ -88,16 +96,23 @@ class DayAttentionBanner extends StatelessWidget {
       _AttentionSource(builder: (context, items) => _Banner(items: items));
 }
 
-class _Banner extends StatelessWidget {
+class _Banner extends ConsumerWidget {
   const _Banner({required this.items});
 
   final List<InboxItem> items;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tokens = AppThemeTokens.of(context);
-    final overdue = items.where((item) => item.isOverdue).length;
-    final dueToday = items.length - overdue;
+    var overdue = 0;
+    var dueToday = 0;
+    for (final group in groupAttention(items, _watchNow(ref))) {
+      if (group.kind == AttentionGroupKind.dueToday) {
+        dueToday += group.items.length;
+      } else {
+        overdue += group.items.length;
+      }
+    }
     final text = [
       if (overdue > 0) '$overdue overdue',
       if (dueToday > 0) '$dueToday due today',
@@ -159,6 +174,9 @@ class _Banner extends StatelessWidget {
   }
 }
 
+/// The compact list. It has its own [ScaffoldMessenger] and [Scaffold] so the
+/// "Moved to 14:00 · Undo" bar shows inside the sheet: the route's scrim and
+/// the sheet itself would cover a bar shown by the page underneath.
 class _AttentionSheet extends StatelessWidget {
   const _AttentionSheet();
 
@@ -169,54 +187,65 @@ class _AttentionSheet extends StatelessWidget {
       initialChildSize: 0.6,
       minChildSize: 0.3,
       maxChildSize: 0.95,
-      builder: (context, controller) => _AttentionSource(
-        builder: (context, items) => ListView.builder(
-          key: const ValueKey('day-attention-sheet-list'),
-          controller: controller,
-          // The header is item 0 so dragging it moves the sheet.
-          itemCount: items.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) return _SheetHeader(count: items.length);
-            return _row(items[index - 1]);
-          },
+      builder: (context, controller) => ScaffoldMessenger(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Builder(
+            // Outlives the rows: they hand it to the snack bar.
+            builder: (feedbackContext) => _AttentionSource(
+              empty: _SheetEmpty(controller: controller),
+              builder: (context, items) => DayAttentionList(
+                items: items,
+                // The sheet covers the timeline, so there is nothing to drop on.
+                showDragHandle: false,
+                controller: controller,
+                scrollKey: const ValueKey('day-attention-sheet-list'),
+                leading: const _GrabBar(),
+                feedbackContext: feedbackContext,
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({required this.count});
-
-  final int count;
+class _GrabBar extends StatelessWidget {
+  const _GrabBar();
 
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.sm,
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 32,
-            height: 4,
-            decoration: BoxDecoration(
-              color: tokens.outlineStrong,
-              borderRadius: BorderRadius.circular(DayStyle.pill),
-            ),
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Center(
+        child: Container(
+          width: 32,
+          height: 4,
+          decoration: BoxDecoration(
+            color: tokens.outlineStrong,
+            borderRadius: BorderRadius.circular(DayStyle.pill),
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Text(_title(count), style: DayStyle.section(context)),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+/// What the sheet shows once the last item has been dealt with.
+class _SheetEmpty extends StatelessWidget {
+  const _SheetEmpty({required this.controller});
+
+  final ScrollController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      controller: controller,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      children: const [_GrabBar(), _PanelEmpty()],
     );
   }
 }
@@ -257,7 +286,15 @@ class _Strip extends ConsumerWidget {
       0.0,
       maxHeight - _stripHeaderHeight - border - 2 * verticalPadding,
     );
-    final listHeight = math.min(listCap, items.length * _estimatedRowHeight);
+    // Rows, group headings and the "Move all" line; taller content scrolls.
+    final groups = groupAttention(items, _watchNow(ref));
+    final overdue = items.where((item) => item.isOverdue).length;
+    final listHeight = math.min(
+      listCap,
+      items.length * _estimatedRowHeight +
+          groups.length * _estimatedGroupHeaderHeight +
+          (overdue >= 2 ? _moveAllHeight : 0),
+    );
     final radius = BorderRadius.circular(DayStyle.medium(context));
 
     final header = SizedBox(
@@ -319,9 +356,11 @@ class _Strip extends ConsumerWidget {
               if (expanded)
                 SizedBox(
                   height: listHeight,
-                  child: ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (context, index) => _row(items[index]),
+                  child: DayAttentionList(
+                    items: items,
+                    // The timeline is visible under the strip.
+                    showDragHandle: true,
+                    showTitle: false,
                   ),
                 ),
             ],
@@ -383,41 +422,7 @@ class _PanelList extends StatelessWidget {
         borderRadius: BorderRadius.circular(DayStyle.medium(context)),
         border: Border.all(color: tokens.outline),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: _stripHeaderHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 20,
-                    color: tokens.warning,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      _title(items.length),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: DayStyle.section(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: items.length,
-              itemBuilder: (context, index) => _row(items[index]),
-            ),
-          ),
-        ],
-      ),
+      child: DayAttentionList(items: items, showDragHandle: true),
     );
   }
 }

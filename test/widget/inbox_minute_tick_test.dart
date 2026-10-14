@@ -56,7 +56,7 @@ void main() {
     final (container, id) = await pumpDay(tester);
     expect(find.byKey(ValueKey('day-attention-$id')), findsOneWidget);
 
-    await tester.tap(find.byKey(ValueKey('inbox-menu-$id')));
+    await tester.tap(find.byKey(ValueKey('day-attention-menu-$id')));
     await settle(tester);
     await tester.tap(find.text('Edit'));
     await settle(tester);
@@ -89,15 +89,11 @@ void main() {
     (tester) async {
       final (container, id) = await pumpDay(tester);
 
-      await tester.tap(find.byKey(ValueKey('inbox-menu-$id')));
+      await tester.tap(find.byKey(ValueKey('day-attention-menu-$id')));
       await settle(tester);
       await tester.tap(find.text('Schedule'));
       await settle(tester);
-      // Date picker, then the 24-hour time picker.
-      await tester.tap(find.text('OK'));
-      await settle(tester);
-      await tester.tap(find.text('OK'));
-      await settle(tester);
+      // The scheduling form opens directly (it has the date and time fields).
       expect(find.text('Schedule Inbox capture'), findsOneWidget);
 
       await tickPastMidnight(tester);
