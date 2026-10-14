@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,6 +17,7 @@ import '../../../../core/widgets/global_search_action.dart';
 import '../../../analytics/providers/analytics_providers.dart';
 import '../../../day_context/presentation/day_context_editor.dart';
 import '../../../day_context/providers/day_context_providers.dart';
+import '../../../review/presentation/widgets/weekly_review_style.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/snap_to_grid.dart';
@@ -95,9 +97,21 @@ class DayHeaderBar extends ConsumerWidget {
   }
 }
 
-const _iconButtonStyle = ButtonStyle(
-  minimumSize: WidgetStatePropertyAll(DayStyle.minTarget),
+ButtonStyle _iconButtonStyle(BuildContext context) => ButtonStyle(
+  minimumSize: const WidgetStatePropertyAll(DayStyle.minTarget),
+  side: DayStyle.focusBorder(context),
 );
+
+/// Tooltip text with the shortcut appended. The hint is shown only at medium
+/// and up and only where the shortcut handler is active (the same platform
+/// check as `KeyboardShortcutHandler._isDesktop`, which ignores Android and
+/// iOS), so a hint never advertises a key that does nothing.
+String _tip(WindowSizeClass sizeClass, String label, String key) {
+  final shortcutsActive =
+      defaultTargetPlatform != TargetPlatform.android &&
+      defaultTargetPlatform != TargetPlatform.iOS;
+  return !sizeClass.isCompact && shortcutsActive ? '$label ($key)' : label;
+}
 
 Future<void> _pickDate(
   BuildContext context,
@@ -132,10 +146,11 @@ void _step(WidgetRef ref, DateTime selected, int days) {
 }
 
 class _DaySwitcher extends ConsumerWidget {
-  const _DaySwitcher({required this.expand});
+  const _DaySwitcher({required this.expand, required this.sizeClass});
 
   /// Fill the available width (compact second row).
   final bool expand;
+  final WindowSizeClass sizeClass;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -145,11 +160,22 @@ class _DaySwitcher extends ConsumerWidget {
       showSelectedIcon: false,
       expandedInsets: expand ? EdgeInsets.zero : null,
       style: ButtonStyle(
-        side: WidgetStatePropertyAll(BorderSide(color: tokens.outlineStrong)),
+        side: DayStyle.focusBorder(
+          context,
+          rest: BorderSide(color: tokens.outlineStrong),
+        ),
       ),
-      segments: const [
-        ButtonSegment(value: 'day', label: Text('Day')),
-        ButtonSegment(value: 'week', label: Text('Week')),
+      segments: [
+        ButtonSegment(
+          value: 'day',
+          label: const Text('Day'),
+          tooltip: _tip(sizeClass, 'Toggle Day/Week', 'W'),
+        ),
+        ButtonSegment(
+          value: 'week',
+          label: const Text('Week'),
+          tooltip: _tip(sizeClass, 'Toggle Day/Week', 'W'),
+        ),
       ],
       selected: const {'day'},
       onSelectionChanged: (selection) {
@@ -172,11 +198,16 @@ class _TodayButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isToday = isSameDay(selected, ref.read(insightsNowFactoryProvider)());
+    final tokens = AppThemeTokens.of(context);
     return OutlinedButton(
       key: const ValueKey('day-today'),
-      style: padding == null
-          ? null
-          : OutlinedButton.styleFrom(padding: padding),
+      style: ButtonStyle(
+        padding: padding == null ? null : WidgetStatePropertyAll(padding),
+        side: DayStyle.focusBorder(
+          context,
+          rest: BorderSide(color: tokens.outlineStrong),
+        ),
+      ),
       onPressed: isToday ? null : () => _setToday(ref),
       child: const Text('Today'),
     );
@@ -293,7 +324,7 @@ class _OverflowMenu extends ConsumerWidget {
       builder: (context, controller, _) => IconButton(
         key: const ValueKey('day-overflow'),
         tooltip: 'More actions',
-        style: _iconButtonStyle,
+        style: _iconButtonStyle(context),
         icon: const Icon(Icons.more_vert),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
@@ -329,7 +360,7 @@ class _CompactTopBar extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.sm,
                         ),
-                      ),
+                      ).copyWith(side: DayStyle.focusBorder(context)),
                       onPressed: () => _pickDate(context, ref, selected),
                       child: Text(
                         DateFormat('EEE, MMM d').format(selected),
@@ -372,7 +403,10 @@ class _CompactTopBar extends ConsumerWidget {
               horizontal: AppSpacing.md,
               vertical: AppSpacing.xs,
             ),
-            child: const _DaySwitcher(expand: true),
+            child: _DaySwitcher(
+              expand: true,
+              sizeClass: DaySizeClass.of(context),
+            ),
           ),
         ),
       ],
@@ -414,8 +448,8 @@ class _WideHeader extends ConsumerWidget {
                 constraints.maxWidth >= _labelledNewTaskWidth(textScale);
             final previous = IconButton(
               key: const ValueKey('day-previous'),
-              tooltip: 'Previous day (←)',
-              style: _iconButtonStyle,
+              tooltip: _tip(sizeClass, 'Previous day', '←'),
+              style: _iconButtonStyle(context),
               icon: const Icon(Icons.chevron_left),
               onPressed: () => _step(ref, selected, -1),
             );
@@ -424,7 +458,7 @@ class _WideHeader extends ConsumerWidget {
               style: TextButton.styleFrom(
                 foregroundColor: tokens.textPrimary,
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              ),
+              ).copyWith(side: DayStyle.focusBorder(context)),
               onPressed: () => _pickDate(context, ref, selected),
               child: Text(
                 DateFormat('EEE, MMM d, yyyy').format(selected),
@@ -435,8 +469,8 @@ class _WideHeader extends ConsumerWidget {
             );
             final next = IconButton(
               key: const ValueKey('day-next'),
-              tooltip: 'Next day (→)',
-              style: _iconButtonStyle,
+              tooltip: _tip(sizeClass, 'Next day', '→'),
+              style: _iconButtonStyle(context),
               icon: const Icon(Icons.chevron_right),
               onPressed: () => _step(ref, selected, 1),
             );
@@ -450,24 +484,31 @@ class _WideHeader extends ConsumerWidget {
                   )
                 : null;
             final today = Tooltip(
-              message: 'Today (T)',
+              message: _tip(sizeClass, 'Today', 'T'),
               child: _TodayButton(selected: selected),
             );
-            const switcher = _DaySwitcher(expand: false);
+            final switcher = _DaySwitcher(expand: false, sizeClass: sizeClass);
+            final newTaskStyle = ButtonStyle(
+              side: DayStyle.focusBorder(context),
+            );
             final newTask = Tooltip(
-              message: 'New task (N)',
-              child: labelled
-                  ? FilledButton.icon(
-                      key: const ValueKey('day-new-task'),
-                      onPressed: () => requestNewTask(ref),
-                      icon: const Icon(Icons.add),
-                      label: const Text('New task'),
-                    )
-                  : FilledButton(
-                      key: const ValueKey('day-new-task'),
-                      onPressed: () => requestNewTask(ref),
-                      child: const Icon(Icons.add),
-                    ),
+              message: _tip(sizeClass, 'New task', 'N'),
+              child: WeeklyPressScale(
+                child: labelled
+                    ? FilledButton.icon(
+                        key: const ValueKey('day-new-task'),
+                        style: newTaskStyle,
+                        onPressed: () => requestNewTask(ref),
+                        icon: const Icon(Icons.add),
+                        label: const Text('New task'),
+                      )
+                    : FilledButton(
+                        key: const ValueKey('day-new-task'),
+                        style: newTaskStyle,
+                        onPressed: () => requestNewTask(ref),
+                        child: const Icon(Icons.add),
+                      ),
+              ),
             );
             final sync = <Widget>[
               const SizedBox(width: AppSpacing.xs),

@@ -10,6 +10,7 @@ import '../../../../../core/widgets/error_panel.dart';
 import '../../../../inbox/presentation/widgets/day_needs_attention.dart';
 import '../../../../inbox/providers/inbox_provider.dart';
 import '../../../../review/presentation/widgets/review_animated_size.dart';
+import '../../../../review/presentation/widgets/weekly_review_style.dart';
 import '../day_style.dart';
 import 'attention_groups.dart';
 import 'day_attention_list.dart';
@@ -126,45 +127,47 @@ class _Banner extends ConsumerWidget {
         AppSpacing.md,
         AppSpacing.xs,
       ),
-      child: Material(
-        key: const ValueKey('day-needs-attention'),
-        color: _amberTint(context),
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(color: tokens.warning.withValues(alpha: 0.4)),
-        ),
-        child: InkWell(
-          key: const ValueKey('day-attention-banner'),
-          borderRadius: radius,
-          onTap: () => showModalBottomSheet<void>(
-            context: context,
-            isScrollControlled: true,
-            useSafeArea: true,
-            builder: (_) => const _AttentionSheet(),
+      child: WeeklyPressScale(
+        child: Material(
+          key: const ValueKey('day-needs-attention'),
+          color: _amberTint(context),
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(color: tokens.warning.withValues(alpha: 0.4)),
           ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 48),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 20,
-                    color: tokens.warning,
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      text,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: DayStyle.section(context)
-                          .copyWith(color: tokens.textPrimary),
+          child: InkWell(
+            key: const ValueKey('day-attention-banner'),
+            borderRadius: radius,
+            onTap: () => showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              builder: (_) => const _AttentionSheet(),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 20,
+                      color: tokens.warning,
                     ),
-                  ),
-                  Icon(Icons.expand_less, color: tokens.textSecondary),
-                ],
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: DayStyle.section(context)
+                            .copyWith(color: tokens.textPrimary),
+                      ),
+                    ),
+                    Icon(Icons.expand_less, color: tokens.textSecondary),
+                  ],
+                ),
               ),
             ),
           ),

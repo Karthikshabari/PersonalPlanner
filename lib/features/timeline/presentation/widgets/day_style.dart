@@ -52,13 +52,18 @@ abstract final class DayStyle {
   static Color hoverFill(BuildContext context) =>
       AppThemeTokens.of(context).hover;
 
-  /// 2px `tokens.focus` border when focused, none otherwise.
-  static WidgetStateBorderSide focusBorder(BuildContext context) {
+  /// 2px `tokens.focus` border when focused, [rest] otherwise (none by
+  /// default; outlined buttons pass their normal outline so setting this
+  /// does not remove it).
+  static WidgetStateBorderSide focusBorder(
+    BuildContext context, {
+    BorderSide rest = BorderSide.none,
+  }) {
     final focus = AppThemeTokens.of(context).focus;
     return WidgetStateBorderSide.resolveWith(
       (states) => states.contains(WidgetState.focused)
           ? BorderSide(color: focus, width: 2)
-          : BorderSide.none,
+          : rest,
     );
   }
 

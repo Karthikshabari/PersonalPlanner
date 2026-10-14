@@ -9,9 +9,11 @@ import '../../../../core/layout/breakpoints.dart';
 import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../recurring/providers/recurring_providers.dart';
+import '../../../review/presentation/widgets/weekly_review_style.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../timer/presentation/widgets/timer_overlay.dart';
 import '../providers/selected_date_provider.dart';
@@ -20,6 +22,7 @@ import '../widgets/attention/day_attention_section.dart';
 import '../widgets/day_header_bar.dart';
 import '../widgets/day_layout.dart';
 import '../widgets/day_side_panel.dart';
+import '../widgets/day_style.dart';
 import '../widgets/timeline_widget.dart';
 
 class DayViewScreen extends ConsumerStatefulWidget {
@@ -124,11 +127,13 @@ class _DayViewScreenState extends ConsumerState<DayViewScreen> {
       return Scaffold(
         floatingActionButton: _mobileEditorOpen
             ? null
-            : FloatingActionButton.extended(
-                key: const ValueKey('day-new-task-fab'),
-                onPressed: () => requestNewTask(ref),
-                icon: const Icon(Icons.add),
-                label: const Text('New task'),
+            : WeeklyPressScale(
+                child: FloatingActionButton.extended(
+                  key: const ValueKey('day-new-task-fab'),
+                  onPressed: () => requestNewTask(ref),
+                  icon: const Icon(Icons.add),
+                  label: const Text('New task'),
+                ),
               ),
         body: SafeArea(
           top: true,
@@ -246,7 +251,7 @@ class _DayMaterializationStatus extends ConsumerWidget {
   }
 }
 
-/// One-time tip that an empty slot can be double-clicked to add a block.
+/// One-time tip that tapping an empty slot adds a task.
 class _DayCreateTip extends ConsumerWidget {
   const _DayCreateTip();
 
@@ -256,6 +261,7 @@ class _DayCreateTip extends ConsumerWidget {
     // Hidden while loading so it never flashes for a user who already
     // dismissed it.
     if (dismissed != false) return const SizedBox.shrink();
+    final tokens = AppThemeTokens.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md,
@@ -263,24 +269,37 @@ class _DayCreateTip extends ConsumerWidget {
         AppSpacing.md,
         0,
       ),
-      child: Row(
-        key: const ValueKey('day-create-tip'),
-        children: [
-          const Icon(Icons.lightbulb_outline, size: 16),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              'Tip: ${doubleClickVerb()} an empty slot to add a block.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surfaceRaised,
+          borderRadius: BorderRadius.circular(DayStyle.small(context)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: AppSpacing.md),
+          child: Row(
+            key: const ValueKey('day-create-tip'),
+            children: [
+              Icon(
+                Icons.lightbulb_outline,
+                size: 16,
+                color: tokens.textSecondary,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'Tip: tap an empty slot to add a task.',
+                  style: DayStyle.secondary(context),
+                ),
+              ),
+              TextButton(
+                key: const ValueKey('day-create-tip-dismiss'),
+                onPressed: () =>
+                    ref.read(dayCreateTipDismissedProvider.notifier).dismiss(),
+                child: const Text('Got it'),
+              ),
+            ],
           ),
-          TextButton(
-            key: const ValueKey('day-create-tip-dismiss'),
-            onPressed: () =>
-                ref.read(dayCreateTipDismissedProvider.notifier).dismiss(),
-            child: const Text('Got it'),
-          ),
-        ],
+        ),
       ),
     );
   }

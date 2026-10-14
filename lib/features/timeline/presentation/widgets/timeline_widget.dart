@@ -1,11 +1,12 @@
 import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/layout/breakpoints.dart';
-import '../providers/double_click_tip_provider.dart';
 
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/category.dart';
@@ -41,6 +42,8 @@ import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../providers/timeline_action_provider.dart';
 import 'current_time_indicator.dart';
+import 'day_layout.dart';
+import 'day_style.dart';
 import 'draggable_task_block.dart';
 import 'ghost_preview.dart';
 import 'resizable_handle.dart';
@@ -99,6 +102,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   final _removalTimers = <String, Timer>{};
   bool _quickCreateOpening = false;
 
+  /// Snapped slot under the mouse while it is free; drives only the hover
+  /// overlay, so a pointer move never rebuilds the timeline.
+  final _hoverSlot = ValueNotifier<int?>(null);
+  int? _lastHoverSnap;
+
   double get _pixelsPerMinute => AppConstants.pixelsPerMinute;
 
   PlannerDayAxis get _dayAxis => PlannerDayAxis(ref.read(selectedDateProvider));
@@ -139,6 +147,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     }
     _removalTimers.clear();
     _scrollController.dispose();
+    _hoverSlot.dispose();
     super.dispose();
   }
 
@@ -254,19 +263,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     );
   }
 
-  void _handleDoubleTapDown(TapDownDetails details) {
-    if (_quickCreateSlot != null || _drag != null || _resize != null) return;
-    final tasks = _currentTasks();
-    // The detector is attached to the content-sized background grid, so its
-    // local position is already expressed in timeline-content coordinates.
-    final contentY = details.localPosition.dy;
+  /// The snapped slot at [contentY] (timeline-content coordinates), or null
+  /// when a task already occupies it.
+  int? _freeSlotAt(double contentY) {
     final rawMinutes = contentY / _pixelsPerMinute;
     final snapped = snapSlotStart(
       rawMinutes.round(),
       _gridMinutes,
     ).clamp(0, _dayAxis.durationMinutes - _gridMinutes);
     final slotEnd = snapped + _gridMinutes;
-    for (final task in tasks) {
+    for (final task in _currentTasks()) {
       final visibleTask = _clipTaskToSelectedDay(task);
       final s = visibleTask.startTime == null
           ? 0.0
@@ -274,9 +280,50 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       final e = visibleTask.endTime == null
           ? s + _gridMinutes
           : _dayAxis.elapsedMinutes(visibleTask.endTime!);
-      if (snapped < e && slotEnd > s) return;
+      if (snapped < e && slotEnd > s) return null;
     }
+    return snapped;
+  }
+
+  void _handleEmptySlotTap(TapUpDetails details) {
+    // With a task selected the first tap on empty space only deselects.
+    if (ref.read(selectedTaskIdProvider) != null) {
+      ref.read(selectedTaskIdProvider.notifier).state = null;
+      return;
+    }
+    if (_quickCreateSlot != null ||
+        _quickCreateOpening ||
+        _drag != null ||
+        _resize != null) {
+      return;
+    }
+    // The detector is attached to the content-sized background grid, so its
+    // local position is already expressed in timeline-content coordinates.
+    final snapped = _freeSlotAt(details.localPosition.dy);
+    if (snapped == null) return;
     setState(() => _quickCreateSlot = snapped);
+  }
+
+  void _handleGridHover(PointerHoverEvent event) {
+    if (_quickCreateSlot != null ||
+        _quickCreateOpening ||
+        _drag != null ||
+        _resize != null) {
+      _clearHover();
+      return;
+    }
+    final snapped = snapSlotStart(
+      (event.localPosition.dy / _pixelsPerMinute).round(),
+      _gridMinutes,
+    ).clamp(0, _dayAxis.durationMinutes - _gridMinutes);
+    if (snapped == _lastHoverSnap) return;
+    _lastHoverSnap = snapped;
+    _hoverSlot.value = _freeSlotAt(event.localPosition.dy);
+  }
+
+  void _clearHover() {
+    _lastHoverSnap = null;
+    _hoverSlot.value = null;
   }
 
   // ------------------------------------------------------------------
@@ -608,6 +655,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     final dragTaskId = _drag?.task.id;
     final resizeTaskId = _resize?.task.id;
 
+    // The empty-day card sits one hour below the minute the timeline scrolls
+    // to on open (now - 90 min today, 07:00 on other days).
+    final emptyAnchorMinutes = showNowLine
+        ? _dayAxis.elapsedMinutes(now) - DayLayout.nowScrollLeadMinutes
+        : 7 * Duration.minutesPerHour.toDouble();
+    final emptyCardTop =
+        ((emptyAnchorMinutes + Duration.minutesPerHour) * _pixelsPerMinute)
+            .clamp(8.0, _totalHeight - 240)
+            .toDouble();
+
     final requestedQuickCreate = ref.watch(timelineQuickCreateSlotProvider);
     if (requestedQuickCreate != null &&
         _quickCreateSlot != requestedQuickCreate) {
@@ -665,12 +722,47 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                       return Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onDoubleTapDown: _handleDoubleTapDown,
-                            onDoubleTap: () {},
-                            child: _buildHourGrid(context, grid),
+                          MouseRegion(
+                            onHover: _handleGridHover,
+                            onExit: (_) => _clearHover(),
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTapUp: _handleEmptySlotTap,
+                              child: _buildHourGrid(context, grid),
+                            ),
                           ),
+                          ValueListenableBuilder<int?>(
+                            valueListenable: _hoverSlot,
+                            builder: (context, slot, _) {
+                              if (slot == null ||
+                                  _drag != null ||
+                                  _resize != null) {
+                                return const SizedBox.shrink();
+                              }
+                              return Positioned(
+                                top: slot * _pixelsPerMinute,
+                                height: grid * _pixelsPerMinute,
+                                left: AppConstants.hourLabelWidth + 8,
+                                right: AppSpacing.md + editActionGutter,
+                                child: _HoverSlotHighlight(
+                                  label:
+                                      '+ ${formatClock24(PlannerTimeZone.toPlannerLocal(_dayAxis.instantAt(slot.toDouble())))}',
+                                ),
+                              );
+                            },
+                          ),
+                          if (liveTasks.isEmpty && _quickCreateSlot == null)
+                            Positioned(
+                              top: emptyCardTop,
+                              left: AppConstants.hourLabelWidth + 8,
+                              right: AppSpacing.md,
+                              child: Align(
+                                alignment: Alignment.topLeft,
+                                child: _EmptyDayCard(
+                                  onAdd: _requestQuickCreateAtCurrentTime,
+                                ),
+                              ),
+                            ),
                           for (final task in tasks)
                             _buildPositionedBlock(
                               context,
@@ -743,10 +835,6 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
               ),
             ),
           ),
-          if (liveTasks.isEmpty && _quickCreateSlot == null)
-            Positioned.fill(
-              child: _EmptyDayState(onAdd: _requestQuickCreateAtCurrentTime),
-            ),
         ],
       ),
     );
@@ -1042,34 +1130,105 @@ class _SelectedTaskEditAction extends StatelessWidget {
   }
 }
 
-class _EmptyDayState extends StatelessWidget {
-  final VoidCallback onAdd;
+/// One-slot-tall hint painted under the mouse over a free slot.
+class _HoverSlotHighlight extends StatelessWidget {
+  final String label;
 
-  const _EmptyDayState({required this.onAdd});
+  const _HoverSlotHighlight({required this.label});
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      ignoring: false,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Tooltip(
-              message: 'Add block (or ${doubleClickVerb()} an empty slot)',
-              child: TextButton.icon(
-                key: const ValueKey('empty-day-add'),
-                onPressed: onAdd,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add block'),
+      child: DecoratedBox(
+        key: const ValueKey('timeline-hover-slot'),
+        decoration: BoxDecoration(
+          color: DayStyle.hoverFill(context),
+          borderRadius: BorderRadius.circular(DayStyle.small(context)),
+        ),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.clip,
+              softWrap: false,
+              style: DayStyle.secondary(context).copyWith(height: 1),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Quiet card shown inside the scroll content when the day has no tasks.
+class _EmptyDayCard extends StatelessWidget {
+  final VoidCallback onAdd;
+
+  const _EmptyDayCard({required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 420),
+      child: DecoratedBox(
+        key: const ValueKey('empty-day-card'),
+        decoration: BoxDecoration(
+          color: tokens.surfaceRaised,
+          borderRadius: BorderRadius.circular(DayStyle.medium(context)),
+          border: Border.all(color: tokens.outline),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.event_available_outlined,
+                    size: 24,
+                    color: tokens.textSecondary,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Flexible(
+                    child: Text(
+                      'Nothing scheduled.',
+                      style: DayStyle.section(context),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Text(
-              'or ${doubleClickVerb()} an empty slot',
-              key: const ValueKey('empty-day-hint'),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Tap a time slot or pull something from Inbox.',
+                key: const ValueKey('empty-day-hint'),
+                style: DayStyle.secondary(context),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  FilledButton.icon(
+                    key: const ValueKey('empty-day-add'),
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('New task'),
+                  ),
+                  OutlinedButton(
+                    key: const ValueKey('empty-day-inbox'),
+                    onPressed: () => context.go('/inbox'),
+                    child: const Text('Open Inbox'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

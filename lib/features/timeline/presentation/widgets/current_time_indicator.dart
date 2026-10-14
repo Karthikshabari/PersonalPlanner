@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/planner_day_axis.dart';
 import '../../../../core/utils/planner_time_zone.dart';
+import 'day_style.dart';
 
 class CurrentTimeIndicator extends StatefulWidget {
   final double pixelsPerMinute;
@@ -77,31 +78,42 @@ class _CurrentTimeIndicatorState extends State<CurrentTimeIndicator> {
       left: widget.left,
       right: widget.right,
       top: top - 0.75,
-      child: IgnorePointer(
-        child: Semantics(
-          label:
-              'Current time ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}',
-          child: Row(
-            children: [
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: tokens.info,
-                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                ),
-                child: Text(
-                  '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    color: tokens.surfaceRaised,
+      // The row is centred on the time, so the line sits exactly at it for any
+      // pill height or text scale.
+      child: FractionalTranslation(
+        translation: const Offset(0, -0.5),
+        child: IgnorePointer(
+          child: Semantics(
+            label:
+                'Current time ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}',
+            child: Row(
+              children: [
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: tokens.info,
+                    borderRadius: BorderRadius.circular(DayStyle.pill),
+                  ),
+                  child: Text(
+                    '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: tokens.surfaceRaised,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(child: Divider(color: tokens.info, thickness: 1.5)),
-            ],
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Divider(color: tokens.info, thickness: 2, height: 2),
+                ),
+              ],
+            ),
           ),
         ),
       ),

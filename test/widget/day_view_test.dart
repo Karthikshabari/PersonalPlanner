@@ -96,12 +96,13 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('double-tap empty slot creates task via quick create', (
-    tester,
-  ) async {
+  testWidgets('tap empty slot creates task via quick create', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
+    await tester.tap(
+      find.byKey(const ValueKey('timeline-gestures')),
+      warnIfMissed: false,
+    );
     await settle(tester);
     expect(find.text('Create scheduled task'), findsOneWidget);
 
@@ -153,6 +154,28 @@ void main() {
     await doubleTap(tester, createdBlock);
     await settle(tester);
     expect(find.text('Edit Task'), findsOneWidget);
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('double tap on an empty slot still opens one quick create', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    await pumpDesktop(tester, container);
+    // The first tap opens the dialog; the second lands on its barrier or
+    // inside it and must neither queue a second dialog nor change the slot.
+    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
+    await settle(tester);
+    expect(find.text('Create scheduled task'), findsOneWidget);
+
+    // Saving rebuilds the timeline; a queued second dialog would open now.
+    await tester.enterText(
+      find.byKey(const ValueKey('quick-create-input')),
+      'Once',
+    );
+    await tester.tap(find.byKey(const ValueKey('quick-create-submit')));
+    await settle(tester);
+    expect(find.text('Create scheduled task'), findsNothing);
     await teardownApp(tester, container);
   });
 
@@ -388,7 +411,7 @@ void main() {
     );
     expect(label(todayLabel), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Next day (→)'));
+    await tester.tap(find.byTooltip('Next day'));
     await settle(tester);
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     expect(
@@ -398,9 +421,9 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.byTooltip('Previous day (←)'));
+    await tester.tap(find.byTooltip('Previous day'));
     await settle(tester);
-    await tester.tap(find.byTooltip('Previous day (←)'));
+    await tester.tap(find.byTooltip('Previous day'));
     await settle(tester);
     final yesterday = DateTime.now().subtract(const Duration(days: 1));
     expect(

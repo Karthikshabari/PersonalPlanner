@@ -12,6 +12,7 @@ import 'error_panel.dart';
 import 'task_progress_background.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
 import '../../features/timeline/domain/timeline_geometry.dart';
+import '../../features/timeline/presentation/widgets/day_style.dart';
 import 'status_badge.dart';
 
 class TaskBlockWidget extends ConsumerWidget {
@@ -122,277 +123,351 @@ class TaskBlockWidget extends ConsumerWidget {
       onTap: onTap,
       child: Material(
         color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          onDoubleTap: onDoubleTap,
-          mouseCursor: onTap == null
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
-          hoverColor: tokens.hover,
-          focusColor: tokens.focus.withValues(alpha: 0.12),
-          splashColor: tokens.selected,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            decoration: BoxDecoration(
-              color: selected
-                  ? Color.alphaBlend(tokens.selected, tokens.surfaceRaised)
-                  : tokens.surfaceRaised,
-              // A non-uniform Border cannot have a borderRadius (paint-time
-              // crash), so overlap blocks use square corners.
-              borderRadius: hasOverlap || selected
-                  ? null
-                  : BorderRadius.circular(tokens.radiusSmall),
-              border: hasOverlap
-                  ? Border(
-                      left: BorderSide(
-                        color: categoryColor ?? AppColors.primary,
-                        width: 4,
+        child: LayoutBuilder(
+          builder: (context, outer) {
+            // Blocks at least 48 px tall get the card radius, shorter ones the
+            // small radius.
+            final blockHeight = outer.hasBoundedHeight
+                ? outer.maxHeight
+                : (geometry?.heightPx ?? 0);
+            final radius = BorderRadius.circular(
+              blockHeight >= 48
+                  ? DayStyle.medium(context)
+                  : DayStyle.small(context),
+            );
+            final baseFill = selected
+                ? Color.alphaBlend(tokens.selected, tokens.surfaceRaised)
+                : tokens.surfaceRaised;
+            return InkWell(
+              onTap: onTap,
+              onDoubleTap: onDoubleTap,
+              mouseCursor: onTap == null
+                  ? SystemMouseCursors.basic
+                  : SystemMouseCursors.click,
+              hoverColor: Colors.transparent,
+              focusColor: tokens.focus.withValues(alpha: 0.12),
+              splashColor: tokens.selected,
+              borderRadius: radius,
+              child: _HoverFill(
+                builder: (context, hovered, child) => Container(
+                  decoration: BoxDecoration(
+                    // The ink of an InkWell paints under this opaque fill, so
+                    // the hover tint is blended into the fill itself.
+                    color: hovered
+                        ? Color.alphaBlend(tokens.hover, baseFill)
+                        : baseFill,
+                    // A non-uniform Border with several visible colours cannot
+                    // have a borderRadius (paint-time crash), so overlap blocks
+                    // use square corners. The selection ring is a separate
+                    // uniform foreground border and keeps the corners round.
+                    borderRadius: hasOverlap ? null : radius,
+                    border: hasOverlap
+                        ? Border(
+                            left: BorderSide(
+                              color: categoryColor ?? AppColors.primary,
+                              width: 4,
+                            ),
+                            top: BorderSide(color: tokens.warning, width: 1.5),
+                            right: BorderSide(
+                              color: tokens.warning,
+                              width: 1.5,
+                            ),
+                            bottom: BorderSide(
+                              color: tokens.warning,
+                              width: 1.5,
+                            ),
+                          )
+                        : Border(
+                            left: BorderSide(
+                              color: categoryColor ?? AppColors.primary,
+                              width: 4,
+                            ),
+                          ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: selected
+                            ? tokens.focus.withValues(alpha: 0.38)
+                            : colorScheme.shadow.withValues(alpha: 0.24),
+                        blurRadius: selected ? 8 : 4,
+                        spreadRadius: selected ? 1 : 0,
                       ),
-                      top: BorderSide(color: tokens.warning, width: 1.5),
-                      right: BorderSide(color: tokens.warning, width: 1.5),
-                      bottom: BorderSide(color: tokens.warning, width: 1.5),
-                    )
-                  : Border(
-                      left: BorderSide(
-                        color: categoryColor ?? AppColors.primary,
-                        width: 4,
-                      ),
-                      top: selected
-                          ? BorderSide(color: tokens.focus, width: 1.5)
-                          : BorderSide.none,
-                      right: selected
-                          ? BorderSide(color: tokens.focus, width: 1.5)
-                          : BorderSide.none,
-                      bottom: selected
-                          ? BorderSide(color: tokens.focus, width: 1.5)
-                          : BorderSide.none,
-                    ),
-              boxShadow: [
-                BoxShadow(
-                  color: selected
-                      ? tokens.focus.withValues(alpha: 0.38)
-                      : colorScheme.shadow.withValues(alpha: 0.24),
-                  blurRadius: selected ? 8 : 4,
-                  spreadRadius: selected ? 1 : 0,
+                    ],
+                  ),
+                  foregroundDecoration: selected
+                      ? BoxDecoration(
+                          borderRadius: hasOverlap ? null : radius,
+                          border: Border.all(color: tokens.focus, width: 2),
+                        )
+                      : null,
+                  child: child,
                 ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                if (geometry != null)
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                      child: TaskProgressBackground(geometry: geometry!),
-                    ),
-                  ),
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? AppSpacing.xs : AppSpacing.md,
-                    vertical: AppSpacing.xs,
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compactBlock =
-                          compact ||
-                          (geometry == null
-                              ? constraints.maxHeight < compactHeightThreshold
-                              : geometry!.heightPx < compactHeightThreshold);
-                      final showPriorTitle =
-                          planChange != null &&
-                          (compact
-                              ? geometry != null
-                                    ? geometry!.heightPx >=
-                                          compactHeightThreshold
-                                    : constraints.maxHeight >= 48
-                              : constraints.maxHeight >= 58);
-                      final titleStyle = Theme.of(context).textTheme.titleSmall
-                          ?.copyWith(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: taskFillForeground,
-                          );
-                      final title = Tooltip(
-                        message: planChange == null
-                            ? task.title
-                            : '${planChange.previousTitle} → ${task.title}',
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                task.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: titleStyle,
-                              ),
-                            ),
-                            if (planChange != null &&
-                                !showPriorTitle &&
-                                (!compactBlock || renderedSubtaskCount == null))
-                              Icon(
-                                Icons.history,
-                                key: const ValueKey('plan-change-indicator'),
-                                size: 12,
-                                color: taskFillForeground,
-                              ),
-                          ],
+                child: Stack(
+                  children: [
+                    if (geometry != null)
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: radius,
+                          child: TaskProgressBackground(geometry: geometry!),
                         ),
-                      );
-                      final durationLabel = duration == null
-                          ? null
-                          : Text(
-                              duration.shortLabel,
-                              key: const ValueKey('task-duration-label'),
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: geometry == null
-                                    ? colorScheme.onSurfaceVariant
-                                    : tokens.onTaskFill.withValues(alpha: 0.82),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            );
-                      final subtaskLabel = renderedSubtaskCount == null
-                          ? null
-                          : Text(
-                              renderedSubtaskCount,
-                              key: const ValueKey('subtask-count'),
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            );
-                      return Stack(
-                        children: [
-                          if (hasOverlap)
-                            Positioned.fill(
-                              child: IgnorePointer(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: CustomPaint(
-                                    painter: _StripesPainter(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          if (compactBlock && showPriorTitle)
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              mainAxisSize: MainAxisSize.min,
+                      ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? AppSpacing.xs : AppSpacing.md,
+                        vertical: AppSpacing.xs,
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compactBlock =
+                              compact ||
+                              (geometry == null
+                                  ? constraints.maxHeight <
+                                        compactHeightThreshold
+                                  : geometry!.heightPx <
+                                        compactHeightThreshold);
+                          final showPriorTitle =
+                              planChange != null &&
+                              (compact
+                                  ? geometry != null
+                                        ? geometry!.heightPx >=
+                                              compactHeightThreshold
+                                        : constraints.maxHeight >= 48
+                                  : constraints.maxHeight >= 58);
+                          final titleStyle = Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: taskFillForeground,
+                              );
+                          final title = Tooltip(
+                            message: planChange == null
+                                ? task.title
+                                : '${planChange.previousTitle} → ${task.title}',
+                            child: Row(
                               children: [
-                                Text(
-                                  planChange.previousTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: titleStyle?.copyWith(
-                                    fontWeight: FontWeight.w400,
-                                    decoration: TextDecoration.lineThrough,
-                                  ),
-                                ),
-                                title,
-                              ],
-                            )
-                          else if (compactBlock)
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(child: title),
-                                if (subtaskLabel != null) ...[
-                                  const SizedBox(width: AppSpacing.xs),
-                                  subtaskLabel,
-                                ],
-                              ],
-                            )
-                          else
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (showPriorTitle)
-                                  Text(
-                                    planChange.previousTitle,
+                                Expanded(
+                                  child: Text(
+                                    task.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: titleStyle?.copyWith(
-                                      fontWeight: FontWeight.w400,
-                                      decoration: TextDecoration.lineThrough,
-                                    ),
+                                    style: titleStyle,
                                   ),
-                                title,
-                                if (subtaskLabel != null) ...[
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: subtaskLabel,
-                                  ),
-                                ],
-                                if (subtaskLookupLoading && !subtaskLookupError)
-                                  const Align(
-                                    alignment: Alignment.centerRight,
-                                    child: SizedBox(
-                                      width: 10,
-                                      height: 10,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.5,
-                                      ),
-                                    ),
-                                  ),
-                                if (lookupError != null)
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: Tooltip(
-                                      message: lookupError,
-                                      child: Icon(
-                                        Icons.error_outline,
-                                        size: 12,
-                                        color: colorScheme.error,
-                                      ),
-                                    ),
-                                  ),
-                                Row(
-                                  children: [
-                                    StatusBadge(
-                                      status: task.status,
-                                      onTap: onStatusTap,
-                                    ),
-                                    const Spacer(),
-                                    durationLabel ?? const SizedBox.shrink(),
-                                  ],
                                 ),
+                                if (planChange != null &&
+                                    !showPriorTitle &&
+                                    (!compactBlock ||
+                                        renderedSubtaskCount == null))
+                                  Icon(
+                                    Icons.history,
+                                    key: const ValueKey(
+                                      'plan-change-indicator',
+                                    ),
+                                    size: 12,
+                                    color: taskFillForeground,
+                                  ),
                               ],
                             ),
-                          if (hasOverlap)
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              child: Icon(
-                                Icons.warning_amber_rounded,
-                                size: 13,
-                                color: tokens.warning,
-                              ),
-                            ),
-                          // Recurring-series marker (Chunk 4 #14): small ↻ in the
-                          // corner; the overlap warning wins when both apply.
-                          if (task.recurringRuleId != null && !hasOverlap)
-                            Positioned(
-                              top: 0,
-                              right: 2,
-                              child: Icon(
-                                key: const ValueKey('recurring-indicator'),
-                                Icons.refresh,
-                                size: 13,
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
+                          );
+                          final durationLabel = duration == null
+                              ? null
+                              : Text(
+                                  duration.shortLabel,
+                                  key: const ValueKey('task-duration-label'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: geometry == null
+                                        ? colorScheme.onSurfaceVariant
+                                        : tokens.onTaskFill.withValues(
+                                            alpha: 0.82,
+                                          ),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                );
+                          final subtaskLabel = renderedSubtaskCount == null
+                              ? null
+                              : Text(
+                                  renderedSubtaskCount,
+                                  key: const ValueKey('subtask-count'),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                );
+                          return Stack(
+                            children: [
+                              if (hasOverlap)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: CustomPaint(
+                                        painter: _StripesPainter(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (compactBlock && showPriorTitle)
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      planChange.previousTitle,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: titleStyle?.copyWith(
+                                        fontWeight: FontWeight.w400,
+                                        decoration: TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                    title,
+                                  ],
+                                )
+                              else if (compactBlock)
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(child: title),
+                                    if (subtaskLabel != null) ...[
+                                      const SizedBox(width: AppSpacing.xs),
+                                      subtaskLabel,
+                                    ],
+                                  ],
+                                )
+                              else
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (showPriorTitle)
+                                      Text(
+                                        planChange.previousTitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: titleStyle?.copyWith(
+                                          fontWeight: FontWeight.w400,
+                                          decoration:
+                                              TextDecoration.lineThrough,
+                                        ),
+                                      ),
+                                    // The count shares the title line so the
+                                    // 12sp meta text still fits a 54 px card.
+                                    if (subtaskLabel == null)
+                                      title
+                                    else
+                                      Row(
+                                        children: [
+                                          Expanded(child: title),
+                                          const SizedBox(width: AppSpacing.xs),
+                                          subtaskLabel,
+                                        ],
+                                      ),
+                                    if (subtaskLookupLoading &&
+                                        !subtaskLookupError)
+                                      const Align(
+                                        alignment: Alignment.centerRight,
+                                        child: SizedBox(
+                                          width: 10,
+                                          height: 10,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                          ),
+                                        ),
+                                      ),
+                                    if (lookupError != null)
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: Tooltip(
+                                          message: lookupError,
+                                          child: Icon(
+                                            Icons.error_outline,
+                                            size: 12,
+                                            color: colorScheme.error,
+                                          ),
+                                        ),
+                                      ),
+                                    Row(
+                                      children: [
+                                        StatusBadge(
+                                          status: task.status,
+                                          onTap: onStatusTap,
+                                        ),
+                                        const Spacer(),
+                                        durationLabel ??
+                                            const SizedBox.shrink(),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              if (hasOverlap)
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: Icon(
+                                    Icons.warning_amber_rounded,
+                                    size: 13,
+                                    color: tokens.warning,
+                                  ),
+                                ),
+                              // Recurring-series marker (Chunk 4 #14): small ↻ in the
+                              // corner; the overlap warning wins when both apply.
+                              if (task.recurringRuleId != null && !hasOverlap)
+                                Positioned(
+                                  top: 0,
+                                  right: 2,
+                                  child: Icon(
+                                    key: const ValueKey('recurring-indicator'),
+                                    Icons.refresh,
+                                    size: 13,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+/// Hover state for one block, kept in its own small State so a pointer
+/// entering or leaving rebuilds only the fill, never the timeline.
+class _HoverFill extends StatefulWidget {
+  final Widget Function(BuildContext context, bool hovered, Widget child)
+  builder;
+  final Widget child;
+
+  const _HoverFill({required this.builder, required this.child});
+
+  @override
+  State<_HoverFill> createState() => _HoverFillState();
+}
+
+class _HoverFillState extends State<_HoverFill> {
+  bool _hovered = false;
+
+  void _set(bool value) {
+    if (_hovered != value) setState(() => _hovered = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => _set(true),
+      onExit: (_) => _set(false),
+      child: widget.builder(context, _hovered, widget.child),
     );
   }
 }
