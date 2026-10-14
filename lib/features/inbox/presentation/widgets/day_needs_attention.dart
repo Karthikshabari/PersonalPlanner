@@ -24,7 +24,10 @@ class DayNeedsAttention extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final attention = ref.watch(dayAttentionProvider);
+    // The list is rebuilt every minute; keep the rows (and any dialog opened
+    // from one) mounted while it reloads.
     return attention.when(
+      skipLoadingOnReload: true,
       loading: () => const SizedBox.shrink(),
       error: (error, stack) => Padding(
         padding: const EdgeInsets.fromLTRB(

@@ -32,6 +32,24 @@ String friendlyErrorMessage(Object error) {
   return 'Something went wrong. Your local data was not discarded; please retry.';
 }
 
+final _frameworkRef = RegExp(r'\bref\b', caseSensitive: false);
+
+/// The message of an error our own code threw for the user (an
+/// [ArgumentError] or [StateError] with a written message); anything else,
+/// including a Riverpod "Using ref ... unmounted" [StateError], goes through
+/// [friendlyErrorMessage].
+String userFacingErrorMessage(Object error) {
+  final message = switch (error) {
+    ArgumentError(:final message) => '$message',
+    StateError(:final message) => message,
+    _ => null,
+  };
+  if (message == null || _frameworkRef.hasMatch(message)) {
+    return friendlyErrorMessage(error);
+  }
+  return message;
+}
+
 class ErrorPanel extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;

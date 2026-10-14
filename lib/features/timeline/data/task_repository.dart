@@ -144,11 +144,18 @@ class TaskRepository {
       // source. Reload it before the full task write so this status update
       // cannot replay the pre-stop cache captured above.
       final accounting = await _dao.getTaskById(effective.id) ?? current;
-      final finalTask = canonical.copyWith(
+      var finalTask = canonical.copyWith(
         actualDurationMin: accounting.actualDurationMin,
         manualDurationAdjustmentMin: accounting.manualDurationAdjustmentMin,
         manualActualSet: accounting.manualActualSet,
       );
+      // `missed_at` is the planned end minute, stamped once. A new end time
+      // makes it stale (and a block moved to the future is no longer
+      // missed), so clear it in this same write; the next stamp recomputes
+      // it from the new end. An unchanged end keeps it.
+      if (!_sameInstant(row.endTime, finalTask.endTime)) {
+        finalTask = finalTask.copyWith(missedAt: null);
+      }
       await _dao.updateTask(
         _toRow(finalTask, syncStatus: 1, revision: row.revision + 1),
       );
@@ -449,6 +456,9 @@ class TaskRepository {
     syncStatus: const Value(1),
     revision: const Value(1),
   );
+
+  static bool _sameInstant(DateTime? a, DateTime? b) =>
+      a == null || b == null ? a == b : a.isAtSameMomentAs(b);
 
   static bool _sameInboxHistory(List<InboxClosure> a, List<InboxClosure> b) {
     if (a.length != b.length) return false;

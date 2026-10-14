@@ -152,4 +152,63 @@ class TaskEditorDraft {
           : latest.actualDurationMin,
     );
   }
+
+  /// Labels for fields the user changed in [edited] (against [latest], the row
+  /// the edit was merged onto) that were also changed to another value in
+  /// [fresh], the row as it is just before the write.
+  static List<String> lateConflictingFields(
+    Task edited,
+    Task latest,
+    Task fresh, {
+    required bool actualDurationDirty,
+  }) {
+    return TaskEditorDraft(
+      title: edited.title,
+      description: edited.description,
+      notes: edited.notes,
+      categoryId: edited.categoryId,
+      tagId: edited.tagId,
+      status: edited.status,
+      startTime: edited.startTime,
+      endTime: edited.endTime,
+      dueDate: edited.dueDate,
+      actualDurationMin: edited.actualDurationMin,
+      actualDurationDirty: actualDurationDirty,
+    ).conflictingFields(latest, fresh);
+  }
+
+  /// Moves [edited] (merged onto [latest]) onto [fresh]: a field the user
+  /// changed keeps the user's value, every other field takes [fresh]'s. The
+  /// app's own automatic columns (`missed_at`, `updated_at`) always come from
+  /// [fresh], so a minute stamp that landed meanwhile is neither lost nor
+  /// treated as a conflict.
+  static Task rebaseOnto(Task edited, Task latest, Task fresh) {
+    T pick<T>(T mine, T base, T theirs) => mine != base ? mine : theirs;
+    return edited.copyWith(
+      title:
+          TaskEditorBaseline.normalizeTitle(edited.title) !=
+              TaskEditorBaseline.normalizeTitle(latest.title)
+          ? edited.title
+          : fresh.title,
+      description: pick(
+        edited.description,
+        latest.description,
+        fresh.description,
+      ),
+      notes: pick(edited.notes, latest.notes, fresh.notes),
+      categoryId: pick(edited.categoryId, latest.categoryId, fresh.categoryId),
+      tagId: pick(edited.tagId, latest.tagId, fresh.tagId),
+      status: pick(edited.status, latest.status, fresh.status),
+      startTime: pick(edited.startTime, latest.startTime, fresh.startTime),
+      endTime: pick(edited.endTime, latest.endTime, fresh.endTime),
+      dueDate: pick(edited.dueDate, latest.dueDate, fresh.dueDate),
+      actualDurationMin: pick(
+        edited.actualDurationMin,
+        latest.actualDurationMin,
+        fresh.actualDurationMin,
+      ),
+      missedAt: fresh.missedAt,
+      updatedAt: fresh.updatedAt,
+    );
+  }
 }

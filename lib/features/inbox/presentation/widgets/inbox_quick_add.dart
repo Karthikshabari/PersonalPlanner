@@ -17,6 +17,9 @@ Future<void> showInboxQuickAddDialog(
   BuildContext context,
   WidgetRef ref,
 ) async {
+  // Read before the dialog opens: the opening widget can be rebuilt away
+  // while the dialog is up, and its ref would then throw.
+  final repository = ref.read(inboxRepositoryProvider);
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -24,8 +27,7 @@ Future<void> showInboxQuickAddDialog(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: InboxCaptureEditor(
-          onSubmit: (content, _) =>
-              ref.read(inboxRepositoryProvider).addToInbox(content),
+          onSubmit: (content, _) => repository.addToInbox(content),
           onCommitted: () => Navigator.of(dialogContext).pop(),
           onCancel: () => Navigator.of(dialogContext).pop(),
         ),
@@ -42,6 +44,7 @@ Future<void> showInboxEditDialog(
   required String taskId,
   required String initialContent,
 }) async {
+  final repository = ref.read(taskRepositoryProvider);
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
@@ -52,7 +55,6 @@ Future<void> showInboxEditDialog(
           title: 'Edit Inbox capture',
           initialContent: initialContent,
           onSubmit: (content, _) async {
-            final repository = ref.read(taskRepositoryProvider);
             final snapshot = await repository.getTaskWithRevision(taskId);
             final current = snapshot?.$1;
             final revision = snapshot?.$2;

@@ -43,12 +43,11 @@ class InboxTaskTile extends ConsumerWidget {
       );
       return;
     }
-    ref.read(selectedTaskIdProvider.notifier).state = item.task.id;
+    final selected = ref.read(selectedTaskIdProvider.notifier);
+    selected.state = item.task.id;
     if (!isDesktopWidth(MediaQuery.sizeOf(context).width)) {
       await TaskEditorPanel.showAsBottomSheet(context);
-      if (context.mounted) {
-        ref.read(selectedTaskIdProvider.notifier).state = null;
-      }
+      selected.state = null;
     }
   }
 

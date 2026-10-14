@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
@@ -173,6 +174,110 @@ void main() {
       () => container.read(taskRepositoryProvider).getTaskById(task.id),
     );
     expect(saved!.title, 'Remote title');
+    await finish(tester, container);
+  });
+
+  // UAT-002: the once-a-minute missed stamp raises `revision` while the
+  // title-change dialog is open; the save must still go through.
+  testWidgets(
+    'save succeeds when the stamp bumps the revision under a dialog',
+    (tester) async {
+      final container = await buildTestContainer(tester);
+      final task = await insertTask(tester, container);
+      container.read(selectedDateProvider.notifier).state = DateTime(
+        2027,
+        3,
+        15,
+      );
+      await pumpApp(tester, container, surface: const Size(1400, 1000));
+      requestEditor(container, task.id);
+      await settle(tester);
+
+      await tester.enterText(titleField(), 'Stamped title');
+      await save(tester, replacePlanChange: false);
+      final replace = find.byKey(const ValueKey('plan-change-replace'));
+      expect(replace, findsOneWidget);
+
+      final before = await runDb(
+        tester,
+        () =>
+            container.read(taskRepositoryProvider).getTaskWithRevision(task.id),
+      );
+      final stamped = await runDb(
+        tester,
+        () => container
+            .read(inboxRepositoryProvider)
+            .stampOverdue(DateTime(2027, 3, 16)),
+      );
+      expect(stamped, 1);
+      final during = await runDb(
+        tester,
+        () =>
+            container.read(taskRepositoryProvider).getTaskWithRevision(task.id),
+      );
+      expect(during!.$2, before!.$2 + 1);
+
+      await tester.tap(replace);
+      await settle(tester);
+
+      expect(find.textContaining('Something went wrong'), findsNothing);
+      expect(find.text('Task changed elsewhere'), findsNothing);
+      final saved = await runDb(
+        tester,
+        () => container.read(taskRepositoryProvider).getTaskById(task.id),
+      );
+      expect(saved!.title, 'Stamped title');
+      // The stamp's own write is carried over, not undone by the save.
+      expect(saved.missedAt, during.$1.missedAt);
+      expect(saved.missedAt, isNotNull);
+      await finish(tester, container);
+    },
+  );
+
+  testWidgets('a real edit made elsewhere under the dialog still conflicts', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    final task = await insertTask(tester, container);
+    container.read(selectedDateProvider.notifier).state = DateTime(2027, 3, 15);
+    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    requestEditor(container, task.id);
+    await settle(tester);
+
+    await tester.enterText(titleField(), 'Local title');
+    await save(tester, replacePlanChange: false);
+    final replace = find.byKey(const ValueKey('plan-change-replace'));
+    expect(replace, findsOneWidget);
+
+    final current = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    await runDb(
+      tester,
+      () => container
+          .read(taskRepositoryProvider)
+          .updateTask(current!.copyWith(title: 'Remote title')),
+    );
+    await tester.tap(replace);
+    await settle(tester);
+
+    // Nothing is written on the stale decision, and the generic message does
+    // not appear; the next Save goes through the normal conflict choice.
+    expect(find.textContaining('Something went wrong'), findsNothing);
+    expect(
+      find.textContaining('changed elsewhere while you were saving'),
+      findsWidgets,
+    );
+    final unchanged = await runDb(
+      tester,
+      () => container.read(taskRepositoryProvider).getTaskById(task.id),
+    );
+    expect(unchanged!.title, 'Remote title');
+    await save(tester, replacePlanChange: false);
+    expect(find.text('Task changed elsewhere'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('reload-task')));
+    await settle(tester);
     await finish(tester, container);
   });
 

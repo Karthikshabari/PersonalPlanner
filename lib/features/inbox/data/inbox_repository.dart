@@ -119,7 +119,10 @@ class InboxRepository {
     // The minute the task became overdue is a pure function of its planned
     // end, so every device stamps the same value and concurrent stamps
     // converge instead of conflicting.
-    return _db.customUpdate(
+    // `customUpdate` reports its tables as changed even when no row matched,
+    // which re-queries every task stream once a minute; report only a stamp
+    // that changed rows.
+    final stamped = await _db.customUpdate(
       "UPDATE tasks SET missed_at = strftime('%Y-%m-%dT%H:%M', end_time), "
       'updated_at = ?, sync_status = 1, revision = revision + 1 '
       'WHERE deleted_at IS NULL AND is_inbox = 0 AND missed_at IS NULL '
@@ -128,8 +131,13 @@ class InboxRepository {
         Variable<String>(now.toIso8601String()),
         Variable<String>(_utcIso(now)),
       ],
-      updates: {_db.tasks},
     );
+    if (stamped > 0) {
+      _db.notifyUpdates({
+        TableUpdate.onTable(_db.tasks, kind: UpdateKind.update),
+      });
+    }
+    return stamped;
   }
 
   // ---------------------------------------------------------------------

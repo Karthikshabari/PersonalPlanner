@@ -103,19 +103,10 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
       if (committed) Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = _friendlyError(error));
+      setState(() => _error = userFacingErrorMessage(error));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  /// Our own ArgumentError/StateError messages are written for the user;
-  /// anything else (Drift, SQLite, platform) may dump whole rows, so it is
-  /// mapped to a safe message.
-  String _friendlyError(Object error) {
-    if (error is ArgumentError) return '${error.message}';
-    if (error is StateError) return error.message;
-    return friendlyErrorMessage(error);
   }
 
   @override

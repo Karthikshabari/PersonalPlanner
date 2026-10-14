@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
+import '../../../../core/widgets/error_panel.dart';
 
 /// Shared raw-content editor for new Inbox captures and explicit capture edits.
 /// The widget owns the draft until [onSubmit] completes successfully.
@@ -81,14 +82,11 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
       }
       widget.onCommitted?.call();
     } catch (error) {
-      if (mounted) setState(() => _error = _friendlyError(error));
+      if (mounted) setState(() => _error = userFacingErrorMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
-
-  String _friendlyError(Object error) =>
-      error.toString().replaceFirst('Bad state: ', '');
 
   @override
   Widget build(BuildContext context) {

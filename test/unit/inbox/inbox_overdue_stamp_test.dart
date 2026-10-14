@@ -35,4 +35,63 @@ void main() {
       await db.close();
     }
   });
+
+  // C-002: the minute stamp must not wake every task stream when it changes
+  // nothing.
+  test(
+    'stampOverdue notifies the tasks table only when it stamps a row',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      try {
+        final repository = InboxRepository(db);
+        var notifications = 0;
+        final subscription = db
+            .tableUpdates(TableUpdateQuery.onTable(db.tasks))
+            .listen((_) => notifications++);
+        Future<void> flush() =>
+            Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await db
+            .into(db.tasks)
+            .insert(
+              TasksCompanion.insert(
+                id: 'future-task',
+                title: 'Not yet',
+                startTime: Value(DateTime.utc(2026, 1, 1, 12)),
+                endTime: Value(DateTime.utc(2026, 1, 1, 13)),
+                createdAt: DateTime.utc(2026, 1, 1, 8),
+                updatedAt: DateTime.utc(2026, 1, 1, 8),
+              ),
+            );
+        await flush();
+        notifications = 0;
+
+        // Nothing is overdue: no rows change, no notification.
+        expect(await repository.stampOverdue(DateTime.utc(2026, 1, 1, 11)), 0);
+        await flush();
+        expect(notifications, 0);
+
+        // One block ends: one stamp, exactly one notification.
+        expect(
+          await repository.stampOverdue(DateTime.utc(2026, 1, 1, 13, 5)),
+          1,
+        );
+        await flush();
+        expect(notifications, 1);
+        final row = (await db.taskDao.getTaskById('future-task'))!;
+        expect(row.missedAt, '2026-01-01T13:00');
+
+        // The next minute finds it already stamped.
+        expect(
+          await repository.stampOverdue(DateTime.utc(2026, 1, 1, 13, 6)),
+          0,
+        );
+        await flush();
+        expect(notifications, 1);
+        await subscription.cancel();
+      } finally {
+        await db.close();
+      }
+    },
+  );
 }

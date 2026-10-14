@@ -870,6 +870,43 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
       editedTask = editedTask.copyWith(tagId: tag.id);
     }
 
+    // The dialogs above can stay open for a while, and the app writes to this
+    // row on its own (the once-a-minute missed stamp raises `revision` and
+    // sets `missed_at`/`updated_at`). Read the row again right before the
+    // write: an automatic write is carried over. A field the user edited that
+    // was changed elsewhere meanwhile is a real conflict; the choices made in
+    // the dialogs above were based on the older row, so nothing is written and
+    // the next Save runs the normal conflict choice against the current row.
+    final freshSnapshot = await ref
+        .read(taskRepositoryProvider)
+        .getTaskWithRevision(task.id);
+    final fresh = freshSnapshot?.$1;
+    final freshRevision = freshSnapshot?.$2;
+    if (fresh == null || fresh.deletedAt != null || freshRevision == null) {
+      if (mounted) setState(() => _saving = false);
+      _showValidationError(_taskDeletedMessage);
+      return;
+    }
+    final writeRevision = freshRevision;
+    if (freshRevision != latestRevision) {
+      final lateConflicts = TaskEditorDraft.lateConflictingFields(
+        editedTask,
+        latest,
+        fresh,
+        actualDurationDirty: actualDirty,
+      );
+      if (lateConflicts.isNotEmpty) {
+        if (mounted) setState(() => _saving = false);
+        _showValidationError(
+          'This task changed elsewhere while you were saving '
+          '(${lateConflicts.join(', ')}). Nothing was overwritten; press Save '
+          'again to review the changes.',
+        );
+        return;
+      }
+      editedTask = TaskEditorDraft.rebaseOnto(editedTask, latest, fresh);
+    }
+
     final wantsDetach = _repeat == RepeatPreset.never;
 
     if (hadRule) {
@@ -889,7 +926,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         extraTaskIds: schedulePlan.shifts.map((shift) => shift.taskId).toSet(),
         mutation: () async {
           await applySchedulePlan();
-          int? taskRevisionForWrite = latestRevision;
+          int? taskRevisionForWrite = writeRevision;
           final liveRule = await rulesRepo.getRuleById(ruleId);
           if (liveRule == null) {
             throw StateError('Recurring rule $ruleId not found');
@@ -1006,7 +1043,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     .read(taskRepositoryProvider)
                     .updateTask(
                       editedTask.copyWith(recurringRuleId: rule.id),
-                      expectedRevision: latestRevision,
+                      expectedRevision: writeRevision,
                     );
                 if (actualDirty && actual != null) {
                   await ref
@@ -1024,7 +1061,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     .read(taskRepositoryProvider)
                     .updateTask(
                       editedTask.copyWith(recurringRuleId: null),
-                      expectedRevision: latestRevision,
+                      expectedRevision: writeRevision,
                     );
                 if (actualDirty && actual != null) {
                   await ref

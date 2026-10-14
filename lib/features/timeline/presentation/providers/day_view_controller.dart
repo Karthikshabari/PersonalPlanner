@@ -201,41 +201,48 @@ abstract final class TimelineActions {
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 760),
-          child: TaskQuickCreate(
-            taskId: item.task.id,
-            initialStart: start,
-            initialEnd: end,
-            initialTitle: item.isOverdue ? item.task.title : sessionText.title,
-            initialDescription: item.isOverdue
-                ? item.task.description ?? ''
-                : sessionText.description ?? '',
-            heading: item.isOverdue
-                ? 'Reschedule overdue task'
-                : 'Schedule Inbox capture',
-            infoText: item.task.dueDate == null
-                ? null
-                : 'Due date: ${item.task.dueDate}',
-            conversionMode: !item.isOverdue,
-            onSubmit: (draft) async {
-              final committed = await scheduleInboxItem(
-                context,
-                ref,
-                item,
-                draft.start!,
-                draft.end!,
-                title: draft.title.trim(),
-                description: draft.description,
-                replaceDescription: true,
-              );
-              if (committed && dialogContext.mounted) {
-                Navigator.of(dialogContext).pop(true);
-              }
-              return false;
-            },
-            onCancel: () => Navigator.of(dialogContext).pop(false),
+      // The dialog's own Consumer supplies the context and ref used while saving:
+      // the opening widget (an Inbox row) can be unmounted by a rebuild while
+      // the dialog is open, and its ref would then throw.
+      builder: (_) => Consumer(
+        builder: (dialogContext, dialogRef, _) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560, maxHeight: 760),
+            child: TaskQuickCreate(
+              taskId: item.task.id,
+              initialStart: start,
+              initialEnd: end,
+              initialTitle: item.isOverdue
+                  ? item.task.title
+                  : sessionText.title,
+              initialDescription: item.isOverdue
+                  ? item.task.description ?? ''
+                  : sessionText.description ?? '',
+              heading: item.isOverdue
+                  ? 'Reschedule overdue task'
+                  : 'Schedule Inbox capture',
+              infoText: item.task.dueDate == null
+                  ? null
+                  : 'Due date: ${item.task.dueDate}',
+              conversionMode: !item.isOverdue,
+              onSubmit: (draft) async {
+                final committed = await scheduleInboxItem(
+                  dialogContext,
+                  dialogRef,
+                  item,
+                  draft.start!,
+                  draft.end!,
+                  title: draft.title.trim(),
+                  description: draft.description,
+                  replaceDescription: true,
+                );
+                if (committed && dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(true);
+                }
+                return false;
+              },
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+            ),
           ),
         ),
       ),
@@ -308,6 +315,9 @@ abstract final class TimelineActions {
     // provider graph.
     final viewedDate = ref.read(selectedDateProvider);
     final repository = ref.read(taskRepositoryProvider);
+    final history = ref.read(undoStackProvider.notifier);
+    final rulesRepo = ref.read(recurringRepositoryProvider);
+    final recurrence = ref.read(recurrenceServiceProvider);
 
     // Inbox rows store the placeholder title "Inbox capture"; the user knows
     // them by their captured text and finds them in the Inbox, not on the
@@ -338,7 +348,6 @@ abstract final class TimelineActions {
       );
       if (scope == null) return;
 
-      final rulesRepo = ref.read(recurringRepositoryProvider);
       final ruleId = task.recurringRuleId!;
       final boundary = startOfDay(task.startTime ?? viewedDate);
       final command = RecurrenceAggregateCommand(
@@ -353,17 +362,15 @@ abstract final class TimelineActions {
             await rulesRepo.addException(ruleId, boundary);
           } else {
             await rulesRepo.endSeriesBefore(ruleId, boundary);
-            await ref
-                .read(recurrenceServiceProvider)
-                .deleteMaterializedFuture(
-                  ruleId,
-                  boundary,
-                  keepTaskId: task.id,
-                );
+            await recurrence.deleteMaterializedFuture(
+              ruleId,
+              boundary,
+              keepTaskId: task.id,
+            );
           }
         },
       );
-      await ref.read(undoStackProvider.notifier).execute(command);
+      await history.execute(command);
       if (!context.mounted) return;
       showAppToast(
         context,
@@ -374,7 +381,7 @@ abstract final class TimelineActions {
       ref.invalidate(dayMaterializationProvider(viewedDate));
     } else {
       final command = DeleteTaskCommand(repository: repository, original: task);
-      await ref.read(undoStackProvider.notifier).execute(command);
+      await history.execute(command);
     }
   }
 
