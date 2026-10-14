@@ -8,14 +8,19 @@ import 'package:personal_planner/core/constants/app_constants.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/core/theme/app_theme.dart';
 import 'package:personal_planner/core/utils/planner_day_axis.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/widgets/status_badge.dart';
+import 'package:personal_planner/core/widgets/task_block_widget.dart';
+import 'package:personal_planner/features/timeline/domain/timeline_geometry.dart';
 import 'package:personal_planner/features/timeline/domain/snap_to_grid.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/ghost_preview.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/task_quick_create.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/timeline_overlap_action.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/timeline_widget.dart';
 
 import '../helpers/test_container.dart';
@@ -365,6 +370,89 @@ void main() {
       );
     }
     await teardownApp(tester, container);
+
+    // The overlap action and the drag ghost are only shown on demand, so build
+    // them directly at the smallest box a block gets (28 dp) and at text scale
+    // 1.5; the text must be 12sp or more and must fit with no overflow error.
+    final at = DateTime.utc(2026, 3, 10, 9);
+    final overlapping = [
+      for (var i = 0; i < 2; i++)
+        Task(
+          id: 'overlap-$i',
+          title: 'Overlap $i',
+          startTime: at,
+          endTime: at.add(const Duration(hours: 1)),
+          createdAt: at,
+          updatedAt: at,
+        ),
+    ];
+    final geometry = TimelineGeometry.layoutForDay(
+      tasks: overlapping,
+      date: at,
+    ).first;
+    for (final scale in [1.0, 1.5]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  width: 120,
+                  height: TaskBlockWidget.compactMinHeight,
+                  child: TimelineOverlapAction(
+                    geometry: geometry,
+                    tasks: overlapping,
+                    date: at,
+                    onOpen: (_) {},
+                  ),
+                ),
+                for (final (i, minutes) in [5, 15, 30, 90].indexed)
+                  GhostPreview(
+                    key: ValueKey('ghost-$minutes'),
+                    title: 'Ghost task',
+                    topPx: 60.0 + i * 100,
+                    heightPx: minutes * _ppm,
+                    left: 0,
+                    right: 0,
+                    accentColor: Colors.red,
+                    durationMinutes: minutes,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: 'scale $scale');
+      for (final (name, root) in [
+        ('overlap action', find.byType(TimelineOverlapAction)),
+        ('ghost preview', find.byType(GhostPreview)),
+      ]) {
+        final runs = find
+            .descendant(of: root, matching: find.byType(RichText))
+            .evaluate();
+        expect(runs, isNotEmpty, reason: name);
+        for (final element in runs) {
+          final paragraph = element.renderObject! as RenderParagraph;
+          expect(
+            paragraph.text.style?.fontSize,
+            greaterThanOrEqualTo(12),
+            reason: '$name text "${paragraph.text.toPlainText()}" at $scale',
+          );
+        }
+      }
+      // One line (ellipsis, never scaled down) inside the 28 dp box.
+      final label = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.byType(TimelineOverlapAction),
+          matching: find.byType(RichText),
+        ),
+      );
+      expect(label.size.height, lessThanOrEqualTo(28), reason: 'scale $scale');
+    }
   });
 
   testWidgets('the timeline opens at now minus 90 minutes', (tester) async {

@@ -38,7 +38,9 @@ void main() {
       // Settings left the Day header; on compact it is behind More.
       expect(find.byKey(const ValueKey('day-settings-action')), findsNothing);
       expect(find.byKey(const ValueKey('sync-status-action')), findsOneWidget);
-      expect(find.text('Today'), findsOneWidget);
+      // Today is a text button, or an icon button when the date needs the room
+      // (Ahem glyphs are one em wide, so it is the icon here).
+      expect(find.byKey(const ValueKey('day-today')), findsOneWidget);
       await tester.tap(find.text('More'));
       await settle(tester);
       expect(find.byKey(const ValueKey('more-sheet-settings')), findsOneWidget);

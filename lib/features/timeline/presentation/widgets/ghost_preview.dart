@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/duration_utils.dart';
+import '../../../../core/widgets/task_block_widget.dart';
+import 'day_style.dart';
 
 /// Translucent preview of a task block shown at the live drop position
 /// during a drag (architecture.md §8 — ghost preview). Purely presentational;
@@ -31,11 +33,30 @@ class GhostPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final tokens = AppThemeTokens.of(context);
+    // Below the compact threshold a real block is drawn at its minimum height
+    // with the title and the duration on one line; the preview does the same
+    // so 12sp text fits.
+    final compact = heightPx < TaskBlockWidget.compactHeightThreshold;
+    final title = Text(
+      this.title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
+    );
+    final duration = Text(
+      Duration(minutes: durationMinutes).shortLabel,
+      style: DayStyle.secondary(context)
+          .copyWith(color: colorScheme.onSurfaceVariant),
+    );
     return Positioned(
       top: topPx,
       left: left,
       right: right,
-      height: heightPx.clamp(1.0, double.infinity),
+      height: heightPx.clamp(
+        compact ? TaskBlockWidget.compactMinHeight : 1.0,
+        double.infinity,
+      ),
       child: IgnorePointer(
         child: Opacity(
           opacity: 0.55,
@@ -56,28 +77,22 @@ class GhostPreview extends StatelessWidget {
               vertical: 2,
             ),
             alignment: Alignment.topLeft,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleSmall
-                      ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-                Flexible(
-                  child: Text(
-                    Duration(minutes: durationMinutes).shortLabel,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
+            child: compact
+                ? Row(
+                    children: [
+                      Expanded(child: title),
+                      const SizedBox(width: AppSpacing.xs),
+                      duration,
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      Flexible(child: duration),
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

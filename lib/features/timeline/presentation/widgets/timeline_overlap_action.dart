@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../domain/timeline_geometry.dart';
+import 'day_style.dart';
 
 /// Compact, keyboard/touch accessible affordance for a dense overlap lane.
 ///
@@ -104,13 +105,12 @@ class TimelineOverlapAction extends StatelessWidget {
           child: Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  _label,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
+              child: Text(
+                _label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: DayStyle.secondary(context),
               ),
             ),
           ),

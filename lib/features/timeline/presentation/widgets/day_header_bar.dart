@@ -190,15 +190,38 @@ class _DaySwitcher extends ConsumerWidget {
 }
 
 class _TodayButton extends ConsumerWidget {
-  const _TodayButton({required this.selected, this.padding});
+  const _TodayButton({
+    required this.selected,
+    this.padding,
+    this.iconOnly = false,
+  });
 
   final DateTime selected;
   final EdgeInsetsGeometry? padding;
+
+  /// A 48x48 icon button instead of the text button; the compact top bar uses
+  /// it when the date has no room left at a large text size.
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isToday = isSameDay(selected, ref.read(insightsNowFactoryProvider)());
     final tokens = AppThemeTokens.of(context);
+    if (iconOnly) {
+      return IconButton(
+        key: const ValueKey('day-today'),
+        tooltip: 'Today',
+        style: ButtonStyle(
+          minimumSize: const WidgetStatePropertyAll(DayStyle.minTarget),
+          side: DayStyle.focusBorder(
+            context,
+            rest: BorderSide(color: tokens.outlineStrong),
+          ),
+        ),
+        icon: const Icon(Icons.today_outlined),
+        onPressed: isToday ? null : () => _setToday(ref),
+      );
+    }
     return OutlinedButton(
       key: const ValueKey('day-today'),
       style: ButtonStyle(
@@ -333,6 +356,68 @@ class _OverflowMenu extends ConsumerWidget {
   }
 }
 
+const double _dateButtonPadding = AppSpacing.sm;
+
+/// Width of a 48 dp touch target (`DayStyle.minTarget`).
+const double _targetExtent = 48;
+
+/// What the compact top bar shows for the date and for Today, decided by
+/// measuring the real text (style and the user's text scale) against the room
+/// the row leaves: "EEE, MMM d", then "MMM d", then "MMM d" with Today as an
+/// icon.
+class _CompactDateFit {
+  const _CompactDateFit(this.label, {required this.todayAsIcon});
+
+  final String label;
+  final bool todayAsIcon;
+
+  /// Search, sync status and the overflow menu, each a 48 dp target.
+  static const double _trailingWidth = 3 * _targetExtent;
+
+  /// Slack for rounding between the painter and the laid-out button.
+  static const double _slack = 4;
+
+  static double _textWidth(BuildContext context, String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  static _CompactDateFit resolve(
+    BuildContext context,
+    DateTime selected,
+    double rowWidth,
+  ) {
+    final style = DayStyle.dateTitle(context);
+    final long = DateFormat('EEE, MMM d').format(selected);
+    final short = DateFormat('MMM d').format(selected);
+    double needed(String text) =>
+        _textWidth(context, text, style) + 2 * _dateButtonPadding + _slack;
+    final room = rowWidth - _trailingWidth;
+    final todayText =
+        _textWidth(
+          context,
+          'Today',
+          Theme.of(context).textTheme.labelLarge ?? const TextStyle(),
+        ) +
+        2 * AppSpacing.md;
+    final todayWidth = todayText < _targetExtent ? _targetExtent : todayText;
+    if (needed(long) <= room - todayWidth) {
+      return _CompactDateFit(long, todayAsIcon: false);
+    }
+    if (needed(short) <= room - todayWidth) {
+      return _CompactDateFit(short, todayAsIcon: false);
+    }
+    return _CompactDateFit(short, todayAsIcon: true);
+  }
+}
+
 class _CompactTopBar extends ConsumerWidget {
   const _CompactTopBar();
 
@@ -348,39 +433,51 @@ class _CompactTopBar extends ConsumerWidget {
           height: 56,
           child: Padding(
             padding: const EdgeInsets.only(left: AppSpacing.sm),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton(
-                      key: const ValueKey('day-date-button'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: tokens.textPrimary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.sm,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final fit = _CompactDateFit.resolve(
+                  context,
+                  selected,
+                  constraints.maxWidth,
+                );
+                return Row(
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton(
+                          key: const ValueKey('day-date-button'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: tokens.textPrimary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: _dateButtonPadding,
+                            ),
+                          ).copyWith(side: DayStyle.focusBorder(context)),
+                          onPressed: () => _pickDate(context, ref, selected),
+                          child: Text(
+                            fit.label,
+                            semanticsLabel: DateFormat('EEEE, MMMM d, y')
+                                .format(selected),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: DayStyle.dateTitle(context),
+                          ),
                         ),
-                      ).copyWith(side: DayStyle.focusBorder(context)),
-                      onPressed: () => _pickDate(context, ref, selected),
-                      child: Text(
-                        DateFormat('EEE, MMM d').format(selected),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: DayStyle.dateTitle(context),
                       ),
                     ),
-                  ),
-                ),
-                _TodayButton(
-                  selected: selected,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                  ),
-                ),
-                const GlobalSearchAction(),
-                const SyncStatusAction(),
-                _OverflowMenu(date: selected, includeStepping: true),
-              ],
+                    _TodayButton(
+                      selected: selected,
+                      iconOnly: fit.todayAsIcon,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                      ),
+                    ),
+                    const GlobalSearchAction(),
+                    const SyncStatusAction(),
+                    _OverflowMenu(date: selected, includeStepping: true),
+                  ],
+                );
+              },
             ),
           ),
         ),

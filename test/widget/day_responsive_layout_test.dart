@@ -76,6 +76,33 @@ void main() {
     }
   });
 
+  for (final scale in [1.0, 1.5]) {
+    testWidgets('320x700 at text scale $scale: top bar has no overflow', (
+      tester,
+    ) async {
+      // Ahem is far wider than a real font, so this is the worst case for the
+      // compact top bar's date and Today fitting.
+      final container = await pumpResponsiveDay(
+        tester,
+        size: const Size(320, 700),
+        textScale: scale,
+        blocks: false,
+      );
+      expect(tester.takeException(), isNull);
+      expect(byKey('day-date-button'), findsOneWidget);
+      expect(byKey('day-today'), findsOneWidget);
+      expect(
+        tester.getSize(byKey('day-today')).width,
+        greaterThanOrEqualTo(48),
+      );
+      expect(
+        tester.getRect(byKey('day-today')).right,
+        lessThanOrEqualTo(tester.getRect(byKey('day-overflow')).left),
+      );
+      await finish(tester, container);
+    });
+  }
+
   testWidgets('13 overdue items do not shrink the timeline at 1280x800', (
     tester,
   ) async {
