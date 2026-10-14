@@ -134,7 +134,7 @@ void main() {
       );
       expect(find.text('Cloud setup needs a retry'), findsOneWidget);
       expect(find.text('Retry cloud setup'), findsOneWidget);
-      expect(find.byTooltip('Cloud setup pending'), findsOneWidget);
+      expect(find.byTooltip('Sync: Cloud setup pending'), findsOneWidget);
 
       await _teardown(tester, harness);
     },

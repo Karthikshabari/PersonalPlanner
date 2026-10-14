@@ -119,11 +119,12 @@ abstract final class AppTheme {
       ),
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: background,
-        minWidth: 88,
+        minWidth: 80,
         minExtendedWidth: 208,
         groupAlignment: -0.7,
         useIndicator: true,
         indicatorColor: AppColors.primary.withValues(alpha: 0.2),
+        indicatorShape: const StadiumBorder(),
         selectedIconTheme: const IconThemeData(color: AppColors.primary),
         unselectedIconTheme: IconThemeData(color: textSecondary),
         selectedLabelTextStyle: TextStyle(
@@ -134,7 +135,7 @@ abstract final class AppTheme {
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
-        height: 76,
+        height: 72,
         indicatorColor: AppColors.primary.withValues(alpha: 0.25),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)

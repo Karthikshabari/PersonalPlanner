@@ -39,7 +39,7 @@ void main() {
     });
   });
 
-  testWidgets('desktop width shows navigation rail, no bottom bar', (
+  testWidgets('large width shows an extended rail with seven labelled items', (
     tester,
   ) async {
     final container = await buildTestContainer(tester);
@@ -47,7 +47,93 @@ void main() {
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.byType(AdaptiveShell), findsOneWidget);
-    expect(find.text('Day'), findsWidgets);
+    final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+    expect(rail.extended, isTrue);
+    expect(rail.labelType, NavigationRailLabelType.none);
+    expect(rail.destinations, hasLength(4));
+    for (final label in [
+      'Day',
+      'Inbox',
+      'Review',
+      'Insights',
+      'Search',
+      'Categories',
+      'Settings',
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: 'rail label $label',
+      );
+    }
+    // Settings is reachable from exactly one place, and the old "PLAN"
+    // caption is gone.
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('PLAN'), findsNothing);
+    expect(find.byKey(const ValueKey('day-settings-action')), findsNothing);
+    // The rail carries Search, so the app bar does not.
+    expect(find.byKey(const ValueKey('mobile-search-action')), findsNothing);
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('medium and expanded widths show an icons-only rail', (
+    tester,
+  ) async {
+    for (final size in const [
+      Size(600, 900),
+      Size(700, 900),
+      Size(839, 900),
+      Size(1000, 800),
+      Size(1199, 800),
+    ]) {
+      final container = await buildTestContainer(tester);
+      appRouter.go('/day');
+      await pumpApp(tester, container, surface: size);
+      expect(find.byType(NavigationBar), findsNothing, reason: '$size');
+      final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+      expect(rail.extended, isFalse, reason: '$size');
+      // Hidden labels still get tooltips; Settings exists once.
+      for (final label in [
+        'Day',
+        'Inbox',
+        'Review',
+        'Insights',
+        'Search',
+        'Categories',
+        'Settings',
+      ]) {
+        expect(find.byTooltip(label), findsOneWidget, reason: '$label $size');
+      }
+      expect(find.text('PLAN'), findsNothing);
+      expect(find.byKey(const ValueKey('mobile-search-action')), findsNothing);
+      expect(tester.takeException(), isNull, reason: 'overflow at $size');
+      await teardownApp(tester, container);
+    }
+  });
+
+  testWidgets('a short window collapses the rail to primary plus More', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(800, 360));
+    final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
+    expect(rail.destinations, hasLength(4));
+    expect(find.byTooltip('More'), findsOneWidget);
+    expect(find.byTooltip('Categories'), findsNothing);
+    expect(find.byTooltip('Settings'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('More'));
+    await settle(tester);
+    expect(find.widgetWithText(MenuItemButton, 'Search'), findsOneWidget);
+    expect(find.widgetWithText(MenuItemButton, 'Categories'), findsOneWidget);
+    await tester.tap(find.widgetWithText(MenuItemButton, 'Settings'));
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/settings');
     await teardownApp(tester, container);
   });
 
@@ -57,12 +143,11 @@ void main() {
     final container = await buildTestContainer(tester);
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
-    expect(rail.destinations, hasLength(7));
     expect(
       rail.destinations
           .map((destination) => (destination.label as Text).data)
           .toList(),
-      isNot(contains('Week')),
+      ['Day', 'Inbox', 'Review', 'Insights'],
     );
     expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
     expect(find.byIcon(Icons.home_outlined), findsNothing);
@@ -101,16 +186,21 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('mobile width shows bottom navigation bar', (tester) async {
+  testWidgets('width 599 shows the bottom bar, 600 shows a rail', (
+    tester,
+  ) async {
     final container = await buildTestContainer(tester);
-    await pumpApp(tester, container, surface: const Size(600, 900));
+    await pumpApp(tester, container, surface: const Size(599, 900));
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
+    await pumpApp(tester, container, surface: const Size(600, 900));
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.byType(NavigationRail), findsOneWidget);
     await teardownApp(tester, container);
   });
 
   testWidgets(
-    'compact phones keep four stable destinations and global Search',
+    'compact phones keep five stable destinations and global Search',
     (tester) async {
       for (final width in <double>[320, 360, 393, 412]) {
         final container = await buildTestContainer(tester);
@@ -118,15 +208,27 @@ void main() {
         await pumpApp(tester, container, surface: Size(width, 844));
 
         final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
-        expect(bar.destinations, hasLength(4));
+        expect(bar.destinations, hasLength(5));
         expect(
           bar.destinations
               .map(
                 (destination) => (destination as NavigationDestination).label,
               )
               .toList(),
-          ['Day', 'Review', 'Insights', 'Inbox'],
+          ['Day', 'Inbox', 'Review', 'Insights', 'More'],
         );
+        // The labels are real text in the bar.
+        for (final label in ['Day', 'Inbox', 'Review', 'Insights', 'More']) {
+          expect(
+            find.descendant(
+              of: find.byType(NavigationBar),
+              matching: find.text(label),
+            ),
+            findsOneWidget,
+            reason: '$label at ${width}px',
+          );
+        }
+        expect(find.byKey(const ValueKey('day-settings-action')), findsNothing);
         expect(find.byTooltip('Search'), findsOneWidget);
         expect(find.byKey(const ValueKey('day-week-switcher')), findsOneWidget);
         expect(
@@ -152,7 +254,7 @@ void main() {
       expect(find.byKey(const ValueKey('week-pages')), findsOneWidget);
       final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
       expect(bar.selectedIndex, 0);
-      expect(bar.destinations, hasLength(4));
+      expect(bar.destinations, hasLength(5));
 
       await tester.tap(find.text('Day').last);
       await settle(tester);
@@ -161,32 +263,58 @@ void main() {
     },
   );
 
-  testWidgets(
-    'mobile navigation keeps primary destinations and settings reachable',
-    (tester) async {
-      final container = await buildTestContainer(tester);
-      await pumpApp(tester, container, surface: const Size(600, 900));
-      expect(find.text('Settings'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('day-settings-action')));
-      await settle(tester);
-      expect(find.text('Categories'), findsWidgets);
-      await tester.tap(find.text('Categories').first);
-      await settle(tester);
-      // Categories is a secondary Settings route; the mobile shell keeps the
-      // five primary destinations out of secondary screens rather than
-      // falsely selecting Day.
-      expect(find.byType(NavigationBar), findsNothing);
-      expect(find.text('Work'), findsOneWidget);
-      expect(find.text('Personal'), findsOneWidget);
-      expect(find.text('Health'), findsOneWidget);
-      expect(find.text('Learning'), findsOneWidget);
-      await tester.pageBack();
-      await settle(tester);
-      expect(find.text('Categories'), findsWidgets);
-      await tester.pageBack();
-      await settle(tester);
-      expect(find.byKey(const ValueKey('day-settings-action')), findsOneWidget);
-      await teardownApp(tester, container);
-    },
-  );
+  testWidgets('compact More opens Categories and Settings, Back returns', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(393, 844));
+    expect(find.text('Settings'), findsNothing);
+
+    await tester.tap(find.text('More'));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('more-sheet-categories')), findsOneWidget);
+    expect(find.byKey(const ValueKey('more-sheet-settings')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('more-sheet-settings'))).height,
+      greaterThanOrEqualTo(48),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('more-sheet-settings')));
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/settings');
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Categories'), findsWidgets);
+    await tester.tap(find.text('Categories').first);
+    await settle(tester);
+    // Categories is a secondary Settings route; the compact shell keeps the
+    // primary destinations out of secondary screens rather than falsely
+    // selecting Day.
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Work'), findsOneWidget);
+    expect(find.text('Personal'), findsOneWidget);
+    expect(find.text('Health'), findsOneWidget);
+    expect(find.text('Learning'), findsOneWidget);
+    await tester.pageBack();
+    await settle(tester);
+    expect(find.text('Categories'), findsWidgets);
+    await tester.pageBack();
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/day');
+    expect(find.byType(NavigationBar), findsOneWidget);
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('compact More also reaches Categories directly', (tester) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/day');
+    await pumpApp(tester, container, surface: const Size(360, 800));
+    await tester.tap(find.text('More'));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('more-sheet-categories')));
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/categories');
+    expect(find.byType(NavigationBar), findsNothing);
+    await teardownApp(tester, container);
+  });
 }

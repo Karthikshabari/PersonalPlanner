@@ -65,9 +65,19 @@ void main() {
         await pumpApp(tester, container, surface: entry.size);
 
         expect(find.byKey(const ValueKey('day-week-switcher')), findsOneWidget);
+        // Settings is in the navigation, not the Day header, and is reachable
+        // from exactly one place: More (compact), a rail tooltip (medium and
+        // expanded) or a rail label (large).
+        expect(find.byKey(const ValueKey('day-settings-action')), findsNothing);
+        final width = entry.size.width;
         expect(
-          find.byKey(const ValueKey('day-settings-action')),
+          width < 600
+              ? find.text('More')
+              : width >= 1200
+              ? find.text('Settings')
+              : find.byTooltip('Settings'),
           findsOneWidget,
+          reason: 'Settings entry at $width',
         );
         expect(
           find.byKey(const ValueKey('sync-status-action')),

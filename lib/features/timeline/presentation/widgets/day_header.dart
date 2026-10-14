@@ -108,12 +108,6 @@ class DayHeader extends ConsumerWidget {
               ),
             ),
             const GlobalSearchAction(),
-            IconButton(
-              key: const ValueKey('day-settings-action'),
-              tooltip: 'Settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => context.push('/settings'),
-            ),
             const SyncStatusAction(),
           ],
         ),
@@ -175,12 +169,6 @@ class DayHeader extends ConsumerWidget {
         const SizedBox(width: AppSpacing.xs),
         _buildDayWeekSwitcher(context, ref, selectedDate),
         const Spacer(),
-        TextButton.icon(
-          key: const ValueKey('day-settings-action'),
-          icon: const Icon(Icons.settings_outlined, size: 18),
-          label: const Text('Settings'),
-          onPressed: () => context.go('/settings'),
-        ),
         const SyncStatusAction(),
       ],
     );
@@ -236,12 +224,6 @@ class DayHeader extends ConsumerWidget {
             const SizedBox(width: AppSpacing.xs),
             _buildDayWeekSwitcher(context, ref, selectedDate),
             const SizedBox(width: AppSpacing.xs),
-            IconButton(
-              key: const ValueKey('day-settings-action'),
-              tooltip: 'Settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => context.push('/settings'),
-            ),
             const SyncStatusAction(),
           ],
         ),

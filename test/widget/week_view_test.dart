@@ -21,7 +21,7 @@ import '../helpers/test_container.dart';
 void main() {
   Future<ProviderContainer> pumpDay(
     WidgetTester tester, {
-    Size surface = const Size(1400, 1000),
+    Size surface = const Size(1600, 1000),
   }) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await buildTestContainer(tester);
@@ -181,7 +181,7 @@ void main() {
           ),
     );
     appRouter.go('/week');
-    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    await pumpApp(tester, container, surface: const Size(1600, 1000));
 
     final todayIso = isoDateString(today);
     final line = find.byKey(ValueKey('week-current-time-$todayIso'));

@@ -35,9 +35,16 @@ void main() {
     for (final surface in [const Size(360, 800), phone]) {
       await pumpRoute(tester, container, '/day', surface: surface);
 
-      expect(find.byKey(const ValueKey('day-settings-action')), findsOneWidget);
+      // Settings left the Day header; on compact it is behind More.
+      expect(find.byKey(const ValueKey('day-settings-action')), findsNothing);
       expect(find.byKey(const ValueKey('sync-status-action')), findsOneWidget);
       expect(find.text('Today'), findsOneWidget);
+      await tester.tap(find.text('More'));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('more-sheet-settings')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('more-sheet-settings')));
+      await settle(tester);
+      expect(appRouter.state.uri.path, '/settings');
       expect(tester.takeException(), isNull);
     }
 

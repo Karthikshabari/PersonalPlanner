@@ -160,7 +160,7 @@ void main() {
     );
 
     appRouter.go('/week');
-    await pumpApp(tester, container, surface: const Size(1400, 1000));
+    await pumpApp(tester, container, surface: const Size(1600, 1000));
 
     expect(
       find.byKey(ValueKey('day-context-action-${isoDateString(contextDate)}')),
