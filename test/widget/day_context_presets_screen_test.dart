@@ -78,6 +78,22 @@ void main() {
     await finish(tester, c);
   });
 
+  testWidgets('the Undo bar goes away on its own after its duration', (
+    tester,
+  ) async {
+    final c = await pumpScreen(tester);
+    final name = presetsOf(c)[1].name;
+    await tester.tap(find.byKey(const ValueKey('day-context-preset-delete-1')));
+    await flush(tester);
+    expect(find.text('Deleted $name'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Deleted $name'), findsNothing);
+    expect(find.text('Undo'), findsNothing);
+    await finish(tester, c);
+  });
+
   testWidgets('Undo does nothing once the list changed since the delete', (
     tester,
   ) async {

@@ -142,6 +142,9 @@ Future<void> _delete(
   messenger.showSnackBar(
     SnackBar(
       content: Text('Deleted $name'),
+      // A snackbar with an action never times out unless told to (Flutter
+      // defaults persist to true); match the review snackbars.
+      persist: false,
       action: SnackBarAction(
         label: 'Undo',
         onPressed: () => notifier.restoreIfUnchanged(previous, afterDelete),
