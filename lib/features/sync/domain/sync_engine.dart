@@ -192,21 +192,20 @@ class SyncEngine with WidgetsBindingObserver {
       // answered, so the out-of-band unreachable verdict no longer applies.
       if (result.pullFailure == null) _backendReportedUnreachable = false;
       pulled = result.pullFailure == null;
-      if (result.succeeded) {
-        // `sync.last_success_at` means "the last time a real synchronization
-        // left nothing outstanding". A cycle that skipped queued work (for
-        // example, while a retry backoff was still running) round-tripped but
-        // did not synchronize the local change, so it must not move the
-        // instant forward.
-        if (await _db.syncDao.pendingCount() == 0 &&
-            (_lastSuccessfulSync == null || hadPendingWork)) {
-          _lastSuccessfulSync = DateTime.now().toUtc();
-          await _db.syncDao.setSetting(
-            'sync.last_success_at',
-            _lastSuccessfulSync!.toIso8601String(),
-          );
-        }
-      } else {
+      // `sync.last_success_at`: the pull worked and the push reached the
+      // server. Parked, refused and held rows wait for a repair or for the
+      // server, not for this device, so they do not hold it back (P-4); a row
+      // still in transport backoff was not synchronized, so it does.
+      if (_reachedServer(result) &&
+          await _db.syncDao.countTransportBackoff() == 0 &&
+          (_lastSuccessfulSync == null || hadPendingWork)) {
+        _lastSuccessfulSync = DateTime.now().toUtc();
+        await _db.syncDao.setSetting(
+          'sync.last_success_at',
+          _lastSuccessfulSync!.toIso8601String(),
+        );
+      }
+      if (!result.succeeded) {
         final failure = result.firstFailure!;
         _lastError = failure.message;
         _failureState = _failureStateFor(result);
@@ -316,6 +315,19 @@ class SyncEngine with WidgetsBindingObserver {
         message: _lastError ?? permanent?.lastError,
       ),
     );
+  }
+
+  /// The pull worked and the push reached the server: no push failure, a
+  /// refusal, or a parked payload. Authentication, transport and
+  /// upgrade-required failures never count.
+  static bool _reachedServer(SyncCycleResult result) {
+    final push = result.pushFailure;
+    return result.pullFailure == null &&
+        (push == null ||
+            push.kind == SyncFailureKind.refused ||
+            ((push.kind == SyncFailureKind.permanent ||
+                    push.kind == SyncFailureKind.invalidData) &&
+                !isSyncUpgradeRequiredFailure(push)));
   }
 
   SyncEngineState _failureStateFor(SyncCycleResult result) {

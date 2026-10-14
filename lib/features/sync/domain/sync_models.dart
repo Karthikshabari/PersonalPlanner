@@ -47,6 +47,11 @@ enum SyncFailureKind {
   /// modify stored configuration, local data, or the local outbox.
   backendUnavailable,
   invalidData,
+
+  /// The server refused the change for a reason that can clear later (a 403
+  /// permission refusal or a resource limit). Retried on a long backoff, like
+  /// a retryable failure for everything else; never parked, never dropped.
+  refused,
 }
 
 class SyncFailure {
@@ -65,15 +70,15 @@ class SyncFailure {
   /// and would misreport a temporary outage as a data problem.
   bool get keepsOperationQueued =>
       kind == SyncFailureKind.retryable ||
-      kind == SyncFailureKind.backendUnavailable;
+      kind == SyncFailureKind.backendUnavailable ||
+      kind == SyncFailureKind.refused;
 }
 
 class SyncCycleResult {
   final SyncFailure? pushFailure;
   final SyncFailure? pullFailure;
 
-  const SyncCycleResult({this.pushFailure, this.pullFailure})
-    : skipped = false;
+  const SyncCycleResult({this.pushFailure, this.pullFailure}) : skipped = false;
 
   /// A cycle that was never run because the repository was already busy with
   /// another cycle.

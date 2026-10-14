@@ -176,4 +176,102 @@ void main() {
       expect(isInitialBaselineFencingFailure(failure), isTrue);
     });
   });
+
+  group('QA Phase 3: refusal classification table', () {
+    PostgrestException http(String status, String body) =>
+        PostgrestException(message: body, code: status, details: 'x');
+
+    test('each server answer has one kind, decided by status or code', () {
+      final table = <Object, SyncFailureKind>{
+        http('401', 'Unauthorized'): SyncFailureKind.authentication,
+        http('403', '<html>Forbidden</html>'): SyncFailureKind.refused,
+        http('408', 'Request Timeout'): SyncFailureKind.retryable,
+        http('429', 'Too Many Requests: invalid rate'):
+            SyncFailureKind.retryable,
+        http('500', 'Internal Server Error'): SyncFailureKind.retryable,
+        http('502', '<html>Invalid response from upstream</html>'):
+            SyncFailureKind.retryable,
+        http('503', 'unsupported upstream, constraint'):
+            SyncFailureKind.retryable,
+        http('400', '<html>Bad Request</html>'): SyncFailureKind.permanent,
+        http('422', 'Unprocessable'): SyncFailureKind.permanent,
+        const PostgrestException(
+          message: 'permission denied for function apply_sync_operation_v2',
+          code: '42501',
+        ): SyncFailureKind.refused,
+        const PostgrestException(
+          message: 'could not extend file: No space left on device',
+          code: '53100',
+        ): SyncFailureKind.refused,
+        const PostgrestException(
+          message: 'too many connections',
+          code: '53300',
+        ): SyncFailureKind.retryable,
+        const PostgrestException(
+          message: 'Authentication required',
+          code: '42501',
+        ): SyncFailureKind.authentication,
+        const PostgrestException(
+          message: 'duplicate key value violates unique constraint',
+          code: '23505',
+        ): SyncFailureKind.permanent,
+        const PostgrestException(
+          message: 'Record identity does not match payload',
+          code: '22023',
+        ): SyncFailureKind.permanent,
+        const SyncValidationException('Title is required'):
+            SyncFailureKind.invalidData,
+        Exception('SocketException: Connection reset by peer'):
+            SyncFailureKind.retryable,
+      };
+      for (final entry in table.entries) {
+        expect(
+          classifySyncFailure(entry.key).kind,
+          entry.value,
+          reason: '${entry.key}',
+        );
+      }
+      for (final kind in [
+        SyncFailureKind.retryable,
+        SyncFailureKind.refused,
+        SyncFailureKind.backendUnavailable,
+      ]) {
+        expect(SyncFailure(kind, '').keepsOperationQueued, isTrue);
+      }
+    });
+
+    test('stored text carries status, code and server message only', () {
+      const error = PostgrestException(
+        message: 'permission  denied\nfor function x',
+        code: '42501',
+        details: 'SECRET-DETAILS',
+        hint: 'SECRET-HINT',
+      );
+      final text = syncFailureText(classifySyncFailure(error), error);
+      expect(
+        text,
+        endsWith(' [server - 42501] permission denied for function x'),
+      );
+      expect(text, isNot(contains('SECRET')));
+
+      final gateway = http('502', 'Bad gateway ${'x' * 2000}');
+      final long = syncFailureText(classifySyncFailure(gateway), gateway);
+      expect(long, contains(' [server 502 502] Bad gateway'));
+      expect(long.length, lessThanOrEqualTo(300));
+
+      // Local failures: no server part, message unchanged to the character.
+      const invalid = SyncValidationException(
+        'Recurrence end_date must not precede start_date',
+      );
+      expect(
+        syncFailureText(classifySyncFailure(invalid), invalid),
+        'Invalid sync data: Recurrence end_date must not precede start_date',
+      );
+      final socket = Exception('SocketException: Connection reset by peer');
+      expect(
+        syncFailureText(classifySyncFailure(socket), socket),
+        isNot(contains('[server')),
+      );
+    });
+  });
 }

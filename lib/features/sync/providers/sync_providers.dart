@@ -215,22 +215,21 @@ final syncAccountBindingProvider = Provider<SyncAccountBinding?>((ref) {
 /// `notApplicable` is returned for every non-provisioned backend: the
 /// provisioned first-sync gate does not apply to the compile-time developer
 /// path, which keeps its historical behaviour.
-final syncInitialSyncProvider =
-    StreamProvider.autoDispose<InitialSyncStatus>((ref) {
-      final backend = ref.watch(runtimeBackendProvider);
-      if (backend is! ProvisionedRuntimeBackend) {
-        return Stream.value(InitialSyncStatus.notApplicable);
-      }
-      return InitialSyncStateStore(ref.watch(appDatabaseProvider))
-          .watch()
-          .map(InitialSyncStatus.fromRecord);
-    });
+final syncInitialSyncProvider = StreamProvider.autoDispose<InitialSyncStatus>((
+  ref,
+) {
+  final backend = ref.watch(runtimeBackendProvider);
+  if (backend is! ProvisionedRuntimeBackend) {
+    return Stream.value(InitialSyncStatus.notApplicable);
+  }
+  return InitialSyncStateStore(ref.watch(appDatabaseProvider))
+      .watch()
+      .map(InitialSyncStatus.fromRecord);
+});
 
 /// Phase G initial-synchronization orchestrator of the current provisioned
 /// account, or null when this runtime has no provisioned account open.
-final initialSyncCoordinatorProvider = Provider<InitialSyncCoordinator?>((
-  ref,
-) {
+final initialSyncCoordinatorProvider = Provider<InitialSyncCoordinator?>((ref) {
   final backend = ref.watch(runtimeBackendProvider);
   if (backend is! ProvisionedRuntimeBackend) return null;
   final binding = ref.watch(syncAccountBindingProvider);
@@ -270,8 +269,7 @@ final syncRepositoryProvider = Provider<SyncRepository?>((ref) {
   // only exists once the durable initial synchronization baseline is complete.
   // Authentication alone, and a READY backend alone, are both insufficient.
   if (binding.isProvisioned &&
-      !(ref.watch(syncInitialSyncProvider).value?.baselineComplete ??
-          false)) {
+      !(ref.watch(syncInitialSyncProvider).value?.baselineComplete ?? false)) {
     return null;
   }
   return SyncRepository.withGateway(
@@ -405,8 +403,6 @@ String provisionedPhaseDescription(InitialSyncPhase phase) => switch (phase) {
   InitialSyncPhase.complete => 'Cloud synchronization is ready.',
 };
 
-
-
 class _SyncAccessTokenUnavailable implements Exception {
   const _SyncAccessTokenUnavailable();
 }
@@ -417,6 +413,11 @@ final syncConflictsProvider = StreamProvider.autoDispose((ref) {
 
 final syncPermanentOperationsProvider = StreamProvider.autoDispose((ref) {
   return ref.watch(appDatabaseProvider).syncDao.watchPermanentOperations();
+});
+
+/// Operations the server keeps refusing (see SyncDao.watchAttentionOperations).
+final syncAttentionOperationsProvider = StreamProvider.autoDispose((ref) {
+  return ref.watch(appDatabaseProvider).syncDao.watchAttentionOperations();
 });
 
 final syncQuarantinedChangesProvider = StreamProvider.autoDispose((ref) {

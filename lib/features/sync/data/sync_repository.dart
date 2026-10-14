@@ -305,10 +305,13 @@ class SyncRepository {
             return failure;
           }
           firstFailure ??= failure;
-          final failureMessage = failure.message;
+          // Built fresh on every failure, so the stored text never grows.
+          final failureMessage = syncFailureText(failure, error);
           if (failure.keepsOperationQueued) {
             final retryAt = DateTime.now().toUtc().add(
-              _backoff(operation.attemptCount + 1),
+              failure.kind == SyncFailureKind.refused
+                  ? _refusedBackoff(operation.attemptCount + 1)
+                  : _backoff(operation.attemptCount + 1),
             );
             await _db.syncDao.markRetryableError(
               operation.operationId,
@@ -2430,6 +2433,13 @@ class SyncRepository {
     return Duration(seconds: seconds.clamp(1, 60));
   }
 
+  /// 1, 2, 4 … 32 minutes, then hourly: a refusal (403, resource limit) can
+  /// clear later, but not within seconds.
+  static Duration _refusedBackoff(int attempt) {
+    final minutes = 1 << (attempt - 1).clamp(0, 6);
+    return Duration(minutes: minutes.clamp(1, 60));
+  }
+
   static int _changeOrder(SyncRemoteChange a, SyncRemoteChange b) {
     final aDelete = a.operation == 'delete';
     final bDelete = b.operation == 'delete';
@@ -3085,6 +3095,37 @@ bool isSyncUpgradeRequiredFailure(SyncFailure failure) =>
     failure.message == _upgradeRequiredMessage ||
     failure.message == _capabilityUnavailableMessage;
 
+/// Marker that starts the server part of a stored `last_error`:
+/// `<message> [server <status|-> <code|->] <server message>`. Present only
+/// when the server answered (a [PostgrestException]); a socket, DNS or timeout
+/// failure never carries it.
+const syncServerDetailMarker = SyncDao.serverAnswerMarker;
+
+/// The text stored in `last_error` for a failed push: the classified message
+/// plus, for a server answer, its HTTP status (when PostgREST kept it), its
+/// code and its message. At most about 300 characters; details, hints,
+/// headers and payloads are never included. Client validation and other
+/// local failures keep their message unchanged.
+String syncFailureText(SyncFailure failure, Object error) {
+  final detail = syncErrorDetail(error);
+  if (detail.isEmpty) return failure.message;
+  return '${_clip(failure.message, 120)}$detail';
+}
+
+/// The server part of [syncFailureText], or '' when the server did not answer.
+@visibleForTesting
+String syncErrorDetail(Object error) {
+  if (error is! PostgrestException) return '';
+  final code = (error.code ?? '').trim();
+  final status = RegExp(r'^\d{3}$').hasMatch(code) ? code : '-';
+  final shownCode = code.isEmpty ? '-' : _clip(code, 12);
+  final message = error.message.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return '$syncServerDetailMarker$status $shownCode] ${_clip(message, 150)}';
+}
+
+String _clip(String text, int max) =>
+    text.length <= max ? text : '${text.substring(0, max - 1)}…';
+
 String safeSyncError(Object error) {
   if (error is SyncValidationException) {
     return 'Invalid sync data: ${error.message}';
@@ -3165,10 +3206,12 @@ SyncFailure? classifyBySqlState(Object error) {
       _authenticationExpiredMessage,
     );
   }
-  if (code.startsWith('22') ||
-      code.startsWith('23') ||
-      code == '42501' ||
-      code == '55000') {
+  // A permission refusal (PostgREST answers 403) or a resource limit says
+  // nothing certain about the payload and can clear later (QA Phase 3).
+  if (code == '42501' || (code.startsWith('53') && code != '53300')) {
+    return const SyncFailure(SyncFailureKind.refused, syncRefusedMessage);
+  }
+  if (code.startsWith('22') || code.startsWith('23') || code == '55000') {
     return SyncFailure(
       SyncFailureKind.permanent,
       'Sync action needs attention: $message',
@@ -3178,6 +3221,46 @@ SyncFailure? classifyBySqlState(Object error) {
     return const SyncFailure(
       SyncFailureKind.retryable,
       'Sync request failed; retry scheduled.',
+    );
+  }
+  return null;
+}
+
+const syncRefusedMessage =
+    'The server refused this change for now; it will be tried again later.';
+
+/// Classification of a PostgREST answer whose body was not JSON, so its code
+/// is the bare HTTP status. Decided by status alone, never by body text: a
+/// gateway page that happens to say "invalid" must not park valid data.
+/// Returns null for statuses the other rules decide (404 and the rest).
+SyncFailure? classifyByHttpStatus(Object error) {
+  if (error is! PostgrestException) return null;
+  final status = int.tryParse(error.code ?? '');
+  if (status == null || (error.code ?? '').length != 3) return null;
+  if (status == 401) {
+    return const SyncFailure(
+      SyncFailureKind.authentication,
+      _authenticationExpiredMessage,
+    );
+  }
+  if (status == 403) {
+    return const SyncFailure(SyncFailureKind.refused, syncRefusedMessage);
+  }
+  if (status == 408 || status == 429 || (status >= 500 && status <= 599)) {
+    return looksLikeUnavailableBackend(error.toString().toLowerCase())
+        ? const SyncFailure(
+            SyncFailureKind.backendUnavailable,
+            cloudBackendUnreachableMessage,
+          )
+        : const SyncFailure(
+            SyncFailureKind.retryable,
+            'Sync request failed; retry scheduled.',
+          );
+  }
+  if (status == 400 || status == 422) {
+    return const SyncFailure(
+      SyncFailureKind.permanent,
+      'Sync action needs attention: the server rejected this change.',
     );
   }
   return null;
@@ -3206,6 +3289,8 @@ SyncFailure classifySyncFailure(Object error) {
       initialBaselineFencedMessage,
     );
   }
+  final byHttpStatus = classifyByHttpStatus(error);
+  if (byHttpStatus != null) return byHttpStatus;
   final bySqlState = classifyBySqlState(error);
   if (bySqlState != null) return bySqlState;
   // Authentication is checked before backend availability: an expired session

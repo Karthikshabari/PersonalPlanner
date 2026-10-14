@@ -432,6 +432,87 @@ void main() {
     },
   );
 
+  group('QA Phase 3 item 4: last success with a parked operation', () {
+    final previous = DateTime.utc(2026, 9, 19, 18, 12);
+
+    Future<String> queueCategory(AppDatabase db) async {
+      await CategoryRepository(db).insertCategory(
+        Category(
+          id: 'p4-category',
+          name: 'P4',
+          colorHex: '#4285F4',
+          createdAt: DateTime.utc(2026, 1, 1),
+          updatedAt: DateTime.utc(2026, 1, 1),
+        ),
+      );
+      return (await db.select(db.syncLog).get()).single.operationId;
+    }
+
+    test('a parked operation does not freeze last success', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      await db.syncDao.setSetting(
+        'sync.last_success_at',
+        previous.toIso8601String(),
+      );
+      final operationId = await queueCategory(db);
+      await db.syncDao.markPermanentError(
+        operationId,
+        now: DateTime.now().toUtc(),
+        error: 'Invalid sync data: bad',
+      );
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
+      );
+      try {
+        await engine.start();
+        final recorded = DateTime.parse(
+          (await db.syncDao.getSetting('sync.last_success_at'))!,
+        );
+        expect(recorded.isAfter(previous), isTrue);
+        // The reported status is unchanged: the parked row still asks for
+        // a repair.
+        expect(engine.currentStatus?.state, SyncEngineState.permanentFailure);
+        expect(await db.syncDao.firstPermanentOperation(), isA<SyncLogRow>());
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    });
+
+    test('an authentication failure does not move last success', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity()
+        ..checkResult = Future.value(const [ConnectivityResult.wifi]);
+      await db.syncDao.setSetting(
+        'sync.last_success_at',
+        previous.toIso8601String(),
+      );
+      await queueCategory(db);
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _RefusingAuthGateway(), 'account'),
+        connectivity,
+      );
+      try {
+        await engine.start();
+        expect(
+          await db.syncDao.getSetting('sync.last_success_at'),
+          previous.toIso8601String(),
+        );
+        expect(engine.currentStatus?.state, SyncEngineState.authFailure);
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    });
+  });
+
   test('a skipped repository cycle is never a successful sync', () async {
     final db = AppDatabase(NativeDatabase.memory());
     final gate = Completer<void>();
@@ -662,46 +743,49 @@ void main() {
     },
   );
 
-  test('a late watchStatus subscriber gets the current status at once', () async {
-    final db = AppDatabase(NativeDatabase.memory());
-    final connectivity = _FakeConnectivity();
-    final engine = SyncEngine(
-      db,
-      SyncRepository.withGateway(db, _NoopGateway(), 'account'),
-      connectivity,
-    );
-    try {
-      await engine.start();
-      final current = engine.currentStatus;
-      expect(current?.state, SyncEngineState.offline);
-
-      // Subscribed after the engine emitted; nothing changes meanwhile.
-      final snapshots = <SyncStatusSnapshot>[];
-      var done = false;
-      final subscription = engine.watchStatus().listen(
-        snapshots.add,
-        onDone: () => done = true,
+  test(
+    'a late watchStatus subscriber gets the current status at once',
+    () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      final connectivity = _FakeConnectivity();
+      final engine = SyncEngine(
+        db,
+        SyncRepository.withGateway(db, _NoopGateway(), 'account'),
+        connectivity,
       );
-      await Future<void>.delayed(Duration.zero);
-      expect(snapshots, [same(current)]);
+      try {
+        await engine.start();
+        final current = engine.currentStatus;
+        expect(current?.state, SyncEngineState.offline);
 
-      // Later changes still arrive.
-      connectivity.emit(const [ConnectivityResult.wifi]);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(snapshots.length, greaterThan(1));
-      expect(snapshots.last.state, isNot(SyncEngineState.offline));
+        // Subscribed after the engine emitted; nothing changes meanwhile.
+        final snapshots = <SyncStatusSnapshot>[];
+        var done = false;
+        final subscription = engine.watchStatus().listen(
+          snapshots.add,
+          onDone: () => done = true,
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(snapshots, [same(current)]);
 
-      // A stopped engine completes the stream instead of leaving it open.
-      await engine.stop();
-      await Future<void>.delayed(Duration.zero);
-      expect(done, isTrue);
-      await subscription.cancel();
-    } finally {
-      await engine.stop();
-      await connectivity.close();
-      await db.close();
-    }
-  });
+        // Later changes still arrive.
+        connectivity.emit(const [ConnectivityResult.wifi]);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(snapshots.length, greaterThan(1));
+        expect(snapshots.last.state, isNot(SyncEngineState.offline));
+
+        // A stopped engine completes the stream instead of leaving it open.
+        await engine.stop();
+        await Future<void>.delayed(Duration.zero);
+        expect(done, isTrue);
+        await subscription.cancel();
+      } finally {
+        await engine.stop();
+        await connectivity.close();
+        await db.close();
+      }
+    },
+  );
 }
 
 class _FakeConnectivity implements SyncConnectivityMonitor {
@@ -754,6 +838,35 @@ class _NoopGateway implements SyncRemoteGateway {
     required int afterChangeId,
     required int limit,
   }) => Future.value(const <Object>[]);
+}
+
+class _RefusingAuthGateway extends _NoopGateway {
+  @override
+  Future<Object?> getCapabilities() => Future.value(const <String, Object?>{
+    'protocol_version': 2,
+    'payload_versions': [1, 2],
+    'schedule_duration_projection': true,
+    'inbox_content_version': true,
+    'due_date': true,
+    'plan_title_history': true,
+    'manual_actual_source': true,
+    'timer_state_machine': true,
+    'day_contexts': true,
+    'recurrence_removal_provenance': true,
+  });
+
+  @override
+  Future<Object?> applyOperation({
+    required String operationId,
+    required String tableName,
+    required String recordId,
+    required String operation,
+    required int? expectedServerVersion,
+    required Map<String, dynamic> payload,
+    required int payloadVersion,
+    String? baselineToken,
+  }) =>
+      throw const PostgrestException(message: 'JWT expired', code: 'PGRST301');
 }
 
 class _CountingGateway extends _NoopGateway {

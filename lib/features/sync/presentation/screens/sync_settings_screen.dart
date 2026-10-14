@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/daos/sync_dao.dart';
+import '../../../../core/providers/database_provider.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -76,6 +77,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final enabledAsync = ref.watch(syncEnabledProvider);
     final conflictsAsync = ref.watch(syncConflictsProvider);
     final permanentAsync = ref.watch(syncPermanentOperationsProvider);
+    final attentionAsync = ref.watch(syncAttentionOperationsProvider);
     final quarantineAsync = ref.watch(syncQuarantinedChangesProvider);
     if (sessionAsync.hasError ||
         statusAsync.hasError ||
@@ -126,6 +128,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final enabled = enabledAsync.requireValue;
     final conflicts = conflictsAsync.requireValue;
     final permanentOperations = permanentAsync.value ?? const <SyncLogRow>[];
+    final attentionOperations = attentionAsync.value ?? const <SyncLogRow>[];
     final quarantinedChanges = quarantineAsync.requireValue;
     final adoptionSummary = session == null
         ? null
@@ -163,11 +166,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           onKeepRemote: _keepRemote,
         ),
       if (conflicts.isNotEmpty) const SizedBox(height: 12),
-      if (permanentOperations.isNotEmpty) ...[
+      if (permanentOperations.isNotEmpty || attentionOperations.isNotEmpty) ...[
         _PermanentFailureCard(
           operations: permanentOperations,
+          retrying: attentionOperations,
           busy: _busy,
           onRepair: _repairPermanentOperation,
+          onRetryNow: _retryNow,
         ),
         const SizedBox(height: 12),
       ],
@@ -755,6 +760,16 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     }
   }
 
+  /// Ends the wait of an operation the server keeps refusing and syncs once.
+  /// Only a listed row is touched (SyncDao.retryNow); nothing is discarded.
+  Future<void> _retryNow(String operationId) async {
+    final retried = await ref
+        .read(appDatabaseProvider)
+        .syncDao
+        .retryNow(operationId, DateTime.now().toUtc());
+    if (retried) await ref.read(syncEngineProvider)?.syncNow();
+  }
+
   Future<void> _repairPermanentOperation(String operationId) async {
     final repository = ref.read(syncRepositoryProvider);
     if (repository == null) {
@@ -982,13 +997,20 @@ class _QuarantineCard extends StatelessWidget {
 class _PermanentFailureCard extends StatelessWidget {
   const _PermanentFailureCard({
     required this.operations,
+    required this.retrying,
     required this.busy,
     required this.onRepair,
+    required this.onRetryNow,
   });
 
+  /// Parked operations.
   final List<SyncLogRow> operations;
+
+  /// Operations the server keeps refusing; still retried automatically.
+  final List<SyncLogRow> retrying;
   final bool busy;
   final ValueChanged<String> onRepair;
+  final ValueChanged<String> onRetryNow;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -997,54 +1019,109 @@ class _PermanentFailureCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(Icons.build_circle_outlined),
-            title: Text('Sync needs a repair'),
-            subtitle: Text(
-              'Edit the affected record first, then queue a validated snapshot. '
-              'The invalid payload will never be retried unchanged.',
-            ),
-          ),
-          for (final operation in operations) ...[
-            ListTile(
+          if (operations.isNotEmpty) ...[
+            const ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(_operationLabel(operation)),
+              leading: Icon(Icons.build_circle_outlined),
+              title: Text('Sync needs a repair'),
               subtitle: Text(
-                operation.lastError?.replaceFirst(
-                      SyncDao.permanentErrorPrefix,
-                      '',
-                    ) ??
-                    'Permanent sync error',
-              ),
-              trailing: OutlinedButton(
-                onPressed: busy ? null : () => onRepair(operation.operationId),
-                child: const Text('Retry repaired record'),
+                'Edit the affected record first, then queue a validated snapshot. '
+                'The invalid payload will never be retried unchanged.',
               ),
             ),
-            if (operation != operations.last) const Divider(),
+            for (final operation in operations) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(syncOperationSummary(operation)),
+                subtitle: Text(
+                  operation.lastError?.replaceFirst(
+                        SyncDao.permanentErrorPrefix,
+                        '',
+                      ) ??
+                      'Permanent sync error',
+                ),
+                trailing: OutlinedButton(
+                  onPressed: busy
+                      ? null
+                      : () => onRepair(operation.operationId),
+                  child: const Text('Retry repaired record'),
+                ),
+              ),
+              if (operation != operations.last) const Divider(),
+            ],
+          ],
+          if (operations.isNotEmpty && retrying.isNotEmpty) const Divider(),
+          if (retrying.isNotEmpty) ...[
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.schedule),
+              title: Text('Still retrying'),
+              subtitle: Text(
+                'The server refused these changes. They stay on this device '
+                'and are tried again automatically.',
+              ),
+            ),
+            for (final operation in retrying) ...[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(syncOperationSummary(operation)),
+                subtitle: Text(syncRetryingLine(operation)),
+                trailing: OutlinedButton(
+                  onPressed: busy
+                      ? null
+                      : () => onRetryNow(operation.operationId),
+                  child: const Text('Retry now'),
+                ),
+              ),
+              if (operation != retrying.last) const Divider(),
+            ],
           ],
         ],
       ),
     ),
   );
+}
 
-  static String _operationLabel(SyncLogRow operation) {
-    final table = switch (operation.entityTableName) {
-      'tasks' => 'Task',
-      'categories' => 'Category',
-      'tags' => 'Legacy metadata',
-      'subtasks' => 'Subtask',
-      'recurring_rules' => 'Recurring rule',
-      'task_templates' => 'Template',
-      'daily_reviews' => 'Daily review',
-      'weekly_reviews' => 'Weekly review',
-      'timer_sessions' => 'Timer session',
-      'task_tags' => 'Legacy metadata link',
-      _ => 'Record',
-    };
-    return '$table · ${operation.recordId}';
-  }
+/// "Create · Task · Write report": what the queued operation attempts.
+@visibleForTesting
+String syncOperationSummary(SyncLogRow operation) {
+  final action = switch (operation.operation) {
+    'insert' => 'Create',
+    'delete' => 'Delete',
+    _ => 'Update',
+  };
+  final table = switch (operation.entityTableName) {
+    'tasks' => 'Task',
+    'categories' => 'Category',
+    'tags' => 'Legacy metadata',
+    'subtasks' => 'Subtask',
+    'recurring_rules' => 'Recurring rule',
+    'task_templates' => 'Template',
+    'daily_reviews' => 'Daily review',
+    'weekly_reviews' => 'Weekly review',
+    'timer_sessions' => 'Timer session',
+    'day_contexts' => 'Day context',
+    'experiments' => 'Experiment',
+    'experiment_check_ins' => 'Experiment check-in',
+    'task_tags' => 'Legacy metadata link',
+    _ => 'Record',
+  };
+  final payload = _snapshotMap(operation.payload);
+  final name = payload == null
+      ? ''
+      : _displayName(operation.entityTableName, payload);
+  return '$action · $table · ${name.isEmpty ? operation.recordId : name}';
+}
+
+/// "Tried 7 times · next try 14:05" plus the stored server answer.
+@visibleForTesting
+String syncRetryingLine(SyncLogRow operation) {
+  final next = operation.nextAttemptAt;
+  return [
+    'Tried ${operation.attemptCount} times'
+        '${next == null ? ' · trying now' : ' · next try ${formatSyncClockTime(next)}'}',
+    if (operation.lastError != null) operation.lastError!,
+  ].join('\n');
 }
 
 class _AnonymousAdoptionCard extends StatelessWidget {
@@ -1132,6 +1209,7 @@ class _ConflictCard extends StatelessWidget {
               title: Text(_conflictTitle(conflict)),
               subtitle: Text(
                 '${_conflictDetails(conflict)}\n'
+                '${conflictChangedLine(conflict)}\n'
                 'Expected ${conflict.expectedServerVersion ?? 'new'} · '
                 'server ${conflict.actualServerVersion ?? 'deleted'}',
               ),
@@ -1179,6 +1257,28 @@ String _conflictTitle(SyncConflictRow conflict) {
       : _displayName(conflict.entityTableName, value);
   return name == null || name.isEmpty ? label : '$label · $name';
 }
+
+/// "This device: changed 2 minutes ago · Another device: changed Yesterday at
+/// 21:47", from each snapshot's `updated_at`. "Changed", not "edited":
+/// background writes (overdue stamp, reschedule heal) also move updated_at.
+/// The local side is always this device's queued change; the remote side was
+/// written elsewhere. No snapshot records a device name.
+@visibleForTesting
+String conflictChangedLine(SyncConflictRow conflict, {DateTime? now}) {
+  String side(String label, String snapshot) {
+    final changed = DateTime.tryParse(
+      '${_snapshotMap(snapshot)?['updated_at'] ?? ''}',
+    );
+    return changed == null
+        ? '$label: change time unknown'
+        : '$label: changed ${_lowerFirst(formatSyncTimestamp(changed, now: now))}';
+  }
+
+  return '${side('This device', conflict.localSnapshot)} · '
+      '${side('Another device', conflict.remoteSnapshot)}';
+}
+
+String _lowerFirst(String text) => text == 'Just now' ? 'just now' : text;
 
 String _conflictDetails(SyncConflictRow conflict) {
   final local = _snapshotMap(conflict.localSnapshot);

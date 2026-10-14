@@ -374,6 +374,61 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
             ]))
           .watch();
 
+  /// Attempts after which a server-refused operation is shown as still
+  /// retrying.
+  static const attentionAttempts = 5;
+
+  /// Stored in `last_error` only when the server answered (see
+  /// `syncServerDetailMarker`); socket, DNS and timeout failures never carry
+  /// it, so being offline never lists a row.
+  static const serverAnswerMarker = ' [server ';
+
+  /// Backing-off operations the server has refused at least
+  /// [attentionAttempts] times. Parked rows are listed separately.
+  Expression<bool> _needsAttention($SyncLogTable row) =>
+      row.state.equals('error') &
+      row.nextAttemptAt.isNotNull() &
+      row.nextAttemptAt.equals(permanentRetryAt.toIso8601String()).not() &
+      row.attemptCount.isBiggerOrEqualValue(attentionAttempts) &
+      row.lastError.like('%$serverAnswerMarker%');
+
+  /// Rows backing off after a failure the server never answered (network,
+  /// DNS, timeout): not parked and without [serverAnswerMarker].
+  Future<int> countTransportBackoff() async => (await customSelect(
+    "SELECT COUNT(*) AS c FROM sync_log WHERE state = 'error' "
+    "AND next_attempt_at <> ? AND COALESCE(last_error, '') NOT LIKE ?",
+    variables: [
+      Variable<String>(permanentRetryAt.toIso8601String()),
+      Variable<String>('%$serverAnswerMarker%'),
+    ],
+  ).getSingle()).read<int>('c');
+
+  Stream<List<SyncLogRow>> watchAttentionOperations() =>
+      (select(syncLog)
+            ..where(_needsAttention)
+            ..orderBy([
+              (row) => OrderingTerm.asc(row.seq),
+              (row) => OrderingTerm.asc(row.operationId),
+            ]))
+          .watch();
+
+  /// Makes a listed row eligible at once; attempts, error and payload stay.
+  /// Does nothing for any other row (parked, pending, in flight, conflict).
+  Future<bool> retryNow(String operationId, DateTime now) async {
+    final count =
+        await (update(syncLog)..where(
+              (row) =>
+                  row.operationId.equals(operationId) & _needsAttention(row),
+            ))
+            .write(
+              SyncLogCompanion(
+                nextAttemptAt: const Value(null),
+                updatedAt: Value(now),
+              ),
+            );
+    return count > 0;
+  }
+
   Stream<List<SyncLogRow>> watchPendingOperations() =>
       (select(syncLog)
             ..where(
@@ -533,13 +588,14 @@ class SyncDao extends DatabaseAccessor<AppDatabase> with _$SyncDaoMixin {
           .watch()
           .map((rows) => {for (final row in rows) row.key: row.value});
 
-  Future<void> writeSettings(Map<String, String> values) => transaction(() async {
-    for (final entry in values.entries) {
-      await into(appSettings).insertOnConflictUpdate(
-        AppSettingsCompanion.insert(key: entry.key, value: entry.value),
-      );
-    }
-  });
+  Future<void> writeSettings(Map<String, String> values) =>
+      transaction(() async {
+        for (final entry in values.entries) {
+          await into(appSettings).insertOnConflictUpdate(
+            AppSettingsCompanion.insert(key: entry.key, value: entry.value),
+          );
+        }
+      });
 
   Future<void> recordQuarantinedChange(
     String accountId,
