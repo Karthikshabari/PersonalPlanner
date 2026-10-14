@@ -46,6 +46,36 @@ void main() {
     await db.close();
   });
 
+  Future<Task> seedTracked(String title, {required int? actual}) {
+    final start = day.add(const Duration(hours: 9));
+    return tasks.insertTask(
+      Task(
+        id: '',
+        title: title,
+        startTime: start,
+        endTime: start.add(const Duration(hours: 1)),
+        actualDurationMin: actual,
+        createdAt: day,
+        updatedAt: day,
+      ),
+    );
+  }
+
+  Future<void> finishedSession(String taskId, int minutes) {
+    final startedAt = day.add(const Duration(hours: 10));
+    return TimerRepository(db).insertSession(
+      TimerSession(
+        id: '',
+        taskId: taskId,
+        startedAt: startedAt,
+        endedAt: startedAt.add(Duration(minutes: minutes)),
+        durationSec: minutes * 60,
+        createdAt: day,
+        updatedAt: day,
+      ),
+    );
+  }
+
   Future<String> workCategoryId() async {
     final all = await db.categoryDao.getActiveCategories();
     return all.firstWhere((c) => c.name == 'Work').id;
@@ -465,35 +495,51 @@ void main() {
       );
     });
 
-    test(
-      'completed sessions count even when their task is unscheduled or deleted',
-      () async {
-        final task = await tasks.insertTask(
-          Task(
-            id: '',
-            title: 'Unscheduled tracked work',
-            createdAt: day,
-            updatedAt: day,
-          ),
-        );
-        final startedAt = day.add(const Duration(hours: 10));
-        await TimerRepository(db).insertSession(
-          TimerSession(
-            id: '',
-            taskId: task.id,
-            startedAt: startedAt,
-            endedAt: startedAt.add(const Duration(minutes: 30)),
-            durationSec: 30 * 60,
-            createdAt: day,
-            updatedAt: day,
-          ),
-        );
-        await tasks.deleteTask(task.id);
+    test('completed sessions count when their task is unscheduled', () async {
+      final task = await tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Unscheduled tracked work',
+          createdAt: day,
+          updatedAt: day,
+        ),
+      );
+      await finishedSession(task.id, 30);
+      final stats = await statsService.computeForDate(day);
+      expect(stats.totalTasks, 0);
+      expect(stats.actualDurationMin, 30);
+    });
 
-        final stats = await statsService.computeForDate(day);
-        expect(stats.totalTasks, 0);
-        expect(stats.actualDurationMin, 30);
-      },
-    );
+    test('a deleted task adds nothing to tracked time', () async {
+      final live = await seedTracked('Live', actual: 30);
+      final deleted = await seedTracked('Deleted', actual: 600);
+      await tasks.deleteTask(deleted.id);
+
+      expect(live.id, isNot(deleted.id));
+      expect((await statsService.computeForDate(day)).actualDurationMin, 30);
+      expect(
+        (await statsService.computeRange(
+          day,
+          addDays(day, 1),
+        )).actualDurationMin,
+        30,
+      );
+    });
+
+    test('deleting a task with tracked time lowers the day total', () async {
+      await seedTracked('Keep', actual: 30);
+      final other = await seedTracked('Drop', actual: 45);
+      expect((await statsService.computeForDate(day)).actualDurationMin, 75);
+      await tasks.deleteTask(other.id);
+      expect((await statsService.computeForDate(day)).actualDurationMin, 30);
+    });
+
+    test('a deleted task with a finished session adds nothing', () async {
+      final task = await seedTracked('Timed then deleted', actual: null);
+      await finishedSession(task.id, 30);
+      expect((await statsService.computeForDate(day)).actualDurationMin, 30);
+      await tasks.deleteTask(task.id);
+      expect((await statsService.computeForDate(day)).actualDurationMin, 0);
+    });
   });
 }

@@ -106,8 +106,8 @@ class InsightsService {
             ))
             .get();
 
-    // Same task set as DailyStatsService: every task starting in range,
-    // including soft-deleted ones, so their manual Actual is not dropped.
+    // Same task set as DailyStatsService: every live task starting in range.
+    // Soft-deleted tasks never count in tracked time.
     final startsInRange = [
       Variable<String>(actualRangeStart.toUtc().toIso8601String()),
       Variable<String>(actualRangeEnd.toUtc().toIso8601String()),
@@ -116,7 +116,8 @@ class InsightsService {
       for (final row
           in await _db
               .customSelect(
-                'SELECT id FROM tasks WHERE start_time >= ? AND start_time < ?',
+                'SELECT id FROM tasks WHERE deleted_at IS NULL '
+                'AND start_time >= ? AND start_time < ?',
                 variables: startsInRange,
                 readsFrom: {_db.tasks},
               )
@@ -153,7 +154,7 @@ class InsightsService {
                 in await _db
                     .customSelect(
                       'SELECT id FROM tasks WHERE manual_actual_set = 1 '
-                      'AND start_time >= ? AND start_time < ?',
+                      'AND deleted_at IS NULL AND start_time >= ? AND start_time < ?',
                       variables: startsInRange,
                       readsFrom: {_db.tasks},
                     )
@@ -163,9 +164,10 @@ class InsightsService {
     final producerIds = <String>{...historyByTask.keys, ...manualOnlyIds};
     final actualRows = producerIds.isEmpty
         ? const <TaskRow>[]
-        : await (_db.select(
-            _db.tasks,
-          )..where((task) => task.id.isIn(producerIds))).get();
+        : await (_db.select(_db.tasks)..where(
+                (task) => task.id.isIn(producerIds) & task.deletedAt.isNull(),
+              ))
+              .get();
     final actualSlices = <ActualTimeSlice>[];
     for (final task in actualRows) {
       final allocation = TaskActualDurationService.allocateActualByDate(

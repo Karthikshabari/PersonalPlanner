@@ -56,7 +56,7 @@ void main() {
   }
 
   test('Insights week Actual equals Weekly Review tracked time', () async {
-    // (a) Soft-deleted task carrying a manual Actual and no timer history.
+    // (a) Soft-deleted task carrying a manual Actual: must not count.
     final deleted = await seedTask(
       'Deleted with manual',
       0,
@@ -101,9 +101,10 @@ void main() {
     final insights = await InsightsService(db)
         .compute(weekStart: monday, now: now);
 
-    // 25 (deleted manual) + 40 (later-dated manual) + 30 (finished session);
+    // 40 (later-dated manual) + 30 (finished session); the deleted task's 25
+    // never counts;
     // the running session is not counted until it is stopped.
-    expect(weekly.actualDurationMin, 95);
+    expect(weekly.actualDurationMin, 70);
     expect(insights.actualMinutes, weekly.actualDurationMin);
     expect(
       insights.categories.fold<int>(0, (sum, c) => sum + c.actualMinutes),
