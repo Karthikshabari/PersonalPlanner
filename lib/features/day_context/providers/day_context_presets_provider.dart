@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/database_provider.dart';
@@ -64,6 +65,18 @@ class DayContextPresetsNotifier extends AsyncNotifier<List<DayContextPreset>> {
   Future<void> remove(int index) async {
     if (index < 0 || index >= _current.length || _current.length <= 1) return;
     await _write([..._current]..removeAt(index));
+  }
+
+  /// Writes [previous] back after a delete, only while the list is still
+  /// [afterDelete] (any other change since then is not overwritten). Returns
+  /// whether it restored.
+  Future<bool> restoreIfUnchanged(
+    List<DayContextPreset> previous,
+    List<DayContextPreset> afterDelete,
+  ) async {
+    if (!listEquals(_current, afterDelete)) return false;
+    await _write(List.of(previous));
+    return true;
   }
 
   Future<void> resetToDefaults() => _write(List.of(defaultDayContextPresets));

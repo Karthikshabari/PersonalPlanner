@@ -56,6 +56,20 @@ void main() {
       );
     });
 
+    test('the limit counts visible characters, not UTF-16 units', () {
+      // 21 letters + 3 emoji = 24 visible characters, 27 UTF-16 units.
+      final fits = '${'x' * 21}\u{1F600}\u{1F600}\u{1F600}';
+      expect(fits.length, 27);
+      expect(
+        DayContextPresets.validateName(defaultDayContextPresets, fits),
+        isNull,
+      );
+      expect(
+        DayContextPresets.validateName(defaultDayContextPresets, '${fits}x'),
+        'Use 24 characters or fewer',
+      );
+    });
+
     test('duplicates are refused ignoring case and spaces', () {
       for (final name in ['leave', 'LEAVE', ' Leave ', 'Rest day', 'restday']) {
         expect(

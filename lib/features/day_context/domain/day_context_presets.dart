@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart' show StringCharacters;
+
 import '../../../core/models/day_context.dart';
 
 const String dayContextPresetsSettingKey = 'day_context_presets';
@@ -80,7 +82,8 @@ abstract final class DayContextPresets {
   }) {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return 'Enter a name';
-    if (trimmed.length > maxDayContextPresetNameLength) {
+    // Visible characters, as the dialog's length limiter counts them.
+    if (trimmed.characters.length > maxDayContextPresetNameLength) {
       return 'Use $maxDayContextPresetNameLength characters or fewer';
     }
     final key = normalize(trimmed);

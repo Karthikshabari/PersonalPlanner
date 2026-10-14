@@ -143,6 +143,25 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('the suggestions open below the field', (tester) async {
+    final container = await buildTestContainer(tester);
+    final learn = await runDb(
+      tester,
+      () => container.read(tagRepositoryProvider).getOrCreateByName('Learn C'),
+    );
+    final task = await insertBlock(tester, container);
+    await openEditor(tester, container, task);
+
+    await typeTag(tester, 'lea');
+    final option = find.byKey(ValueKey('tag-option-${learn.id}'));
+    expect(option, findsOneWidget);
+    expect(
+      tester.getTopLeft(option).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.byKey(fieldKey)).dy),
+    );
+    await finish(tester, container);
+  });
+
   testWidgets('type a new name, choose Create, save: tag created and used', (
     tester,
   ) async {

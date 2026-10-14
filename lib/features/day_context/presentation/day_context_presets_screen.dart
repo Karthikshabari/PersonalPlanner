@@ -44,11 +44,16 @@ class DayContextPresetsScreen extends ConsumerWidget {
                         ListTile(
                           key: ValueKey('day-context-preset-$i'),
                           title: Text(presets[i].name),
-                          subtitle: const Text('Break day'),
-                          leading: Switch(
-                            key: ValueKey('day-context-preset-break-$i'),
-                            value: presets[i].isBreak,
-                            onChanged: (value) => notifier.setBreak(i, value),
+                          subtitle: presets[i].isBreak
+                              ? const Text('Break day')
+                              : null,
+                          leading: Semantics(
+                            label: 'Break day: ${presets[i].name}',
+                            child: Switch(
+                              key: ValueKey('day-context-preset-break-$i'),
+                              value: presets[i].isBreak,
+                              onChanged: (value) => notifier.setBreak(i, value),
+                            ),
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -70,7 +75,12 @@ class DayContextPresetsScreen extends ConsumerWidget {
                                 icon: const Icon(Icons.delete_outline),
                                 onPressed: presets.length <= 1
                                     ? null
-                                    : () => notifier.remove(i),
+                                    : () => _delete(
+                                        context,
+                                        notifier,
+                                        presets,
+                                        i,
+                                      ),
                               ),
                             ],
                           ),
@@ -105,7 +115,7 @@ class DayContextPresetsScreen extends ConsumerWidget {
                       ),
                     TextButton(
                       key: const ValueKey('day-context-preset-reset'),
-                      onPressed: notifier.resetToDefaults,
+                      onPressed: () => _confirmReset(context, notifier),
                       child: const Text('Reset to defaults'),
                     ),
                   ],
@@ -114,6 +124,60 @@ class DayContextPresetsScreen extends ConsumerWidget {
             ),
     );
   }
+}
+
+/// Deletes at once; the snackbar's Undo writes the previous list back, but
+/// only while the list is still the one the delete produced.
+Future<void> _delete(
+  BuildContext context,
+  DayContextPresetsNotifier notifier,
+  List<DayContextPreset> previous,
+  int index,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final name = previous[index].name;
+  await notifier.remove(index);
+  final afterDelete = [...previous]..removeAt(index);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text('Deleted $name'),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () => notifier.restoreIfUnchanged(previous, afterDelete),
+      ),
+    ),
+  );
+}
+
+Future<void> _confirmReset(
+  BuildContext context,
+  DayContextPresetsNotifier notifier,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Reset to defaults?'),
+      content: const Text(
+        'Your presets are replaced by the default list. Days already '
+        'labelled with a removed or renamed preset keep their label, but '
+        "stop counting as break days if that preset's Break switch was on.",
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('day-context-preset-reset-cancel'),
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('day-context-preset-reset-confirm'),
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Reset'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await notifier.resetToDefaults();
 }
 
 /// A name field with inline validation. [submit] returns the validation

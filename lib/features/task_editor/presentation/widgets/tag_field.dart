@@ -297,7 +297,7 @@ class _TagFieldState extends ConsumerState<TagField> {
     return RawAutocomplete<_TagChoice>(
       textEditingController: _controller,
       focusNode: _focusNode,
-      optionsViewOpenDirection: OptionsViewOpenDirection.mostSpace,
+      optionsViewOpenDirection: OptionsViewOpenDirection.down,
       displayStringForOption: (choice) => choice.text,
       optionsBuilder: (value) => _choicesFor(value.text),
       onSelected: _onSelected,
@@ -336,6 +336,16 @@ class _TagFieldState extends ConsumerState<TagField> {
         final choices = options.toList(growable: false);
         final tokens = AppThemeTokens.of(context);
         final highlighted = AutocompleteHighlightedOption.of(context);
+        // The list opens below the field; keep it within the screen.
+        final media = MediaQuery.of(context);
+        final fieldBox = _fieldContext?.findRenderObject();
+        final below = fieldBox is RenderBox && fieldBox.attached
+            ? media.size.height -
+                  media.viewInsets.bottom -
+                  fieldBox.localToGlobal(Offset(0, fieldBox.size.height)).dy -
+                  AppSpacing.sm
+            : 240.0;
+        final maxHeight = below.clamp(56.0, 240.0);
         return _CloseOnScroll(
           position: scrollPosition,
           onScroll: _closeSuggestionsOnScroll,
@@ -345,7 +355,7 @@ class _TagFieldState extends ConsumerState<TagField> {
             borderRadius: BorderRadius.circular(tokens.radiusMedium),
             clipBehavior: Clip.antiAlias,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
+              constraints: BoxConstraints(maxHeight: maxHeight),
               child: ListView.builder(
                 padding: EdgeInsets.zero,
                 shrinkWrap: true,

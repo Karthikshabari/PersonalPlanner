@@ -363,7 +363,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
                 onPressed: () => _navigateWeek(-1),
               ),
               Text(
-                '${DateFormat('MMM d').format(weekStart)} – ${DateFormat('MMM d, yyyy').format(addDays(weekStart, 6))}',
+                weekRangeLabel(weekStart),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               IconButton(
@@ -834,4 +834,13 @@ class _WeekDayGrid extends ConsumerWidget {
       child: child,
     );
   }
+}
+
+/// "Oct 26 – Nov 1, 2026"; the start year is added when the week crosses a
+/// year boundary ("Dec 28, 2026 – Jan 3, 2027").
+String weekRangeLabel(DateTime weekStart) {
+  final end = addDays(weekStart, 6);
+  final start = DateFormat(weekStart.year == end.year ? 'MMM d' : 'MMM d, yyyy')
+      .format(weekStart);
+  return '$start – ${DateFormat('MMM d, yyyy').format(end)}';
 }
