@@ -37,7 +37,7 @@ void main() {
     ProviderContainer container,
   ) async {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
-    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
+    await doubleTapEmptyTimeline(tester);
     await settle(tester);
     expect(find.text('Create scheduled task'), findsOneWidget);
   }

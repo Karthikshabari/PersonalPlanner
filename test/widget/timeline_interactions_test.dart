@@ -604,7 +604,7 @@ void main() {
     container.read(date_provider.selectedDateProvider.notifier).state = viewDay;
     await settle(tester);
 
-    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
+    await doubleTapEmptyTimeline(tester);
     await settle(tester);
     await tester.enterText(
       find.byKey(const ValueKey('quick-create-input')),

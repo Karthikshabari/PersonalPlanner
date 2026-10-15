@@ -99,10 +99,7 @@ void main() {
   testWidgets('tap empty slot creates task via quick create', (tester) async {
     final container = await buildTestContainer(tester);
     await pumpDesktop(tester, container);
-    await tester.tap(
-      find.byKey(const ValueKey('timeline-gestures')),
-      warnIfMissed: false,
-    );
+    await tapEmptyTimeline(tester);
     await settle(tester);
     expect(find.text('Create scheduled task'), findsOneWidget);
 
@@ -164,7 +161,7 @@ void main() {
     await pumpDesktop(tester, container);
     // The first tap opens the dialog; the second lands on its barrier or
     // inside it and must neither queue a second dialog nor change the slot.
-    await doubleTap(tester, find.byKey(const ValueKey('timeline-gestures')));
+    await doubleTapEmptyTimeline(tester);
     await settle(tester);
     expect(find.text('Create scheduled task'), findsOneWidget);
 

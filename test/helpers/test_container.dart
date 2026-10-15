@@ -109,3 +109,24 @@ Future<void> doubleTap(WidgetTester tester, Finder finder) async {
   await tester.tap(finder, warnIfMissed: false);
   await tester.pump();
 }
+
+/// A point on the Day timeline that is never covered by the empty-day card.
+///
+/// The card (at most 420 wide) follows the clock: it sits one hour below the
+/// minute the timeline scrolls to on open, which puts it under the centre of
+/// the viewport for part of every day. The lane's right-hand side is free in
+/// every case.
+Offset emptyTimelinePoint(WidgetTester tester) {
+  final rect = tester.getRect(find.byKey(const ValueKey('timeline-gestures')));
+  return Offset(rect.right - 120, rect.center.dy);
+}
+
+Future<void> tapEmptyTimeline(WidgetTester tester) =>
+    tester.tapAt(emptyTimelinePoint(tester));
+
+Future<void> doubleTapEmptyTimeline(WidgetTester tester) async {
+  await tester.tapAt(emptyTimelinePoint(tester));
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.tapAt(emptyTimelinePoint(tester));
+  await tester.pump();
+}

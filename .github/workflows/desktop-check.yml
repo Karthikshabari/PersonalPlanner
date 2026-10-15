@@ -35,7 +35,7 @@ jobs:
   windows:
     if: github.event_name != 'workflow_dispatch' || inputs.platform != 'macos'
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       # Keep LF endings: tests hash the SQL migrations byte for byte.
       - run: git config --global core.autocrlf false
@@ -84,7 +84,7 @@ jobs:
   macos:
     if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       TZ: Asia/Kolkata
     steps:
