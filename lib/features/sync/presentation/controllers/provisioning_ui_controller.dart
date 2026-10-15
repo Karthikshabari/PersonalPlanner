@@ -568,6 +568,9 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
   Uri? _authorizationUrl;
   StreamSubscription<String>? _linkSubscription;
 
+  /// The Supabase authorization page of the current attempt, when known.
+  Uri? get authorizationUrl => _authorizationUrl;
+
   @override
   Future<ProvisioningUiState> build() async {
     ref.onDispose(() {

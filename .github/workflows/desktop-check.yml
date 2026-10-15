@@ -101,6 +101,17 @@ jobs:
           cache: true
 
       - run: flutter --version
+
+      - name: Require the outgoing-network entitlement
+        # The sandboxed app needs it for Supabase and the browser hand-off.
+        run: |
+          for f in macos/Runner/DebugProfile.entitlements macos/Runner/Release.entitlements; do
+            if ! grep -A1 'com.apple.security.network.client' "$f" | grep -q '<true/>'; then
+              echo "::error file=$f::com.apple.security.network.client must be set to true"
+              exit 1
+            fi
+          done
+
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
 
@@ -115,6 +126,8 @@ jobs:
           APP="build/macos/Build/Products/Release/Personal Planner.app"
           lipo -info "$APP/Contents/MacOS/Personal Planner"
           codesign -dv "$APP" 2>&1 || true
+          # Information only: an unsigned build may print nothing.
+          codesign -d --entitlements :- "$APP" 2>&1 || true
           ditto -c -k --sequesterRsrc --keepParent "$APP" planner-macos.zip
 
       - uses: actions/upload-artifact@v7

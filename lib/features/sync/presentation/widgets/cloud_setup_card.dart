@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
+import '../../../../core/utils/external_link.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../domain/sync_models.dart';
-import '../../providers/provisioning_providers.dart';
 import '../../providers/sync_providers.dart';
 import '../controllers/provisioning_ui_controller.dart';
 import 'cloud_setup_preflight.dart';
@@ -52,17 +52,28 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     });
   }
 
-  Future<void> _openProjectDashboard(String projectRef) async {
-    final opened = await ref
-        .read(browserLauncherProvider)
-        .open(supabaseProjectDashboardUrl(projectRef));
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('The Supabase dashboard could not be opened.'),
-        ),
-      );
+  Future<void> _openProjectDashboard(String projectRef) => openExternalLink(
+    context,
+    supabaseProjectDashboardUrl(projectRef),
+    allowed: isSupabaseUri,
+  );
+
+  /// Shows the address when the hand-off the controller just attempted failed,
+  /// so the user can open or copy it themselves.
+  void _offerAddressIfLaunchFailed(ProvisioningUiController controller) {
+    final url = controller.authorizationUrl;
+    if (!mounted || url == null) return;
+    if (controller.current?.message != cloudSetupBrowserLaunchFailedMessage) {
+      return;
     }
+    showExternalLinkFallback(context, url);
+  }
+
+  Future<void> _openAuthorizationPage(
+    ProvisioningUiController controller,
+  ) async {
+    await controller.openAuthorizationPage();
+    _offerAddressIfLaunchFailed(controller);
   }
 
   @override
@@ -151,6 +162,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
     final confirmed = await showCloudSetupPreflight(context);
     if (!confirmed || !mounted) return;
     await controller.startSetup();
+    _offerAddressIfLaunchFailed(controller);
   }
 
   /// Confirms, then clears the cloud setup on this device.
@@ -288,7 +300,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             if (state.authorizationUrlAvailable)
               TextButton(
                 key: const ValueKey('cloud-open-authorization'),
-                onPressed: busy ? null : controller.openAuthorizationPage,
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openAuthorizationPage(controller)),
                 child: const Text('Open authorization page'),
               ),
             TextButton(
@@ -519,7 +533,9 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             if (state.authorizationUrlAvailable)
               TextButton(
                 key: const ValueKey('cloud-open-authorization'),
-                onPressed: busy ? null : controller.openAuthorizationPage,
+                onPressed: busy
+                    ? null
+                    : () => unawaited(_openAuthorizationPage(controller)),
                 child: const Text('Open authorization page'),
               ),
             _cancelSetupButton(controller, busy),

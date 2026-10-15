@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/external_link.dart';
 import 'package:personal_planner/features/sync/data/backend_project_probe.dart';
 import 'package:personal_planner/features/sync/data/provisioning_client.dart';
 import 'package:personal_planner/features/sync/domain/provisioning_coordinator.dart';
@@ -12,6 +13,7 @@ import 'package:personal_planner/features/sync/presentation/widgets/cloud_setup_
 import 'package:personal_planner/features/sync/presentation/widgets/cloud_setup_card.dart';
 import 'package:personal_planner/features/sync/providers/provisioning_providers.dart';
 
+import '../helpers/fake_url_launcher.dart';
 import '../helpers/provisioning_fakes.dart';
 
 Future<void> _pumpCard(
@@ -241,6 +243,32 @@ void main() {
     expect(find.text(cloudStorageWaitingStatus), findsOneWidget);
     // A second tap while the first attempt is running cannot start another.
     expect(find.byKey(const ValueKey('cloud-enable-action')), findsNothing);
+
+    await _unmount(tester);
+  });
+
+  testWidgets('a refused browser launch offers the address to copy', (
+    tester,
+  ) async {
+    launcher.succeeds = false;
+    api.startResult = ProvisioningResult(
+      outcome: ProvisioningOutcome.inProgress,
+      profile: testProfile(ProvisioningState.authorizationPending),
+      authorizationUrl: testAuthorizationUrl,
+    );
+    await _pumpCard(tester, api: api, launcher: launcher);
+
+    await tester.tap(find.byKey(const ValueKey('cloud-enable-action')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cloud-preflight-continue')));
+    await _settle(tester);
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('external-link-fallback')),
+      findsOneWidget,
+    );
+    expect(find.text('Copy'), findsOneWidget);
 
     await _unmount(tester);
   });
@@ -1344,12 +1372,26 @@ void main() {
     expect(find.byKey(const ValueKey('cloud-open-dashboard')), findsOneWidget);
     expect(find.text('Open Supabase'), findsOneWidget);
 
+    final urlLauncher = FakeUrlLauncher()..install();
+    resetExternalLinkGuard();
     await tester.tap(find.byKey(const ValueKey('cloud-open-dashboard')));
     await _settle(tester);
+    expect(urlLauncher.launched, <String>[
+      'https://supabase.com/dashboard/project/$testProjectRef',
+    ]);
+    expect(find.byType(SnackBar), findsNothing);
+
+    // A refused launch shows the address with a Copy action.
+    resetExternalLinkGuard();
+    urlLauncher.result = false;
+    await tester.tap(find.byKey(const ValueKey('cloud-open-dashboard')));
+    await _settle(tester);
+    await tester.pump();
     expect(
-      launcher.opened.last,
-      Uri.parse('https://supabase.com/dashboard/project/$testProjectRef'),
+      find.byKey(const ValueKey('external-link-fallback')),
+      findsOneWidget,
     );
+    expect(find.text('Copy'), findsOneWidget);
 
     await _unmount(tester);
   });

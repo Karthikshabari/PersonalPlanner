@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/config/provisioning_config.dart';
+import '../../../core/utils/external_link.dart';
 import '../data/backend_project_probe.dart';
 import '../data/cloud_lifecycle_service.dart';
 import '../data/connection_profile_store.dart';
@@ -23,14 +23,10 @@ class UrlLauncherBrowserLauncher implements BrowserLauncher {
   const UrlLauncherBrowserLauncher();
 
   @override
-  Future<bool> open(Uri url) async {
-    try {
-      return await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // A failed hand-off must never destroy the provisioning transaction.
-      return false;
-    }
-  }
+  Future<bool> open(Uri url) =>
+      // Only Supabase authorization pages are opened through here. A failed
+      // hand-off must never destroy the provisioning transaction.
+      launchExternalUri(url, allowed: isSupabaseUri);
 }
 
 final browserLauncherProvider = Provider<BrowserLauncher>(
