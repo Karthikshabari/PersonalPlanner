@@ -12,6 +12,7 @@ class TagOptionRow {
     required this.name,
     required this.createdAt,
     required this.hasExperiment,
+    this.hasDeletedExperiment = false,
   });
 
   final String id;
@@ -21,8 +22,12 @@ class TagOptionRow {
   /// share a name key.
   final String createdAt;
 
-  /// True when an experiment is linked to this tag.
+  /// True when a live (not deleted) experiment is linked to this tag.
   final bool hasExperiment;
+
+  /// True when only a deleted experiment is linked to this tag. Its name
+  /// cannot start a new experiment (one experiment row per tag).
+  final bool hasDeletedExperiment;
 }
 
 /// How many blocks carry a tag, and when the earliest one starts.
@@ -81,14 +86,16 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
     return count > 0;
   }
 
-  /// Active tags with a flag telling whether an experiment uses them,
-  /// ordered by name. Reads `experiments` too, so the stream fires when an
+  /// Active tags with flags telling whether a live or a deleted experiment
+  /// uses them, ordered by name. Reads `experiments` too, so the stream fires when an
   /// experiment is created.
   Stream<List<TagOptionRow>> watchTagOptions() {
     return customSelect(
       'SELECT t.id AS id, t.name AS name, t.created_at AS created_at, '
-      'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id) '
-      'AS has_experiment '
+      'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id '
+      'AND e.deleted_at IS NULL) AS has_experiment, '
+      'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id '
+      'AND e.deleted_at IS NOT NULL) AS has_deleted_experiment '
       'FROM tags t WHERE t.deleted_at IS NULL ORDER BY t.name',
       readsFrom: {tags, attachedDatabase.experiments},
     ).watch().map(
@@ -99,6 +106,7 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
             name: row.read<String>('name'),
             createdAt: row.read<String>('created_at'),
             hasExperiment: row.read<int>('has_experiment') != 0,
+            hasDeletedExperiment: row.read<int>('has_deleted_experiment') != 0,
           ),
       ],
     );
@@ -119,7 +127,9 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
     );
   }
 
-  /// True when any experiment row references [tagId].
+  /// True when any experiment row references [tagId], a deleted one
+  /// included: the guard of [softDeleteTag] (a revived tag must not collide
+  /// with the experiment's deterministic id). Not for driving UI.
   Future<bool> tagBelongsToExperiment(String tagId) async {
     final row = await customSelect(
       'SELECT EXISTS (SELECT 1 FROM experiments WHERE tag_id = ?) AS used',

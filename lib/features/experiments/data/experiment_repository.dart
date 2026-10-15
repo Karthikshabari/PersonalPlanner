@@ -23,6 +23,19 @@ class ExperimentTagInUseException implements Exception {
   String toString() => 'An experiment already uses the tag "$tagName"';
 }
 
+/// Thrown by [ExperimentRepository.createExperiment] when the tag the name
+/// resolves to holds a deleted experiment. A deleted experiment keeps its tag
+/// and its deterministic id, so its name cannot be reused.
+class ExperimentNameDeletedException implements Exception {
+  const ExperimentNameDeletedException(this.tagName);
+
+  final String tagName;
+
+  @override
+  String toString() =>
+      'An experiment called "$tagName" was deleted. Pick a different name.';
+}
+
 /// Persistence boundary for experiments and their check-ins. Every write runs
 /// in one `writeTransaction` with ordinary Drift writes, so the sync triggers
 /// queue the operations. Text limits count code points (ED9) and every date
@@ -80,8 +93,11 @@ class ExperimentRepository {
     }
     return _db.writeTransaction(() async {
       final tag = await TagRepository(_db).getOrCreateForName(tagName);
-      if (await _dao.getExperimentByTagId(tag.id) != null) {
-        throw ExperimentTagInUseException(tag.name);
+      final existing = await _dao.getExperimentByTagId(tag.id);
+      if (existing != null) {
+        throw existing.deletedAt != null
+            ? ExperimentNameDeletedException(tag.name)
+            : ExperimentTagInUseException(tag.name);
       }
       final now = _clock().toUtc();
       final id = generateDeterministicUuid('experiment:${tag.id}');
@@ -267,6 +283,70 @@ class ExperimentRepository {
       return _load(experimentId);
     });
   }
+
+  /// Soft-deletes an experiment of any status. Its check-ins, its tag and the
+  /// tagged blocks are left alone. Returns the new revision, which
+  /// [restoreExperiment] needs for Undo.
+  Future<int> deleteExperiment(
+    String experimentId, {
+    required int expectedRevision,
+  }) {
+    return _db.writeTransaction(() async {
+      final row = await _dao.getExperimentById(experimentId);
+      if (row == null || row.deletedAt != null) {
+        throw StateError('Experiment $experimentId not found');
+      }
+      if (row.revision != expectedRevision) {
+        throw StateError(
+          'Experiment $experimentId changed while it was open; reload it.',
+        );
+      }
+      final now = _clock().toUtc();
+      final revision = row.revision + 1;
+      await _dao.updateExperiment(
+        row.copyWith(
+          deletedAt: Value(now),
+          updatedAt: now,
+          syncStatus: 1,
+          revision: revision,
+        ),
+      );
+      return revision;
+    });
+  }
+
+  /// Undoes [deleteExperiment]: clears `deleted_at` only while the experiment
+  /// is still deleted and its revision is [expectedRevision], the one the
+  /// delete returned. Otherwise it throws and writes nothing.
+  Future<Experiment> restoreExperiment(
+    String experimentId, {
+    required int expectedRevision,
+  }) {
+    return _db.writeTransaction(() async {
+      final row = await _dao.getExperimentById(experimentId);
+      if (row == null || row.deletedAt == null) {
+        throw StateError('Experiment $experimentId is not deleted');
+      }
+      if (row.revision != expectedRevision) {
+        throw StateError(
+          'Experiment $experimentId changed after it was deleted.',
+        );
+      }
+      await _dao.updateExperiment(
+        row.copyWith(
+          deletedAt: const Value(null),
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
+  /// How many written (non-deleted) check-ins an experiment has.
+  Future<int> countCheckIns(String experimentId) async =>
+      (await _dao.getCheckInsForExperiment(experimentId)).length;
 
   /// Writes the check-in for one slot of a running experiment. The slot must
   /// be dated [today] or earlier and not written yet.

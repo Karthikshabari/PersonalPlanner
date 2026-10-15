@@ -16,6 +16,9 @@ const maxExperimentDayTargetMin = 1440;
 String experimentTagInUseMessage(String tagName) =>
     'An experiment already uses the tag "$tagName". Pick a different name.';
 
+String experimentNameDeletedMessage(String tagName) =>
+    'An experiment called "$tagName" was deleted. Pick a different name.';
+
 /// Whole number from 0 to 9999 typed as digits only (ED27); null otherwise.
 int? parseExperimentTarget(String text) {
   final trimmed = text.trim();
@@ -59,7 +62,8 @@ class ExperimentFormValidation {
     required this.canSubmit,
   });
 
-  /// "An experiment already uses the tag ..." or null.
+  /// "An experiment already uses the tag ...", "An experiment called ... was
+  /// deleted ..." or null.
   final String? nameError;
 
   /// "The end date must be on or after the start date." or null.
@@ -110,8 +114,12 @@ class ExperimentFormState {
     final trimmed = TagRepository.normalizeTagName(name);
     final matched = _matchTag(trimmed, tags);
 
-    final nameError = matched != null && matched.hasExperiment
+    final nameError = matched == null
+        ? null
+        : matched.hasExperiment
         ? experimentTagInUseMessage(matched.name)
+        : matched.hasDeletedExperiment
+        ? experimentNameDeletedMessage(matched.name)
         : null;
     final endDateError = endDate.compareTo(startDate) < 0
         ? experimentEndBeforeStartMessage

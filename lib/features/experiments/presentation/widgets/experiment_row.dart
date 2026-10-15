@@ -9,6 +9,7 @@ import '../../../analytics/presentation/widgets/analytics_cards.dart'
 import '../../domain/experiment_dashboard.dart';
 import '../../domain/experiment_progress.dart';
 import '../../domain/kept_copy.dart';
+import 'experiment_actions_menu.dart';
 import 'experiment_chart.dart';
 import 'experiment_check_in_box.dart';
 import 'experiment_end_panel.dart';
@@ -312,13 +313,36 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(child: Text(experiment.tagName, style: styles.cardTitle)),
-            const SizedBox(width: AppSpacing.md),
-            _StatusChip(text: view.progress.statusChip),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) => Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(experiment.tagName, style: styles.cardTitle),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              // The chip text wraps inside its pill when large text leaves
+              // too little room for chip and menu.
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: constraints.maxWidth * .55,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: _StatusChip(text: view.progress.statusChip),
+                    ),
+                    ExperimentActionsMenu(
+                      experimentId: id,
+                      name: experiment.tagName,
+                      revision: experiment.revision,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(_metaLine(experiment), style: styles.caption),

@@ -99,7 +99,7 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
   /// Set when the repository refused the name because an experiment already
   /// uses the tag; stays until the name changes.
   String? _refusedKey;
-  String? _refusedTagName;
+  String? _refusedMessage;
 
   @override
   void initState() {
@@ -192,7 +192,13 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
       if (!mounted) return;
       setState(() {
         _refusedKey = TagRepository.normalizeTagKey(_name.text);
-        _refusedTagName = error.tagName;
+        _refusedMessage = experimentTagInUseMessage(error.tagName);
+      });
+    } on ExperimentNameDeletedException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _refusedKey = TagRepository.normalizeTagKey(_name.text);
+        _refusedMessage = experimentNameDeletedMessage(error.tagName);
       });
     } catch (_) {
       if (mounted) {
@@ -218,7 +224,7 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
     var validation = _state.validate(tags: tags);
     String? firstBlockDate;
     final matched = validation.matchedTag;
-    if (matched != null && !matched.hasExperiment) {
+    if (matched != null && validation.nameError == null) {
       final usage = ref.watch(tagUsageProvider(matched.id)).value;
       if (usage != null) {
         firstBlockDate = usage.firstBlockDate;
@@ -233,8 +239,7 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
         _refusedKey != null &&
         _refusedKey == TagRepository.normalizeTagKey(_name.text);
     final nameError =
-        validation.nameError ??
-        (refused ? experimentTagInUseMessage(_refusedTagName!) : null);
+        validation.nameError ?? (refused ? _refusedMessage : null);
     final canSubmit = validation.canSubmit && !refused && !_saving;
 
     return PopScope<void>(

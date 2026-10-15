@@ -12,6 +12,7 @@ import '../../../analytics/providers/analytics_providers.dart';
 import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../domain/kept_copy.dart';
 import '../../domain/kept_experiment.dart';
+import 'experiment_actions_menu.dart';
 import 'experiment_ui.dart';
 import 'kept_experiment_list.dart' show KeptRetiredEntry;
 import 'kept_explain_panel.dart';
@@ -139,12 +140,24 @@ class _KeptExperimentRowState extends ConsumerState<KeptExperimentRow> {
                   Text(view.subtitle, style: styles.subtitle),
                 ],
               ),
-              ExperimentChip(
-                key: ValueKey('kept-chip-$id'),
-                text: view.chipText,
-                fontSize: 12.5,
-                color: chipColor,
-                fill: caution ? styles.cautionSoft : null,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: ExperimentChip(
+                      key: ValueKey('kept-chip-$id'),
+                      text: view.chipText,
+                      fontSize: 12.5,
+                      color: chipColor,
+                      fill: caution ? styles.cautionSoft : null,
+                    ),
+                  ),
+                  ExperimentActionsMenu(
+                    experimentId: id,
+                    name: view.name,
+                    revision: view.revision,
+                  ),
+                ],
               ),
             ],
           ),

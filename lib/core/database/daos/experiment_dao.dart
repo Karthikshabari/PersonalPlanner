@@ -118,6 +118,8 @@ class ExperimentDao extends DatabaseAccessor<AppDatabase>
   Future<ExperimentRow?> getExperimentById(String id) =>
       (select(experiments)..where((e) => e.id.equals(id))).getSingleOrNull();
 
+  /// The experiment row of [tagId], a deleted one included: that is how a
+  /// tag that holds a deleted experiment is detected.
   Future<ExperimentRow?> getExperimentByTagId(String tagId) => (select(
     experiments,
   )..where((e) => e.tagId.equals(tagId))).getSingleOrNull();

@@ -23,6 +23,19 @@ import '../domain/kept_experiment.dart';
 /// (Running, Kept or Concluded), scrolls its row into view and clears it.
 final experimentFocusProvider = StateProvider<String?>((ref) => null);
 
+/// An experiment that was just deleted, shown as a one-line message with Undo
+/// on the Experiments card. [revision] is the one the delete produced.
+typedef ExperimentDeletedEntry = ({
+  String experimentId,
+  String name,
+  int revision,
+});
+
+/// The experiment deleted last. Auto-disposed, so it is forgotten when
+/// Insights is left; a newer delete replaces it.
+final experimentDeletedProvider =
+    StateProvider.autoDispose<ExperimentDeletedEntry?>((ref) => null);
+
 final experimentRepositoryProvider = Provider<ExperimentRepository>((ref) {
   return ExperimentRepository(ref.watch(appDatabaseProvider));
 });
