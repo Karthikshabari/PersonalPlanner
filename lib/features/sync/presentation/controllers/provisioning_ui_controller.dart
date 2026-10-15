@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/utils/file_log.dart';
 import '../../../../core/config/management_callback.dart';
 import '../../data/backend_project_probe.dart';
 import '../../data/provisioning_client.dart';
@@ -584,6 +585,7 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     // to switch back and press anything.
     _linkSubscription = ref.read(appLinkSourceProvider).links.listen((link) {
       if (ManagementCallback.matches(link)) {
+        unawaited(logToFile('setup: management callback received'));
         unawaited(_onManagementAuthorizationReturned(link));
       }
     });
@@ -2019,8 +2021,16 @@ class ProvisioningUiController extends AsyncNotifier<ProvisioningUiState> {
     final enteredFrom = state.value?.phase;
     _operationInFlight = true;
     if (markBusy) _update((current) => current.copyWith(busy: true));
+    unawaited(logToFile('setup: action started in phase $enteredFrom'));
     try {
       await body();
+      unawaited(
+        logToFile('setup: action finished, phase ${state.value?.phase}'),
+      );
+    } catch (error, stack) {
+      // Never swallow: log for the file, then let the caller see it as before.
+      unawaited(logToFile('setup: action FAILED', error, stack));
+      rethrow;
     } finally {
       _operationInFlight = false;
       if (markBusy && ref.mounted) {

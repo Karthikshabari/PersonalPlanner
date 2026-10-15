@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/config/auth_callback.dart';
 import '../../../core/config/management_callback.dart';
+import '../../../core/utils/file_log.dart';
 
 /// The single app-lifetime source of incoming Planner deep links.
 ///
@@ -113,6 +114,14 @@ class AppLinkSource {
 
   void _emit(String link) {
     if (_disposed) return;
+    // Scheme and host only: callback queries can carry codes or tokens.
+    final uri = Uri.tryParse(link);
+    unawaited(
+      logToFile(
+        'deep link received: ${uri?.scheme}://${uri?.host} '
+        '(listener=${_controller.hasListener})',
+      ),
+    );
     if (_controller.hasListener) {
       _controller.add(link);
       return;
