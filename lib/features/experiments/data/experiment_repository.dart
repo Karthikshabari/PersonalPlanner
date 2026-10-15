@@ -192,6 +192,84 @@ class ExperimentRepository {
     });
   }
 
+  /// Moves the end date of a running experiment to [today], so the end panel
+  /// shows at once. Allowed only while `start <= today < end`. Writes
+  /// `end_date` and nothing else (a shortening cannot be recorded in
+  /// `extensions_json`). Returns the end date it replaced and the new
+  /// revision, which [restoreEndDate] needs for Undo.
+  Future<({String previousEndDate, int revision})> endExperimentToday(
+    String experimentId, {
+    required String today,
+    required int expectedRevision,
+  }) async {
+    _requireDate(today, 'today');
+    return _db.writeTransaction(() async {
+      final row = await _dao.getExperimentById(experimentId);
+      if (row == null || row.deletedAt != null) {
+        throw StateError('Experiment $experimentId not found');
+      }
+      if (row.revision != expectedRevision) {
+        throw StateError(
+          'Experiment $experimentId changed while it was open; reload it.',
+        );
+      }
+      if (row.status != ExperimentStatus.running.dbValue) {
+        throw StateError('Experiment $experimentId is not running');
+      }
+      if (today.compareTo(row.startDate) < 0 ||
+          today.compareTo(row.endDate) >= 0) {
+        throw StateError('Experiment $experimentId is not in its window today');
+      }
+      final revision = row.revision + 1;
+      await _dao.updateExperiment(
+        row.copyWith(
+          endDate: today,
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: revision,
+        ),
+      );
+      return (previousEndDate: row.endDate, revision: revision);
+    });
+  }
+
+  /// Undoes [endExperimentToday]: puts [endDate] back while the experiment is
+  /// still running and its revision is [expectedRevision], the one the end
+  /// returned. Otherwise it throws and writes nothing.
+  Future<Experiment> restoreEndDate(
+    String experimentId, {
+    required String endDate,
+    required int expectedRevision,
+  }) async {
+    _requireDate(endDate, 'endDate');
+    return _db.writeTransaction(() async {
+      final row = await _dao.getExperimentById(experimentId);
+      if (row == null || row.deletedAt != null) {
+        throw StateError('Experiment $experimentId not found');
+      }
+      if (row.revision != expectedRevision) {
+        throw StateError(
+          'Experiment $experimentId changed after it was ended.',
+        );
+      }
+      if (row.status != ExperimentStatus.running.dbValue) {
+        throw StateError('Experiment $experimentId is not running');
+      }
+      if (endDate.compareTo(row.startDate) < 0) {
+        throw ArgumentError('endDate must be on or after the start date');
+      }
+      await _dao.updateExperiment(
+        row.copyWith(
+          endDate: endDate,
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
   /// Changes the weekday and weekend minimum of a kept experiment, from this
   /// week or from next Monday. Writes nothing when the history would not
   /// change.

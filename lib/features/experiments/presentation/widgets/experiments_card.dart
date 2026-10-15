@@ -9,7 +9,11 @@ import '../../domain/experiment_dashboard.dart';
 import '../../domain/kept_copy.dart';
 import '../../providers/experiment_providers.dart';
 import 'experiment_actions_menu.dart'
-    show experimentDeletedLine, experimentUndoDeleteFailed;
+    show
+        experimentDeletedLine,
+        experimentEndedLine,
+        experimentUndoDeleteFailed,
+        experimentUndoEndFailed;
 import 'experiment_row.dart';
 import 'experiment_start_form.dart';
 import 'experiment_ui.dart';
@@ -140,6 +144,28 @@ class _BodyState extends ConsumerState<_Body> {
     }
   }
 
+  /// Undoes "End today" shown in the "Ended today. Undo" line; the line goes
+  /// away either way.
+  Future<void> _undoEnd() async {
+    final entry = ref.read(experimentEndedProvider);
+    if (entry == null || _undoing) return;
+    _undoing = true;
+    final repository = ref.read(experimentRepositoryProvider);
+    final ended = ref.read(experimentEndedProvider.notifier);
+    try {
+      await repository.restoreEndDate(
+        entry.experimentId,
+        endDate: entry.previousEndDate,
+        expectedRevision: entry.revision,
+      );
+    } catch (_) {
+      if (mounted) showAppToast(context, experimentUndoEndFailed);
+    } finally {
+      _undoing = false;
+      if (ended.state == entry) ended.state = null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -206,10 +232,20 @@ class _BodyState extends ConsumerState<_Body> {
     final deleted = ref.watch(experimentDeletedProvider);
     final deletedLine = deleted == null
         ? null
-        : _DeletedLine(
+        : _UndoLine(
             key: ValueKey('experiment-deleted-${deleted.experimentId}'),
-            entry: deleted,
+            text: experimentDeletedLine(deleted.name),
+            undoKey: ValueKey('experiment-undo-delete-${deleted.experimentId}'),
             onUndo: _undoDelete,
+          );
+    final ended = ref.watch(experimentEndedProvider);
+    final endedLine = ended == null
+        ? null
+        : _UndoLine(
+            key: ValueKey('experiment-ended-${ended.experimentId}'),
+            text: experimentEndedLine,
+            undoKey: ValueKey('experiment-undo-end-${ended.experimentId}'),
+            onUndo: _undoEnd,
           );
     if (dashboard.isEmpty) {
       final empty = Text(
@@ -278,6 +314,10 @@ class _BodyState extends ConsumerState<_Body> {
           const SizedBox(height: AppSpacing.lg),
           deletedLine,
         ],
+        if (endedLine != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          endedLine,
+        ],
         if (kept) ...const [
           SizedBox(height: AppSpacing.lg),
           KeptExperimentList(),
@@ -314,11 +354,18 @@ class _BodyState extends ConsumerState<_Body> {
   }
 }
 
-/// "Deleted {name}. Undo", the inline line that replaces a deleted row.
-class _DeletedLine extends StatelessWidget {
-  const _DeletedLine({super.key, required this.entry, required this.onUndo});
+/// A one-line message with an Undo link: "Deleted {name}. Undo" replaces a
+/// deleted row, "Ended today. Undo" follows End today.
+class _UndoLine extends StatelessWidget {
+  const _UndoLine({
+    super.key,
+    required this.text,
+    required this.undoKey,
+    required this.onUndo,
+  });
 
-  final ExperimentDeletedEntry entry;
+  final String text;
+  final Key undoKey;
   final VoidCallback onUndo;
 
   @override
@@ -330,9 +377,9 @@ class _DeletedLine extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: AppSpacing.sm,
         children: [
-          Text(experimentDeletedLine(entry.name), style: styles.note),
+          Text(text, style: styles.note),
           ExperimentTextLink(
-            key: ValueKey('experiment-undo-delete-${entry.experimentId}'),
+            key: undoKey,
             label: keptUndo,
             color: styles.accentText,
             onPressed: onUndo,

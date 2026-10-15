@@ -405,7 +405,7 @@ void main() {
 
     await tester.tap(find.text('Delete'));
     await settle(tester);
-    expect(find.text('Delete task?'), findsOneWidget);
+    expect(find.text('Delete idea?'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
     await settle(tester);
 
@@ -429,6 +429,7 @@ void main() {
   testWidgets('deleting an Inbox capture names it and says Inbox', (
     tester,
   ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final container = await pumpDesktop(tester);
     appRouter.go('/inbox');
     await settle(tester);
@@ -447,7 +448,8 @@ void main() {
 
     expect(
       find.text(
-        '"Call the plumber" will be removed from your Inbox.\n'
+        '"Call the plumber" will be removed from your Inbox on all your '
+        'devices.\n'
         'You can undo this with Ctrl+Z.',
       ),
       findsOneWidget,
@@ -1035,7 +1037,9 @@ void main() {
       await finish(tester, container);
     });
 
-    testWidgets('Delete is hidden once the idea has a session', (tester) async {
+    testWidgets('Delete is disabled while a session is upcoming', (
+      tester,
+    ) async {
       late Task planned;
       final (container, _) = await pumpInbox(
         tester,
@@ -1048,6 +1052,11 @@ void main() {
       await settle(tester);
       expect(find.text('Edit'), findsOneWidget);
       expect(find.text('Delete'), findsNothing);
+      expect(find.text('Delete (close it first)'), findsOneWidget);
+      final item = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Delete (close it first)'),
+      );
+      expect(item.enabled, isFalse);
       await finish(tester, container);
     });
 

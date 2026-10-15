@@ -58,7 +58,13 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
         .read(taskRepositoryProvider)
         .getTaskById(widget.itemId);
     if (task == null || !mounted) return;
-    await TimelineActions.deleteWithConfirmation(context, ref, task);
+    final view = ref.read(inboxBoardProvider).value?.byId[widget.itemId];
+    await TimelineActions.deleteWithConfirmation(
+      context,
+      ref,
+      task,
+      pastSessions: view == null ? 0 : _pastSessions(view),
+    );
   }
 
   @override
@@ -76,9 +82,7 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
     final line = _statusLine(view);
     final badge = _badge(context, view);
     final (icon, tint) = _icon(tokens, view);
-    final canDelete = !view.sessions.any(
-      (s) => s.status != InboxSessionStatus.dropped,
-    );
+    final canDelete = inboxIdeaCanDelete(view);
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _collapse},
       child: AppSurface(
@@ -178,11 +182,13 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    if (canDelete)
-                      const PopupMenuItem(
-                        value: 'delete',
-                        child: Text('Delete'),
+                    PopupMenuItem(
+                      value: 'delete',
+                      enabled: canDelete,
+                      child: Text(
+                        canDelete ? 'Delete' : 'Delete (close it first)',
                       ),
+                    ),
                   ],
                 ),
               ],
@@ -265,3 +271,14 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
     InboxItemStatus.closed => (Icons.check_circle_outline, tokens.textMuted),
   };
 }
+
+/// An idea can be deleted unless a session is still upcoming or in progress
+/// (both are `upcoming`). Done, missed, skipped, carried and dropped sessions
+/// do not block it; close the idea first to turn its missed ones into skipped.
+bool inboxIdeaCanDelete(InboxIdeaView view) =>
+    !view.sessions.any((s) => s.status == InboxSessionStatus.upcoming);
+
+/// Sessions that stay on Day when the idea is deleted: every one that is not
+/// dropped (a dropped session is already deleted).
+int _pastSessions(InboxIdeaView view) =>
+    view.sessions.where((s) => s.status != InboxSessionStatus.dropped).length;

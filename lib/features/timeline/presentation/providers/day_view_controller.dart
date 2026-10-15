@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,6 +38,45 @@ import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/undo_stack_provider.dart';
 import '../widgets/task_quick_create.dart';
+
+/// Title and message of the delete confirmation. A Day task says "Delete
+/// task?"; an Inbox idea says "Delete idea?" and, when it has [pastSessions]
+/// (done, missed, skipped or carried), that they stay on Day. The Ctrl+Z hint
+/// is shown only when [desktop] is true, because there is no Ctrl+Z on
+/// Android.
+({String title, String message}) deleteConfirmationText({
+  required String label,
+  required bool isIdea,
+  int pastSessions = 0,
+  required bool desktop,
+}) {
+  const undoHint = 'You can undo this with Ctrl+Z.';
+  if (!isIdea) {
+    return (
+      title: 'Delete task?',
+      message:
+          '"$label" will be removed from the timeline.'
+          '${desktop ? '\n$undoHint' : ''}',
+    );
+  }
+  return (
+    title: 'Delete idea?',
+    message:
+        '"$label" will be removed from your Inbox on all your devices.'
+        '${pastSessions == 0
+            ? ''
+            : pastSessions == 1
+            ? ' Its 1 past session stays on Day.'
+            : ' Its $pastSessions past sessions stay on Day.'}'
+        '${desktop ? '\n$undoHint' : ''}',
+  );
+}
+
+/// The same platform check as `KeyboardShortcutHandler._isDesktop`: the
+/// shortcuts, Ctrl+Z included, do nothing on Android and iOS.
+bool get _undoShortcutAvailable =>
+    defaultTargetPlatform != TargetPlatform.android &&
+    defaultTargetPlatform != TargetPlatform.iOS;
 
 /// Shared high-level scheduling actions, invoked from the context menu,
 /// keyboard shortcuts and dialogs.
@@ -305,12 +345,14 @@ abstract final class TimelineActions {
   /// Asks for confirmation, then soft-deletes via [DeleteTaskCommand].
   /// Recurring instances get an extra scope question (planner.md Chunk 4 #8):
   /// "This occurrence only" adds an exception date; "All future occurrences"
-  /// ends the rule the day before this instance.
+  /// ends the rule the day before this instance. For an Inbox idea,
+  /// [pastSessions] is how many of its sessions stay on Day.
   static Future<void> deleteWithConfirmation(
     BuildContext context,
     WidgetRef ref,
-    Task task,
-  ) async {
+    Task task, {
+    int pastSessions = 0,
+  }) async {
     // Capture before any await so post-dialog work never touches a stale
     // provider graph.
     final viewedDate = ref.read(selectedDateProvider);
@@ -325,13 +367,16 @@ abstract final class TimelineActions {
     final label = task.isInbox
         ? InboxItem.explicit(task).displayPreview
         : task.title;
-    final location = task.isInbox ? 'your Inbox' : 'the timeline';
+    final text = deleteConfirmationText(
+      label: label,
+      isIdea: task.isInbox,
+      pastSessions: pastSessions,
+      desktop: _undoShortcutAvailable,
+    );
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete task?',
-      message:
-          '"$label" will be removed from $location.\n'
-          'You can undo this with Ctrl+Z.',
+      title: text.title,
+      message: text.message,
       confirmLabel: 'Delete',
     );
     if (!confirmed) return;

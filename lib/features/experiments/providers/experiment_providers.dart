@@ -36,6 +36,20 @@ typedef ExperimentDeletedEntry = ({
 final experimentDeletedProvider =
     StateProvider.autoDispose<ExperimentDeletedEntry?>((ref) => null);
 
+/// An experiment that was just ended early ("End today"), shown as a one-line
+/// message with Undo on the Experiments card. [previousEndDate] is the end
+/// date to put back; [revision] is the one the write produced.
+typedef ExperimentEndedEntry = ({
+  String experimentId,
+  String previousEndDate,
+  int revision,
+});
+
+/// The experiment ended early last. Auto-disposed like
+/// [experimentDeletedProvider]; a newer one replaces it.
+final experimentEndedProvider =
+    StateProvider.autoDispose<ExperimentEndedEntry?>((ref) => null);
+
 final experimentRepositoryProvider = Provider<ExperimentRepository>((ref) {
   return ExperimentRepository(ref.watch(appDatabaseProvider));
 });

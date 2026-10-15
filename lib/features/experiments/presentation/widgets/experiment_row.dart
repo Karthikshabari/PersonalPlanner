@@ -337,6 +337,12 @@ class _Header extends StatelessWidget {
                       experimentId: id,
                       name: experiment.tagName,
                       revision: experiment.revision,
+                      startDate: experiment.status == ExperimentStatus.running
+                          ? experiment.startDate
+                          : null,
+                      endDate: experiment.status == ExperimentStatus.running
+                          ? experiment.endDate
+                          : null,
                     ),
                   ],
                 ),
