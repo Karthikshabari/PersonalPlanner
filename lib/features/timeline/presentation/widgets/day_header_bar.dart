@@ -218,7 +218,7 @@ class _TodayButton extends ConsumerWidget {
             rest: BorderSide(color: tokens.outlineStrong),
           ),
         ),
-        icon: const Icon(Icons.today_outlined),
+        icon: const Icon(Icons.today_outlined, semanticLabel: 'Today'),
         onPressed: isToday ? null : () => _setToday(ref),
       );
     }
@@ -348,7 +348,7 @@ class _OverflowMenu extends ConsumerWidget {
         key: const ValueKey('day-overflow'),
         tooltip: 'More actions',
         style: _iconButtonStyle(context),
-        icon: const Icon(Icons.more_vert),
+        icon: const Icon(Icons.more_vert, semanticLabel: 'More actions'),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
       ),
@@ -547,7 +547,10 @@ class _WideHeader extends ConsumerWidget {
               key: const ValueKey('day-previous'),
               tooltip: _tip(sizeClass, 'Previous day', '←'),
               style: _iconButtonStyle(context),
-              icon: const Icon(Icons.chevron_left),
+              icon: const Icon(
+                Icons.chevron_left,
+                semanticLabel: 'Previous day',
+              ),
               onPressed: () => _step(ref, selected, -1),
             );
             final date = TextButton(
@@ -568,7 +571,7 @@ class _WideHeader extends ConsumerWidget {
               key: const ValueKey('day-next'),
               tooltip: _tip(sizeClass, 'Next day', '→'),
               style: _iconButtonStyle(context),
-              icon: const Icon(Icons.chevron_right),
+              icon: const Icon(Icons.chevron_right, semanticLabel: 'Next day'),
               onPressed: () => _step(ref, selected, 1),
             );
             final chip = sizeClass == WindowSizeClass.medium

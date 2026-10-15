@@ -573,7 +573,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       );
     }
     if (!gridAsync.hasValue) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(semanticsLabel: 'Loading day'),
+      );
     }
     if (tasksAsync.hasError) {
       return ErrorPanel(
@@ -582,7 +584,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       );
     }
     if (!tasksAsync.hasValue) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(semanticsLabel: 'Loading day'),
+      );
     }
     if (categoriesAsync.hasError) {
       return ErrorPanel(
@@ -591,7 +595,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       );
     }
     if (!categoriesAsync.hasValue) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(semanticsLabel: 'Loading day'),
+      );
     }
     if (subtaskCountsAsync.hasError) {
       return ErrorPanel(
@@ -600,7 +606,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       );
     }
     if (!subtaskCountsAsync.hasValue) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(semanticsLabel: 'Loading day'),
+      );
     }
     final subtaskCounts = subtaskCountsAsync.requireValue;
     final selectedTaskId = ref.watch(selectedTaskIdProvider);
@@ -1124,7 +1132,11 @@ class _SelectedTaskEditAction extends StatelessWidget {
         key: ValueKey('selected-task-edit-${task.id}'),
         tooltip: 'Edit ${task.title}',
         onPressed: onPressed,
-        icon: const Icon(Icons.edit_outlined, size: 20),
+        icon: Icon(
+          Icons.edit_outlined,
+          semanticLabel: 'Edit ${task.title}',
+          size: 20,
+        ),
       ),
     );
   }

@@ -54,7 +54,11 @@ class _StringListEditorState extends State<StringListEditor> {
                 key: ValueKey('${widget.label}-remove-$i'),
                 tooltip: 'Remove',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.close, size: 16),
+                icon: const Icon(
+                  Icons.close,
+                  semanticLabel: 'Remove',
+                  size: 16,
+                ),
                 onPressed: () {
                   final next = [...widget.items]..removeAt(i);
                   widget.onChanged(next);
@@ -77,7 +81,7 @@ class _StringListEditorState extends State<StringListEditor> {
             IconButton(
               tooltip: 'Add',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, semanticLabel: 'Add'),
               onPressed: _add,
             ),
           ],

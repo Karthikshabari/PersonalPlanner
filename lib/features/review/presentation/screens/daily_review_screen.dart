@@ -324,13 +324,13 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     final prev = IconButton(
       key: const ValueKey('review-prev-day'),
       tooltip: 'Previous day',
-      icon: const Icon(Icons.chevron_left),
+      icon: const Icon(Icons.chevron_left, semanticLabel: 'Previous day'),
       onPressed: () => notifier.state = addDays(date, -1),
     );
     final next = IconButton(
       key: const ValueKey('review-next-day'),
       tooltip: 'Next day',
-      icon: const Icon(Icons.chevron_right),
+      icon: const Icon(Icons.chevron_right, semanticLabel: 'Next day'),
       onPressed: () => notifier.state = addDays(date, 1),
     );
     final dateText = Text(

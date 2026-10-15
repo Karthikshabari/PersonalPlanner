@@ -115,11 +115,18 @@ class AdaptiveShell extends ConsumerWidget {
     );
   }
 
-  Widget _withBanner(Widget content) => Column(
-    children: [
-      const SignedOutBanner(),
-      Expanded(child: content),
-    ],
+  // The routed child is a nested Navigator whose route barrier blocks the
+  // semantics of everything painted before it in the same node, which hid the
+  // rail. Its own container node confines that to the body.
+  Widget _withBanner(Widget content) => Semantics(
+    container: true,
+    explicitChildNodes: true,
+    child: Column(
+      children: [
+        const SignedOutBanner(),
+        Expanded(child: content),
+      ],
+    ),
   );
 
   /// Index into [_primaryDestinations] for the current route, or null for a
@@ -180,7 +187,7 @@ class AdaptiveShell extends ConsumerWidget {
                 child: Image.asset(
                   'assets/branding/app_logo.png',
                   fit: BoxFit.contain,
-                  excludeFromSemantics: true,
+                  semanticLabel: 'Home',
                 ),
               ),
               onPressed: () => _navigate(context, '/day'),

@@ -98,7 +98,10 @@ class _ReviewPresetEditorState extends ConsumerState<ReviewPresetEditor> {
         IconButton(
           key: ValueKey('review-preset-remove-$index'),
           tooltip: 'Remove preset ${index + 1}',
-          icon: const Icon(Icons.close_rounded),
+          icon: Icon(
+            Icons.close_rounded,
+            semanticLabel: 'Remove preset ${index + 1}',
+          ),
           onPressed: () => notifier.removeAt(index),
         ),
       ],

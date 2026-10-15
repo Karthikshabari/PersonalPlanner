@@ -225,14 +225,17 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToTarget());
   }
 
-  /// A segment whose spoken label is "Dropped, 2 items".
-  ButtonSegment<_Segment> _segmentOf(_Segment value, String name, int count) =>
+  /// A segment whose spoken label is "Dropped, 2 items". A null [count] means
+  /// the Inbox has not loaded, so no count is shown or spoken.
+  ButtonSegment<_Segment> _segmentOf(_Segment value, String name, int? count) =>
       ButtonSegment(
         value: value,
         label: Semantics(
-          label: '$name, $count ${count == 1 ? 'item' : 'items'}',
+          label: count == null
+              ? '$name, loading'
+              : '$name, $count ${count == 1 ? 'item' : 'items'}',
           excludeSemantics: true,
-          child: Text('$name ($count)'),
+          child: Text(count == null ? name : '$name ($count)'),
         ),
       );
 
@@ -253,7 +256,9 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
     } else if (!state.loaded) {
       status = const Padding(
         padding: EdgeInsets.all(AppSpacing.huge),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(
+          child: CircularProgressIndicator(semanticsLabel: 'Loading Inbox'),
+        ),
       );
     } else if (_items.isEmpty) {
       status = Padding(
@@ -359,16 +364,20 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                             minimumSize: const Size(0, 44),
                           ),
                           segments: [
-                            _segmentOf(_Segment.open, 'Open', state.openCount),
+                            _segmentOf(
+                              _Segment.open,
+                              'Open',
+                              state.loaded ? state.openCount : null,
+                            ),
                             _segmentOf(
                               _Segment.done,
                               'Done',
-                              state.done.length,
+                              state.loaded ? state.done.length : null,
                             ),
                             _segmentOf(
                               _Segment.dropped,
                               'Dropped',
-                              state.dropped.length,
+                              state.loaded ? state.dropped.length : null,
                             ),
                           ],
                           selected: {_segment},

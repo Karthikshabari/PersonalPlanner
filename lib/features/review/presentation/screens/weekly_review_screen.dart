@@ -273,7 +273,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         IconButton(
           key: const ValueKey('week-prev'),
           tooltip: 'Previous week',
-          icon: const Icon(Icons.chevron_left),
+          icon: const Icon(Icons.chevron_left, semanticLabel: 'Previous week'),
           onPressed: () => notifier.state = addDays(weekStart, -7),
         ),
         Text(
@@ -284,7 +284,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         IconButton(
           key: const ValueKey('week-next'),
           tooltip: 'Next week',
-          icon: const Icon(Icons.chevron_right),
+          icon: const Icon(Icons.chevron_right, semanticLabel: 'Next week'),
           onPressed: () => notifier.state = addDays(weekStart, 7),
         ),
         const SizedBox(width: AppSpacing.sm),

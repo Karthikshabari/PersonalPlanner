@@ -1177,7 +1177,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                   label: 'Close editor',
                   child: IconButton(
                     tooltip: 'Close editor',
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(
+                      Icons.close,
+                      semanticLabel: 'Close editor',
+                    ),
                     onPressed: _requestClose,
                   ),
                 ),
@@ -1521,7 +1524,10 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                         onPressed: _saving
                             ? null
                             : () => setState(() => _dueDate = null),
-                        icon: const Icon(Icons.clear),
+                        icon: const Icon(
+                          Icons.clear,
+                          semanticLabel: 'Clear due date',
+                        ),
                       ),
                   ],
                 ),

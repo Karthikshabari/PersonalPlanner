@@ -46,7 +46,10 @@ class _ExperimentPastCheckInsState extends State<ExperimentPastCheckIns> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text('Past check-ins', style: styles.sectionHeading),
-        ExperimentChip(key: ValueKey('checkin-past-count-$id'), text: '$count'),
+        ExperimentChip(
+          key: ValueKey('checkin-past-count-$id'),
+          text: '$count written',
+        ),
       ],
     );
     return Column(

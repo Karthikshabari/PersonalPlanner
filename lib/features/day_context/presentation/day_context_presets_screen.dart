@@ -61,7 +61,10 @@ class DayContextPresetsScreen extends ConsumerWidget {
                               IconButton(
                                 key: ValueKey('day-context-preset-rename-$i'),
                                 tooltip: 'Rename ${presets[i].name}',
-                                icon: const Icon(Icons.edit_outlined),
+                                icon: Icon(
+                                  Icons.edit_outlined,
+                                  semanticLabel: 'Rename ${presets[i].name}',
+                                ),
                                 onPressed: () => _showNameDialog(
                                   context,
                                   title: 'Rename day context',
@@ -72,7 +75,10 @@ class DayContextPresetsScreen extends ConsumerWidget {
                               IconButton(
                                 key: ValueKey('day-context-preset-delete-$i'),
                                 tooltip: 'Delete ${presets[i].name}',
-                                icon: const Icon(Icons.delete_outline),
+                                icon: Icon(
+                                  Icons.delete_outline,
+                                  semanticLabel: 'Delete ${presets[i].name}',
+                                ),
                                 onPressed: presets.length <= 1
                                     ? null
                                     : () => _delete(

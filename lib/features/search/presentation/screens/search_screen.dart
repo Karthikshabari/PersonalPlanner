@@ -107,7 +107,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       ? null
                       : IconButton(
                           tooltip: 'Clear search',
-                          icon: const Icon(Icons.clear),
+                          icon: const Icon(
+                            Icons.clear,
+                            semanticLabel: 'Clear search',
+                          ),
                           onPressed: () {
                             _controller.clear();
                             _onChanged('');

@@ -19,7 +19,7 @@ class GlobalSearchAction extends StatelessWidget {
     return IconButton(
       key: const ValueKey('mobile-search-action'),
       tooltip: 'Search',
-      icon: const Icon(Icons.search),
+      icon: const Icon(Icons.search, semanticLabel: 'Search'),
       onPressed: () => context.push('/search'),
     );
   }

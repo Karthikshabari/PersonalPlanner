@@ -506,7 +506,7 @@ class _DayAttentionRowState extends ConsumerState<DayAttentionRow> {
     ) => IconButton(
       key: ValueKey('day-attention-$key-$id'),
       tooltip: tooltip,
-      icon: Icon(icon, size: 20),
+      icon: Icon(icon, semanticLabel: tooltip, size: 20),
       style: IconButton.styleFrom(minimumSize: DayStyle.minTarget),
       onPressed: run,
     );
@@ -604,7 +604,11 @@ class _DayAttentionRowState extends ConsumerState<DayAttentionRow> {
       builder: (context, controller, child) => IconButton(
         key: ValueKey('day-attention-menu-${_task.id}'),
         tooltip: 'Task actions',
-        icon: const Icon(Icons.more_vert, size: 20),
+        icon: const Icon(
+          Icons.more_vert,
+          semanticLabel: 'Task actions',
+          size: 20,
+        ),
         style: IconButton.styleFrom(minimumSize: DayStyle.minTarget),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),

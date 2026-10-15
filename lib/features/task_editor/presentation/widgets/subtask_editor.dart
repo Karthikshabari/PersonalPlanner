@@ -156,7 +156,11 @@ class _SubtaskEditorState extends ConsumerState<SubtaskEditor> {
                         IconButton(
                           key: ValueKey('subtask-delete-${subtask.id}'),
                           tooltip: 'Delete subtask ${subtask.title}',
-                          icon: const Icon(Icons.close, size: 16),
+                          icon: Icon(
+                            Icons.close,
+                            semanticLabel: 'Delete subtask ${subtask.title}',
+                            size: 16,
+                          ),
                           onPressed: _busy
                               ? null
                               : () => _runMutation(

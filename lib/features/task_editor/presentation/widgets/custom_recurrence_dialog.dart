@@ -195,7 +195,10 @@ class _CustomRecurrenceDialogState
                     const SizedBox(width: AppSpacing.sm),
                     IconButton(
                       tooltip: 'Clear end date',
-                      icon: const Icon(Icons.clear),
+                      icon: const Icon(
+                        Icons.clear,
+                        semanticLabel: 'Clear end date',
+                      ),
                       onPressed: () => setState(() => _endDate = null),
                     ),
                   ],

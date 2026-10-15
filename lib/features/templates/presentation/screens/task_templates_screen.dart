@@ -93,7 +93,10 @@ class TaskTemplatesScreen extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit_outlined),
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          semanticLabel: 'Edit template',
+                        ),
                         tooltip: 'Edit',
                         onPressed: () => showTemplateFormDialog(
                           context,
@@ -103,7 +106,10 @@ class TaskTemplatesScreen extends ConsumerWidget {
                       ),
                       IconButton(
                         key: ValueKey('delete-template-${template.id}'),
-                        icon: const Icon(Icons.delete_outline),
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          semanticLabel: 'Delete template',
+                        ),
                         tooltip: 'Delete',
                         onPressed: () async {
                           final confirmed = await showConfirmDialog(

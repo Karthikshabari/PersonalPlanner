@@ -952,7 +952,10 @@ class _QuarantineCard extends StatelessWidget {
               ),
               trailing: IconButton(
                 tooltip: 'Copy sync review details',
-                icon: const Icon(Icons.copy_outlined),
+                icon: const Icon(
+                  Icons.copy_outlined,
+                  semanticLabel: 'Copy sync review details',
+                ),
                 onPressed: () =>
                     Clipboard.setData(ClipboardData(text: _copyText(change))),
               ),
@@ -1676,6 +1679,9 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
                     _passwordVisible
                         ? Icons.visibility_off_outlined
                         : Icons.visibility_outlined,
+                    semanticLabel: _passwordVisible
+                        ? 'Hide password'
+                        : 'Show password',
                   ),
                   onPressed: () =>
                       setState(() => _passwordVisible = !_passwordVisible),

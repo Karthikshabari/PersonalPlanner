@@ -35,13 +35,12 @@ class RatingPicker extends StatelessWidget {
               color: star <= (value ?? 0)
                   ? Theme.of(context).colorScheme.secondary
                   : null,
+              semanticLabel: 'Rate $star out of 5',
             ),
-            onPressed: () =>
-                onChanged(value == star ? null : star),
+            onPressed: () => onChanged(value == star ? null : star),
           ),
         if (value != null)
-          Text('$value/5',
-              style: Theme.of(context).textTheme.bodySmall),
+          Text('$value/5', style: Theme.of(context).textTheme.bodySmall),
       ],
     );
   }

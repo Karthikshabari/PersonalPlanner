@@ -69,6 +69,9 @@ class _InboxSidebarState extends ConsumerState<InboxSidebar> {
                     _expanded
                         ? Icons.keyboard_arrow_down
                         : Icons.keyboard_arrow_up,
+                    semanticLabel: _expanded
+                        ? 'Collapse inbox'
+                        : 'Expand inbox',
                   ),
                   onPressed: () => setState(() => _expanded = !_expanded),
                 ),

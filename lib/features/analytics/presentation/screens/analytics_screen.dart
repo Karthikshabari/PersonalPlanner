@@ -107,7 +107,7 @@ class _InsightsLoading extends StatelessWidget {
   Widget build(BuildContext context) => const Center(
     child: Padding(
       padding: EdgeInsets.all(AppSpacing.huge),
-      child: CircularProgressIndicator(),
+      child: CircularProgressIndicator(semanticsLabel: 'Loading Insights'),
     ),
   );
 }

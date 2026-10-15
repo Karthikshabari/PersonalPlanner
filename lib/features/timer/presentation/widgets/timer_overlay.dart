@@ -176,7 +176,10 @@ class TimerOverlay extends ConsumerWidget {
     if (elapsedAsync.hasError) {
       return IconButton(
         tooltip: friendlyErrorMessage(elapsedAsync.error!),
-        icon: const Icon(Icons.error_outline),
+        icon: Icon(
+          Icons.error_outline,
+          semanticLabel: friendlyErrorMessage(elapsedAsync.error!),
+        ),
         color: tokens.error,
         onPressed: () => ref.invalidate(timerSessionElapsedProvider),
       );
@@ -219,6 +222,9 @@ class TimerOverlay extends ConsumerWidget {
             session.state == TimerSessionState.paused
                 ? Icons.play_arrow
                 : Icons.pause,
+            semanticLabel: session.state == TimerSessionState.paused
+                ? 'Resume'
+                : 'Pause',
             size: 18,
           ),
           onPressed: busy
@@ -236,7 +242,7 @@ class TimerOverlay extends ConsumerWidget {
           key: const ValueKey('overlay-stop-button'),
           tooltip: 'Stop',
           visualDensity: VisualDensity.compact,
-          icon: const Icon(Icons.stop, size: 18),
+          icon: const Icon(Icons.stop, semanticLabel: 'Stop', size: 18),
           onPressed: busy
               ? null
               : () => _runTimerAction(

@@ -359,7 +359,10 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
               IconButton(
                 key: const ValueKey('weekview-prev'),
                 tooltip: 'Previous week',
-                icon: const Icon(Icons.chevron_left),
+                icon: const Icon(
+                  Icons.chevron_left,
+                  semanticLabel: 'Previous week',
+                ),
                 onPressed: () => _navigateWeek(-1),
               ),
               Text(
@@ -369,7 +372,10 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
               IconButton(
                 key: const ValueKey('weekview-next'),
                 tooltip: 'Next week',
-                icon: const Icon(Icons.chevron_right),
+                icon: const Icon(
+                  Icons.chevron_right,
+                  semanticLabel: 'Next week',
+                ),
                 onPressed: () => _navigateWeek(1),
               ),
               OutlinedButton(

@@ -148,7 +148,10 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
                         IconButton(
                           tooltip: 'Cancel quick create',
                           onPressed: _saving ? null : widget.onCancel,
-                          icon: const Icon(Icons.close),
+                          icon: const Icon(
+                            Icons.close,
+                            semanticLabel: 'Cancel quick create',
+                          ),
                         ),
                       ],
                     ),

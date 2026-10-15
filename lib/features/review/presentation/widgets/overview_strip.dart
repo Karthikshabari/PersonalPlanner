@@ -707,7 +707,7 @@ class ReviewStripArrowButton extends StatelessWidget {
       child: IconButton(
         padding: EdgeInsets.zero,
         tooltip: tooltip,
-        icon: Icon(icon, size: 22),
+        icon: Icon(icon, semanticLabel: tooltip, size: 22),
         onPressed: onPressed,
         style:
             IconButton.styleFrom(

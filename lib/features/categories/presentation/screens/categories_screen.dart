@@ -57,7 +57,11 @@ class CategoriesScreen extends ConsumerWidget {
         child: const Icon(Icons.add),
       ),
       body: categoriesAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(
+          child: CircularProgressIndicator(
+            semanticsLabel: 'Loading categories',
+          ),
+        ),
         error: (e, _) => ErrorPanel(message: friendlyErrorMessage(e)),
         data: (categories) => ReorderableListView.builder(
           padding: EdgeInsets.all(
@@ -104,6 +108,9 @@ class CategoriesScreen extends ConsumerWidget {
                       tooltip: 'Focus category',
                       icon: Icon(
                         Icons.center_focus_strong,
+                        semanticLabel: category.isFocus
+                            ? 'Focus category, on'
+                            : 'Focus category, off',
                         size: 20,
                         color: category.isFocus
                             ? AppColors.primary
@@ -117,15 +124,23 @@ class CategoriesScreen extends ConsumerWidget {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Edit',
+                      tooltip: 'Edit category',
                       key: ValueKey('edit-category-${category.name}'),
-                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        semanticLabel: 'Edit category',
+                        size: 18,
+                      ),
                       onPressed: () => _showEditDialog(context, ref, category),
                     ),
                     IconButton(
                       tooltip: 'Delete category',
                       key: ValueKey('delete-category-${category.name}'),
-                      icon: const Icon(Icons.delete_outline, size: 18),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        semanticLabel: 'Delete category',
+                        size: 18,
+                      ),
                       onPressed: () => _confirmDelete(context, ref, category),
                     ),
                   ],

@@ -235,7 +235,7 @@ void main() {
       matching: find.text(n),
     );
     expect(find.text('Past check-ins'), findsOneWidget);
-    expect(count('0'), findsOneWidget);
+    expect(count('0 written'), findsOneWidget);
     expect(find.text('No check-ins written yet.'), findsNothing);
     await tester.tap(toggle);
     await tester.pump();
@@ -248,7 +248,7 @@ void main() {
     await writeNote(tester, e, 'First note');
     await save(tester, e);
 
-    expect(count('3'), findsOneWidget);
+    expect(count('3 written'), findsOneWidget);
     expect(find.text('No check-ins written yet.'), findsNothing);
     final list = find.byKey(ValueKey('checkin-past-list-${e.id}'));
     expect(list, findsOneWidget);
@@ -280,7 +280,7 @@ void main() {
 
     await tester.tap(toggle);
     await tester.pump();
-    expect(count('3'), findsOneWidget);
+    expect(count('3 written'), findsOneWidget);
     expect(list, findsNothing);
 
     await teardownApp(tester, container);

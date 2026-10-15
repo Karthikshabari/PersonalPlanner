@@ -323,7 +323,10 @@ class _TagFieldState extends ConsumerState<TagField> {
                     ? IconButton(
                         key: const ValueKey('task-tag-clear'),
                         tooltip: 'Clear tag',
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(
+                          Icons.close,
+                          semanticLabel: 'Clear tag',
+                        ),
                         onPressed: _clear,
                       )
                     : null,
