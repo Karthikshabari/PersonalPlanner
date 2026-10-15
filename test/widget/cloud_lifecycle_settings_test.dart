@@ -619,7 +619,9 @@ Future<void> _flushLifecycle(
     if (condition()) return;
     await tester.pump(const Duration(milliseconds: 50));
     await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      // Real time: the profile store's file writes and renames only progress
+      // here, and they are slower on Windows than on Linux or macOS.
+      () => Future<void>.delayed(const Duration(milliseconds: 25)),
     );
   }
 }
