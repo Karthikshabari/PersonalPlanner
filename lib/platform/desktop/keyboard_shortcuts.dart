@@ -25,6 +25,7 @@ import '../../features/timeline/presentation/providers/selected_task_provider.da
 import '../../features/timeline/presentation/providers/timeline_action_provider.dart';
 import '../../features/timeline/presentation/providers/undo_stack_provider.dart';
 import '../../features/timeline/presentation/providers/day_view_controller.dart';
+import 'primary_shortcut.dart';
 
 enum PlannerShortcutAction {
   newTask,
@@ -225,8 +226,20 @@ abstract final class PlannerShortcutRegistry {
   static Map<ShortcutActivator, Intent> get bindings => {
     for (final definition in definitions)
       for (final activator in definition.activators)
-        activator: _PlannerIntent(definition.action),
+        _forPlatform(activator): _PlannerIntent(definition.action),
   };
+
+  /// The definitions are written with Control; macOS uses Command instead.
+  static ShortcutActivator _forPlatform(ShortcutActivator activator) =>
+      usesCommandModifier && activator is SingleActivator && activator.control
+      ? primaryShortcut(activator.trigger, shift: activator.shift)
+      : activator;
+
+  /// [PlannerShortcutDefinition.shortcut] as shown on this platform.
+  static String label(PlannerShortcutDefinition definition) =>
+      usesCommandModifier
+      ? definition.shortcut.replaceAll('Ctrl+', '⌘')
+      : definition.shortcut;
 }
 
 class _PlannerIntent extends Intent {
@@ -543,7 +556,7 @@ class _KeyboardShortcutHandlerState
                     SizedBox(
                       width: 130,
                       child: Text(
-                        definition.shortcut,
+                        PlannerShortcutRegistry.label(definition),
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),

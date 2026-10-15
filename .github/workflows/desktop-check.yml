@@ -1,0 +1,124 @@
+# Builds and smoke-tests the Windows and macOS desktop apps on clean runners
+# and uploads unsigned release builds. Needs no secrets: the app runs
+# local-only because no Supabase dart-defines are passed.
+name: Desktop check
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to check
+        type: choice
+        options: [both, windows, macos]
+        default: both
+  push:
+    branches: [desktop-port]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: 3.47.1
+
+# Generated *.g.dart / *.freezed.dart files are committed, so build_runner is
+# not run here.
+#
+# The unit tests run last, after the artifact upload, so a test that assumes
+# Linux cannot hide the build result. They use local wall-clock fixtures that
+# expect the Asia/Kolkata time zone, which each job sets first.
+
+jobs:
+  windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # Keep LF endings: tests hash the SQL migrations byte for byte.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Use the time zone the unit tests expect
+        run: tzutil /s "India Standard Time"
+
+      - run: flutter --version
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+
+      - name: Smoke test (debug app on Windows)
+        run: flutter test integration_test/desktop_smoke_test.dart -d windows
+
+      - name: Build release
+        run: flutter build windows --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse build\windows\x64\runner\Release "Personal Planner"
+          Compress-Archive -Path "Personal Planner" -DestinationPath planner-windows-x64.zip
+          Get-ChildItem "Personal Planner" | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: planner-windows-x64
+          path: planner-windows-x64.zip
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Unit and widget tests
+        shell: pwsh
+        # Host tests load sqlite3.dll by name; use the one bundled with the app.
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE\build\windows\x64\runner\Release;$env:PATH"
+          flutter test
+
+  macos:
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'windows'
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      TZ: Asia/Kolkata
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter --version
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze
+
+      - name: Smoke test (debug app on macOS)
+        run: flutter test integration_test/desktop_smoke_test.dart -d macos
+
+      - name: Build release (unsigned)
+        run: flutter build macos --release
+
+      - name: Package
+        run: |
+          APP="build/macos/Build/Products/Release/Personal Planner.app"
+          lipo -info "$APP/Contents/MacOS/Personal Planner"
+          codesign -dv "$APP" 2>&1 || true
+          ditto -c -k --sequesterRsrc --keepParent "$APP" planner-macos.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: planner-macos
+          path: planner-macos.zip
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Unit and widget tests
+        run: flutter test

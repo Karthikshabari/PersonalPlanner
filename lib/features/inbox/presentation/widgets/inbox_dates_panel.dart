@@ -14,6 +14,7 @@ import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/time_picker_24h.dart';
+import '../../../../platform/desktop/primary_shortcut.dart';
 import '../../domain/inbox_board.dart';
 import '../../domain/inbox_dates.dart';
 import '../../domain/inbox_status.dart';
@@ -295,7 +296,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): _save,
+        primaryShortcut(LogicalKeyboardKey.enter): _save,
         const SingleActivator(LogicalKeyboardKey.escape): widget.onCancel,
       },
       child: Column(

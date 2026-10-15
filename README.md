@@ -323,6 +323,41 @@ flutter build apk --release
 
 Use your own Android signing configuration for release builds. Keystores, signing passwords, and `android/key.properties` should never be committed to the repository.
 
+### Windows and macOS (unsigned builds)
+
+These builds are **unsigned** and were **tested only in CI** (GitHub Actions runners), not by hand on a real Windows PC or Mac. Windows and macOS will warn you before the first launch.
+
+The `Desktop check` workflow (`.github/workflows/desktop-check.yml`) builds both apps, runs a smoke test on each one, and uploads `planner-windows-x64` and `planner-macos` for 3 days. Open a finished run in the **Actions** tab and download them from **Artifacts** (you must be signed in to GitHub). GitHub zips each download, so unzip it once to get `planner-windows-x64.zip` or `planner-macos.zip`.
+
+**Windows**
+
+1. Extract the whole zip. Keep `personal_planner.exe`, the `.dll` files and the `data` folder together.
+2. Run `personal_planner.exe`.
+3. If SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.
+
+**macOS**
+
+1. Unzip `planner-macos.zip` and move `Personal Planner.app` to **Applications**.
+2. Try to open it. macOS blocks it the first time.
+3. Open **System Settings → Privacy & Security** and click **Open Anyway** next to Personal Planner.
+4. If **Open Anyway** is not offered, or macOS says the app is damaged, run:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/Personal Planner.app"
+   ```
+
+**Known limits on Windows and macOS**
+
+- Reminders and timer notifications are off. They are set up only for Linux and Android.
+- Email/password sign-in works. Links that should come back into the app (the sign-up confirmation email and the "Use Personal Planner's provisioning flow" authorization) do not, because the `com.personalplanner.personalplanner://` link scheme is not registered on Windows or macOS.
+
+Build locally on a Windows PC or a Mac with:
+
+```bash
+flutter build windows --release   # build/windows/x64/runner/Release/
+flutter build macos --release     # build/macos/Build/Products/Release/Personal Planner.app
+```
+
 ## Set up sync
 
 There are two useful paths when running your own build.

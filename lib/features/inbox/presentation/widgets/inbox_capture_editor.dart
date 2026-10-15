@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../platform/desktop/primary_shortcut.dart';
 
 /// Shared raw-content editor for new Inbox captures and explicit capture edits.
 /// The widget owns the draft until [onSubmit] completes successfully.
@@ -155,7 +156,7 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): _submit,
+        primaryShortcut(LogicalKeyboardKey.enter): _submit,
         const SingleActivator(LogicalKeyboardKey.escape): () =>
             widget.onCancel?.call(),
       },

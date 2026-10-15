@@ -6,6 +6,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/task_time_metrics.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../../platform/desktop/primary_shortcut.dart';
 import '../../domain/scheduled_task_draft.dart';
 import 'schedule_fields.dart';
 
@@ -118,8 +119,7 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
       child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): _cancel,
-          const SingleActivator(LogicalKeyboardKey.enter, control: true):
-              _submit,
+          primaryShortcut(LogicalKeyboardKey.enter): _submit,
         },
         child: FocusTraversalGroup(
           child: Material(

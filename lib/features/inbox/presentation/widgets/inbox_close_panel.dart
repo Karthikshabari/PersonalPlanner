@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../platform/desktop/primary_shortcut.dart';
 import '../../../task_editor/presentation/widgets/tag_field.dart';
 import '../../domain/inbox_history.dart';
 import '../../providers/inbox_provider.dart';
@@ -114,7 +115,7 @@ class _InboxClosePanelState extends ConsumerState<InboxClosePanel> {
     final action = widget.letGo ? 'Let go' : 'Close it';
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): _submit,
+        primaryShortcut(LogicalKeyboardKey.enter): _submit,
         const SingleActivator(LogicalKeyboardKey.escape): widget.onCancel,
       },
       child: Column(

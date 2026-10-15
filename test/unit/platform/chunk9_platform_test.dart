@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,6 +41,26 @@ void main() {
       expect(shortcuts[PlannerShortcutAction.resizeDown], 'Shift+↓');
       expect(shortcuts[PlannerShortcutAction.saveAndClose], 'Ctrl+Enter');
       expect(shortcuts[PlannerShortcutAction.help], '?');
+    });
+
+    test('macOS binds Command where Linux binds Control', () {
+      List<SingleActivator> modified() => [
+        for (final activator in PlannerShortcutRegistry.bindings.keys)
+          if (activator is SingleActivator &&
+              (activator.control || activator.meta))
+            activator,
+      ];
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      try {
+        expect(modified(), isNotEmpty);
+        expect(modified().where((a) => a.meta || !a.control), isEmpty);
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        expect(modified(), isNotEmpty);
+        expect(modified().where((a) => a.control || !a.meta), isEmpty);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
   });
 
