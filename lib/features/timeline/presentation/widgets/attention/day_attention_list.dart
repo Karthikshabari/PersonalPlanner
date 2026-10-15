@@ -69,10 +69,8 @@ class DayAttentionList extends ConsumerWidget {
         ref.watch(inboxClockProvider.select((clock) => clock.value)) ??
         ref.read(inboxNowFactoryProvider)();
     final groups = groupAttention(items, now);
-    final overdue = [
-      for (final group in groups)
-        if (group.kind != AttentionGroupKind.dueToday) ...group.items,
-    ];
+    // Oldest first overall, not in group display order.
+    final overdue = overdueOldestFirst(groups);
     final header = _Header(
       count: items.length,
       showTitle: showTitle,

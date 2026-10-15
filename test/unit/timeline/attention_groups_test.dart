@@ -45,32 +45,35 @@ void main() {
     for (final item in group.items) item.task.id,
   ];
 
-  test('groups are Due today, Earlier, Yesterday, Today, oldest first', () {
-    final groups = groupAttention([
-      capture('c1'),
-      overdue('earlier-old', ist(9, 1, 9)),
-      overdue('earlier-new', ist(10, 5, 9)),
-      overdue('yesterday', ist(10, 13, 9)),
-      overdue('today', ist(10, 14, 8)),
-    ], now);
-    expect(
-      [for (final g in groups) g.kind],
-      [
-        AttentionGroupKind.dueToday,
-        AttentionGroupKind.earlier,
-        AttentionGroupKind.yesterday,
-        AttentionGroupKind.today,
-      ],
-    );
-    expect(
-      [for (final g in groups) g.label],
-      ['Due today', 'Earlier', 'Yesterday', 'Today'],
-    );
-    expect(ids(groups[0]), ['c1']);
-    expect(ids(groups[1]), ['earlier-old', 'earlier-new']);
-    expect(ids(groups[2]), ['yesterday']);
-    expect(ids(groups[3]), ['today']);
-  });
+  test(
+    'groups are Due today, Today, Yesterday, Earlier, oldest first inside',
+    () {
+      final groups = groupAttention([
+        capture('c1'),
+        overdue('earlier-old', ist(9, 1, 9)),
+        overdue('earlier-new', ist(10, 5, 9)),
+        overdue('yesterday', ist(10, 13, 9)),
+        overdue('today', ist(10, 14, 8)),
+      ], now);
+      expect(
+        [for (final g in groups) g.kind],
+        [
+          AttentionGroupKind.dueToday,
+          AttentionGroupKind.today,
+          AttentionGroupKind.yesterday,
+          AttentionGroupKind.earlier,
+        ],
+      );
+      expect(
+        [for (final g in groups) g.label],
+        ['Due today', 'Today', 'Yesterday', 'Earlier'],
+      );
+      expect(ids(groups[0]), ['c1']);
+      expect(ids(groups[1]), ['today']);
+      expect(ids(groups[2]), ['yesterday']);
+      expect(ids(groups[3]), ['earlier-old', 'earlier-new']);
+    },
+  );
 
   test('empty groups are dropped', () {
     expect(groupAttention(const [], now), isEmpty);
@@ -89,14 +92,14 @@ void main() {
     expect(
       [for (final g in groups) g.kind],
       [
-        AttentionGroupKind.earlier,
-        AttentionGroupKind.yesterday,
         AttentionGroupKind.today,
+        AttentionGroupKind.yesterday,
+        AttentionGroupKind.earlier,
       ],
     );
-    expect(ids(groups[0]), ['a']);
+    expect(ids(groups[0]), ['d']);
     expect(ids(groups[1]), ['b', 'c']);
-    expect(ids(groups[2]), ['d']);
+    expect(ids(groups[2]), ['a']);
   });
 
   test('the planner zone decides the day, not UTC', () {
@@ -133,5 +136,19 @@ void main() {
     final groups = groupAttention([capture('c2'), capture('c1')], now);
     expect(groups.single.kind, AttentionGroupKind.dueToday);
     expect(ids(groups.single), ['c2', 'c1']);
+  });
+
+  test('overdueOldestFirst ignores display order and Due today', () {
+    final groups = groupAttention([
+      capture('c1'),
+      overdue('today', ist(10, 14, 8)),
+      overdue('yesterday', ist(10, 13, 9)),
+      overdue('earlier-new', ist(10, 5, 9)),
+      overdue('earlier-old', ist(9, 1, 9)),
+    ], now);
+    expect(
+      [for (final item in overdueOldestFirst(groups)) item.task.id],
+      ['earlier-old', 'earlier-new', 'yesterday', 'today'],
+    );
   });
 }

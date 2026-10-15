@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/screens/day_view_screen.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/attention/attention_groups.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/attention/day_attention_section.dart';
 
 import '../helpers/day_responsive_fixture.dart';
@@ -205,7 +206,12 @@ void main() {
       of: list,
       matching: find.byType(Scrollable),
     );
-    for (final item in items) {
+    // Scroll down through the rows in the order the sheet shows them.
+    final shown = [
+      for (final group in groupAttention(items, responsiveNow)) ...group.items,
+    ];
+    expect(shown, hasLength(items.length));
+    for (final item in shown) {
       await tester.scrollUntilVisible(
         find.byKey(ValueKey('day-attention-${item.task.id}')),
         120,
@@ -213,7 +219,7 @@ void main() {
       );
     }
     expect(
-      find.byKey(ValueKey('day-attention-${items.last.task.id}')),
+      find.byKey(ValueKey('day-attention-${shown.last.task.id}')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

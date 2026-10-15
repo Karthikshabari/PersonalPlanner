@@ -120,7 +120,7 @@ void main() {
   // Before any `at(...)`: the helpers build planner-zone times.
   PlannerTimeZone.initialize(identifier: 'Asia/Kolkata');
 
-  testWidgets('groups are Due today, Earlier, Yesterday, Today; oldest first', (
+  testWidgets('groups are Due today, Today, Yesterday, Earlier; oldest first', (
     tester,
   ) async {
     final ids = <String, String>{};
@@ -139,27 +139,27 @@ void main() {
 
     double top(Finder f) => tester.getTopLeft(f).dy;
     final headers = [
-      for (final kind in ['dueToday', 'earlier', 'yesterday', 'today'])
+      for (final kind in ['dueToday', 'today', 'yesterday', 'earlier'])
         find.byKey(ValueKey('day-attention-group-$kind')),
     ];
     for (final header in headers) {
       expect(header, findsOneWidget);
     }
     expect(find.text('Due today · 1'), findsOneWidget);
-    expect(find.text('Earlier · 2'), findsOneWidget);
-    expect(find.text('Yesterday · 1'), findsOneWidget);
     expect(find.text('Today · 1'), findsOneWidget);
+    expect(find.text('Yesterday · 1'), findsOneWidget);
+    expect(find.text('Earlier · 2'), findsOneWidget);
 
     final order = [
       headers[0],
       row(ids['Pay the invoice']!),
       headers[1],
-      row(ids['Earlier older']!),
-      row(ids['Earlier newer']!),
+      row(ids['Today task']!),
       headers[2],
       row(ids['Yesterday task']!),
       headers[3],
-      row(ids['Today task']!),
+      row(ids['Earlier older']!),
+      row(ids['Earlier newer']!),
     ];
     for (var i = 1; i < order.length; i++) {
       expect(
@@ -562,6 +562,48 @@ void main() {
         isEmpty,
       );
       expect(undoStack, isNotNull);
+      await finish(tester, container);
+    },
+  );
+
+  testWidgets(
+    'Move all places oldest original first, whatever the group display order',
+    (tester) async {
+      final ids = <String, String>{};
+      final container = await pumpTriage(
+        tester,
+        size: const Size(1280, 800),
+        ids: ids,
+        overdue: [
+          // Seeded newest first on purpose.
+          seed('Today task', at(3, 10, 8)),
+          seed('Yesterday task', at(3, 9, 14)),
+          seed('Earlier task', at(3, 5, 9)),
+        ],
+        captures: ['Pay the invoice'],
+      );
+      // Displayed: Due today, Today, Yesterday, Earlier.
+      await tester.tap(find.byKey(const ValueKey('day-attention-move-all')));
+      await settle(tester);
+      expect(find.text('Move 3 overdue tasks to today?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Move to today'));
+      await settle(tester);
+
+      final successors = [
+        for (final t in await todaysBlocks(tester, container))
+          if (t.rescheduledFromId != null) t,
+      ]..sort((a, b) => a.startTime!.compareTo(b.startTime!));
+      expect(successors, hasLength(3));
+      expect(successors[0].startTime, sameInstant(at(3, 10, 11)));
+      expect(
+        [for (final t in successors) t.rescheduledFromId],
+        [ids['Earlier task'], ids['Yesterday task'], ids['Today task']],
+      );
+      // The capture is not an overdue task and is not moved.
+      expect(
+        (await taskById(tester, container, ids['Pay the invoice']!))?.status,
+        isNot(TaskStatus.rescheduled),
+      );
       await finish(tester, container);
     },
   );
