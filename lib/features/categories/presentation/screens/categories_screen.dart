@@ -220,14 +220,15 @@ class CategoriesScreen extends ConsumerWidget {
                 });
                 if (error != null) return;
                 // Duplicates stay allowed, but only after a warning (F-012).
-                if (existing == null &&
-                    _hasCategoryNamed(
-                      ref.read(categoriesProvider).value,
-                      name,
-                    )) {
+                if (_hasCategoryNamed(
+                  ref.read(categoriesProvider).value,
+                  name,
+                  excludingId: existing?.id,
+                )) {
                   final createAnyway = await _confirmDuplicateName(
                     dialogContext,
                     name,
+                    renaming: existing != null,
                   );
                   if (createAnyway != true || !dialogContext.mounted) return;
                 }
@@ -274,36 +275,45 @@ class CategoriesScreen extends ConsumerWidget {
     );
   }
 
-  static bool _hasCategoryNamed(List<Category>? categories, String name) {
+  static bool _hasCategoryNamed(
+    List<Category>? categories,
+    String name, {
+    String? excludingId,
+  }) {
     final wanted = name.trim().toLowerCase();
     return (categories ?? const <Category>[]).any(
-      (category) => category.name.trim().toLowerCase() == wanted,
+      (category) =>
+          category.id != excludingId &&
+          category.name.trim().toLowerCase() == wanted,
     );
   }
 
-  Future<bool?> _confirmDuplicateName(BuildContext context, String name) =>
-      showDialog<bool>(
-        context: context,
-        builder: (confirmContext) => AlertDialog(
-          title: const Text('Duplicate category name'),
-          content: Text(
-            'A category named "$name" already exists. '
-            'Create anyway?',
-          ),
-          actions: [
-            TextButton(
-              key: const ValueKey('duplicate-category-cancel'),
-              onPressed: () => Navigator.of(confirmContext).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              key: const ValueKey('duplicate-category-create'),
-              onPressed: () => Navigator.of(confirmContext).pop(true),
-              child: const Text('Create'),
-            ),
-          ],
+  Future<bool?> _confirmDuplicateName(
+    BuildContext context,
+    String name, {
+    bool renaming = false,
+  }) => showDialog<bool>(
+    context: context,
+    builder: (confirmContext) => AlertDialog(
+      title: const Text('Duplicate category name'),
+      content: Text(
+        'A category named "$name" already exists. '
+        '${renaming ? 'Rename' : 'Create'} anyway?',
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('duplicate-category-cancel'),
+          onPressed: () => Navigator.of(confirmContext).pop(false),
+          child: const Text('Cancel'),
         ),
-      );
+        FilledButton(
+          key: const ValueKey('duplicate-category-create'),
+          onPressed: () => Navigator.of(confirmContext).pop(true),
+          child: Text(renaming ? 'Rename' : 'Create'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _confirmDelete(
     BuildContext context,

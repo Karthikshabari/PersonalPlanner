@@ -164,6 +164,36 @@ void main() {
       expect(TagRepository.normalizeTagKey('   '), '');
     });
 
+    test('normalizeTagName strips "#", trims and collapses spaces', () {
+      String n(String s) => TagRepository.normalizeTagName(s);
+      expect(n(''), '');
+      expect(n('#'), '');
+      expect(n('##x'), 'x');
+      expect(n('# x'), 'x');
+      expect(n(' X '), 'X');
+      expect(n('a  b   c'), 'a b c');
+      expect(n('#a # b'), 'a # b');
+      expect(n('தமிழ்  பயிற்சி'), 'தமிழ் பயிற்சி');
+      expect(n('#🎯  focus'), '🎯 focus');
+      expect(TagRepository.normalizeTagKey('#MiXed  Case'), 'mixed case');
+      expect(TagRepository.normalizeTagKey('#தமிழ்'), 'தமிழ்');
+    });
+
+    test('"#x", "x" and " X " resolve to one tag', () async {
+      final created = await tags.getOrCreateForName('  #X  ');
+      expect(created.name, 'X');
+      for (final v in ['#x', 'x', ' X ', '## x']) {
+        expect((await tags.getOrCreateForName(v)).id, created.id);
+      }
+      expect((await tags.watchAllTags().first).length, 1);
+    });
+
+    test('an old stored "#x" row is found by "x"', () async {
+      final old = await tags.getOrCreateByName('#x');
+      expect((await tags.getOrCreateForName('x')).id, old.id);
+      expect((await tags.findByNameIgnoringCase('X'))?.id, old.id);
+    });
+
     test('findByNameIgnoringCase finds active tags only', () async {
       final learn = await tags.getOrCreateByName('Learn C');
       expect((await tags.findByNameIgnoringCase('learn c'))?.id, learn.id);

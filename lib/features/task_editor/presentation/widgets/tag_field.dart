@@ -235,8 +235,8 @@ class _TagFieldState extends ConsumerState<TagField> {
 
   void _onTextChanged(String text) {
     _startScrollGrace();
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) {
+    final clean = TagRepository.normalizeTagName(text);
+    if (clean.isEmpty) {
       _report(null, null);
       return;
     }
@@ -244,7 +244,7 @@ class _TagFieldState extends ConsumerState<TagField> {
     if (match != null) {
       _report(match.id, null);
     } else {
-      _report(null, trimmed);
+      _report(null, clean);
     }
   }
 
@@ -253,7 +253,7 @@ class _TagFieldState extends ConsumerState<TagField> {
     if (option != null) {
       _report(option.id, null);
     } else {
-      _report(null, choice.createName!.trim());
+      _report(null, TagRepository.normalizeTagName(choice.createName!));
     }
   }
 
@@ -271,7 +271,7 @@ class _TagFieldState extends ConsumerState<TagField> {
           _TagChoice.existing(option),
     ];
     if (key.isNotEmpty && _matchFor(text) == null) {
-      choices.add(_TagChoice.create(text.trim()));
+      choices.add(_TagChoice.create(TagRepository.normalizeTagName(text)));
     }
     return choices;
   }

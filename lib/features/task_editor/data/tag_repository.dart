@@ -24,12 +24,21 @@ class TagRepository {
 
   TagDao get _dao => _db.tagDao;
 
-  /// The key used to FIND an existing tag (ED5): trimmed, every run of inner
-  /// whitespace collapsed to one space, lower-cased. Never use it as a name
-  /// or pass it to [getOrCreateByName], which keeps the deterministic id
-  /// formula `tag:<trimmed name as typed>`.
+  /// The name a typed tag is stored under: trimmed, leading `#` characters
+  /// and the spaces after them removed, every run of inner whitespace
+  /// collapsed to one space. Case is kept. Empty when nothing is left.
+  static String normalizeTagName(String name) => name
+      .replaceFirst(RegExp(r'^[\s#]+'), '')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+
+  /// The key used to FIND an existing tag (ED5): [normalizeTagName],
+  /// lower-cased, so "#x", "x" and " X " are one tag (old rows that still
+  /// start with "#" included). Never use it as a name or pass it to
+  /// [getOrCreateByName], which keeps the deterministic id formula
+  /// `tag:<trimmed name>`.
   static String normalizeTagKey(String name) =>
-      name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+      normalizeTagName(name).toLowerCase();
 
   /// The active tag whose [normalizeTagKey] equals the input's, or null.
   /// When several active tags share the key (ED4) the one created first wins,
@@ -44,12 +53,14 @@ class TagRepository {
   }
 
   /// Finds the tag [name] refers to, ignoring case and spacing, or creates it
-  /// with the trimmed text as typed.
+  /// with [normalizeTagName] of the text as typed.
   Future<Tag> getOrCreateForName(String name) async {
-    if (name.trim().isEmpty) {
+    final clean = normalizeTagName(name);
+    if (clean.isEmpty) {
       throw ArgumentError.value(name, 'name', 'must not be blank');
     }
-    return await findByNameIgnoringCase(name) ?? await getOrCreateByName(name);
+    return await findByNameIgnoringCase(clean) ??
+        await getOrCreateByName(clean);
   }
 
   /// Number of non-deleted, non-Inbox blocks that carry [tagId] and the

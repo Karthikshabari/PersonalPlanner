@@ -1,3 +1,5 @@
+import 'package:flutter/services.dart';
+
 import '../../../core/database/daos/tag_dao.dart';
 import '../../task_editor/data/tag_repository.dart';
 
@@ -5,6 +7,11 @@ import '../../task_editor/data/tag_repository.dart';
 const experimentEndBeforeStartMessage =
     'The end date must be on or after the start date.';
 const experimentTargetsMessage = 'Targets must be numbers, 0 or more.';
+
+const experimentTargetTooLargeMessage = 'A day has 1440 minutes';
+
+/// Minutes in a day: the most a per-day target can sensibly be.
+const maxExperimentDayTargetMin = 1440;
 
 String experimentTagInUseMessage(String tagName) =>
     'An experiment already uses the tag "$tagName". Pick a different name.';
@@ -14,6 +21,30 @@ int? parseExperimentTarget(String text) {
   final trimmed = text.trim();
   if (!RegExp(r'^\d{1,4}$').hasMatch(trimmed)) return null;
   return int.parse(trimmed);
+}
+
+/// Keeps the digits before the first "." or "," (so a pasted "7.5" becomes
+/// "7") and drops every other character.
+class WholeNumberTextFormatter extends TextInputFormatter {
+  const WholeNumberTextFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    final cut = text.indexOf(RegExp('[.,]'));
+    final digits = (cut < 0 ? text : text.substring(0, cut)).replaceAll(
+      RegExp(r'\D'),
+      '',
+    );
+    if (digits == text) return newValue;
+    return TextEditingValue(
+      text: digits,
+      selection: TextSelection.collapsed(offset: digits.length),
+    );
+  }
 }
 
 /// What the form says about the values typed so far.
@@ -76,7 +107,7 @@ class ExperimentFormState {
     int? blockCount,
     String? firstBlockDate,
   }) {
-    final trimmed = name.trim();
+    final trimmed = TagRepository.normalizeTagName(name);
     final matched = _matchTag(trimmed, tags);
 
     final nameError = matched != null && matched.hasExperiment
@@ -85,10 +116,13 @@ class ExperimentFormState {
     final endDateError = endDate.compareTo(startDate) < 0
         ? experimentEndBeforeStartMessage
         : null;
-    final targetsError =
-        parseExperimentTarget(weekdayTargetText) == null ||
-            parseExperimentTarget(weekendTargetText) == null
+    final weekday = parseExperimentTarget(weekdayTargetText);
+    final weekend = parseExperimentTarget(weekendTargetText);
+    final targetsError = weekday == null || weekend == null
         ? experimentTargetsMessage
+        : weekday > maxExperimentDayTargetMin ||
+              weekend > maxExperimentDayTargetMin
+        ? experimentTargetTooLargeMessage
         : null;
 
     String? info;

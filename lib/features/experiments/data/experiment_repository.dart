@@ -61,7 +61,7 @@ class ExperimentRepository {
     required int checkInEveryDays,
     Future<void> Function(Experiment created)? inSameTransaction,
   }) async {
-    final tagName = name.trim();
+    final tagName = TagRepository.normalizeTagName(name);
     if (tagName.isEmpty || tagName.length > _maxTagNameUnits) {
       throw ArgumentError('name must be 1 to $_maxTagNameUnits characters');
     }

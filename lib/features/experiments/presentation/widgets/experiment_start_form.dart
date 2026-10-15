@@ -473,7 +473,7 @@ class _TargetField extends StatelessWidget {
     controller: controller,
     keyboardType: TextInputType.number,
     inputFormatters: [
-      FilteringTextInputFormatter.digitsOnly,
+      const WholeNumberTextFormatter(),
       LengthLimitingTextInputFormatter(4),
     ],
     decoration: InputDecoration(labelText: label),

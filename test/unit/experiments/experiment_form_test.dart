@@ -173,8 +173,8 @@ void main() {
       }
     });
 
-    test('0 and 9999 are valid', () {
-      final v = form(weekday: '0', weekend: '9999').validate(tags: const []);
+    test('0 and 1440 are valid', () {
+      final v = form(weekday: '0', weekend: '1440').validate(tags: const []);
       expect(v.targetsError, isNull);
       expect(v.canSubmit, isTrue);
     });
@@ -197,5 +197,40 @@ void main() {
     expect(v.endDateError, isNotNull);
     expect(v.targetsError, isNotNull);
     expect(v.canSubmit, isFalse);
+  });
+
+  group('day targets', () {
+    test('1440 is accepted, above 1440 shows the inline error', () {
+      expect(form(weekday: '1440').validate(tags: const []).canSubmit, isTrue);
+      final v = form(weekend: '1441').validate(tags: const []);
+      expect(v.targetsError, 'A day has 1440 minutes');
+      expect(v.canSubmit, isFalse);
+      expect(
+        form(weekday: '9999').validate(tags: const []).targetsError,
+        experimentTargetTooLargeMessage,
+      );
+    });
+
+    test('formatter keeps the part before the separator', () {
+      const f = WholeNumberTextFormatter();
+      String run(String t) => f
+          .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: t))
+          .text;
+      expect(run('7.5'), '7');
+      expect(run('7,5'), '7');
+      expect(run('12a3'), '123');
+      expect(run('.5'), '');
+    });
+
+    test('a name of only "#" cannot be submitted', () {
+      expect(form(name: ' # ').validate(tags: const []).canSubmit, isFalse);
+    });
+
+    test('"#x" matches an existing tag "x" and the reverse', () {
+      final a = form(name: '#X').validate(tags: [tag('x')]);
+      expect(a.matchedTag?.name, 'x');
+      final b = form(name: 'x').validate(tags: [tag('#x')]);
+      expect(b.matchedTag?.name, '#x');
+    });
   });
 }

@@ -363,5 +363,65 @@ void main() {
       expect(names, contains('Workshop'));
       await finish(tester, container);
     });
+
+    group('rename', () {
+      Future<void> rename(WidgetTester tester, String to) async {
+        await tester.tap(find.byKey(const ValueKey('edit-category-Health')));
+        await settle(tester);
+        await tester.enterText(find.byKey(const ValueKey('category-name')), to);
+        await tester.tap(find.byKey(const ValueKey('save-category')));
+        await settle(tester);
+      }
+
+      testWidgets('onto an existing name warns; Cancel keeps the form', (
+        tester,
+      ) async {
+        final container = await pumpCategories(tester);
+
+        await rename(tester, ' work ');
+
+        expect(
+          find.text('A category named "work" already exists. Rename anyway?'),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('duplicate-category-cancel')),
+        );
+        await settle(tester);
+        expect(find.text('Edit category'), findsOneWidget);
+        expect(
+          tester
+              .widget<TextField>(find.byKey(const ValueKey('category-name')))
+              .controller!
+              .text,
+          ' work ',
+        );
+        expect(await workCount(tester, container), 1);
+
+        await tester.tap(find.byKey(const ValueKey('save-category')));
+        await settle(tester);
+        await tester.tap(
+          find.byKey(const ValueKey('duplicate-category-create')),
+        );
+        await settle(tester);
+        expect(await workCount(tester, container), 2);
+        await finish(tester, container);
+      });
+
+      testWidgets('to its own name or only its case shows no warning', (
+        tester,
+      ) async {
+        final container = await pumpCategories(tester);
+
+        await rename(tester, 'Health');
+        expect(find.textContaining('already exists'), findsNothing);
+        expect(find.text('Edit category'), findsNothing);
+
+        await rename(tester, 'HEALTH');
+        expect(find.textContaining('already exists'), findsNothing);
+        expect(find.text('Edit category'), findsNothing);
+        await finish(tester, container);
+      });
+    });
   });
 }
