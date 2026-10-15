@@ -4,12 +4,12 @@ import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:intl/intl.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/database/app_database.dart';
+import '../../../core/utils/local_timezone.dart';
 import '../../../core/utils/planner_time_zone.dart';
 import '../../../core/utils/clock_format.dart';
 import 'planner_notification.dart';
@@ -604,9 +604,9 @@ class LinuxReminderScheduler {
 Future<void> initializeTimezone() async {
   tzdata.initializeTimeZones();
   try {
-    final info = await FlutterTimezone.getLocalTimezone();
-    tz.setLocalLocation(tz.getLocation(info.identifier));
-    PlannerTimeZone.initialize(identifier: info.identifier);
+    final identifier = await resolveLocalTimezoneId();
+    tz.setLocalLocation(tz.getLocation(identifier));
+    PlannerTimeZone.initialize(identifier: identifier);
   } on Object {
     tz.setLocalLocation(tz.getLocation('UTC'));
     PlannerTimeZone.initialize(identifier: 'UTC');

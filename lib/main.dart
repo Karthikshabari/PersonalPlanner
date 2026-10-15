@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:drift/drift.dart' as drift show TableUpdate;
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'core/models/planner_account_scope.dart';
 import 'core/providers/database_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/utils/date_utils.dart';
+import 'core/utils/file_log.dart';
 import 'core/widgets/error_panel.dart';
 import 'features/recurring/providers/recurring_providers.dart';
 import 'features/settings/providers/notification_settings_providers.dart';
@@ -247,7 +249,23 @@ class _AccountDatabaseTarget {
 }
 
 Future<void> main(List<String> arguments) async {
+  await runZonedGuarded(
+    () => _main(arguments),
+    (error, stack) => logToFile('Uncaught zone error', error, stack),
+  );
+}
+
+Future<void> _main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    logToFile('FlutterError', details.exception, details.stack);
+    previousOnError?.call(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    logToFile('PlatformDispatcher error', error, stack);
+    return false;
+  };
   if (NotificationService.isReminderWorker(arguments)) {
     try {
       await NotificationService.runReminderWorker(arguments[1]);
