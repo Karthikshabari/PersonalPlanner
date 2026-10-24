@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/models/task.dart';
 import '../../core/router/app_router.dart';
+import '../../core/search/page_search.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/widgets/status_badge.dart';
@@ -147,7 +148,7 @@ abstract final class PlannerShortcutRegistry {
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.search,
       shortcut: 'Ctrl+F',
-      description: 'Open Search',
+      description: 'Search this page, or open Search',
       activators: [SingleActivator(LogicalKeyboardKey.keyF, control: true)],
     ),
     PlannerShortcutDefinition(
@@ -254,12 +255,17 @@ class _PlannerIntent extends Intent {
 /// over the framework's default editing bindings. Returning from an action
 /// because an editable control has focus is too late: [ShortcutManager] has
 /// already matched the key and will consume it. This manager lets the event
-/// continue to the text-editing shortcut manager instead.
+/// continue to the text-editing shortcut manager instead. Search is the one
+/// exception while the current page has a page search, so Ctrl+F also works
+/// from a text field there.
 class _PlannerShortcutManager extends ShortcutManager {
   final bool Function() isEditableFocused;
+  final bool Function() pageSearchAvailable;
 
-  _PlannerShortcutManager({required this.isEditableFocused})
-    : super(shortcuts: PlannerShortcutRegistry.bindings);
+  _PlannerShortcutManager({
+    required this.isEditableFocused,
+    required this.pageSearchAvailable,
+  }) : super(shortcuts: PlannerShortcutRegistry.bindings);
 
   @override
   KeyEventResult handleKeypress(BuildContext context, KeyEvent event) {
@@ -269,7 +275,9 @@ class _PlannerShortcutManager extends ShortcutManager {
         final intent = entry.value;
         if (intent is _PlannerIntent &&
             intent.action != PlannerShortcutAction.escape &&
-            intent.action != PlannerShortcutAction.saveAndClose) {
+            intent.action != PlannerShortcutAction.saveAndClose &&
+            !(intent.action == PlannerShortcutAction.search &&
+                pageSearchAvailable())) {
           return KeyEventResult.ignored;
         }
       }
@@ -292,12 +300,14 @@ class _KeyboardShortcutHandlerState
     extends ConsumerState<KeyboardShortcutHandler> {
   bool _deleteInFlight = false;
   late final _PlannerShortcutManager _shortcutManager;
+  final _pageSearch = PageSearchRegistry();
 
   @override
   void initState() {
     super.initState();
     _shortcutManager = _PlannerShortcutManager(
       isEditableFocused: _focusOwnsEditableControl,
+      pageSearchAvailable: () => _pageSearch.current != null,
     );
   }
 
@@ -362,6 +372,9 @@ class _KeyboardShortcutHandlerState
     }
     if (_focusOwnsPopupRoute()) return true;
     if (action == PlannerShortcutAction.saveAndClose) return false;
+    if (action == PlannerShortcutAction.search && _pageSearch.current != null) {
+      return false;
+    }
     return _focusOwnsEditableControl();
   }
 
@@ -426,7 +439,12 @@ class _KeyboardShortcutHandlerState
         final now = DateTime.now();
         ref.read(selectedDateProvider.notifier).state = startOfDay(now);
       case PlannerShortcutAction.search:
-        appRouter.go('/search');
+        final page = _pageSearch.current;
+        if (page != null) {
+          page.open();
+        } else {
+          appRouter.go('/search');
+        }
       case PlannerShortcutAction.previousTask:
         _selectAdjacentTask(-1);
       case PlannerShortcutAction.nextTask:
@@ -590,7 +608,10 @@ class _KeyboardShortcutHandlerState
             },
           ),
         },
-        child: FocusScope(autofocus: true, child: widget.child),
+        child: PageSearchRegistryScope(
+          registry: _pageSearch,
+          child: FocusScope(autofocus: true, child: widget.child),
+        ),
       ),
     );
   }
