@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/global_search_action.dart';
 import '../../../experiments/presentation/widgets/experiments_card.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/analytics_models.dart';
@@ -24,8 +24,8 @@ class AnalyticsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: tokens.canvas,
       appBar: AppBar(
-        title: const Text('Insights'),
-        actions: const [GlobalSearchAction(), SyncStatusAction()],
+        title: const PageSearchTitle('Insights'),
+        actions: const [PageSearchAction(), SyncStatusAction()],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {

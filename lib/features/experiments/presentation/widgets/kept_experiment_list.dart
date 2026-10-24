@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../domain/kept_copy.dart';
@@ -19,10 +20,13 @@ typedef KeptRetiredEntry = ({
 });
 
 /// The Kept segment: one row per kept experiment, most recently kept first.
-/// It takes no arguments, so a rebuild of the card skips it; it rebuilds only
-/// when [keptSegmentProvider] changes.
+/// Without [matchIds] it takes no arguments, so a rebuild of the card skips
+/// it; it rebuilds only when [keptSegmentProvider] changes.
 class KeptExperimentList extends ConsumerStatefulWidget {
-  const KeptExperimentList({super.key});
+  const KeptExperimentList({super.key, this.matchIds});
+
+  /// While a page search is active: only these experiments show.
+  final Set<String>? matchIds;
 
   @override
   ConsumerState<KeptExperimentList> createState() => _KeptExperimentListState();
@@ -54,7 +58,14 @@ class _KeptExperimentListState extends ConsumerState<KeptExperimentList> {
   @override
   Widget build(BuildContext context) {
     final styles = ExperimentStyles.of(context);
-    final views = ref.watch(keptSegmentProvider).views;
+    final matchIds = widget.matchIds;
+    final all = ref.watch(keptSegmentProvider).views;
+    final views = matchIds == null
+        ? all
+        : [
+            for (final v in all)
+              if (matchIds.contains(v.experimentId)) v,
+          ];
     final shownIds = {for (final v in views) v.experimentId};
     final items = <({String keptSince, String name, String id, Widget child})>[
       for (final v in views)
@@ -72,7 +83,8 @@ class _KeptExperimentListState extends ConsumerState<KeptExperimentList> {
           ),
         ),
       for (final e in _retired.values)
-        if (!shownIds.contains(e.experimentId))
+        if (!shownIds.contains(e.experimentId) &&
+            (matchIds == null || matchIds.contains(e.experimentId)))
           (
             keptSince: e.keptSince,
             name: e.name,
@@ -85,6 +97,9 @@ class _KeptExperimentListState extends ConsumerState<KeptExperimentList> {
           ),
     ]..sort(_compare);
     if (items.isEmpty) {
+      if (matchIds != null) {
+        return const PageSearchNoMatches(key: ValueKey('kept-search-empty'));
+      }
       return Text(
         keptEmptyText(),
         key: const ValueKey('kept-empty'),

@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/models/experiment.dart';
+import '../../../../core/search/page_search.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../domain/experiment_dashboard.dart';
+import '../../domain/experiment_search.dart';
 import '../../domain/kept_copy.dart';
 import '../../providers/experiment_providers.dart';
 import 'experiment_actions_menu.dart'
@@ -123,6 +125,9 @@ class _BodyState extends ConsumerState<_Body> {
 
   bool _undoing = false;
 
+  // Page search (Ctrl+F or the phone icon). The scope outlives this State.
+  PageSearchController? _search;
+
   /// Undoes the delete shown in the "Deleted ... Undo" line; the line goes
   /// away either way.
   Future<void> _undoDelete() async {
@@ -170,6 +175,29 @@ class _BodyState extends ConsumerState<_Body> {
   void initState() {
     super.initState();
     _applyFocus(ref.read(experimentFocusProvider), inInit: true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final search = PageSearchScope.maybeOf(context);
+    if (identical(search, _search)) return;
+    _search?.needle.removeListener(_onNeedle);
+    _search = search;
+    search?.needle.addListener(_onNeedle);
+    // The card sits in the Insights list, so that is the list to put back.
+    search?.scrollPosition = () =>
+        mounted ? Scrollable.maybeOf(context)?.position : null;
+  }
+
+  void _onNeedle() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _search?.needle.removeListener(_onNeedle);
+    super.dispose();
   }
 
   /// Opens the segment the experiment is in, scrolls its row into view and
@@ -266,14 +294,19 @@ class _BodyState extends ConsumerState<_Body> {
     }
     final running = _segment == _Segment.running;
     final kept = _segment == _Segment.kept;
+    // Null unless a page search is active; then only matching experiments
+    // show and the segment labels count the matches.
+    final needle = _search?.needle.value ?? '';
+    final matches = needle.isEmpty ? null : matchExperiments(dashboard, needle);
     final shown = kept
         ? const <ExperimentView>[]
         : [
             for (final view in dashboard.views)
               if (view.experiment.status ==
-                  (running
-                      ? ExperimentStatus.running
-                      : ExperimentStatus.concluded))
+                      (running
+                          ? ExperimentStatus.running
+                          : ExperimentStatus.concluded) &&
+                  (matches == null || matches.ids.contains(view.experiment.id)))
                 view,
           ];
     return Column(
@@ -293,15 +326,21 @@ class _BodyState extends ConsumerState<_Body> {
               segments: [
                 ButtonSegment(
                   value: _Segment.running,
-                  label: Text('Running (${dashboard.runningCount})'),
+                  label: Text(
+                    'Running (${matches?.running ?? dashboard.runningCount})',
+                  ),
                 ),
                 ButtonSegment(
                   value: _Segment.kept,
-                  label: Text(keptSegmentLabel(dashboard.keptCount)),
+                  label: Text(
+                    keptSegmentLabel(matches?.kept ?? dashboard.keptCount),
+                  ),
                 ),
                 ButtonSegment(
                   value: _Segment.concluded,
-                  label: Text('Concluded (${dashboard.concludedCount})'),
+                  label: Text(
+                    'Concluded (${matches?.concluded ?? dashboard.concludedCount})',
+                  ),
                 ),
               ],
               selected: {_segment},
@@ -318,27 +357,35 @@ class _BodyState extends ConsumerState<_Body> {
           const SizedBox(height: AppSpacing.lg),
           endedLine,
         ],
-        if (kept) ...const [
-          SizedBox(height: AppSpacing.lg),
-          KeptExperimentList(),
+        if (kept) ...[
+          const SizedBox(height: AppSpacing.lg),
+          // The const instance stays when no search is active, so a rebuild
+          // of the card skips the list.
+          matches == null
+              ? const KeptExperimentList()
+              : KeptExperimentList(matchIds: matches.ids),
         ] else if (shown.isEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
-          Text(
-            running
-                ? 'No running experiments.'
-                : 'No concluded experiments yet.',
-            key: const ValueKey('experiments-filter-empty'),
-            style: mutedBody,
-          ),
-          if (running) ...[
-            const SizedBox(height: AppSpacing.md),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _StartButton(
-                key: const ValueKey('experiments-start-empty'),
-                accent: styles.accent,
-              ),
+          if (matches != null)
+            const PageSearchNoMatches(key: ValueKey('experiments-search-empty'))
+          else ...[
+            Text(
+              running
+                  ? 'No running experiments.'
+                  : 'No concluded experiments yet.',
+              key: const ValueKey('experiments-filter-empty'),
+              style: mutedBody,
             ),
+            if (running) ...[
+              const SizedBox(height: AppSpacing.md),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _StartButton(
+                  key: const ValueKey('experiments-start-empty'),
+                  accent: styles.accent,
+                ),
+              ),
+            ],
           ],
         ],
         for (final view in shown) ...[

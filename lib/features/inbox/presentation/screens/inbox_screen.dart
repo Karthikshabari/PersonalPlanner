@@ -5,14 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/global_search_action.dart';
 import '../../../experiments/presentation/widgets/experiment_ui.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/inbox_board.dart';
+import '../../domain/inbox_search.dart';
 import '../../providers/inbox_provider.dart';
 import '../widgets/inbox_idea_row.dart';
 import '../widgets/inbox_quick_add.dart';
@@ -70,6 +71,21 @@ class _ScreenState {
   final List<String> dropped;
 
   int get openCount => leftOver.length + ideas.length + comingUp.length;
+
+  /// Only the ideas in [ids], for page search. The order is kept.
+  _ScreenState onlyIds(Set<String> ids) {
+    List<String> pick(List<String> section) =>
+        section.where(ids.contains).toList(growable: false);
+    return _ScreenState(
+      error: error,
+      loaded: loaded,
+      leftOver: pick(leftOver),
+      ideas: pick(ideas),
+      comingUp: pick(comingUp),
+      done: pick(done),
+      dropped: pick(dropped),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -129,8 +145,27 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
   int _scrollAttempts = 0;
   List<_Item> _items = const [];
 
+  // Page search (Ctrl+F or the phone icon). The scope outlives this State.
+  PageSearchController? _search;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final search = PageSearchScope.maybeOf(context);
+    if (identical(search, _search)) return;
+    _search?.needle.removeListener(_onNeedle);
+    _search = search;
+    search?.needle.addListener(_onNeedle);
+    search?.scrollPosition = () => _scroll.hasClients ? _scroll.position : null;
+  }
+
+  void _onNeedle() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _search?.needle.removeListener(_onNeedle);
     _scroll.dispose();
     super.dispose();
   }
@@ -245,7 +280,17 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
     final focusId = ref.watch(inboxFocusItemProvider);
     if (focusId != null && state.loaded) _queueFocus(focusId);
     final tokens = AppThemeTokens.of(context);
-    _items = state.loaded ? _buildItems(state) : const [];
+    // Null unless a page search is active; then the lists below keep only the
+    // matching ideas and the segment labels count the matches.
+    final needle = _search?.needle.value ?? '';
+    final matches = needle.isEmpty
+        ? null
+        : ref.watch(
+            inboxBoardProvider.select((b) => matchInbox(b.value, needle)),
+          );
+    _items = state.loaded
+        ? _buildItems(matches == null ? state : state.onlyIds(matches.ids))
+        : const [];
 
     // Loading, an error or an empty list takes the place of the rows. The
     // Review line is the first line of the list, so a tall line at large text
@@ -260,6 +305,8 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
           child: CircularProgressIndicator(semanticsLabel: 'Loading Inbox'),
         ),
       );
+    } else if (matches != null && _items.isEmpty) {
+      status = const PageSearchNoMatches(key: ValueKey('inbox-search-empty'));
     } else if (_items.isEmpty) {
       status = Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
@@ -334,8 +381,8 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inbox'),
-        actions: const [GlobalSearchAction(), SyncStatusAction()],
+        title: const PageSearchTitle('Inbox'),
+        actions: const [PageSearchAction(), SyncStatusAction()],
       ),
       body: Shortcuts(
         shortcuts: _activateKeys,
@@ -367,17 +414,23 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                             _segmentOf(
                               _Segment.open,
                               'Open',
-                              state.loaded ? state.openCount : null,
+                              state.loaded
+                                  ? matches?.open ?? state.openCount
+                                  : null,
                             ),
                             _segmentOf(
                               _Segment.done,
                               'Done',
-                              state.loaded ? state.done.length : null,
+                              state.loaded
+                                  ? matches?.done ?? state.done.length
+                                  : null,
                             ),
                             _segmentOf(
                               _Segment.dropped,
                               'Dropped',
-                              state.loaded ? state.dropped.length : null,
+                              state.loaded
+                                  ? matches?.dropped ?? state.dropped.length
+                                  : null,
                             ),
                           ],
                           selected: {_segment},

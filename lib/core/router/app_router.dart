@@ -15,6 +15,7 @@ import '../../features/timeline/presentation/screens/day_view_screen.dart';
 import '../../features/timeline/presentation/screens/week_view_screen.dart';
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/sync/presentation/screens/sync_settings_screen.dart';
+import '../search/page_search.dart';
 import '../widgets/adaptive_shell.dart';
 
 /// Navigator used by app-level actions that originate above the routed child.
@@ -62,7 +63,10 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/analytics',
-          builder: (context, state) => const AnalyticsScreen(),
+          builder: (context, state) => const PageSearchScope(
+            hint: 'Search experiments',
+            child: AnalyticsScreen(),
+          ),
         ),
         GoRoute(
           path: '/search',
@@ -84,7 +88,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/inbox',
-          builder: (context, state) => const InboxScreen(),
+          builder: (context, state) =>
+              const PageSearchScope(hint: 'Search Inbox', child: InboxScreen()),
         ),
         GoRoute(
           path: '/settings',
