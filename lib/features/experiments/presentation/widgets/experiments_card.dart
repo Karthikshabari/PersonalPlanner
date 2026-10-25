@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -26,13 +29,22 @@ import 'kept_experiment_row.dart' show KeptCard;
 /// value, else the last cached dashboard, else a fixed-height placeholder with
 /// no spinner (ED39, ED42), so returning to Insights never flashes a loading
 /// state and a reload replaces numbers in place.
-class ExperimentsCard extends ConsumerWidget {
+class ExperimentsCard extends ConsumerStatefulWidget {
   const ExperimentsCard({super.key, required this.compact});
 
   final bool compact;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ExperimentsCard> createState() => _ExperimentsCardState();
+}
+
+class _ExperimentsCardState extends ConsumerState<ExperimentsCard> {
+  /// The "Experiments" header; a page search scrolls it to the top of the list.
+  final _header = GlobalKey(debugLabel: 'experiments-header');
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = widget.compact;
     final async = ref.watch(experimentDashboardProvider);
     final Widget body;
     if (async.hasError) {
@@ -46,7 +58,7 @@ class ExperimentsCard extends ConsumerWidget {
           async.value ?? ref.read(experimentDashboardCacheProvider)?.dashboard;
       body = dashboard == null
           ? const SizedBox(key: ValueKey('experiments-placeholder'), height: 96)
-          : _Body(dashboard: dashboard);
+          : _Body(dashboard: dashboard, headerKey: _header);
     }
     final styles = ExperimentStyles.of(context);
     // The Insights screen pads 12 on narrow widths; 4 more makes 16.
@@ -63,6 +75,7 @@ class ExperimentsCard extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Wrap(
+                key: _header,
                 alignment: WrapAlignment.spaceBetween,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 spacing: AppSpacing.md,
@@ -109,10 +122,14 @@ class _StartButton extends StatelessWidget {
 
 enum _Segment { running, kept, concluded }
 
+/// How much of the first Kept row must be on screen to count as visible.
+const _keptRowExtent = 120.0;
+
 class _Body extends ConsumerStatefulWidget {
-  const _Body({required this.dashboard});
+  const _Body({required this.dashboard, required this.headerKey});
 
   final ExperimentDashboard dashboard;
+  final GlobalKey headerKey;
 
   @override
   ConsumerState<_Body> createState() => _BodyState();
@@ -127,6 +144,11 @@ class _BodyState extends ConsumerState<_Body> {
 
   // Page search (Ctrl+F or the phone icon). The scope outlives this State.
   PageSearchController? _search;
+  String _needleSeen = '';
+
+  /// The spacer above the first result (row, kept list or "No matches"), so a
+  /// search can find where the results start.
+  final _results = GlobalKey(debugLabel: 'experiments-results');
 
   /// Undoes the delete shown in the "Deleted ... Undo" line; the line goes
   /// away either way.
@@ -184,6 +206,7 @@ class _BodyState extends ConsumerState<_Body> {
     if (identical(search, _search)) return;
     _search?.needle.removeListener(_onNeedle);
     _search = search;
+    _needleSeen = search?.needle.value ?? '';
     search?.needle.addListener(_onNeedle);
     // The card sits in the Insights list, so that is the list to put back.
     search?.scrollPosition = () =>
@@ -191,7 +214,50 @@ class _BodyState extends ConsumerState<_Body> {
   }
 
   void _onNeedle() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final needle = _search?.needle.value ?? '';
+    // The text just became non-empty: one search session starts. The page
+    // search has already recorded the offset that close puts back.
+    final started = _needleSeen.isEmpty && needle.isNotEmpty;
+    _needleSeen = needle;
+    setState(() {});
+    if (started) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealResults());
+    }
+  }
+
+  /// Scrolls the Experiments header to the top of the list when the first
+  /// result is not fully on screen (on a phone with the keyboard up, or a short
+  /// window, the card sits below the fold). Runs once per search session.
+  void _revealResults() {
+    if (!mounted || (_search?.needle.value ?? '').isEmpty) return;
+    final spacer = _results.currentContext?.findRenderObject();
+    final header = widget.headerKey.currentContext;
+    if (spacer is! RenderBox || !spacer.attached || header == null) return;
+    final first =
+        (spacer.parentData as ContainerBoxParentData<RenderBox>).nextSibling;
+    if (first == null || !first.attached) return;
+    // Every Flutter viewport is a box.
+    final viewport = RenderAbstractViewport.maybeOf(first) as RenderBox?;
+    if (viewport == null) return;
+    final view = viewport.localToGlobal(Offset.zero) & viewport.size;
+    final top = first.localToGlobal(Offset.zero).dy;
+    // The Kept list is one box for all its rows, so only its start counts.
+    final height = _segment == _Segment.kept
+        ? math.min(first.size.height, _keptRowExtent)
+        : first.size.height;
+    final fits = height <= view.height;
+    final visible =
+        top >= view.top - 0.5 &&
+        (fits ? top + height <= view.bottom + 0.5 : top < view.bottom);
+    if (visible) return;
+    final animate = !MediaQuery.disableAnimationsOf(context);
+    Scrollable.ensureVisible(
+      header,
+      alignment: 0,
+      duration: animate ? const Duration(milliseconds: 250) : Duration.zero,
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -358,14 +424,14 @@ class _BodyState extends ConsumerState<_Body> {
           endedLine,
         ],
         if (kept) ...[
-          const SizedBox(height: AppSpacing.lg),
+          SizedBox(key: _results, height: AppSpacing.lg),
           // The const instance stays when no search is active, so a rebuild
           // of the card skips the list.
           matches == null
               ? const KeptExperimentList()
               : KeptExperimentList(matchIds: matches.ids),
         ] else if (shown.isEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
+          SizedBox(key: _results, height: AppSpacing.lg),
           if (matches != null)
             const PageSearchNoMatches(key: ValueKey('experiments-search-empty'))
           else ...[
@@ -388,8 +454,8 @@ class _BodyState extends ConsumerState<_Body> {
             ],
           ],
         ],
-        for (final view in shown) ...[
-          const SizedBox(height: AppSpacing.lg),
+        for (final (i, view) in shown.indexed) ...[
+          SizedBox(key: i == 0 ? _results : null, height: AppSpacing.lg),
           ExperimentRowView(
             key: ValueKey('experiment-row-${view.experiment.id}'),
             view: view,
