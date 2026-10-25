@@ -476,6 +476,13 @@ class _KeyboardShortcutHandlerState
       case PlannerShortcutAction.saveAndClose:
         ref.read(taskEditorSaveRequestProvider.notifier).state++;
       case PlannerShortcutAction.escape:
+        // The scope's own Esc handler only sees keys while focus is inside the
+        // page; this covers focus elsewhere, unless a popup route has focus.
+        final page = _pageSearch.current;
+        if (!_focusOwnsPopupRoute() && page != null && page.isOpen.value) {
+          page.close();
+          return;
+        }
         ref.read(timelineCancelRequestProvider.notifier).state++;
         ref.read(selectedTaskIdProvider.notifier).state = null;
       case PlannerShortcutAction.week:
