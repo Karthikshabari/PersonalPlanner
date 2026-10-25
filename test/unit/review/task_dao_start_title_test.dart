@@ -61,14 +61,16 @@ void main() {
       final full = await db.taskDao.getTasksBetween(from, to);
       final narrow = await db.taskDao.getStartAndTitleBetween(from, to);
 
-      String key(DateTime start, String title) =>
-          '${start.toUtc().toIso8601String()}|$title';
-      final expected = [for (final r in full) key(r.startTime!, r.title)]
+      String key(String id, DateTime start, String title) =>
+          '$id|${start.toUtc().toIso8601String()}|$title';
+      final expected = [for (final r in full) key(r.id, r.startTime!, r.title)]
         ..sort();
-      final actual = [for (final r in narrow) key(r.start, r.title)]..sort();
+      final actual = [for (final r in narrow) key(r.id, r.start, r.title)]
+        ..sort();
 
       expect(actual, expected);
       expect(full.map((r) => r.id).toSet(), {'in', 'in2', 'spans-in'});
+      expect(narrow.map((r) => r.id).toSet(), {'in', 'in2', 'spans-in'});
       expect(narrow.map((r) => r.title).toSet(), {
         'Title of in',
         'Title of in2',

@@ -42,11 +42,20 @@ class ReviewSearchWeekReview {
   final List<ReviewSearchText> texts;
 }
 
-/// Everything Review search can find, up to today and this week.
+/// Everything Review search can find: days up to today (Daily) and weeks up to
+/// and including this week, all seven days of it (Weekly).
 class ReviewSearchIndex {
-  const ReviewSearchIndex({required this.days, required this.weekReviews});
+  const ReviewSearchIndex({
+    required this.today,
+    required this.days,
+    required this.weekReviews,
+  });
 
-  /// Newest first; only days with at least one non-blank text.
+  /// The day the index was built for; Daily search stops here.
+  final DateTime today;
+
+  /// Newest first; only days with at least one non-blank text. It reaches to
+  /// the end of this week, so use [today] to tell past days from later ones.
   final List<ReviewSearchDay> days;
   final List<ReviewSearchWeekReview> weekReviews;
 }
@@ -75,12 +84,15 @@ ReviewSearchHit? _firstHit(
   return null;
 }
 
-/// The first matching text of each day, newest day first. [needle] comes from
-/// [pageSearchNeedle]; a blank needle matches nothing.
+/// The first matching text of each day up to and including today, newest day
+/// first. [needle] comes from [pageSearchNeedle]; a blank needle matches
+/// nothing.
 List<ReviewSearchHit> searchReviewDays(ReviewSearchIndex index, String needle) {
   if (needle.isEmpty) return const [];
   return [
-    for (final day in index.days) ?_firstHit(day.date, day.texts, needle),
+    for (final day in index.days)
+      if (!day.date.isAfter(index.today))
+        ?_firstHit(day.date, day.texts, needle),
   ];
 }
 
@@ -115,7 +127,8 @@ List<ReviewSearchHit> searchReviewWeeks(
   return hits;
 }
 
-/// Reads the saved texts of every day and week up to today, for Review search.
+/// Reads the saved texts of every day up to today and every week up to this
+/// one, for Review search.
 ///
 /// Three range reads, none of them per day: titles come from a two-column
 /// projection, since the typed full-row read costs about 100 ms per 5 800 rows.
@@ -126,18 +139,21 @@ class ReviewSearchIndexLoader {
 
   Future<ReviewSearchIndex> load({required DateTime today}) async {
     final from = DateTime.utc(1970);
-    final tomorrow = addDays(startOfDay(today), 1);
+    final day = startOfDay(today);
+    final tomorrow = addDays(day, 1);
     final nextWeek = addDays(startOfWeek(today), 7);
     final repository = ReviewRepository(_db);
-    final tasks = await _db.taskDao.getStartAndTitleBetween(from, tomorrow);
+    // Tasks reach to the end of this week, as the Weekly page lists them.
+    // Reviews only exist for days that have begun.
+    final tasks = await _db.taskDao.getStartAndTitleBetween(from, nextWeek);
     final dailies = await repository.getDailyReviewsBetween(from, tomorrow);
     final weeklies = await repository.getWeeklyReviewsBetween(from, nextWeek);
 
     // The same rule as the Daily Review: a task belongs to the day it starts.
-    final byDay = <DateTime, List<({DateTime start, String title})>>{};
+    final byDay =
+        <DateTime, List<({String id, DateTime start, String title})>>{};
     for (final row in tasks) {
-      if (!row.start.isBefore(tomorrow)) continue;
-      if (row.title.trim().isEmpty) continue;
+      if (!row.start.isBefore(nextWeek)) continue;
       byDay.putIfAbsent(startOfDay(row.start), () => []).add(row);
     }
     final reviewByDay = {
@@ -152,13 +168,21 @@ class ReviewSearchIndexLoader {
       if (note != null && note.isNotEmpty) {
         texts.add(ReviewSearchText(note, ReviewSearchSource.note));
       }
-      final titles = [...?byDay[date]]
+      final dayTasks = [...?byDay[date]]
         ..sort((a, b) => a.start.compareTo(b.start));
-      for (final row in titles) {
-        texts.add(ReviewSearchText(row.title.trim(), ReviewSearchSource.task));
+      for (final row in dayTasks) {
+        final title = row.title.trim();
+        if (title.isEmpty) continue;
+        texts.add(ReviewSearchText(title, ReviewSearchSource.task));
       }
-      for (final reason in review?.taskReasons.values ?? const <String>[]) {
-        final trimmed = reason.trim();
+      // The pages show a reason only beside its task, so a reason whose task
+      // is gone, or starts on another day, is not searchable either.
+      final taskIds = {for (final row in dayTasks) row.id};
+      for (final entry
+          in review?.taskReasons.entries ??
+              const <MapEntry<String, String>>[]) {
+        if (!taskIds.contains(entry.key)) continue;
+        final trimmed = entry.value.trim();
         if (trimmed.isEmpty) continue;
         texts.add(ReviewSearchText(trimmed, ReviewSearchSource.reason));
       }
@@ -181,6 +205,6 @@ class ReviewSearchIndexLoader {
         weekReviews.add(ReviewSearchWeekReview(review.weekStartDate, texts));
       }
     }
-    return ReviewSearchIndex(days: days, weekReviews: weekReviews);
+    return ReviewSearchIndex(today: day, days: days, weekReviews: weekReviews);
   }
 }

@@ -85,29 +85,150 @@ void main() {
     );
   });
 
-  test('excludes future days, deleted tasks and Inbox ideas', () async {
-    await task('past', 'Past one', at(d(10, 13), 9));
-    await task('now', 'Today one', at(d(10, 14), 20));
-    await task('future', 'Tomorrow one', at(d(10, 15), 9));
-    await task('gone', 'Deleted one', at(d(10, 13), 10), deleted: true);
-    await task('idea', 'Inbox one', at(d(10, 13), 11), inbox: true);
+  test(
+    'Daily search excludes future days, deleted tasks and Inbox ideas',
+    () async {
+      await task('past', 'Past one', at(d(10, 13), 9));
+      await task('now', 'Today one', at(d(10, 14), 20));
+      await task('future', 'Tomorrow one', at(d(10, 15), 9));
+      await task('gone', 'Deleted one', at(d(10, 13), 10), deleted: true);
+      await task('idea', 'Inbox one', at(d(10, 13), 11), inbox: true);
 
-    final index = await load();
+      final index = await load();
 
-    expect(index.days.expand((day) => day.texts).map((t) => t.text), [
-      'Today one',
-      'Past one',
-    ]);
-    await reviews.saveReviewDraft(
-      date: d(10, 15),
-      mood: 2,
-      note: 'Future note',
-      taskReasons: const {},
-    );
-    expect(
-      (await load()).days.any((day) => isoDateString(day.date) == '2026-10-15'),
-      isFalse,
-    );
+      // The index keeps the rest of this week for Weekly search; the Daily
+      // filter is what keeps tomorrow out.
+      expect(searchReviewDays(index, 'one').map((h) => h.snippet), [
+        'Today one',
+        'Past one',
+      ]);
+      await reviews.saveReviewDraft(
+        date: d(10, 15),
+        mood: 2,
+        note: 'Future note',
+        taskReasons: const {},
+      );
+      final withFutureNote = await load();
+      expect(searchReviewDays(withFutureNote, 'future note'), isEmpty);
+      expect(searchReviewWeeks(withFutureNote, 'future note'), isEmpty);
+    },
+  );
+
+  test('the index remembers today as the start of the day', () async {
+    expect((await load()).today, d(10, 14));
+  });
+
+  group('current week', () {
+    // Wednesday 2026-10-14 (Monday-start week 12th to 18th).
+    test('Weekly finds a task on a later day, Daily does not', () async {
+      await task('fri', 'Friday dentist', at(d(10, 16), 9));
+      await task('wed', 'Wednesday dentist', at(d(10, 14), 9));
+
+      final index = await load();
+
+      expect(
+        searchReviewWeeks(index, 'dentist').map((h) => isoDateString(h.date)),
+        ['2026-10-12'],
+      );
+      expect(searchReviewWeeks(index, 'friday'), hasLength(1));
+      expect(searchReviewDays(index, 'dentist').map((h) => h.snippet), [
+        'Wednesday dentist',
+      ]);
+      expect(searchReviewDays(index, 'friday'), isEmpty);
+    });
+
+    test('the last day of the week is found, a later week is not', () async {
+      await task('sun', 'Sunday dentist', at(d(10, 18), 23));
+      await task('next', 'Next week dentist', at(d(10, 19), 0));
+      await task('later', 'Later dentist', at(d(10, 28), 9));
+
+      final index = await load();
+
+      expect(searchReviewWeeks(index, 'sunday'), hasLength(1));
+      expect(searchReviewWeeks(index, 'next week'), isEmpty);
+      expect(searchReviewWeeks(index, 'later'), isEmpty);
+      expect(searchReviewDays(index, 'dentist'), isEmpty);
+    });
+
+    test('a Sunday week start reaches Saturday, not the next Sunday', () async {
+      plannerWeekStartDay = WeekStartDay.sunday;
+      // The Sunday-start week is Oct 11 to 17.
+      await task('sat', 'Saturday dentist', at(d(10, 17), 9));
+      await task('sun', 'Next Sunday dentist', at(d(10, 18), 9));
+
+      final index = await load();
+
+      expect(
+        searchReviewWeeks(index, 'dentist').map((h) => isoDateString(h.date)),
+        ['2026-10-11'],
+      );
+      expect(searchReviewWeeks(index, 'next sunday'), isEmpty);
+      expect(searchReviewDays(index, 'dentist'), isEmpty);
+    });
+
+    test('a Monday week start reaches Sunday', () async {
+      await task('sun', 'Sunday dentist', at(d(10, 18), 9));
+      expect(searchReviewWeeks(await load(), 'dentist'), hasLength(1));
+    });
+
+    test('on a Sunday-start Sunday the week is the one just begun', () async {
+      plannerWeekStartDay = WeekStartDay.sunday;
+      final sunday = PlannerTimeZone.calendarDate(2026, 10, 11, hour: 12);
+      await task('mon', 'Monday dentist', at(d(10, 12), 9));
+      await task('next', 'Next Sunday dentist', at(d(10, 18), 9));
+
+      final index = await ReviewSearchIndexLoader(db).load(today: sunday);
+
+      expect(searchReviewWeeks(index, 'monday'), hasLength(1));
+      expect(searchReviewWeeks(index, 'next sunday'), isEmpty);
+      expect(searchReviewDays(index, 'monday'), isEmpty);
+    });
+  });
+
+  group('reasons', () {
+    test('only reasons of tasks that start that day are indexed', () async {
+      final real = await task('real', 'Write report', at(d(10, 6), 9));
+      final other = await task('other', 'Other day', at(d(10, 7), 9));
+      await task('gone', 'Deleted', at(d(10, 6), 10), deleted: true);
+      await reviews.saveReviewDraft(
+        date: d(10, 6),
+        mood: 3,
+        note: '',
+        taskReasons: {
+          real: 'Too tired',
+          'no-such-task': 'Ghost reason',
+          other: 'Wrong day reason',
+          'gone': 'Deleted reason',
+        },
+      );
+
+      final index = await load();
+      final day = index.days.singleWhere(
+        (day) => isoDateString(day.date) == '2026-10-06',
+      );
+
+      expect(
+        day.texts
+            .where((t) => t.source == ReviewSearchSource.reason)
+            .map((t) => t.text),
+        ['Too tired'],
+      );
+      expect(searchReviewDays(index, 'ghost'), isEmpty);
+      expect(searchReviewDays(index, 'wrong day'), isEmpty);
+      expect(searchReviewDays(index, 'deleted reason'), isEmpty);
+      expect(searchReviewWeeks(index, 'ghost'), isEmpty);
+      expect(searchReviewDays(index, 'too tired'), hasLength(1));
+    });
+
+    test('a day with only a ghost reason is left out', () async {
+      await reviews.saveReviewDraft(
+        date: d(10, 6),
+        mood: 3,
+        note: '',
+        taskReasons: {'no-such-task': 'Ghost reason'},
+      );
+      expect((await load()).days, isEmpty);
+    });
   });
 
   test('maps the note, task and reason sources, note first', () async {
