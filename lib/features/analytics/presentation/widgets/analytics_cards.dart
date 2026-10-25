@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -96,7 +97,7 @@ class ConsistencyGrid extends StatelessWidget {
     final firstWeek = startOfWeek(visibleStart);
     final lastWeek = startOfWeek(addDays(visibleEndExclusive, -1));
     final weekCount = _calendarDayDifference(firstWeek, lastWeek) ~/ 7 + 1;
-    final weeks = List.generate(
+    final allWeeks = List.generate(
       weekCount,
       (index) => addDays(firstWeek, index * 7),
     );
@@ -105,9 +106,25 @@ class ConsistencyGrid extends StatelessWidget {
         const labelWidth = 34.0;
         const gap = 3.0;
         final available = math.max(0.0, constraints.maxWidth - labelWidth);
-        final cellSize = ((available - (weekCount - 1) * gap) / weekCount)
-            .clamp(9.0, 16.0);
-        final gridWidth = weekCount * cellSize + (weekCount - 1) * gap;
+        // The compact grid scrolls sideways, so it keeps the 9 px floor. The
+        // wider grid does not scroll: it may shrink to 8 px and, if that is
+        // still too wide, drops its oldest weeks rather than overflowing.
+        final minCell = compact ? 9.0 : 8.0;
+        var weeks = allWeeks;
+        var fit = (available - (weekCount - 1) * gap) / weekCount;
+        if (!compact && fit < minCell) {
+          final fitting = ((available + gap) / (minCell + gap)).floor().clamp(
+            1,
+            weekCount,
+          );
+          weeks = allWeeks.sublist(weekCount - fitting);
+          fit = (available - (fitting - 1) * gap) / fitting;
+        }
+        final cellSize = fit.clamp(minCell, 16.0);
+        final shownStart = weeks.length == weekCount
+            ? visibleStart
+            : weeks.first;
+        final gridWidth = weeks.length * cellSize + (weeks.length - 1) * gap;
         final calendarWidth = labelWidth + gridWidth;
         final calendar = SizedBox(
           width: calendarWidth,
@@ -124,7 +141,7 @@ class ConsistencyGrid extends StatelessWidget {
                     children: _monthLabels(
                       context,
                       weeks,
-                      visibleStart,
+                      shownStart,
                       visibleEndExclusive,
                       cellSize,
                       gap,
@@ -235,7 +252,9 @@ class ConsistencyGrid extends StatelessWidget {
     double cellSize,
     double gap,
   ) {
-    final labels = <Widget>[];
+    final style = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: AppThemeTokens.of(context).textMuted);
+    final entries = <({double left, String text})>[];
     var lastMonth = -1;
     for (var index = 0; index < weeks.length; index++) {
       final representative = index == 0
@@ -255,14 +274,31 @@ class ConsistencyGrid extends StatelessWidget {
       final monthKey = representative.year * 100 + representative.month;
       if (!containsMonthStart || monthKey == lastMonth) continue;
       lastMonth = monthKey;
+      entries.add((
+        left: index * (cellSize + gap),
+        text: DateFormat('MMM').format(representative),
+      ));
+    }
+    final scaler = MediaQuery.textScalerOf(context);
+    final labels = <Widget>[];
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      // A short first month sits one or two columns before the next label;
+      // drop it when the two would run together ("OctNov").
+      if (i + 1 < entries.length) {
+        final painter = TextPainter(
+          text: TextSpan(text: entry.text, style: style),
+          textDirection: ui.TextDirection.ltr,
+          textScaler: scaler,
+        )..layout();
+        final width = painter.width;
+        painter.dispose();
+        if (entries[i + 1].left - entry.left < width + 4) continue;
+      }
       labels.add(
         Positioned(
-          left: index * (cellSize + gap),
-          child: Text(
-            DateFormat('MMM').format(representative),
-            style: Theme.of(context).textTheme.labelSmall
-                ?.copyWith(color: AppThemeTokens.of(context).textMuted),
-          ),
+          left: entry.left,
+          child: Text(entry.text, style: style),
         ),
       );
     }
