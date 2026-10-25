@@ -9,12 +9,12 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/models/weekly_review.dart';
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/global_search_action.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/review_draft.dart';
 import '../../domain/weekly_review_history.dart';
@@ -24,6 +24,7 @@ import '../../providers/review_warmup.dart';
 import '../../providers/weekly_review_draft_controller.dart';
 import '../widgets/review_equal_row.dart';
 import '../widgets/review_mode_switcher.dart';
+import '../widgets/review_search_results.dart';
 import '../widgets/review_snack_bar.dart';
 import '../widgets/review_status_chip.dart';
 import '../widgets/weekly_feeling_card.dart';
@@ -53,6 +54,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
   final _saveFocusNode = FocusNode(debugLabel: 'weekly-save');
   final _revealKey = GlobalKey();
   final _warmup = ReviewWarmup();
+  PageSearchController? _search;
 
   /// Content is at least 760 dp wide (two columns, Ctrl + Enter hint).
   bool _wide = true;
@@ -82,6 +84,14 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         weeklyReviewWarmTargets(ref.read(selectedWeekStartProvider)),
       );
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _search = PageSearchScope.maybeOf(context);
+    _search?.scrollPosition = () =>
+        _scrollController.hasClients ? _scrollController.position : null;
   }
 
   @override
@@ -122,8 +132,8 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Weekly Review'),
-        actions: const [GlobalSearchAction(), SyncStatusAction()],
+        title: const PageSearchTitle('Weekly Review'),
+        actions: const [PageSearchAction(), SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,
@@ -135,6 +145,32 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
             final wide =
                 math.min(constraints.maxWidth - 2 * padding, 1000.0) >= 760;
             _wide = wide;
+            final Widget tab = _tabs.index == 0
+                ? _buildReviewTab(
+                    weekStart: weekStart,
+                    daysAsync: daysAsync,
+                    numbers: numbers,
+                    history: history,
+                    future: future,
+                    wide: wide,
+                    reviewAsync: reviewAsync,
+                  )
+                // Only this tab follows every edit of the draft (its preview
+                // shows the note as typed).
+                : Consumer(
+                    builder: (context, ref, _) => WeeklyNextWeekTab(
+                      key: ValueKey(
+                        'weekly-next-week-${isoDateString(weekStart)}',
+                      ),
+                      draft: ref.watch(weeklyReviewDraftProvider(weekStart)),
+                      onChanged: ref
+                          .read(weeklyReviewDraftProvider(weekStart).notifier)
+                          .setNote,
+                      blockerLine:
+                          numbers?.blockerLine ??
+                          'No blockers recorded this week.',
+                    ),
+                  );
             return CallbackShortcuts(
               bindings: {
                 const SingleActivator(
@@ -188,40 +224,7 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
                                     ),
                                   ),
                                   const SizedBox(height: AppSpacing.md),
-                                  if (_tabs.index == 0)
-                                    _buildReviewTab(
-                                      weekStart: weekStart,
-                                      daysAsync: daysAsync,
-                                      numbers: numbers,
-                                      history: history,
-                                      future: future,
-                                      wide: wide,
-                                      reviewAsync: reviewAsync,
-                                    )
-                                  else
-                                    // Only this tab follows every edit of the draft
-                                    // (its preview shows the note as typed).
-                                    Consumer(
-                                      builder: (context, ref, _) =>
-                                          WeeklyNextWeekTab(
-                                            key: ValueKey(
-                                              'weekly-next-week-${isoDateString(weekStart)}',
-                                            ),
-                                            draft: ref.watch(
-                                              weeklyReviewDraftProvider(
-                                                weekStart,
-                                              ),
-                                            ),
-                                            onChanged: ref
-                                                .read(
-                                                  weeklyReviewDraftProvider(
-                                                    weekStart,
-                                                  ).notifier,
-                                                )
-                                                .setNote,
-                                            blockerLine: numbers?.blockerLine ?? 'No blockers recorded this week.',
-                                          ),
-                                    ),
+                                  _withSearch(tab),
                                 ],
                               ),
                             ),
@@ -256,6 +259,38 @@ class _WeeklyReviewScreenState extends ConsumerState<WeeklyReviewScreen>
         ),
       ),
     );
+  }
+
+  /// While a search has a query the tab content is hidden, not removed, so
+  /// drafts, text fields and scroll state survive; the results take its place.
+  Widget _withSearch(Widget tab) {
+    final search = _search;
+    if (search == null) return tab;
+    return ValueListenableBuilder<String>(
+      valueListenable: search.needle,
+      child: tab,
+      builder: (context, needle, tab) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Visibility(visible: needle.isEmpty, maintainState: true, child: tab!),
+          if (needle.isNotEmpty)
+            ReviewSearchResults(
+              needle: needle,
+              weekly: true,
+              onOpen: _openSearchWeek,
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _openSearchWeek(DateTime weekStart) {
+    ref.read(selectedWeekStartProvider.notifier).state = startOfWeek(weekStart);
+    _search?.close(restoreScroll: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    });
   }
 
   Widget _buildHeader(

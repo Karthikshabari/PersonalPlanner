@@ -74,7 +74,10 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/review/weekly',
-          builder: (context, state) => const WeeklyReviewScreen(),
+          builder: (context, state) => const PageSearchScope(
+            hint: 'Search weekly reviews',
+            child: WeeklyReviewScreen(),
+          ),
         ),
         GoRoute(
           path: '/review/overview',
@@ -84,7 +87,10 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/review',
-          builder: (context, state) => const DailyReviewScreen(),
+          builder: (context, state) => const PageSearchScope(
+            hint: 'Search daily reviews',
+            child: DailyReviewScreen(),
+          ),
         ),
         GoRoute(
           path: '/inbox',

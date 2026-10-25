@@ -114,6 +114,29 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
     ];
   }
 
+  /// Start and title of the same tasks [getTasksBetween] returns (same filter
+  /// as [getStartAndStatusBetween]), for Review search, which matches titles
+  /// only. Order is not specified.
+  Future<List<({DateTime start, String title})>> getStartAndTitleBetween(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final rows = await customSelect(
+      'SELECT t.start_time, t.title FROM tasks t WHERE t.deleted_at IS NULL '
+      'AND t.is_inbox = 0 AND t.start_time IS NOT NULL '
+      'AND t.end_time IS NOT NULL AND t.start_time < ? AND t.end_time > ?',
+      variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
+      readsFrom: {tasks},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          start: DateTime.parse(row.read<String>('start_time')).toLocal(),
+          title: row.read<String>('title'),
+        ),
+    ];
+  }
+
   static const _successorLiveSql =
       'EXISTS (SELECT 1 FROM tasks s WHERE s.id = t.rescheduled_to_id '
       'AND s.deleted_at IS NULL) AS successor_live';

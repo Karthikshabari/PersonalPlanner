@@ -9,12 +9,12 @@ import '../../../../core/layout/adaptive_layout.dart';
 import '../../../../core/models/daily_review.dart';
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/models/day_context.dart';
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
-import '../../../../core/widgets/global_search_action.dart';
 import '../../../day_context/providers/day_context_presets_provider.dart';
 import '../../../day_context/providers/day_context_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -31,6 +31,7 @@ import '../widgets/review_mode_switcher.dart';
 import '../widgets/review_mood_card.dart';
 import '../widgets/review_note_card.dart';
 import '../widgets/review_save_bar.dart';
+import '../widgets/review_search_results.dart';
 import '../widgets/review_snack_bar.dart';
 import '../widgets/review_status_chip.dart';
 import '../widgets/task_outcomes_card.dart';
@@ -50,6 +51,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
   final _scrollController = ScrollController();
   final _saveFocusNode = FocusNode(debugLabel: 'review-save');
   final _warmup = ReviewWarmup();
+  PageSearchController? _search;
 
   @override
   void initState() {
@@ -69,6 +71,14 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
         dailyReviewWarmTargets(ref.read(selectedReviewDateProvider)),
       );
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _search = PageSearchScope.maybeOf(context);
+    _search?.scrollPosition = () =>
+        _scrollController.hasClients ? _scrollController.position : null;
   }
 
   @override
@@ -96,8 +106,8 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Daily Review'),
-        actions: const [GlobalSearchAction(), SyncStatusAction()],
+        title: const PageSearchTitle('Daily Review'),
+        actions: const [PageSearchAction(), SyncStatusAction()],
       ),
       body: ColoredBox(
         color: tokens.canvas,
@@ -165,15 +175,17 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                                       _BreakDayBanner(label: breakLabel),
                                     ],
                                     const SizedBox(height: AppSpacing.md),
-                                    _buildBody(
-                                      date: date,
-                                      breakDay: breakLabel != null,
-                                      statsAsync: statsAsync,
-                                      insightsAsync: insightsAsync,
-                                      outcomesAsync: outcomesAsync,
-                                      future: future,
-                                      isToday: date == today,
-                                      wide: wide,
+                                    _withSearch(
+                                      _buildBody(
+                                        date: date,
+                                        breakDay: breakLabel != null,
+                                        statsAsync: statsAsync,
+                                        insightsAsync: insightsAsync,
+                                        outcomesAsync: outcomesAsync,
+                                        future: future,
+                                        isToday: date == today,
+                                        wide: wide,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -234,6 +246,42 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     } else {
       context.push('/review/weekly');
     }
+  }
+
+  /// While a search has a query the cards are hidden, not removed, so drafts,
+  /// text fields and scroll state survive; the results take their place.
+  Widget _withSearch(Widget body) {
+    final search = _search;
+    if (search == null) return body;
+    return ValueListenableBuilder<String>(
+      valueListenable: search.needle,
+      child: body,
+      builder: (context, needle, body) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Visibility(
+            visible: needle.isEmpty,
+            maintainState: true,
+            child: body!,
+          ),
+          if (needle.isNotEmpty)
+            ReviewSearchResults(
+              needle: needle,
+              weekly: false,
+              onOpen: _openSearchDay,
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _openSearchDay(DateTime date) {
+    ref.read(selectedReviewDateProvider.notifier).state = startOfDay(date);
+    _search?.close(restoreScroll: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    });
   }
 
   Widget _buildBody({
