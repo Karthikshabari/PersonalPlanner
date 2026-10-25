@@ -125,6 +125,8 @@ void main() {
     final container = await pumpWeekly(tester);
     expect(find.text('Ctrl + Enter'), findsOneWidget);
 
+    await tester.ensureVisible(feelingField);
+    await settle(tester);
     await tester.tap(feelingField);
     await tester.pump();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);

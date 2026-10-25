@@ -148,7 +148,10 @@ void main() {
     final controller = tester.widget<TextField>(field).controller!;
     await tester.enterText(field, 'Kept');
     await settle(tester);
-    await tester.tap(find.byKey(const ValueKey('review-mood-2')));
+    final mood = find.byKey(const ValueKey('review-mood-2'));
+    await tester.ensureVisible(mood);
+    await settle(tester);
+    await tester.tap(mood);
     await settle(tester);
     expect(tester.widget<TextField>(field).controller, same(controller));
     expect(controller.text, 'Kept');
