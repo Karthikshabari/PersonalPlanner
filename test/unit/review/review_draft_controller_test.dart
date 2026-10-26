@@ -7,6 +7,7 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/features/review/data/review_repository.dart';
 import 'package:personal_planner/features/review/domain/review_draft.dart';
+import 'package:personal_planner/features/review/domain/review_mood.dart';
 import 'package:personal_planner/features/review/domain/task_outcome.dart';
 import 'package:personal_planner/features/review/providers/review_draft_controller.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
@@ -99,6 +100,29 @@ void main() {
     expect(saved?.taskReasons, {'t2': 'Blocked'});
     expect(container.read(p).dirty, isFalse);
     expect(container.read(p).saveStatus, ReviewSaveStatus.saved);
+  });
+
+  test('an untouched default mood still saves Good', () async {
+    await hydrated(day);
+    final p = reviewDraftProvider(day);
+    expect(container.read(p).moodChosen, isFalse);
+
+    expect(await container.read(p.notifier).save(rows: const []), isTrue);
+
+    final saved = await ReviewRepository(db).getReviewForDate(day);
+    expect(saved?.mood, reviewDefaultMood);
+    expect(container.read(p).moodChosen, isTrue);
+  });
+
+  test('picking the suggested mood chooses it without a new value', () async {
+    await hydrated(day);
+    final p = reviewDraftProvider(day);
+
+    container.read(p.notifier).setMood(reviewDefaultMood);
+
+    expect(container.read(p).moodChosen, isTrue);
+    expect(container.read(p).mood, reviewDefaultMood);
+    expect(container.read(p).dirty, isFalse);
   });
 
   test('completed rows never store a reason', () async {

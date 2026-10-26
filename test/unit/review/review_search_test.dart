@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
+import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/review/data/review_repository.dart';
@@ -39,6 +40,7 @@ void main() {
     DateTime start, {
     bool inbox = false,
     bool deleted = false,
+    TaskStatus status = TaskStatus.planned,
   }) async {
     await db
         .into(db.tasks)
@@ -48,6 +50,7 @@ void main() {
             title: title,
             startTime: Value(start),
             endTime: Value(start.add(const Duration(minutes: 30))),
+            status: Value(status.dbValue),
             isInbox: Value(inbox),
             deletedAt: Value(deleted ? stamp : null),
             createdAt: stamp,
@@ -218,6 +221,28 @@ void main() {
       expect(searchReviewDays(index, 'deleted reason'), isEmpty);
       expect(searchReviewWeeks(index, 'ghost'), isEmpty);
       expect(searchReviewDays(index, 'too tired'), hasLength(1));
+    });
+
+    test('a reason on a task completed later is not indexed', () async {
+      final done = await task(
+        'done',
+        'Write report',
+        at(d(10, 6), 9),
+        status: TaskStatus.completed,
+      );
+      final open = await task('open', 'Call dentist', at(d(10, 6), 10));
+      await reviews.saveReviewDraft(
+        date: d(10, 6),
+        mood: 3,
+        note: '',
+        taskReasons: {done: 'Too tired', open: 'No signal'},
+      );
+
+      final index = await load();
+
+      expect(searchReviewDays(index, 'too tired'), isEmpty);
+      expect(searchReviewWeeks(index, 'too tired'), isEmpty);
+      expect(searchReviewDays(index, 'no signal'), hasLength(1));
     });
 
     test('a day with only a ghost reason is left out', () async {

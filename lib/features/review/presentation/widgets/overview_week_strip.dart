@@ -52,9 +52,9 @@ class OverviewWeekTile {
 
 /// Overview › Weeks: a lazy, sideways strip of week tiles, newest at the
 /// right, with the same arrows, edge fades and lazy loading as the day strip,
-/// and the tier legend. The current week starts selected; the selection is
-/// local and drives only the highlight, because a week has no detail line or
-/// "open" action to show.
+/// and the tier legend. The current week starts selected; the selection
+/// (`overviewSelectedWeekProvider`) drives only the highlight, because a week
+/// has no detail line or "open" action to show.
 class OverviewWeekStrip extends ConsumerStatefulWidget {
   const OverviewWeekStrip({super.key});
 
@@ -66,11 +66,20 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
   static const _pageSize = 12;
   static const _maxWeeks = 104;
 
-  int _weekCount = _pageSize;
+  // Wide enough to hold the selected week, which the provider keeps while
+  // the user looks at Days.
+  late int _weekCount = overviewInitialCount(
+    back: _weeksBack(ref.read(overviewSelectedWeekProvider)),
+    pageSize: _pageSize,
+    max: _maxWeeks,
+  );
   List<WeeklyHistoryWeek> _weeks = const [];
   List<OverviewWeekTile> _tiles = const [];
   OverviewSelection<DateTime>? _selection;
   OverviewTileMetrics? _metrics;
+
+  static int _weeksBack(DateTime selected) =>
+      (startOfWeek(DateTime.now()).difference(selected).inHours / 168).round();
 
   @override
   void didChangeDependencies() {
@@ -90,7 +99,7 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
       for (var i = 0; i < weeks.length; i++)
         OverviewWeekTile(weeks[i], isCurrent: i == 0),
     ];
-    _selection ??= OverviewSelection(weeks.first.weekStart);
+    _selection ??= OverviewSelection(ref.read(overviewSelectedWeekProvider));
   }
 
   void _loadMore() {
@@ -120,6 +129,10 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
       hasContext: false,
     );
     final selection = _selection!;
+    ref.listen(
+      overviewSelectedWeekProvider,
+      (_, weekStart) => selection.select(weekStart),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -138,7 +151,9 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
               key: ValueKey('overview-week-${tile.key}'),
               selected: selection.flag(tile.weekStart),
               label: tile.semanticsLabel,
-              onSelect: () => selection.select(tile.weekStart),
+              onSelect: () =>
+                  ref.read(overviewSelectedWeekProvider.notifier).state =
+                      tile.weekStart,
               child: OverviewWeekTileBody(tile: tile),
             );
           },

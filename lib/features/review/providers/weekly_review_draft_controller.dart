@@ -57,8 +57,10 @@ class WeeklyReviewDraftController extends Notifier<WeeklyReviewDraft> {
   }
 
   void setMood(int mood) {
-    if (mood < 1 || mood > 4 || mood == state.mood) return;
-    _edit(state.copyWith(mood: mood));
+    if (mood < 1 || mood > 4 || (mood == state.mood && state.moodChosen)) {
+      return;
+    }
+    _edit(state.copyWith(mood: mood, moodChosen: true));
   }
 
   void setFeeling(String feeling) {
@@ -89,11 +91,18 @@ class WeeklyReviewDraftController extends Notifier<WeeklyReviewDraft> {
     );
   }
 
-  /// One write of mood, feeling and note. Returns true on success.
+  /// One write of mood, feeling and note. Returns true on success. Nothing
+  /// is written (false) while a save runs, before hydration, or when the week
+  /// already has a review with a mood that the draft does not differ from.
   Future<bool> save() async {
     if (!state.hydrated || state.saveStatus == ReviewSaveStatus.saving) {
       return false;
     }
+    // `saved` covers the moment before the stream delivers the new row.
+    final stored =
+        state.saveStatus == ReviewSaveStatus.saved ||
+        ref.read(weeklyReviewProvider(weekStart)).value?.mood != null;
+    if (stored && !state.differsFromSaved) return false;
     final snapshot = state;
     state = state.copyWith(saveStatus: ReviewSaveStatus.saving);
     final feeling = normalizeWeeklyFeeling(snapshot.feeling) ?? '';

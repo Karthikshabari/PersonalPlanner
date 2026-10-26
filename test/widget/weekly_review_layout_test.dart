@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 
 import '../helpers/test_container.dart';
 
@@ -11,6 +14,24 @@ void main() {
     testWidgets('Review tab at $width dp: no overflow, feel card last, '
         'chips in 4 or 2 + 2', (tester) async {
       final container = await buildTestContainer(tester);
+      // A week with a task, so the full set of cards shows (an empty week
+      // collapses into one card).
+      final start = startOfWeek(DateTime.now()).add(const Duration(hours: 9));
+      await runDb(
+        tester,
+        () => container
+            .read(taskRepositoryProvider)
+            .insertTask(
+              Task(
+                id: '',
+                title: 'Write report',
+                startTime: start,
+                endTime: start.add(const Duration(hours: 1)),
+                createdAt: start,
+                updatedAt: start,
+              ),
+            ),
+      );
       appRouter.go('/review/weekly');
       await pumpApp(tester, container, surface: Size(width, 900));
       await settle(tester);

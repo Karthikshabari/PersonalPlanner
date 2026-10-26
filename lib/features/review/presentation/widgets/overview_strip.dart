@@ -222,6 +222,17 @@ class OverviewTileMetrics {
 // Selection
 // ---------------------------------------------------------------------------
 
+/// How many tiles a strip loads when it opens: whole pages of [pageSize],
+/// enough to include a tile [back] steps behind the newest, up to [max].
+int overviewInitialCount({
+  required int back,
+  required int pageSize,
+  required int max,
+}) => math.min(
+  math.max(1, (back + 1 + pageSize - 1) ~/ pageSize) * pageSize,
+  max,
+);
+
 /// The selected tile of a strip. Each tile listens to its own flag, so
 /// selecting rebuilds only the tile that lost the selection, the tile that
 /// gained it, and whatever listens to [listenable] (the summary row).

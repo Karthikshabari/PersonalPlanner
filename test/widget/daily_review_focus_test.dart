@@ -98,9 +98,9 @@ void main() {
         expect(mood.last, lessThan(edit));
         expect(beta, lessThan(note));
       } else {
-        // One column: the list, then the rating, then the note.
-        expect(beta, lessThan(mood.first));
-        expect(mood.last, lessThan(note));
+        // One column on a phone: the rating, then the list, then the note.
+        expect(mood.last, lessThan(edit));
+        expect(beta, lessThan(note));
       }
       await finish(tester, container);
     });

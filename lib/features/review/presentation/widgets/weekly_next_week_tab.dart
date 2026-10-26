@@ -5,6 +5,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../domain/weekly_review_draft.dart';
 import '../../domain/weekly_review_text.dart';
+import 'review_theme.dart';
 import 'weekly_note_line.dart';
 
 /// The "Next week (optional)" sub-tab: one short note that opens next week's
@@ -108,11 +109,26 @@ class _WeeklyNextWeekTabState extends State<WeeklyNextWeekTab> {
                 controller: _controller,
                 focusNode: _focus,
                 enabled: enabled,
-                maxLines: 1,
+                // One line of text that wraps onto a second when it must.
+                maxLines: 2,
                 inputFormatters: [
+                  FilteringTextInputFormatter.singleLineFormatter,
                   LengthLimitingTextInputFormatter(maxWeeklyNoteLength),
                 ],
                 onChanged: widget.onChanged,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Align(
+              alignment: Alignment.centerRight,
+              // Typing rebuilds only this counter and the field itself.
+              child: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _controller,
+                builder: (context, value, _) => Text(
+                  '${value.text.characters.length} / $maxWeeklyNoteLength',
+                  key: const ValueKey('weekly-note-count'),
+                  style: weeklyCaptionStyle(context),
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.sm),

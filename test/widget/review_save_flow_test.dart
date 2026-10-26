@@ -73,6 +73,22 @@ void main() {
     },
   );
 
+  testWidgets('Save is off for a future day and on for today', (tester) async {
+    final container = await pumpDaily(tester);
+    bool saveEnabled() =>
+        tester.widget<FilledButton>(saveButton).onPressed != null;
+    expect(saveEnabled(), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('review-next-day')));
+    await settle(tester);
+    expect(saveEnabled(), isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('review-today')));
+    await settle(tester);
+    expect(saveEnabled(), isTrue);
+    await finish(tester, container);
+  });
+
   testWidgets('success snackbar offers See in Overview', (tester) async {
     final container = await pumpDaily(tester);
     await tapSave(tester);

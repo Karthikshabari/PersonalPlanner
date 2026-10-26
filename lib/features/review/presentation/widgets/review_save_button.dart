@@ -1,7 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../platform/desktop/primary_shortcut.dart';
 import '../../domain/review_draft.dart';
 import 'review_theme.dart';
+
+/// The key that goes with Enter to save, as the platform names it, or null on
+/// phones and tablets, which have no hardware keyboard shortcut to advertise.
+String? reviewSaveModifier() => switch (defaultTargetPlatform) {
+  TargetPlatform.android ||
+  TargetPlatform.iOS ||
+  TargetPlatform.fuchsia => null,
+  _ => usesCommandModifier ? 'Cmd' : 'Ctrl',
+};
 
 /// Save review → (disabled while saving) → Saved with a drawn check on the
 /// success colour. Any later edit returns the draft to idle, which shows
@@ -39,14 +50,20 @@ class ReviewSaveButton extends StatelessWidget {
         ThemeData.estimateBrightnessForColor(success) == Brightness.dark
         ? Colors.white
         : Colors.black;
-    return FilledButton(
+    // Nothing to press while the button reads Saved.
+    final modifier = saved ? null : reviewSaveModifier();
+    final button = FilledButton(
       key: buttonKey,
       focusNode: focusNode,
-      onPressed: enabled && !saving ? onPressed : null,
+      // Saved means nothing differs from storage: pressing it again would
+      // only rewrite the row.
+      onPressed: enabled && !saving && !saved ? onPressed : null,
       style: FilledButton.styleFrom(
         minimumSize: const Size(150, 44),
         backgroundColor: saved ? success : null,
         foregroundColor: saved ? onSuccess : null,
+        disabledBackgroundColor: saved ? success : null,
+        disabledForegroundColor: saved ? onSuccess : null,
         animationDuration: reduceMotion
             ? Duration.zero
             : const Duration(milliseconds: 220),
@@ -81,6 +98,9 @@ class ReviewSaveButton extends StatelessWidget {
         ],
       ),
     );
+    return modifier == null
+        ? button
+        : Tooltip(message: 'Save review ($modifier+Enter)', child: button);
   }
 }
 

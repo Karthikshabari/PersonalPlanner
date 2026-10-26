@@ -200,7 +200,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('mood defaults to Good and selecting another saves it', (
+  testWidgets('Good is only suggested and selecting another saves it', (
     tester,
   ) async {
     final container = await pumpReview(tester);
@@ -208,7 +208,12 @@ void main() {
 
     expect(
       tester.getSemantics(find.byKey(const ValueKey('review-mood-1'))),
-      isSemantics(label: 'Good', hasCheckedState: true, isChecked: true),
+      isSemantics(
+        label: 'Good',
+        hint: 'Suggested',
+        hasCheckedState: true,
+        isChecked: false,
+      ),
     );
     await tester.tap(find.byKey(const ValueKey('review-mood-3')));
     await settle(tester);
@@ -283,8 +288,9 @@ void main() {
 
     await pumpApp(tester, container, surface: const Size(390, 844));
     await settle(tester);
+    // On a phone the rating comes before the task list.
     expect(
-      tester.getTopLeft(find.text('How was the day?')).dy >
+      tester.getTopLeft(find.text('How was the day?')).dy <
           tester.getTopLeft(find.text('Task outcomes')).dy,
       isTrue,
     );

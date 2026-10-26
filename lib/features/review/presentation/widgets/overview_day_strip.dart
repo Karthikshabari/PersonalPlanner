@@ -81,7 +81,13 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
   static const _pageSize = 30;
   static const _maxDays = 730;
 
-  int _dayCount = _pageSize;
+  // Wide enough to hold the selected day, which the provider keeps while
+  // the user looks at Weeks.
+  late int _dayCount = overviewInitialCount(
+    back: _daysBack(ref.read(overviewSelectedDayProvider)),
+    pageSize: _pageSize,
+    max: _maxDays,
+  );
   List<ReviewOverviewDay> _days = const [];
   List<OverviewDayTile> _tiles = const [];
   Map<DateTime, int> _indexByDate = const {};
@@ -89,6 +95,9 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
   OverviewSelection<DateTime>? _selection;
   OverviewTileMetrics? _metrics;
   bool _metricsHaveContext = false;
+
+  static int _daysBack(DateTime selected) =>
+      (startOfDay(DateTime.now()).difference(selected).inHours / 24).round();
 
   @override
   void didChangeDependencies() {
@@ -111,7 +120,7 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
     ];
     _indexByDate = {for (var i = 0; i < days.length; i++) days[i].date: i};
     _hasContext = days.any((d) => d.dayContext != null);
-    _selection ??= OverviewSelection(days.first.date);
+    _selection ??= OverviewSelection(ref.read(overviewSelectedDayProvider));
   }
 
   void _loadMore() {
@@ -156,6 +165,10 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
       );
     }
     final selection = _selection!;
+    ref.listen(
+      overviewSelectedDayProvider,
+      (_, date) => selection.select(date),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -174,7 +187,9 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
               key: ValueKey('overview-day-${tile.key}'),
               selected: selection.flag(tile.date),
               label: tile.semanticsLabel,
-              onSelect: () => selection.select(tile.date),
+              onSelect: () =>
+                  ref.read(overviewSelectedDayProvider.notifier).state =
+                      tile.date,
               child: OverviewDayTileBody(tile: tile),
             );
           },

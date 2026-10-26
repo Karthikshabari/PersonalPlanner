@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
@@ -129,6 +130,32 @@ void main() {
       await finish(tester, container);
     },
   );
+
+  testWidgets('the selected day survives switching to Weeks and back', (
+    tester,
+  ) async {
+    final container = await pumpAt(tester, '/review/overview');
+    final date = addDays(today(), -3);
+    final subtabs = find.byKey(const ValueKey('overview-subtabs'));
+    Text detail() =>
+        tester.widget<Text>(find.byKey(const ValueKey('overview-detail')));
+
+    await tester.tap(card(date));
+    await settle(tester);
+    final selectedDetail = detail().data;
+    expect(selectedDetail, contains(DateFormat('MMM d').format(date)));
+
+    await tester.tap(
+      find.descendant(of: subtabs, matching: find.text('Weeks')),
+    );
+    await settle(tester);
+    await tester.tap(find.descendant(of: subtabs, matching: find.text('Days')));
+    await settle(tester);
+
+    expect(detail().data, selectedDetail);
+    await drainDisposedStreams(tester);
+    await finish(tester, container);
+  });
 
   testWidgets('weekly sub-tab shows the week strip', (tester) async {
     final container = await pumpAt(tester, '/review/overview');

@@ -57,15 +57,18 @@ class _ReviewNoteCardState extends State<ReviewNoteCard> {
           Text(prompt, style: weeklyCaptionStyle(context)),
           const SizedBox(height: WeeklyStyle.titleGap),
           if (!widget.draft.hydrated) const LinearProgressIndicator(),
-          TextField(
-            key: const ValueKey('review-note'),
-            controller: _controller,
-            enabled: widget.draft.hydrated,
-            // Three lines tall at rest, six at most, then it scrolls inside.
-            minLines: 3,
-            maxLines: 6,
-            decoration: WeeklyStyle.fieldDecoration(context, hintText: prompt),
-            onChanged: widget.onNoteChanged,
+          Semantics(
+            label: 'Anything worth remembering?',
+            child: TextField(
+              key: const ValueKey('review-note'),
+              controller: _controller,
+              enabled: widget.draft.hydrated,
+              // Three lines tall at rest, six at most, then it scrolls inside.
+              minLines: 3,
+              maxLines: 6,
+              decoration: WeeklyStyle.fieldDecoration(context),
+              onChanged: widget.onNoteChanged,
+            ),
           ),
         ],
       ),

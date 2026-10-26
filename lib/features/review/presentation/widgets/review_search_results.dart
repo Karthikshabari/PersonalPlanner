@@ -13,6 +13,31 @@ import '../../providers/review_search_providers.dart';
 /// Days per page of results; "Show 50 more" adds the same again.
 const _pageSize = 50;
 
+/// Shows [child] (the Save bar) unless the page search has a query. While the
+/// results are up the cards it would save are hidden behind them.
+class HideWhileReviewSearch extends StatelessWidget {
+  const HideWhileReviewSearch({
+    super.key,
+    required this.search,
+    required this.child,
+  });
+
+  final PageSearchController? search;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final search = this.search;
+    if (search == null) return child;
+    return ValueListenableBuilder<String>(
+      valueListenable: search.needle,
+      child: child,
+      builder: (context, needle, child) =>
+          needle.isEmpty ? child! : const SizedBox.shrink(),
+    );
+  }
+}
+
 /// What a Review page search found: one card per day (Daily) or week (Weekly),
 /// newest first. Tapping a card calls [onOpen] with that day or week start.
 ///

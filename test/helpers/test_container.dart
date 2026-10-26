@@ -28,6 +28,13 @@ Future<ProviderContainer> buildTestContainer(
         appDatabaseProvider.overrideWithValue(database),
         // The midnight timer would outlive tests that tear down in addTearDown.
         selectedDateRolloverProvider.overrideWith((ref) {}),
+        // Nothing can observe a midnight without a faked "now", and the real
+        // clock's timer would outlive tests that tear down in addTearDown.
+        if (insightsNowFactory == null)
+          insightsClockFactoryProvider.overrideWith((ref) {
+            final now = ref.watch(insightsNowFactoryProvider);
+            return () => Stream.value(now());
+          }),
         if (minuteClockFactory != null)
           minuteClockProvider.overrideWithValue(minuteClockFactory),
         if (insightsNowFactory != null)

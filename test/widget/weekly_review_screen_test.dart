@@ -270,7 +270,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('an old review without a mood reads Reviewed, Good preselected', (
+  testWidgets('an old review without a mood reads Reviewed, Good suggested', (
     tester,
   ) async {
     final container = await pumpWeekly(
@@ -289,7 +289,12 @@ void main() {
     expect(find.text('Reviewed'), findsOneWidget);
     expect(
       tester.getSemantics(find.byKey(const ValueKey('weekly-mood-1'))),
-      isSemantics(label: 'Good', hasCheckedState: true, isChecked: true),
+      isSemantics(
+        label: 'Good',
+        hint: 'Suggested',
+        hasCheckedState: true,
+        isChecked: false,
+      ),
     );
     handle.dispose();
     await drainDisposedStreams(tester);

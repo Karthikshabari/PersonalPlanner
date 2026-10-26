@@ -7,6 +7,7 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/features/review/data/review_repository.dart';
 import 'package:personal_planner/features/review/domain/review_draft.dart';
+import 'package:personal_planner/features/review/domain/review_mood.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_draft.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 import 'package:personal_planner/features/review/providers/weekly_review_draft_controller.dart';
@@ -134,6 +135,33 @@ void main() {
       expect(saved.mood, 3);
       expect(saved.feeling, 'Calm, proud');
       expect(saved.reflection, 'Keep doing reviews');
+    });
+
+    test('saving an unchanged review again keeps one revision', () async {
+      await hydrated(week);
+      final p = weeklyReviewDraftProvider(week);
+      final c = container.read(p.notifier);
+      c.setMood(3);
+      expect(await c.save(), isTrue);
+      final first = await db.select(db.weeklyReviews).getSingle();
+
+      expect(await c.save(), isFalse);
+
+      final second = await db.select(db.weeklyReviews).getSingle();
+      expect(second.revision, first.revision);
+      expect(second.updatedAt, first.updatedAt);
+    });
+
+    test('an untouched default mood still saves Good', () async {
+      await hydrated(week);
+      final p = weeklyReviewDraftProvider(week);
+      expect(container.read(p).moodChosen, isFalse);
+
+      expect(await container.read(p.notifier).save(), isTrue);
+
+      final saved = await ReviewRepository(db).getWeeklyReviewForWeek(week);
+      expect(saved?.mood, reviewDefaultMood);
+      expect(container.read(p).moodChosen, isTrue);
     });
 
     test('reverting to the saved values drops the draft', () async {

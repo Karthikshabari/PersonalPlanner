@@ -14,6 +14,7 @@ class WeeklyReviewDraft {
     this.hydrated = false,
     this.hydrationVersion = 0,
     this.mood = reviewDefaultMood,
+    this.moodChosen = false,
     this.feeling = '',
     this.note = '',
     this.savedMood = reviewDefaultMood,
@@ -31,6 +32,10 @@ class WeeklyReviewDraft {
   /// reload their controllers.
   final int hydrationVersion;
   final int mood;
+
+  /// The mood is the user's pick (or a stored one), not the default shown as
+  /// a suggestion. Only the mood tiles read it; the stored value is the same.
+  final bool moodChosen;
   final String feeling;
 
   /// The note for next week (`weekly_reviews.reflection`).
@@ -49,6 +54,7 @@ class WeeklyReviewDraft {
     bool? hydrated,
     int? hydrationVersion,
     int? mood,
+    bool? moodChosen,
     String? feeling,
     String? note,
     int? savedMood,
@@ -62,6 +68,7 @@ class WeeklyReviewDraft {
     hydrated: hydrated ?? this.hydrated,
     hydrationVersion: hydrationVersion ?? this.hydrationVersion,
     mood: mood ?? this.mood,
+    moodChosen: moodChosen ?? this.moodChosen,
     feeling: feeling ?? this.feeling,
     note: note ?? this.note,
     savedMood: savedMood ?? this.savedMood,
@@ -82,6 +89,7 @@ class WeeklyReviewDraft {
   /// Re-points the saved baseline (remote change) keeping the edits.
   WeeklyReviewDraft rebase(WeeklyReview? review) {
     final base = copyWith(
+      moodChosen: moodChosen || review?.mood != null,
       savedMood: review?.mood ?? reviewDefaultMood,
       savedFeeling: review?.feeling ?? '',
       savedNote: review?.reflection ?? '',
@@ -98,6 +106,7 @@ class WeeklyReviewDraft {
     required bool adoptSaved,
   }) {
     final saved = copyWith(
+      moodChosen: true,
       savedMood: mood,
       savedFeeling: feeling.trim(),
       savedNote: note.trim(),
@@ -127,6 +136,7 @@ class WeeklyReviewDraft {
     return copyWith(
       hydrated: true,
       mood: nextMood,
+      moodChosen: moodChosen || review?.mood != null,
       feeling: nextFeeling,
       note: nextNote,
       savedMood: nextMood,

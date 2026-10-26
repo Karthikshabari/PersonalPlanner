@@ -101,8 +101,10 @@ class ReviewDraftController extends Notifier<ReviewDraft> {
   }
 
   void setMood(int mood) {
-    if (mood < 1 || mood > 4 || mood == state.mood) return;
-    _edit(state.copyWith(mood: mood));
+    if (mood < 1 || mood > 4 || (mood == state.mood && state.moodChosen)) {
+      return;
+    }
+    _edit(state.copyWith(mood: mood, moodChosen: true));
   }
 
   void setNote(String note) {

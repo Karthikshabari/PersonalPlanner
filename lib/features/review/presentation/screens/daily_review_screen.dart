@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/layout/adaptive_layout.dart';
+import '../../../../core/layout/breakpoints.dart';
+import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/models/daily_review.dart';
 import '../../../../core/models/daily_stats.dart';
 import '../../../../core/models/day_context.dart';
@@ -13,8 +15,10 @@ import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
+import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../analytics/providers/analytics_providers.dart';
 import '../../../day_context/providers/day_context_presets_provider.dart';
 import '../../../day_context/providers/day_context_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
@@ -101,7 +105,8 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     final dayContext = ref.watch(dayContextForDateProvider(date)).value;
     final breakLabel = ref.watch(breakLabelForDateProvider(date));
     final tokens = AppThemeTokens.of(context);
-    final today = startOfDay(DateTime.now());
+    ref.watch(reviewRolloverProvider);
+    final today = ref.watch(insightsNowProvider.select(startOfDay));
     final future = date.isAfter(today);
 
     return Scaffold(
@@ -166,6 +171,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                                     _buildDateNav(
                                       context,
                                       date,
+                                      today,
                                       dayContext?.displayLabel,
                                       reviewAsync,
                                       future,
@@ -185,6 +191,8 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                                         future: future,
                                         isToday: date == today,
                                         wide: wide,
+                                        compact: DaySizeClass.of(context)
+                                            .isCompact,
                                       ),
                                     ),
                                   ],
@@ -195,33 +203,41 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
                         ),
                       ),
                     ),
-                    FocusTraversalGroup(
-                      child: Consumer(
-                        builder: (context, ref, _) {
-                          final facts = ref.watch(
-                            reviewDraftProvider(date).select(
-                              (d) => (
-                                d.hydrated,
-                                d.saveStatus,
-                                d.differsFromSaved,
+                    HideWhileReviewSearch(
+                      search: _search,
+                      child: FocusTraversalGroup(
+                        child: Consumer(
+                          builder: (context, ref, _) {
+                            final facts = ref.watch(
+                              reviewDraftProvider(date).select(
+                                (d) => (
+                                  d.hydrated,
+                                  d.saveStatus,
+                                  d.differsFromSaved,
+                                ),
                               ),
-                            ),
-                          );
-                          final (hydrated, saveStatus, differs) = facts;
-                          return ReviewSaveBar(
-                            // "Saved" is only true while nothing differs from
-                            // what is stored.
-                            status:
-                                differs && saveStatus == ReviewSaveStatus.saved
-                                ? ReviewSaveStatus.idle
-                                : saveStatus,
-                            enabled: hydrated && outcomesAsync.hasValue,
-                            differsFromSaved: differs,
-                            focusNode: _saveFocusNode,
-                            onSave: () => _save(date),
-                            showShortcutHint: wide,
-                          );
-                        },
+                            );
+                            final (hydrated, saveStatus, differs) = facts;
+                            return ReviewSaveBar(
+                              // "Saved" is only true while nothing differs
+                              // from what is stored.
+                              status:
+                                  differs &&
+                                      saveStatus == ReviewSaveStatus.saved
+                                  ? ReviewSaveStatus.idle
+                                  : saveStatus,
+                              enabled:
+                                  hydrated && outcomesAsync.hasValue && !future,
+                              blockedReason: future
+                                  ? 'You can review this day once it has started'
+                                  : null,
+                              differsFromSaved: differs,
+                              focusNode: _saveFocusNode,
+                              onSave: () => _save(date),
+                              showShortcutHint: wide,
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ],
@@ -292,6 +308,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     required bool future,
     required bool isToday,
     required bool wide,
+    required bool compact,
     required bool breakDay,
   }) {
     const gap = SizedBox(height: ReviewLayout.cardGap);
@@ -312,6 +329,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       child: Consumer(
         builder: (context, ref, _) => ReviewMoodCard(
           selected: ref.watch(provider.select((d) => d.mood)),
+          chosen: ref.watch(provider.select((d) => d.moodChosen)),
           enabled: ref.watch(provider.select((d) => d.hydrated)),
           onChanged: ref.read(provider.notifier).setMood,
         ),
@@ -355,15 +373,19 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
         ],
       );
     }
+    // On a phone the mood card comes before a possibly long task list.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [glance, gap, outcomes, gap, mood, gap, note],
+      children: compact
+          ? [glance, gap, mood, gap, outcomes, gap, note]
+          : [glance, gap, outcomes, gap, mood, gap, note],
     );
   }
 
   Widget _buildDateNav(
     BuildContext context,
     DateTime date,
+    DateTime today,
     String? dayContextLabel,
     AsyncValue<DailyReview?> reviewAsync,
     bool future,
@@ -381,9 +403,19 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
       icon: const Icon(Icons.chevron_right, semanticLabel: 'Next day'),
       onPressed: () => notifier.state = addDays(date, 1),
     );
-    final dateText = Text(
-      DateFormat('EEE, MMM d, yyyy').format(date),
-      style: Theme.of(context).textTheme.titleLarge,
+    final dateText = TextButton(
+      key: const ValueKey('review-date'),
+      onPressed: () => _pickDay(date),
+      style: TextButton.styleFrom(
+        foregroundColor: AppThemeTokens.of(context).textPrimary,
+        minimumSize: const Size(48, 48),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+        alignment: Alignment.centerLeft,
+      ),
+      child: Text(
+        DateFormat('EEE, MMM d, yyyy').format(date),
+        style: Theme.of(context).textTheme.titleLarge,
+      ),
     );
     final badge = dayContextLabel == null
         ? null
@@ -393,7 +425,7 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
           );
     final todayButton = OutlinedButton(
       key: const ValueKey('review-today'),
-      onPressed: () => notifier.state = startOfDay(DateTime.now()),
+      onPressed: () => notifier.state = today,
       child: const Text('Today'),
     );
     final chip = !future && reviewAsync.hasValue
@@ -448,6 +480,21 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
     );
   }
 
+  /// Any day can be opened; a future one cannot be saved (the Save bar says so).
+  Future<void> _pickDay(DateTime date) async {
+    final local = PlannerTimeZone.toPlannerLocal(date);
+    final picked = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDate: DateTime(local.year, local.month, local.day),
+    );
+    if (picked == null || !mounted) return;
+    ref.read(selectedReviewDateProvider.notifier).state = startOfDay(
+      PlannerTimeZone.calendarDate(picked.year, picked.month, picked.day),
+    );
+  }
+
   Widget _buildSummary(
     AsyncValue<DailyStats> stats,
     AsyncValue<ReviewInsights> insights,
@@ -472,8 +519,12 @@ class _DailyReviewScreenState extends ConsumerState<DailyReviewScreen> {
   }
 
   Future<void> _save(DateTime date) async {
+    // The Save bar is off for a future day and hidden during a search; the
+    // keyboard shortcut must not reach past either.
+    final searching = _search?.needle.value.isNotEmpty ?? false;
+    final future = date.isAfter(startOfDay(ref.read(insightsNowProvider)));
     final rows = ref.read(taskOutcomesProvider(date)).value;
-    if (rows == null) return;
+    if (rows == null || future || searching) return;
     final ok = await ref
         .read(reviewDraftProvider(date).notifier)
         .save(rows: rows);

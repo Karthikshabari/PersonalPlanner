@@ -1,4 +1,5 @@
 import '../../../core/database/app_database.dart';
+import '../../../core/models/enums/task_status.dart';
 import '../../../core/search/page_search.dart';
 import '../../../core/utils/date_utils.dart';
 import '../data/review_repository.dart';
@@ -151,7 +152,10 @@ class ReviewSearchIndexLoader {
 
     // The same rule as the Daily Review: a task belongs to the day it starts.
     final byDay =
-        <DateTime, List<({String id, DateTime start, String title})>>{};
+        <
+          DateTime,
+          List<({String id, DateTime start, String title, String status})>
+        >{};
     for (final row in tasks) {
       if (!row.start.isBefore(nextWeek)) continue;
       byDay.putIfAbsent(startOfDay(row.start), () => []).add(row);
@@ -176,8 +180,12 @@ class ReviewSearchIndexLoader {
         texts.add(ReviewSearchText(title, ReviewSearchSource.task));
       }
       // The pages show a reason only beside its task, so a reason whose task
-      // is gone, or starts on another day, is not searchable either.
-      final taskIds = {for (final row in dayTasks) row.id};
+      // is gone, starts on another day, or was completed since (the page
+      // hides it then) is not searchable either.
+      final taskIds = {
+        for (final row in dayTasks)
+          if (row.status != TaskStatus.completed.dbValue) row.id,
+      };
       for (final entry
           in review?.taskReasons.entries ??
               const <MapEntry<String, String>>[]) {

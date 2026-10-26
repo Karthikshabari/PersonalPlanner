@@ -98,6 +98,51 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('Save is off for a future week and on for this week', (
+    tester,
+  ) async {
+    final container = await pumpWeekly(tester);
+    bool saveEnabled() =>
+        tester.widget<FilledButton>(saveButton).onPressed != null;
+    expect(saveEnabled(), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('week-next')));
+    await settle(tester);
+    expect(saveEnabled(), isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('week-this-week')));
+    await settle(tester);
+    expect(saveEnabled(), isTrue);
+    await finish(tester, container);
+  });
+
+  testWidgets('an already saved week has nothing to save until it changes', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    await runDb(
+      tester,
+      () => container
+          .read(reviewRepositoryProvider)
+          .saveWeeklyReviewDraft(
+            weekStart: thisWeek(),
+            mood: 2,
+            feeling: 'Calm',
+            note: '',
+          ),
+    );
+    await pumpWeekly(tester, container: container);
+    bool saveEnabled() =>
+        tester.widget<FilledButton>(saveButton).onPressed != null;
+    expect(saveEnabled(), isFalse);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('weekly-mood-3')));
+    await tester.tap(find.byKey(const ValueKey('weekly-mood-3')));
+    await settle(tester);
+    expect(saveEnabled(), isTrue);
+    await finish(tester, container);
+  });
+
   testWidgets('Not saved yet pill follows the draft', (tester) async {
     final container = await pumpWeekly(tester);
     expect(pill, findsNothing);

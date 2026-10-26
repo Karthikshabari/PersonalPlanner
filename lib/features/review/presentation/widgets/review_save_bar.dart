@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -22,25 +21,25 @@ class ReviewSaveBar extends StatelessWidget {
     required this.focusNode,
     required this.onSave,
     required this.showShortcutHint,
+    this.blockedReason,
   });
 
   /// Already adjusted so "Saved" only shows while nothing differs from storage.
   final ReviewSaveStatus status;
   final bool enabled;
+
+  /// Why Save is off for a reason the user can act on (a day that has not
+  /// started); shown in place of the shortcut hint.
+  final String? blockedReason;
   final bool differsFromSaved;
   final FocusNode focusNode;
   final VoidCallback onSave;
   final bool showShortcutHint;
 
-  /// Phones and tablets have no hardware keyboard shortcut to advertise.
-  static bool get _touchOnly =>
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS ||
-      defaultTargetPlatform == TargetPlatform.fuchsia;
-
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
+    final modifier = showShortcutHint ? reviewSaveModifier() : null;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surface,
@@ -79,8 +78,13 @@ class ReviewSaveBar extends StatelessWidget {
                         container: true,
                         child: const ReviewUnsavedPill(),
                       ),
-                    if (showShortcutHint && !_touchOnly)
-                      Text('Ctrl + Enter', style: weeklyCaptionStyle(context)),
+                    if (blockedReason != null)
+                      Text(blockedReason!, style: weeklyCaptionStyle(context))
+                    else if (modifier != null)
+                      Text(
+                        '$modifier + Enter',
+                        style: weeklyCaptionStyle(context),
+                      ),
                   ],
                 ),
               ),

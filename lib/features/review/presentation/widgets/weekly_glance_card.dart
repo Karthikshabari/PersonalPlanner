@@ -122,37 +122,84 @@ class WeeklyDayStrip extends StatelessWidget {
             ),
           );
         }
-        return ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: const {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.stylus,
-              PointerDeviceKind.trackpad,
-            },
-          ),
-          child: SingleChildScrollView(
-            key: const ValueKey('weekly-day-strip'),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var i = 0; i < days.length; i++) ...[
-                  if (i > 0) const SizedBox(width: gap),
-                  SizedBox(
-                    width: WeeklyDayCard.width,
-                    height: height,
-                    child: WeeklyDayCard(
-                      key: ValueKey('weekly-day-$i'),
-                      day: days[i],
-                      today: _todayInWeek,
-                    ),
+        // Opens with today in view when the week contains it.
+        final todayIndex = _todayInWeek == null
+            ? 0
+            : days.indexWhere(
+                (d) =>
+                    DateTime(d.date.year, d.date.month, d.date.day) ==
+                    _todayInWeek,
+              );
+        final todayEnd = (todayIndex + 1) * (WeeklyDayCard.width + gap) - gap;
+        return _DayStripScroller(
+          key: ValueKey('weekly-day-strip-${days.first.date}'),
+          initialOffset: math.max(0, todayEnd - constraints.maxWidth),
+          child: Row(
+            children: [
+              for (var i = 0; i < days.length; i++) ...[
+                if (i > 0) const SizedBox(width: gap),
+                SizedBox(
+                  width: WeeklyDayCard.width,
+                  height: height,
+                  child: WeeklyDayCard(
+                    key: ValueKey('weekly-day-$i'),
+                    day: days[i],
+                    today: _todayInWeek,
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
           ),
         );
       },
+    );
+  }
+}
+
+/// The sideways scroll view of the day strip, opened at [initialOffset]. A new
+/// key (the week) gives a new view, so each week opens the same way.
+class _DayStripScroller extends StatefulWidget {
+  const _DayStripScroller({
+    super.key,
+    required this.initialOffset,
+    required this.child,
+  });
+
+  final double initialOffset;
+  final Widget child;
+
+  @override
+  State<_DayStripScroller> createState() => _DayStripScrollerState();
+}
+
+class _DayStripScrollerState extends State<_DayStripScroller> {
+  late final _controller = ScrollController(
+    initialScrollOffset: widget.initialOffset,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(
+        dragDevices: const {
+          PointerDeviceKind.touch,
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
+      ),
+      child: SingleChildScrollView(
+        key: const ValueKey('weekly-day-strip'),
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        child: widget.child,
+      ),
     );
   }
 }

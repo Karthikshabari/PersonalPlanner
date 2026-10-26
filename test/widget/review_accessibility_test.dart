@@ -183,7 +183,8 @@ void main() {
 
       // Back to the top, where the sub-tabs are.
       await tester.drag(find.byType(ListView).first, const Offset(0, 4000));
-      await tester.pump(const Duration(milliseconds: 400));
+      // Let the overscroll settle, so the tab is where it rests.
+      await settle(tester);
       // The wide test font makes this tab wider than the phone; tap its start.
       await tester.tapAt(
         tester.getTopLeft(find.text('Next week (optional)')) +
@@ -204,6 +205,20 @@ void main() {
     final handle = tester.ensureSemantics();
 
     final option = find.byKey(const ValueKey('review-mood-1'));
+    // The default is only suggested until the user picks a face.
+    expect(
+      tester.getSemantics(option),
+      isSemantics(
+        label: 'Good',
+        hint: 'Suggested',
+        hasCheckedState: true,
+        isChecked: false,
+        isInMutuallyExclusiveGroup: true,
+        isButton: true,
+      ),
+    );
+    await tester.tap(option);
+    await settle(tester);
     expect(
       tester.getSemantics(option),
       isSemantics(

@@ -114,14 +114,15 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
     ];
   }
 
-  /// Id, start and title of the same tasks [getTasksBetween] returns (same
-  /// filter as [getStartAndStatusBetween]), for Review search, which matches
-  /// titles and needs the id to tell which saved reasons still have a task.
-  /// Order is not specified.
-  Future<List<({String id, DateTime start, String title})>>
+  /// Id, start, title and status of the same tasks [getTasksBetween] returns
+  /// (same filter as [getStartAndStatusBetween]), for Review search, which
+  /// matches titles and needs the id and status to tell which saved reasons
+  /// the Daily Review still shows. Order is not specified.
+  Future<List<({String id, DateTime start, String title, String status})>>
   getStartAndTitleBetween(DateTime start, DateTime end) async {
     final rows = await customSelect(
-      'SELECT t.id, t.start_time, t.title FROM tasks t WHERE t.deleted_at IS NULL '
+      'SELECT t.id, t.start_time, t.title, t.status FROM tasks t '
+      'WHERE t.deleted_at IS NULL '
       'AND t.is_inbox = 0 AND t.start_time IS NOT NULL '
       'AND t.end_time IS NOT NULL AND t.start_time < ? AND t.end_time > ?',
       variables: [Variable<String>(_iso(end)), Variable<String>(_iso(start))],
@@ -133,6 +134,7 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
           id: row.read<String>('id'),
           start: DateTime.parse(row.read<String>('start_time')).toLocal(),
           title: row.read<String>('title'),
+          status: row.read<String>('status'),
         ),
     ];
   }

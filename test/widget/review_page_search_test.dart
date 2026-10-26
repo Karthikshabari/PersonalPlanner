@@ -278,6 +278,19 @@ void main() {
     expect(find.byKey(_field), findsOneWidget);
   });
 
+  _test('the Save bar is hidden while results show', (tester) async {
+    await _open(tester);
+    expect(find.byKey(const ValueKey('review-save')), findsOneWidget);
+
+    await _ctrlF(tester);
+    await _type(tester, 'zanzibar');
+    expect(find.byKey(const ValueKey('review-save')), findsNothing);
+
+    await tester.tap(find.byKey(_close));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('review-save')), findsOneWidget);
+  });
+
   _test('switching to Weekly clears Daily search (laptop)', (tester) async {
     await _open(tester);
     await _ctrlF(tester);

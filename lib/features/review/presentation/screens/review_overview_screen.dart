@@ -59,6 +59,7 @@ class _ReviewOverviewScreenState extends ConsumerState<ReviewOverviewScreen> {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
+    ref.watch(reviewRolloverProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Overview'),

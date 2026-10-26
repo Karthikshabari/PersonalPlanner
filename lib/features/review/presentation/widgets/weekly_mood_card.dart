@@ -18,10 +18,14 @@ class WeeklyMoodCard extends StatelessWidget {
     required this.selected,
     required this.enabled,
     required this.onChanged,
+    this.chosen = true,
     this.lastWeekHint,
   });
 
   final int selected;
+
+  /// False while [selected] is only the default (Good), shown as a suggestion.
+  final bool chosen;
   final bool enabled;
   final ValueChanged<int> onChanged;
 
@@ -48,7 +52,12 @@ class WeeklyMoodCard extends StatelessWidget {
         header: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('How was the week?', style: textTheme.titleMedium),
+            ReviewMoodTitle(
+              title: 'How was the week?',
+              suggestion: chosen
+                  ? null
+                  : '${reviewMoodLabel(selected)} is suggested',
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
         ),
@@ -67,7 +76,8 @@ class WeeklyMoodCard extends StatelessWidget {
                     ReviewMoodTile(
                       keyPrefix: 'weekly-mood',
                       level: level,
-                      selected: selected == level,
+                      selected: chosen && selected == level,
+                      suggested: !chosen && selected == level,
                       enabled: enabled,
                       onChanged: onChanged,
                     ),

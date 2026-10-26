@@ -277,19 +277,24 @@ void main() {
     testWidgets('Ctrl + Enter hint: desktop only, never on touch platforms', (
       tester,
     ) async {
-      for (final (platform, shown) in [
-        (TargetPlatform.linux, true),
-        (TargetPlatform.macOS, true),
-        (TargetPlatform.windows, true),
-        (TargetPlatform.android, false),
-        (TargetPlatform.iOS, false),
-        (TargetPlatform.fuchsia, false),
+      for (final (platform, hint) in [
+        (TargetPlatform.linux, 'Ctrl + Enter'),
+        (TargetPlatform.macOS, 'Cmd + Enter'),
+        (TargetPlatform.windows, 'Ctrl + Enter'),
+        (TargetPlatform.android, null),
+        (TargetPlatform.iOS, null),
+        (TargetPlatform.fuchsia, null),
       ]) {
         debugDefaultTargetPlatformOverride = platform;
         await tester.pumpWidget(bar());
         expect(
           find.text('Ctrl + Enter'),
-          shown ? findsOneWidget : findsNothing,
+          hint == 'Ctrl + Enter' ? findsOneWidget : findsNothing,
+          reason: '$platform',
+        );
+        expect(
+          find.text('Cmd + Enter'),
+          hint == 'Cmd + Enter' ? findsOneWidget : findsNothing,
           reason: '$platform',
         );
       }

@@ -78,8 +78,15 @@ void main() {
             expect(card.width, closeTo(glance.width, 0.01));
           }
           expect(glance.top, lessThan(outcomes.top));
-          expect(outcomes.top, lessThan(mood.top));
-          expect(mood.top, lessThan(note.top));
+          if (width < 600) {
+            // A phone puts the rating before the possibly long task list.
+            expect(glance.top, lessThan(mood.top));
+            expect(mood.top, lessThan(outcomes.top));
+            expect(outcomes.top, lessThan(note.top));
+          } else {
+            expect(outcomes.top, lessThan(mood.top));
+            expect(mood.top, lessThan(note.top));
+          }
         }
 
         // The Save bar is always on screen, without scrolling.

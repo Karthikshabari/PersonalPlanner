@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -10,6 +11,7 @@ import '../../../../core/utils/duration_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../../timeline/presentation/providers/selected_date_provider.dart';
 import '../../domain/reschedule_chain.dart';
 import '../../domain/review_plan_change.dart';
 import '../../domain/review_reason_presets.dart';
@@ -70,6 +72,12 @@ class _TaskOutcomesCardState extends ConsumerState<TaskOutcomesCard> {
         .read(reviewReasonPresetsProvider.notifier)
         .saveAsPreset(text);
     if (added && mounted) showReviewSnackBar(context, 'Preset added');
+  }
+
+  /// Opens Day on this card's date, so an empty day can be planned.
+  void _planDay() {
+    ref.read(selectedDateProvider.notifier).state = widget.date;
+    context.go('/day');
   }
 
   /// Title and status on the left, "Edit presets" at the right end of the same
@@ -180,9 +188,27 @@ class _TaskOutcomesCardState extends ConsumerState<TaskOutcomesCard> {
         style: textTheme.bodyMedium,
       );
     } else if (rows.isEmpty) {
-      body = Text(
-        'No tasks to review for this day',
-        style: textTheme.bodyMedium?.copyWith(color: tokens.textMuted),
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'No tasks to review for this day',
+            style: textTheme.bodyMedium?.copyWith(color: tokens.textMuted),
+          ),
+          if (!widget.breakDay) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'A review compares what you planned with what happened.',
+              style: textTheme.bodySmall?.copyWith(color: tokens.textMuted),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            OutlinedButton(
+              key: const ValueKey('review-plan-this-day'),
+              onPressed: _planDay,
+              child: const Text('Plan this day'),
+            ),
+          ],
+        ],
       );
     } else {
       body = Column(

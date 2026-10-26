@@ -8,6 +8,7 @@ import '../../../core/providers/brief_keep_alive.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/providers/reactive_stats_stream.dart';
 import '../../../core/utils/date_utils.dart';
+import '../../analytics/providers/analytics_providers.dart';
 import '../../settings/providers/week_start_provider.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/review_repository.dart';
@@ -44,6 +45,50 @@ final selectedWeekStartProvider = StateProvider<DateTime>((ref) {
   // Re-derived when the week-start setting changes.
   ref.watch(weekStartDayProvider);
   return startOfWeek(DateTime.now());
+});
+
+/// The day Overview › Days has selected (defaults to today).
+final overviewSelectedDayProvider = StateProvider<DateTime>((ref) {
+  return startOfDay(DateTime.now());
+});
+
+/// The week start Overview › Weeks has selected (defaults to this week).
+/// Held here, not in the strips, so it survives switching Days and Weeks.
+final overviewSelectedWeekProvider = StateProvider<DateTime>((ref) {
+  ref.watch(weekStartDayProvider);
+  return startOfWeek(DateTime.now());
+});
+
+/// The day Daily opens for the week shown on Weekly: today when the week
+/// contains it, otherwise the week's first day.
+DateTime dailyDateForWeek(DateTime weekStart, DateTime today) {
+  final day = startOfDay(today);
+  return startOfWeek(day) == weekStart ? day : weekStart;
+}
+
+/// Moves each Review selection to the new today (or this week) when the
+/// planner day changes, but only a selection that was on the old one; a
+/// deliberately browsed date is left alone. Rides the Insights midnight and
+/// resume clock, so it adds no timer. Watched by the Review screens.
+final reviewRolloverProvider = Provider.autoDispose<void>((ref) {
+  ref.listen(insightsNowProvider.select(startOfDay), (previous, today) {
+    if (previous == null) return;
+    for (final days in [
+      selectedReviewDateProvider,
+      overviewSelectedDayProvider,
+    ]) {
+      if (ref.read(days) == previous) ref.read(days.notifier).state = today;
+    }
+    final week = startOfWeek(previous);
+    for (final weeks in [
+      selectedWeekStartProvider,
+      overviewSelectedWeekProvider,
+    ]) {
+      if (ref.read(weeks) == week) {
+        ref.read(weeks.notifier).state = startOfWeek(today);
+      }
+    }
+  });
 });
 
 /// The saved review for a date (null when none yet).
@@ -124,12 +169,14 @@ final reviewOverviewWindowProvider = StreamProvider.autoDispose
     .family<List<ReviewOverviewDay>, int>((ref, dayCount) {
       keepAliveBriefly(ref);
       ref.watch(breakDayRuleProvider);
+      // Re-read when the planner day rolls over, so "Today" moves on.
+      final today = ref.watch(insightsNowProvider.select(startOfDay));
       return watchReactiveStats(
         ref.read(appDatabaseProvider),
         () async => ref
             .read(reviewOverviewServiceProvider)
             .window(
-              today: DateTime.now(),
+              today: today,
               dayCount: dayCount,
               breakDays: await readBreakDayRule(ref),
             ),
@@ -160,10 +207,11 @@ final reviewOverviewWeekWindowProvider = FutureProvider.autoDispose
     .family<List<WeeklyHistoryWeek>, int>((ref, weekCount) async {
       ref.watch(breakDayRuleProvider);
       ref.watch(weekStartDayProvider);
+      final today = ref.watch(insightsNowProvider.select(startOfDay));
       return ref
           .watch(weeklyReviewHistoryServiceProvider)
           .window(
-            today: DateTime.now(),
+            today: today,
             weekCount: weekCount,
             breakDays: await readBreakDayRule(ref),
           );

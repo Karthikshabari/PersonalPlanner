@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../domain/review_mood.dart';
+import 'dashed_outline.dart';
 import 'mood_face.dart';
 import 'review_equal_grid.dart';
 import 'review_theme.dart';
@@ -24,6 +25,7 @@ class ReviewMoodTile extends StatefulWidget {
     required this.enabled,
     required this.onChanged,
     required this.keyPrefix,
+    this.suggested = false,
     this.selectedScale = 1.0,
   });
 
@@ -34,6 +36,10 @@ class ReviewMoodTile extends StatefulWidget {
 
   /// `weekly-mood` or `review-mood`.
   final String keyPrefix;
+
+  /// The default mood, shown with a dashed tier outline instead of the
+  /// selected look until the user picks one (a tap still picks it).
+  final bool suggested;
 
   /// Scale of the selected tile (1.0 = none).
   final double selectedScale;
@@ -105,6 +111,7 @@ class _ReviewMoodTileState extends State<ReviewMoodTile> {
       checked: selected,
       button: true,
       label: reviewMoodLabel(level),
+      hint: widget.suggested ? 'Suggested' : null,
       excludeSemantics: true,
       child: WeeklyPressScale(
         selected: selected,
@@ -122,71 +129,127 @@ class _ReviewMoodTileState extends State<ReviewMoodTile> {
               highlightColor: moodColor.withValues(alpha: 0.12),
               onTap: widget.enabled ? _pick : null,
               onFocusChange: (value) => setState(() => _focused = value),
-              child: AnimatedContainer(
-                duration: WeeklyStyle.quickFor(context),
-                curve: WeeklyStyle.curve,
-                padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
-                decoration: BoxDecoration(
-                  borderRadius: radius,
-                  // Unselected tiles are a tonal inset (no border); the tier
-                  // colour appears only when selected.
-                  color: selected
-                      ? moodColor.withValues(alpha: 0.14)
-                      : WeeklyStyle.inset(context),
-                  border: Border.all(
-                    color: _focused
-                        ? tokens.focus
-                        : selected
-                        ? moodColor
-                        : Colors.transparent,
-                    width: _focused ? 2 : 1,
-                  ),
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        face,
-                        const SizedBox(height: 4),
-                        Text(
-                          reviewMoodLabel(level),
-                          maxLines: 1,
-                          softWrap: false,
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: selected
-                                    ? tokens.textPrimary
-                                    : tokens.textMuted,
-                                fontWeight: selected
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                              ),
-                        ),
-                      ],
+              child: CustomPaint(
+                foregroundPainter: widget.suggested
+                    ? DashedOutlinePainter(
+                        color: moodColor,
+                        strokeWidth: 1.5,
+                        radius: radius.topLeft.x,
+                      )
+                    : null,
+                child: AnimatedContainer(
+                  duration: WeeklyStyle.quickFor(context),
+                  curve: WeeklyStyle.curve,
+                  padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
+                  decoration: BoxDecoration(
+                    borderRadius: radius,
+                    // Unselected tiles are a tonal inset (no border); the tier
+                    // colour appears only when selected.
+                    color: selected
+                        ? moodColor.withValues(alpha: 0.14)
+                        : WeeklyStyle.inset(context),
+                    border: Border.all(
+                      color: _focused
+                          ? tokens.focus
+                          : selected
+                          ? moodColor
+                          : Colors.transparent,
+                      width: _focused ? 2 : 1,
                     ),
-                    // Selection does not rely on colour alone: a check fades in.
-                    Positioned(
-                      top: 0,
-                      right: 2,
-                      child: AnimatedOpacity(
-                        opacity: selected ? 1 : 0,
-                        duration: WeeklyStyle.quickFor(context),
-                        child: Icon(
-                          Icons.check_circle_rounded,
-                          size: 14,
-                          color: moodColor,
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          face,
+                          const SizedBox(height: 4),
+                          Text(
+                            reviewMoodLabel(level),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: selected || widget.suggested
+                                      ? tokens.textPrimary
+                                      : tokens.textMuted,
+                                  fontWeight: selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w500,
+                                ),
+                          ),
+                        ],
+                      ),
+                      // Selection does not rely on colour alone: a check fades in.
+                      Positioned(
+                        top: 0,
+                        right: 2,
+                        child: AnimatedOpacity(
+                          opacity: selected ? 1 : 0,
+                          duration: WeeklyStyle.quickFor(context),
+                          child: Icon(
+                            Icons.check_circle_rounded,
+                            size: 14,
+                            color: moodColor,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The title of a mood card with, while the mood is only the default, "Good is
+/// suggested" at the end of the same row. It is shown only when both fit on one
+/// line, so the title never wraps for it and choosing a face changes no height
+/// (the dashed tile still marks the suggestion when it does not fit).
+class ReviewMoodTitle extends StatelessWidget {
+  const ReviewMoodTitle({super.key, required this.title, this.suggestion});
+
+  final String title;
+
+  /// Null once the mood is chosen.
+  final String? suggestion;
+
+  static const double _gap = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final heading = Text(title, style: textTheme.titleMedium);
+    final suggestion = this.suggestion;
+    if (suggestion == null) return heading;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fits =
+            measureWidestText(context, [title], textTheme.titleMedium) +
+                _gap +
+                measureWidestText(context, [suggestion], textTheme.bodySmall) <=
+            constraints.maxWidth;
+        if (!fits) return heading;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            heading,
+            Text(
+              suggestion,
+              style: textTheme.bodySmall?.copyWith(
+                color: AppThemeTokens.of(context).textMuted,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

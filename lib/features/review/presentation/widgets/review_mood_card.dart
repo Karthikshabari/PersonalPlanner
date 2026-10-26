@@ -13,6 +13,9 @@ import 'weekly_review_style.dart';
 /// the row is centred in the free height of an equal-height pair.
 class ReviewMoodCard extends StatelessWidget {
   final int selected;
+
+  /// False while [selected] is only the default (Good), shown as a suggestion.
+  final bool chosen;
   final bool enabled;
   final ValueChanged<int> onChanged;
 
@@ -21,6 +24,7 @@ class ReviewMoodCard extends StatelessWidget {
     required this.selected,
     required this.enabled,
     required this.onChanged,
+    this.chosen = true,
   });
 
   @override
@@ -30,9 +34,11 @@ class ReviewMoodCard extends StatelessWidget {
         header: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'How was the day?',
-              style: Theme.of(context).textTheme.titleMedium,
+            ReviewMoodTitle(
+              title: 'How was the day?',
+              suggestion: chosen
+                  ? null
+                  : '${reviewMoodLabel(selected)} is suggested',
             ),
             const SizedBox(height: WeeklyStyle.titleGap),
           ],
@@ -48,7 +54,8 @@ class ReviewMoodCard extends StatelessWidget {
                 ReviewMoodTile(
                   keyPrefix: 'review-mood',
                   level: level,
-                  selected: selected == level,
+                  selected: chosen && selected == level,
+                  suggested: !chosen && selected == level,
                   enabled: enabled,
                   onChanged: onChanged,
                   selectedScale: WeeklyStyle.selectedScale,
