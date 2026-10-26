@@ -45,11 +45,14 @@ class SyncSettingsScreen extends ConsumerStatefulWidget {
 
 class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   bool _busy = false;
-  String? _message;
-  String? _error;
 
-  @override
-  void dispose() => super.dispose();
+  /// Shows an outcome where the user is looking, whatever the scroll position.
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +64,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           current.state != SyncEngineState.pending &&
           current.state != SyncEngineState.offline &&
           current.state != SyncEngineState.refreshPaused &&
+          current.state != SyncEngineState.notConfigured &&
           current.state != previous?.value?.state &&
           context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -157,15 +161,39 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             ref.read(syncEnabledProvider.notifier).setEnabled(value),
       ),
     );
-    List<Widget> syncStateCards() => <Widget>[
-      if (conflicts.isNotEmpty)
+    // The status sits right under the account card; everything that needs a
+    // decision follows below it.
+    final syncStatusCards = <Widget>[
+      SyncStatusPanel(
+        status: status,
+        enabled: enabled,
+        busy: _busy,
+        onSyncNow: () => ref.read(syncEngineProvider)?.syncNow(),
+        onSignInAgain: () => unawaited(_signOut()),
+      ),
+      const SizedBox(height: 12),
+    ];
+    // Quarantined records must stay visible where the attention cards below
+    // the status are not rendered (offline-only, signed out, first sync).
+    final showsAttentionCards =
+        session != null &&
+        (backend is ProvisionedRuntimeBackend
+            ? initialSync?.baselineComplete ?? false
+            : backend is! LocalOnlyRuntimeBackend);
+    final syncAttentionCards = <Widget>[
+      if (quarantinedChanges.isNotEmpty) ...[
+        _QuarantineCard(changes: quarantinedChanges),
+        const SizedBox(height: 12),
+      ],
+      if (conflicts.isNotEmpty) ...[
         _ConflictCard(
           conflicts: conflicts,
           busy: _busy,
           onKeepLocal: _keepLocal,
           onKeepRemote: _keepRemote,
         ),
-      if (conflicts.isNotEmpty) const SizedBox(height: 12),
+        const SizedBox(height: 12),
+      ],
       if (permanentOperations.isNotEmpty || attentionOperations.isNotEmpty) ...[
         _PermanentFailureCard(
           operations: permanentOperations,
@@ -176,12 +204,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         ),
         const SizedBox(height: 12),
       ],
-      SyncStatusPanel(
-        status: status,
-        enabled: enabled,
-        busy: _busy,
-        onSyncNow: () => ref.read(syncEngineProvider)?.syncNow(),
-      ),
     ];
     final tokens = AppThemeTokens.of(context);
     return Scaffold(
@@ -196,10 +218,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl,
           ),
           children: [
-            if (quarantinedChanges.isNotEmpty) ...[
-              _QuarantineCard(changes: quarantinedChanges),
-              const SizedBox(height: 12),
-            ],
             // The three runtime backends never compete for the same screen.
             //
             // local-only: provisioning is the only cloud action available.
@@ -235,6 +253,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   initialSync: initialSync,
                 ),
                 const SizedBox(height: 12),
+                if (initialSync?.baselineComplete ?? false) ...syncStatusCards,
                 // Available before the baseline completes too, so a user can
                 // always stop automatic scheduling of the first upload.
                 syncPreferenceCard,
@@ -251,7 +270,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     onRepair: _repairPendingInitialSyncOperation,
                     onDisconnect: _disconnect,
                   ),
-                if (initialSync?.baselineComplete ?? false) ...syncStateCards(),
+                if (initialSync?.baselineComplete ?? false)
+                  ...syncAttentionCards,
               ],
             ] else if (session == null)
               _AuthForm()
@@ -269,8 +289,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              ...syncStatusCards,
               if (kDebugMode && authController != null) ...[
-                const SizedBox(height: 12),
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.support_agent_outlined),
@@ -285,6 +306,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
               ],
               if (adoptionSummary != null)
                 adoptionSummary.when(
@@ -312,12 +334,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
               const SizedBox(height: 12),
               syncPreferenceCard,
               const SizedBox(height: 12),
-              ...syncStateCards(),
-              const SizedBox(height: 12),
+              ...syncAttentionCards,
               const Card(
                 child: ListTile(
                   leading: Icon(Icons.info_outline),
-                  title: Text('Anonymous data is never uploaded automatically'),
+                  title: Text(
+                    'Offline-only data is never uploaded automatically',
+                  ),
                   subtitle: Text(
                     'If this account has no local data, import from offline-only '
                     'mode only after explicit confirmation.',
@@ -325,17 +348,8 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 ),
               ),
             ],
-            if (_message != null) ...[
-              const SizedBox(height: 12),
-              Text(_message!),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
+            if (!showsAttentionCards && quarantinedChanges.isNotEmpty)
+              _QuarantineCard(changes: quarantinedChanges),
           ],
         ),
       ),
@@ -347,17 +361,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Future<void> _retryInitialSync() async {
     final coordinator = ref.read(initialSyncCoordinatorProvider);
     if (coordinator == null) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _message = null;
-    });
+    setState(() => _busy = true);
     try {
       await coordinator.retry();
     } catch (error) {
-      if (mounted) {
-        setState(() => _error = safeSyncError(error));
-      }
+      _notify(safeSyncError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -392,26 +400,18 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       ),
     );
     if (!mounted || choice != true) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _message = null;
-    });
+    setState(() => _busy = true);
     try {
       await coordinator.adoptOfflineData();
-      if (mounted) {
-        setState(
-          () => _message =
-              'Offline-only data was imported. Uploading it to your cloud '
-              'account.',
-        );
-      }
+      _notify(
+        'Offline-only data was imported. Uploading it to your cloud account.',
+      );
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error is AnonymousDataAdoptionException ? error.message : 'Import could not be completed. The offline-only data was kept.';
-        });
-      }
+      _notify(
+        error is AnonymousDataAdoptionException
+            ? error.message
+            : 'Import could not be completed. The offline-only data was kept.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -420,21 +420,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Future<void> _keepOfflineDataSeparate() async {
     final coordinator = ref.read(initialSyncCoordinatorProvider);
     if (coordinator == null) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _message = null;
-    });
+    setState(() => _busy = true);
     try {
       await coordinator.keepOfflineDataSeparate();
-      if (mounted) {
-        setState(
-          () => _message =
-              'Offline-only data stays separate from this cloud account.',
-        );
-      }
+      _notify('Offline-only data stays separate from this cloud account.');
     } catch (_) {
-      if (mounted) setState(() => _error = 'Could not save that choice.');
+      _notify('Could not save that choice.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -445,39 +436,33 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   Future<void> _repairPendingInitialSyncOperation(String operationId) async {
     final coordinator = ref.read(initialSyncCoordinatorProvider);
     if (coordinator == null) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       await coordinator.repairPendingOperation(operationId);
       await coordinator.retry();
-      if (mounted) {
-        setState(
-          () => _message =
-              'The repaired local record was queued and the first '
-              'synchronization was retried.',
-        );
-      }
+      _notify(
+        'The repaired local record was queued and the first synchronization '
+        'was retried.',
+      );
     } catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = error is SyncRepairException
-              ? error.message
-              : 'The sync failure could not be repaired safely.',
-        );
-      }
+      _notify(
+        error is SyncRepairException
+            ? error.message
+            : 'The sync failure could not be repaired safely.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _signOut() async {
+    final email = ref.read(authSessionProvider).value?.user.email;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sign out?'),
-        content: const Text(
+        title: const Text('Log out?'),
+        content: Text(
+          '${email == null ? '' : 'Signed in as $email.\n\n'}'
           'Your planner data stays on this device but is hidden until you '
           'sign in again.',
         ),
@@ -488,20 +473,17 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Sign out'),
+            child: const Text('Log out'),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       await ref.read(authRepositoryProvider)?.signOut();
     } catch (error) {
-      if (mounted) setState(() => _error = safeAuthError(error));
+      _notify(safeAuthError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -560,11 +542,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       ),
     );
     if (!mounted || confirmed != true) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-      _message = null;
-    });
+    setState(() => _busy = true);
     // Captured before the await: adopting the changed backend disposes this
     // screen's provider container, so nothing may be read from `ref` after
     // that point. `reloader` is owned by the app bootstrap (it is not scoped to
@@ -580,11 +558,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
         authRepository: authRepository,
       );
       if (!result.succeeded) {
-        if (mounted) {
-          setState(
-            () => _error = result.message ?? cloudDisconnectFailedMessage,
-          );
-        }
+        _notify(result.message ?? cloudDisconnectFailedMessage);
         return;
       }
       // The connection is durably disabled. The runtime Auth client and the
@@ -593,16 +567,14 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       // still exists. If this widget was unmounted by the sign-out above, the
       // bootstrap still owns the reload, so the teardown is not skipped.
       await reloader?.reload();
-      if (mounted) {
-        setState(
-          () => _message =
-              result.message ??
-              'Cloud backend disconnected. Local Planner data stays on this '
-                  'device.',
-        );
-      }
+      _notify(
+        result.message ??
+            'Cloud backend disconnected. You will see your offline-only '
+                'planner. Your account data comes back when you reconnect or '
+                'sign in.',
+      );
     } catch (error) {
-      if (mounted) setState(() => _error = friendlyErrorMessage(error));
+      _notify(friendlyErrorMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -649,20 +621,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   }
 
   Future<void> _keepAnonymousDataSeparate() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       await ref.read(anonymousDataAdoptionProvider).keepSeparate();
       ref.invalidate(anonymousDataSummaryProvider);
-      if (mounted) {
-        setState(() {
-          _message = 'Anonymous data remains in offline-only mode.';
-        });
-      }
+      _notify('Offline-only data stays separate from this account.');
     } catch (error) {
-      if (mounted) setState(() => _error = 'Could not save that choice.');
+      _notify('Could not save that choice.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -672,7 +637,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final choice = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Import anonymous data?'),
+        title: const Text('Import offline-only data?'),
         content: const Text(
           'This copies the offline-only records into this signed-in account. '
           'The offline-only database is kept as a recovery copy. Any existing '
@@ -700,61 +665,79 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       return;
     }
 
-    setState(() {
-      _busy = true;
-      _error = null;
-      _message = null;
-    });
+    setState(() => _busy = true);
     try {
       final result = await ref.read(anonymousDataAdoptionProvider).adopt();
       ref.invalidate(anonymousDataSummaryProvider);
-      if (mounted) {
-        setState(() {
-          _message =
-              'Imported ${result.copiedRecords} record(s). '
-              '${result.alreadyPresentRecords} already existed; sync will upload '
-              'the imported records when online.';
-        });
-      }
+      _notify(
+        'Imported ${result.copiedRecords} record(s). '
+        '${result.alreadyPresentRecords} already existed; sync will upload '
+        'the imported records when online.',
+      );
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _error = error is AnonymousDataAdoptionException ? error.message : 'Import could not be completed. The offline-only data was kept.';
-        });
-      }
+      _notify(
+        error is AnonymousDataAdoptionException
+            ? error.message
+            : 'Import could not be completed. The offline-only data was kept.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _keepLocal(String conflictId) => _resolveConflict(
-    conflictId,
-    (repository) => repository.keepLocal(conflictId),
+  Future<void> _keepLocal(SyncConflictRow conflict) => _resolveConflict(
+    conflict,
+    kept: conflictLocalVersion,
+    consequence:
+        'Your changes on this device replace the other device\'s version.',
+    resolve: (repository) => repository.keepLocal(conflict.id),
   );
 
-  Future<void> _keepRemote(String conflictId) => _resolveConflict(
-    conflictId,
-    (repository) => repository.keepRemote(conflictId),
+  Future<void> _keepRemote(SyncConflictRow conflict) => _resolveConflict(
+    conflict,
+    kept: conflictRemoteVersion,
+    consequence:
+        'The other device\'s version replaces your changes on this device.',
+    resolve: (repository) => repository.keepRemote(conflict.id),
   );
 
+  /// Resolving cannot be undone, so the user confirms first and the dialog and
+  /// the result both name the version that is kept.
   Future<void> _resolveConflict(
-    String conflictId,
-    Future<void> Function(SyncRepository repository) resolve,
-  ) async {
+    SyncConflictRow conflict, {
+    required String kept,
+    required String consequence,
+    required Future<void> Function(SyncRepository repository) resolve,
+  }) async {
     final repository = ref.read(syncRepositoryProvider);
     if (repository == null) {
-      setState(() => _error = 'Sign in and enable sync to resolve conflicts.');
+      _notify('Sign in and enable sync to resolve conflicts.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Keep $kept?'),
+        content: Text('${_conflictTitle(conflict)}\n\n$consequence'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Keep $kept'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
     try {
       await resolve(repository);
-      if (mounted) setState(() => _message = 'Conflict resolved.');
+      _notify('Conflict resolved. Kept $kept.');
     } catch (_) {
-      if (mounted) setState(() => _error = 'Conflict could not be resolved.');
+      _notify('Conflict could not be resolved.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -763,41 +746,37 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   /// Ends the wait of an operation the server keeps refusing and syncs once.
   /// Only a listed row is touched (SyncDao.retryNow); nothing is discarded.
   Future<void> _retryNow(String operationId) async {
-    final retried = await ref
-        .read(appDatabaseProvider)
-        .syncDao
-        .retryNow(operationId, DateTime.now().toUtc());
-    if (retried) await ref.read(syncEngineProvider)?.syncNow();
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final retried = await ref
+          .read(appDatabaseProvider)
+          .syncDao
+          .retryNow(operationId, DateTime.now().toUtc());
+      if (retried) await ref.read(syncEngineProvider)?.syncNow();
+    } catch (error) {
+      _notify(safeSyncError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _repairPermanentOperation(String operationId) async {
     final repository = ref.read(syncRepositoryProvider);
     if (repository == null) {
-      setState(
-        () => _error = 'Sign in and enable sync to repair this failure.',
-      );
+      _notify('Sign in and enable sync to repair this failure.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
       await repository.repairPermanentOperation(operationId);
-      if (mounted) {
-        setState(
-          () => _message =
-              'The repaired local record was queued. Sync it when ready.',
-        );
-      }
+      _notify('The repaired local record was queued. Sync it when ready.');
     } catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = error is SyncRepairException
-              ? error.message
-              : 'The sync failure could not be repaired safely.',
-        );
-      }
+      _notify(
+        error is SyncRepairException
+            ? error.message
+            : 'The sync failure could not be repaired safely.',
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -887,7 +866,7 @@ class _CloudProfileHealthCard extends ConsumerWidget {
                 OutlinedButton(
                   key: const ValueKey('cloud-profile-health-repair'),
                   onPressed: () => unawaited(_repairProfile(context, ref)),
-                  child: const Text('Start cloud setup again'),
+                  child: const Text('Start setup again'),
                 )
               else
                 const Text(
@@ -946,8 +925,10 @@ class _QuarantineCard extends StatelessWidget {
                 [
                   change.diagnostic,
                   if (change.recordedAt != null)
-                    'Recorded: ${change.recordedAt!.toLocal()}',
+                    'Recorded: ${formatSyncTimestamp(change.recordedAt!)}',
                   'Automatic replay is disabled until the payload is repaired.',
+                  'Next step: copy the details and contact support. This device '
+                      'keeps its own version meanwhile.',
                 ].join('\n'),
               ),
               trailing: IconButton(
@@ -968,20 +949,7 @@ class _QuarantineCard extends StatelessWidget {
   );
 
   static String _changeLabel(SyncQuarantinedChange change) {
-    final table = switch (change.tableName) {
-      'tasks' => 'Task',
-      'categories' => 'Category',
-      'tags' => 'Legacy metadata',
-      'subtasks' => 'Subtask',
-      'recurring_rules' => 'Recurring rule',
-      'task_templates' => 'Template',
-      'daily_reviews' => 'Daily review',
-      'weekly_reviews' => 'Weekly review',
-      'timer_sessions' => 'Timer session',
-      'day_contexts' => 'Day context',
-      'task_tags' => 'Legacy metadata link',
-      _ => 'Remote record',
-    };
+    final table = syncTableLabel(change.tableName ?? '');
     final identity = change.recordId == null || change.recordId!.isEmpty
         ? 'change ${change.changeId}'
         : change.recordId!;
@@ -1093,26 +1061,11 @@ String syncOperationSummary(SyncLogRow operation) {
     'delete' => 'Delete',
     _ => 'Update',
   };
-  final table = switch (operation.entityTableName) {
-    'tasks' => 'Task',
-    'categories' => 'Category',
-    'tags' => 'Legacy metadata',
-    'subtasks' => 'Subtask',
-    'recurring_rules' => 'Recurring rule',
-    'task_templates' => 'Template',
-    'daily_reviews' => 'Daily review',
-    'weekly_reviews' => 'Weekly review',
-    'timer_sessions' => 'Timer session',
-    'day_contexts' => 'Day context',
-    'experiments' => 'Experiment',
-    'experiment_check_ins' => 'Experiment check-in',
-    'task_tags' => 'Legacy metadata link',
-    _ => 'Record',
-  };
+  final table = syncTableLabel(operation.entityTableName);
   final payload = _snapshotMap(operation.payload);
   final name = payload == null
       ? ''
-      : _displayName(operation.entityTableName, payload);
+      : syncRecordName(operation.entityTableName, payload);
   return '$action · $table · ${name.isEmpty ? operation.recordId : name}';
 }
 
@@ -1164,11 +1117,11 @@ class _AnonymousAdoptionCard extends StatelessWidget {
             children: [
               FilledButton(
                 onPressed: busy ? null : onImport,
-                child: const Text('Import anonymous data'),
+                child: const Text('Import offline-only data'),
               ),
               OutlinedButton(
                 onPressed: busy ? null : onKeepSeparate,
-                child: const Text('Keep it separate'),
+                child: const Text('Keep separate'),
               ),
             ],
           ),
@@ -1188,8 +1141,8 @@ class _ConflictCard extends StatelessWidget {
 
   final List<SyncConflictRow> conflicts;
   final bool busy;
-  final ValueChanged<String> onKeepLocal;
-  final ValueChanged<String> onKeepRemote;
+  final ValueChanged<SyncConflictRow> onKeepLocal;
+  final ValueChanged<SyncConflictRow> onKeepRemote;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1212,21 +1165,19 @@ class _ConflictCard extends StatelessWidget {
               title: Text(_conflictTitle(conflict)),
               subtitle: Text(
                 '${_conflictDetails(conflict)}\n'
-                '${conflictChangedLine(conflict)}\n'
-                'Expected ${conflict.expectedServerVersion ?? 'new'} · '
-                'server ${conflict.actualServerVersion ?? 'deleted'}',
+                '${conflictChangedLine(conflict)}',
               ),
             ),
             Wrap(
               spacing: 8,
               children: [
                 OutlinedButton(
-                  onPressed: busy ? null : () => onKeepLocal(conflict.id),
-                  child: const Text('Keep Local'),
+                  onPressed: busy ? null : () => onKeepLocal(conflict),
+                  child: const Text('Keep $conflictLocalVersion'),
                 ),
                 FilledButton(
-                  onPressed: busy ? null : () => onKeepRemote(conflict.id),
-                  child: const Text('Keep Remote'),
+                  onPressed: busy ? null : () => onKeepRemote(conflict),
+                  child: const Text('Keep $conflictRemoteVersion'),
                 ),
               ],
             ),
@@ -1242,22 +1193,10 @@ String _conflictTitle(SyncConflictRow conflict) {
   final local = _snapshotMap(conflict.localSnapshot);
   final remote = _snapshotMap(conflict.remoteSnapshot);
   final value = local ?? remote;
-  final label = switch (conflict.entityTableName) {
-    'tasks' => 'Task',
-    'categories' => 'Category',
-    'tags' => 'Legacy metadata',
-    'subtasks' => 'Subtask',
-    'recurring_rules' => 'Recurring rule',
-    'task_templates' => 'Template',
-    'daily_reviews' => 'Daily review',
-    'weekly_reviews' => 'Weekly review',
-    'timer_sessions' => 'Timer session',
-    'task_tags' => 'Legacy metadata link',
-    _ => 'Record',
-  };
+  final label = syncTableLabel(conflict.entityTableName);
   final name = value == null
       ? null
-      : _displayName(conflict.entityTableName, value);
+      : syncRecordName(conflict.entityTableName, value);
   return name == null || name.isEmpty ? label : '$label · $name';
 }
 
@@ -1283,31 +1222,49 @@ String conflictChangedLine(SyncConflictRow conflict, {DateTime? now}) {
 
 String _lowerFirst(String text) => text == 'Just now' ? 'just now' : text;
 
-String _conflictDetails(SyncConflictRow conflict) {
+const conflictLocalVersion = 'this device\'s version';
+const conflictRemoteVersion = 'the other device\'s version';
+
+/// What differs between the two sides of a conflict, so the user can choose
+/// with the values in front of them: the first [shown] changed fields with both
+/// values, then "+N more changes". Version numbers and timestamps never count.
+/// Empty when a snapshot cannot be read.
+@visibleForTesting
+List<String> conflictDifferenceLines(
+  SyncConflictRow conflict, {
+  int shown = 2,
+}) {
   final local = _snapshotMap(conflict.localSnapshot);
   final remote = _snapshotMap(conflict.remoteSnapshot);
-  if (local == null || remote == null) {
-    return 'Local and remote snapshots are preserved.';
-  }
-  final fields = <String>[];
-  for (final key in {...local.keys, ...remote.keys}) {
-    if (const {
-      'id',
-      'created_at',
-      'updated_at',
-      'server_version',
-    }.contains(key)) {
-      continue;
-    }
-    if (local[key] == remote[key]) continue;
-    fields.add(_fieldLabel(key));
-  }
-  final changed = fields.isEmpty
-      ? 'different snapshots'
-      : fields.take(4).join(', ');
-  final localState = _snapshotState(local);
-  final remoteState = _snapshotState(remote);
-  return 'Local: $localState · Remote: $remoteState · Changed: $changed';
+  if (local == null || remote == null) return const [];
+  final changed = [
+    for (final key in {...local.keys, ...remote.keys})
+      if (!_conflictBookkeepingFields.contains(key) &&
+          local[key] != remote[key])
+        '${_fieldLabel(key)}: ${_fieldValue(key, local[key])} (this device) · '
+            '${_fieldValue(key, remote[key])} (other device)',
+  ];
+  final more = changed.length - shown;
+  return [
+    ...changed.take(shown),
+    if (more > 0) '+$more more ${more == 1 ? 'change' : 'changes'}',
+  ];
+}
+
+const _conflictBookkeepingFields = {
+  'id',
+  'created_at',
+  'updated_at',
+  'server_version',
+};
+
+String _conflictDetails(SyncConflictRow conflict) {
+  final lines = conflictDifferenceLines(conflict);
+  if (lines.isNotEmpty) return lines.join('\n');
+  return _snapshotMap(conflict.localSnapshot) == null ||
+          _snapshotMap(conflict.remoteSnapshot) == null
+      ? 'Both versions are kept until you choose.'
+      : 'Only the change times differ.';
 }
 
 Map<String, dynamic>? _snapshotMap(String source) {
@@ -1319,31 +1276,70 @@ Map<String, dynamic>? _snapshotMap(String source) {
   }
 }
 
-String _displayName(String table, Map<String, dynamic> snapshot) {
+/// Plain-language name of a synced table, shared by the conflict, quarantine
+/// and queued-operation cards. Only the retired metadata tables say "Legacy".
+@visibleForTesting
+String syncTableLabel(String table) => switch (table) {
+  'tasks' => 'Task',
+  'categories' => 'Category',
+  'tags' => 'Tag',
+  'subtasks' => 'Subtask',
+  'recurring_rules' => 'Recurring rule',
+  'task_templates' => 'Template',
+  'daily_reviews' => 'Daily review',
+  'weekly_reviews' => 'Weekly review',
+  'timer_sessions' => 'Timer session',
+  'day_contexts' => 'Day context',
+  'experiments' => 'Experiment',
+  'experiment_check_ins' => 'Experiment check-in',
+  'task_tags' => 'Legacy metadata link',
+  _ => 'Record',
+};
+
+/// What a person recognises a record by: a title, a date or an experiment's
+/// purpose. An experiment has no name of its own (the UI shows its tag, which a
+/// snapshot only references by id), so it falls back to its date range.
+@visibleForTesting
+String syncRecordName(String table, Map<String, dynamic> snapshot) {
   final value = switch (table) {
     'tasks' || 'subtasks' => snapshot['title'],
     'categories' || 'tags' || 'task_templates' => snapshot['name'],
     'recurring_rules' => snapshot['task_title'],
     'daily_reviews' => snapshot['date'],
     'weekly_reviews' => snapshot['week_start_date'],
+    'experiments' => _experimentName(snapshot),
+    'experiment_check_ins' => snapshot['slot_date'],
     _ => snapshot['id'],
   };
   final text = value?.toString().trim() ?? '';
   return text.length > 80 ? '${text.substring(0, 80)}…' : text;
 }
 
-String _snapshotState(Map<String, dynamic> snapshot) {
-  if (snapshot['deleted_at'] != null || snapshot['deleted'] == true) {
-    return 'deleted';
-  }
-  final status = snapshot['status'];
-  return status == null ? 'active' : status.toString().replaceAll('_', ' ');
+String? _experimentName(Map<String, dynamic> snapshot) {
+  final purpose = '${snapshot['purpose'] ?? ''}'.trim();
+  if (purpose.isNotEmpty) return purpose;
+  final start = snapshot['start_date'];
+  final end = snapshot['end_date'];
+  return start == null || end == null ? null : '$start to $end';
+}
+
+/// A snapshot value as a person would read it: short, with an explicit "none".
+String _fieldValue(String key, Object? value) {
+  if (key == 'deleted_at') return value == null ? 'no' : 'yes';
+  if (value == null) return 'none';
+  final text = switch (value) {
+    true => 'yes',
+    false => 'no',
+    _ => value.toString().trim(),
+  };
+  if (text.isEmpty) return 'empty';
+  return text.length > 40 ? '${text.substring(0, 40)}…' : text;
 }
 
 String _fieldLabel(String key) {
-  if (const {'priority', 'tags_json', 'tag_id'}.contains(key)) {
-    return 'Legacy metadata';
-  }
+  if (key == 'tag_id') return 'Tag';
+  if (key == 'deleted_at') return 'Deleted';
+  if (const {'priority', 'tags_json'}.contains(key)) return 'Legacy metadata';
   return key
       .replaceAll('_', ' ')
       .replaceFirstMapped(
@@ -1487,11 +1483,11 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
                   FilledButton(
                     key: const ValueKey('first-sync-import-offline'),
                     onPressed: busy ? null : onAdopt,
-                    child: const Text('Import offline data and upload'),
+                    child: const Text('Import offline-only data and upload'),
                   ),
                   OutlinedButton(
                     onPressed: busy ? null : onKeepSeparate,
-                    child: const Text('Keep offline data separate'),
+                    child: const Text('Keep separate'),
                   ),
                 ],
               ),
@@ -1510,7 +1506,7 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
                   FilledButton(
                     key: const ValueKey('first-sync-recovery-retry'),
                     onPressed: busy || !syncEnabled ? null : onRetry,
-                    child: const Text('Retry cloud setup'),
+                    child: const Text('Try again'),
                   ),
                   OutlinedButton(
                     key: const ValueKey('first-sync-recovery-disconnect'),
@@ -1552,7 +1548,7 @@ class _ProvisionedFirstSyncCard extends StatelessWidget {
               OutlinedButton(
                 key: const ValueKey('first-sync-retry'),
                 onPressed: busy || waiting || !syncEnabled ? null : onRetry,
-                child: const Text('Retry cloud setup'),
+                child: const Text('Try again'),
               ),
             ],
           ],
@@ -1719,6 +1715,16 @@ class _AuthFormState extends ConsumerState<_AuthForm> {
                     : 'Need an account? Register',
               ),
             ),
+            if (!registering) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Forgot your password? Open your Supabase project, go to '
+                'Authentication > Users and choose "Send password recovery" '
+                'for your email.',
+                key: const ValueKey('sync-forgot-password-help'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (message != null) Text(message!),
             if (error != null)
               Text(

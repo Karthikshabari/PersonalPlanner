@@ -166,8 +166,14 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
   }
 
   /// Confirms, then clears the cloud setup on this device.
-  Future<void> _confirmReset(ProvisioningUiController controller) async {
-    final confirmed = await showCloudSetupResetDialog(context);
+  Future<void> _confirmReset(
+    ProvisioningUiController controller, {
+    bool offlineOnly = false,
+  }) async {
+    final confirmed = await showCloudSetupResetDialog(
+      context,
+      offlineOnly: offlineOnly,
+    );
     if (!confirmed || !mounted) return;
     await controller.resetSetup();
   }
@@ -528,7 +534,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               TextButton(
                 key: const ValueKey('cloud-start-again'),
                 onPressed: busy ? null : controller.startAgain,
-                child: const Text('Start Again'),
+                child: const Text('Start setup again'),
               ),
             if (state.authorizationUrlAvailable)
               TextButton(
@@ -586,7 +592,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             FilledButton(
               key: const ValueKey('cloud-restart-action'),
               onPressed: busy ? null : controller.startAgain,
-              child: const Text('Start Setup Again'),
+              child: const Text('Start setup again'),
             ),
             _cancelSetupButton(controller, busy),
           ],
@@ -605,7 +611,7 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
             FilledButton(
               key: const ValueKey('cloud-restart-action'),
               onPressed: busy ? null : controller.startAgain,
-              child: const Text('Start Again'),
+              child: const Text('Start setup again'),
             ),
             _cancelSetupButton(controller, busy),
           ],
@@ -701,7 +707,8 @@ class _CloudSetupCardState extends ConsumerState<CloudSetupCard>
               key: const ValueKey('cloud-use-offline-only-action'),
               onPressed: busy
                   ? null
-                  : () => unawaited(_confirmReset(controller)),
+                  : () =>
+                        unawaited(_confirmReset(controller, offlineOnly: true)),
               child: const Text('Use offline-only mode'),
             ),
           ],

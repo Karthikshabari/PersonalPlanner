@@ -18,6 +18,7 @@ class SyncStatusPanel extends StatelessWidget {
     required this.enabled,
     required this.busy,
     required this.onSyncNow,
+    this.onSignInAgain,
   });
 
   final SyncStatusSnapshot status;
@@ -25,13 +26,17 @@ class SyncStatusPanel extends StatelessWidget {
   final bool busy;
   final VoidCallback onSyncNow;
 
+  /// Offered while the server rejects the saved sign-in: syncing again cannot
+  /// help once the session itself is no longer accepted.
+  final VoidCallback? onSignInAgain;
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
     final view = syncStatusView(status, enabled: enabled, tokens: tokens);
     final action = FilledButton(
       key: const ValueKey('sync-now-action'),
-      onPressed: enabled && !busy ? onSyncNow : null,
+      onPressed: enabled && !busy && view.canSyncNow ? onSyncNow : null,
       child: Text(view.actionLabel),
     );
     final details = Column(
@@ -44,6 +49,14 @@ class SyncStatusPanel extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs / 2),
         Text(view.subtitle),
+        if (enabled && status.lastSuccessfulSync != null) ...[
+          const SizedBox(height: AppSpacing.xs / 2),
+          Text(
+            'Last synced ${formatSyncClockTime(status.lastSuccessfulSync!)}',
+            key: const ValueKey('sync-last-synced'),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
         if (status.pendingOperations > 0 && enabled) ...[
           const SizedBox(height: AppSpacing.xs / 2),
           Text(
@@ -73,7 +86,18 @@ class SyncStatusPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            SyncActionGroup(actions: <Widget>[action]),
+            SyncActionGroup(
+              actions: <Widget>[
+                action,
+                if (status.state == SyncEngineState.authFailure &&
+                    onSignInAgain != null)
+                  OutlinedButton(
+                    key: const ValueKey('sync-sign-in-again-action'),
+                    onPressed: busy ? null : onSignInAgain,
+                    child: const Text('Log out to sign in again'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -125,6 +149,7 @@ class SyncStatusView {
     required this.subtitle,
     this.active = false,
     this.actionLabel = 'Sync now',
+    this.canSyncNow = true,
   });
 
   final IconData icon;
@@ -137,6 +162,9 @@ class SyncStatusView {
 
   /// Label of the manual action for this state.
   final String actionLabel;
+
+  /// False while a manual sync cannot work (the device is offline).
+  final bool canSyncNow;
 }
 
 SyncStatusView syncStatusView(
@@ -195,6 +223,7 @@ SyncStatusView syncStatusView(
         title: 'Cloud sync paused',
         subtitle:
             "You're offline. Changes will sync when you're connected again.",
+        canSyncNow: false,
       );
     case SyncEngineState.backendUnavailable:
       return SyncStatusView(
@@ -248,8 +277,16 @@ SyncStatusView syncStatusView(
         subtitle:
             status.message ?? 'Sync resumes after the session is refreshed.',
       );
-    case SyncEngineState.partialSuccess:
     case SyncEngineState.invalidData:
+      return SyncStatusView(
+        icon: Icons.error_outline,
+        color: tokens.error,
+        title: "Couldn't sync",
+        subtitle:
+            'Some data was set aside. It will not be retried until the data '
+            'is fixed or removed. Your changes are safe on this device.',
+      );
+    case SyncEngineState.partialSuccess:
     case SyncEngineState.error:
       return SyncStatusView(
         icon: Icons.error_outline,

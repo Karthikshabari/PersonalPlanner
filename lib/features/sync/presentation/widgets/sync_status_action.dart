@@ -141,10 +141,10 @@ class _SyncStatusActionState extends ConsumerState<SyncStatusAction>
 
   static IconData _icon(SyncEngineState state) => switch (state) {
     SyncEngineState.synced => Icons.cloud_done_outlined,
-    SyncEngineState.syncing ||
+    SyncEngineState.syncing => Icons.sync,
     SyncEngineState.pending ||
     SyncEngineState.initialSyncPending ||
-    SyncEngineState.refreshPaused => Icons.sync,
+    SyncEngineState.refreshPaused => Icons.schedule,
     SyncEngineState.offline ||
     SyncEngineState.backendUnavailable => Icons.cloud_off_outlined,
     SyncEngineState.error ||

@@ -3,15 +3,24 @@ import 'package:flutter/material.dart';
 import '../controllers/provisioning_ui_controller.dart';
 
 /// Asks before clearing the cloud setup on this device. Returns true only when
-/// the user pressed "Start over".
-Future<bool> showCloudSetupResetDialog(BuildContext context) async {
+/// the user pressed "Start over" (or "Use offline-only mode" when
+/// [offlineOnly] is set, which clears the same setup but says what the user
+/// chose).
+Future<bool> showCloudSetupResetDialog(
+  BuildContext context, {
+  bool offlineOnly = false,
+}) async {
   final result = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       key: const ValueKey('cloud-reset-dialog'),
-      title: const Text(cloudSetupResetDialogTitle),
-      content: const SingleChildScrollView(
-        child: Text(cloudSetupResetDialogBody),
+      title: Text(
+        offlineOnly ? cloudUseOfflineDialogTitle : cloudSetupResetDialogTitle,
+      ),
+      content: SingleChildScrollView(
+        child: Text(
+          offlineOnly ? cloudUseOfflineDialogBody : cloudSetupResetDialogBody,
+        ),
       ),
       actions: [
         TextButton(
@@ -22,7 +31,11 @@ Future<bool> showCloudSetupResetDialog(BuildContext context) async {
         FilledButton(
           key: const ValueKey('cloud-reset-confirm'),
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text(cloudSetupResetDialogConfirmLabel),
+          child: Text(
+            offlineOnly
+                ? cloudUseOfflineDialogConfirmLabel
+                : cloudSetupResetDialogConfirmLabel,
+          ),
         ),
       ],
     ),

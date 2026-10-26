@@ -806,7 +806,7 @@ void main() {
 
     expect(find.text('Cloud setup paused'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
-    expect(find.text('Start Again'), findsOneWidget);
+    expect(find.text('Start setup again'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('cloud-retry-action')));
     await _settle(tester);
@@ -840,7 +840,7 @@ void main() {
     await _pumpCard(tester, api: api, launcher: launcher);
 
     expect(find.text('Retry Supabase authorization'), findsOneWidget);
-    expect(find.text('Start Again'), findsNothing);
+    expect(find.text('Start setup again'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('cloud-retry-action')));
     await _settle(tester);
     expect(api.calls, contains('retryAuthorization'));
@@ -1300,7 +1300,7 @@ void main() {
     );
     await _pumpCard(tester, api: api, launcher: launcher);
 
-    expect(find.text('Start Setup Again'), findsOneWidget);
+    expect(find.text('Start setup again'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('cloud-restart-action')));
     await _settle(tester);
 

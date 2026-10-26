@@ -133,7 +133,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Cloud setup needs a retry'), findsOneWidget);
-      expect(find.text('Retry cloud setup'), findsOneWidget);
+      expect(find.text('Try again'), findsOneWidget);
       expect(find.byTooltip('Sync: Cloud setup pending'), findsOneWidget);
 
       await _teardown(tester, harness);
@@ -216,7 +216,7 @@ void main() {
 
     await tester.tap(find.text('Log out'));
     await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Log out'));
     await settle(tester);
 
     expect(find.text('Cloud account connected'), findsNothing);

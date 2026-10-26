@@ -125,8 +125,8 @@ class AnonymousDataAdoptionService {
         if (plan.conflicts.isNotEmpty) {
           final first = plan.conflicts.first;
           throw AnonymousDataAdoptionException(
-            'Anonymous data conflicts with ${first.table} ${first.id}. '
-            'Resolve it before importing anonymous data.',
+            'Offline-only data conflicts with ${first.table} ${first.id}. '
+            'Resolve it before importing offline-only data.',
           );
         }
         await BackupDatabaseApplier(_accountDatabase).applyMerge(plan);

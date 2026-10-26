@@ -66,9 +66,9 @@ const cloudSetupRetryableMessage =
     "Cloud setup couldn't continue right now. Your Planner data is safe "
     'locally. Try again.';
 const cloudSetupRestartMessage =
-    'This setup session expired. Start cloud setup again.';
+    'This setup session expired. Start setup again.';
 const cloudSetupMissingCapabilityMessage =
-    'This setup session can no longer be resumed. Start cloud setup again.';
+    'This setup session can no longer be resumed. Start setup again.';
 const cloudSetupTerminalMessage =
     "Cloud setup couldn't be completed. Start again or continue using Personal "
     'Planner locally.';
@@ -153,6 +153,15 @@ const cloudSetupResetDialogBody =
     'before it picks that project up.';
 const cloudSetupResetDialogKeepLabel = 'Keep current setup';
 const cloudSetupResetDialogConfirmLabel = 'Start over';
+const cloudUseOfflineDialogTitle = 'Use offline-only mode?';
+const cloudUseOfflineDialogBody =
+    'Personal Planner stops using the missing cloud project on this device. '
+    'You will see your offline-only planner until you set up cloud storage '
+    'again.\n\n'
+    'Kept: all your Planner data on this device, and every Supabase project '
+    'with its data. Nothing is deleted in Supabase.\n\n'
+    'Cleared on this device: the saved link to the missing project.';
+const cloudUseOfflineDialogConfirmLabel = 'Use offline-only mode';
 const cloudSetupResetDoneMessage =
     'Cloud setup was cleared. Your Planner data is unchanged.';
 const cloudSetupResetFailedMessage =
@@ -196,8 +205,9 @@ const cloudSetupDetailNotAvailable = 'not available';
 const cloudSetupReadyBody = 'Your Planner data can sync across your devices.';
 const cloudSetupDisconnectedBody =
     'Cloud sync is disconnected on this device. Your Planner data stays on '
-    'this device and your Supabase project was not deleted. Reconnect to the '
-    'same project to use it again.';
+    'this device and your Supabase project was not deleted. You will see your '
+    'offline-only planner. Your account data comes back when you reconnect or '
+    'sign in.';
 const cloudSetupReconnectedBody =
     'Reconnected to your cloud backend. Sign in to the account that owns this '
     'project to resume synchronization. Your Planner data was not changed.';

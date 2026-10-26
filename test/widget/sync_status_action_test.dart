@@ -68,19 +68,19 @@ void main() {
             tooltip: 'Sync: Syncing',
           ),
           SyncEngineState.pending: (
-            icon: Icons.sync,
+            icon: Icons.schedule,
             color: (t) => t.info,
             errorDot: false,
             tooltip: 'Sync: Pending',
           ),
           SyncEngineState.initialSyncPending: (
-            icon: Icons.sync,
+            icon: Icons.schedule,
             color: (t) => t.info,
             errorDot: false,
             tooltip: 'Sync: Cloud setup pending',
           ),
           SyncEngineState.refreshPaused: (
-            icon: Icons.sync,
+            icon: Icons.schedule,
             color: (t) => t.info,
             errorDot: false,
             tooltip: 'Sync: Waiting for session refresh',

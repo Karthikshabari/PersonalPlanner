@@ -257,7 +257,7 @@ class InitialSyncCoordinator {
           InitialSyncPhase.complete,
           clearClaim: true,
           nextMessage:
-              'The cloud baseline was already established. Normal sync resumes.',
+              'The first cloud sync was already done. Normal sync resumes.',
         );
         await _seedDefaultsWhenEmpty();
         return;
@@ -339,7 +339,7 @@ class InitialSyncCoordinator {
               : InitialSyncPhase.retryable,
           clearClaim: true,
           nextMessage: localMeaningful
-              ? 'Another device is establishing the cloud baseline for this '
+              ? 'Another device is doing the first cloud sync for this '
                     'account. Your local Planner data was not uploaded.'
               : 'Cloud setup is already in progress on another device. The '
                     'cloud copy is not treated as complete data yet.',
@@ -459,7 +459,7 @@ class InitialSyncCoordinator {
               : InitialSyncPhase.retryable,
           clearClaim: true,
           nextMessage: localDataPresent
-              ? 'Another device is establishing the cloud baseline for this '
+              ? 'Another device is doing the first cloud sync for this '
                     'account. Your local Planner data was not uploaded.'
               : 'Cloud setup is already in progress on another device. The '
                     'cloud copy is not treated as complete data yet.',
@@ -501,7 +501,7 @@ class InitialSyncCoordinator {
           InitialSyncPhase.retryable,
           clearClaim: true,
           nextMessage:
-              'The cloud reported an unexpected baseline state. Retry the '
+              'The cloud reported an unexpected first-sync state. Retry the '
               'first synchronization.',
         );
         return false;
@@ -510,7 +510,7 @@ class InitialSyncCoordinator {
           InitialSyncPhase.retryable,
           clearClaim: true,
           nextMessage:
-              'The cloud did not confirm the baseline claim. Retry the first '
+              'The cloud did not confirm the first sync. Retry the first '
               'synchronization.',
         );
         return false;
@@ -535,8 +535,8 @@ class InitialSyncCoordinator {
       await persist(
         InitialSyncPhase.retryable,
         nextMessage:
-            'The cloud did not confirm the completed baseline. Retry the first '
-            'synchronization.',
+            'The cloud did not confirm that the first sync finished. Retry the '
+            'first synchronization.',
       );
       return;
     }

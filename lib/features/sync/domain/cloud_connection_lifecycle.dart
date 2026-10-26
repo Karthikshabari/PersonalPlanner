@@ -49,6 +49,8 @@ const cloudDisconnectConfirmation =
     '• Your Supabase project and its cloud data are not deleted.\n'
     '• You are signed out of your Planner account on this device and sync '
     'stops.\n'
+    '• You will see your offline-only planner. Your account data comes back '
+    'when you reconnect or sign in.\n'
     '• You can reconnect later; reconnecting to the same project reuses this '
     'device\'s Planner data.';
 const cloudDisconnectFailedMessage =
@@ -77,7 +79,7 @@ const cloudReconnectTitle = 'Reconnect';
 const cloudReconnectExplanation =
     'Connect this device to the same user-owned Supabase project again. The '
     'local Planner data of that project is reused; nothing is uploaded until '
-    'you sign in and the existing first-sync baseline is confirmed.';
+    'you sign in and the first sync is confirmed.';
 
 /// True when [profile] is a remembered backend this installation may reconnect
 /// to without provisioning anything new.

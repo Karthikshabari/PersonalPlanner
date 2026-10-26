@@ -37,7 +37,7 @@ void main() {
   }
 
   testWidgets(
-    'idle healthy state shows synced without a timestamp or animation',
+    'idle healthy state shows synced with a stable clock time and no animation',
     (tester) async {
       await pumpPanel(
         tester,
@@ -49,7 +49,7 @@ void main() {
 
       expect(find.text('Synced'), findsOneWidget);
       expect(find.text('Your Planner data is synchronized.'), findsOneWidget);
-      expect(find.textContaining('Last synced'), findsNothing);
+      expect(find.text('Last synced 21:47'), findsOneWidget);
       // Idle never animates, even though sync is enabled.
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(find.byType(LinearProgressIndicator), findsNothing);
@@ -140,7 +140,7 @@ void main() {
 
     expect(find.text('Waiting to sync'), findsOneWidget);
     expect(find.text('3 changes are waiting to sync.'), findsOneWidget);
-    expect(find.textContaining('Last synced'), findsNothing);
+    expect(find.text('Last synced 21:00'), findsOneWidget);
     expect(
       find.text('Changes will sync when the cloud connection is available.'),
       findsOneWidget,
@@ -235,7 +235,7 @@ void main() {
     expect(find.textContaining('Project unavailable'), findsNothing);
   });
 
-  testWidgets('the sync panel never exposes the last-sync timestamp', (
+  testWidgets('the last-synced time is a stable clock, never relative', (
     tester,
   ) async {
     await pumpPanel(
@@ -246,14 +246,14 @@ void main() {
       ),
     );
     expect(find.text('Synced'), findsOneWidget);
-    expect(find.textContaining('Last synced'), findsNothing);
+    expect(find.text('Last synced 21:47'), findsOneWidget);
 
     // Any relative wording ("just now", "5 minutes ago") would have changed
     // here, and a pending per-second timer would fail the test at teardown.
     await tester.pump(const Duration(minutes: 5));
     await tester.pump(const Duration(hours: 3));
     expect(find.text('Synced'), findsOneWidget);
-    expect(find.textContaining('Last synced'), findsNothing);
+    expect(find.text('Last synced 21:47'), findsOneWidget);
     expect(find.textContaining('ago'), findsNothing);
     expect(find.textContaining('Just now'), findsNothing);
   });

@@ -63,7 +63,7 @@ void main() {
     if (directory.existsSync()) directory.deleteSync(recursive: true);
   });
 
-  testWidgets('Log out asks first; Cancel keeps the session, Sign out ends it', (
+  testWidgets('Log out asks first; Cancel keeps the session, Log out ends it', (
     tester,
   ) async {
     final harness = await _pump(
@@ -80,9 +80,10 @@ void main() {
     await tester.ensureVisible(logOut);
     await tester.tap(logOut);
     await settle(tester);
-    expect(find.text('Sign out?'), findsOneWidget);
+    expect(find.text('Log out?'), findsOneWidget);
     expect(
       find.text(
+        'Signed in as person@example.com.\n\n'
         'Your planner data stays on this device but is hidden until you sign '
         'in again.',
       ),
@@ -91,12 +92,12 @@ void main() {
 
     await tester.tap(find.text('Cancel'));
     await settle(tester);
-    expect(find.text('Sign out?'), findsNothing);
+    expect(find.text('Log out?'), findsNothing);
     expect(harness.client.signOutCalls, 0);
 
     await tester.tap(logOut);
     await settle(tester);
-    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Log out'));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
