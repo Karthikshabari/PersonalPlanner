@@ -46,6 +46,44 @@ void main() {
     await finish(tester, container);
   });
 
+  // FB03 B63: Enter in the name field saves like the Save button.
+  testWidgets('Enter in the template name field saves the template', (
+    tester,
+  ) async {
+    final container = await pumpTemplates(tester);
+
+    await tester.tap(find.byKey(const ValueKey('add-template-fab')));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('template-form-name')),
+      'Quick Win',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+
+    expect(find.byKey(const ValueKey('template-form-save')), findsNothing);
+    final all = await runDb(
+      tester,
+      () => container.read(templateRepositoryProvider).getAllTemplates(),
+    );
+    expect(all.map((t) => t.name), contains('Quick Win'));
+    await finish(tester, container);
+  });
+
+  testWidgets('Enter on a blank template name shows the same error', (
+    tester,
+  ) async {
+    final container = await pumpTemplates(tester);
+
+    await tester.tap(find.byKey(const ValueKey('add-template-fab')));
+    await settle(tester);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+
+    expect(find.text('Template name must not be blank.'), findsOneWidget);
+    await finish(tester, container);
+  });
+
   testWidgets('create a template via the FAB form', (tester) async {
     final container = await pumpTemplates(tester);
 

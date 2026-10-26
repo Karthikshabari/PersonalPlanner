@@ -49,22 +49,6 @@ String pageSearchSnippet(String text, String needle, {int max = 90}) {
       '${cutRight ? '…' : ''}';
 }
 
-/// Keys for a result list.
-///
-/// The planner's global shortcuts bind Enter, Space and the arrows above every
-/// screen; wrapping a result list in [Shortcuts] with this map lets a focused
-/// row activate and move focus instead.
-const pageSearchResultKeys = <ShortcutActivator, Intent>{
-  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-  SingleActivator(LogicalKeyboardKey.arrowUp): DirectionalFocusIntent(
-    TraversalDirection.up,
-  ),
-  SingleActivator(LogicalKeyboardKey.arrowDown): DirectionalFocusIntent(
-    TraversalDirection.down,
-  ),
-};
-
 /// Ctrl/Cmd+Enter would reach the global save-and-close from the field.
 const _fieldKeys = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter, control: true):

@@ -192,19 +192,19 @@ abstract final class PlannerShortcutRegistry {
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.saveAndClose,
       shortcut: 'Ctrl+Enter',
-      description: 'Save and close the task editor',
+      description: 'Save the form you are in (task editor, reviews, Inbox)',
       activators: [SingleActivator(LogicalKeyboardKey.enter, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.escape,
       shortcut: 'Esc',
-      description: 'Close the editor, cancel a drag, or dismiss a dialog',
+      description: 'Close a dialog or menu, the editor, or cancel a drag',
       activators: [SingleActivator(LogicalKeyboardKey.escape)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.week,
       shortcut: 'W',
-      description: 'Switch to Week view',
+      description: 'Switch between Day and Week view',
       activators: [SingleActivator(LogicalKeyboardKey.keyW)],
     ),
     PlannerShortcutDefinition(
@@ -249,7 +249,8 @@ class _PlannerIntent extends Intent {
   const _PlannerIntent(this.action);
 }
 
-/// Keeps planner bindings out of the way of Flutter's text-editing shortcuts.
+/// Keeps planner bindings out of the way of Flutter's text-editing shortcuts
+/// and of the focused control.
 ///
 /// A [Shortcuts] widget below [DefaultTextEditingShortcuts] takes precedence
 /// over the framework's default editing bindings. Returning from an action
@@ -258,17 +259,31 @@ class _PlannerIntent extends Intent {
 /// continue to the text-editing shortcut manager instead. Search is the one
 /// exception while the current page has a page search, so Ctrl+F also works
 /// from a text field there.
+///
+/// The same holds for the keys that the app's default bindings give to
+/// dialogs, menus and buttons (Esc, Enter, Space, the arrows): the planner
+/// manager sits closer to the focus than those defaults, so it ignores the
+/// event when the focus owns the key. Off desktop nothing is matched at all.
 class _PlannerShortcutManager extends ShortcutManager {
+  final bool Function() isDesktop;
   final bool Function() isEditableFocused;
+  final bool Function() focusOwnsPopupRoute;
+  final bool Function(KeyEvent event) focusOwnsKey;
   final bool Function() pageSearchAvailable;
 
   _PlannerShortcutManager({
+    required this.isDesktop,
     required this.isEditableFocused,
+    required this.focusOwnsPopupRoute,
+    required this.focusOwnsKey,
     required this.pageSearchAvailable,
   }) : super(shortcuts: PlannerShortcutRegistry.bindings);
 
   @override
   KeyEventResult handleKeypress(BuildContext context, KeyEvent event) {
+    if (!isDesktop() || focusOwnsPopupRoute() || focusOwnsKey(event)) {
+      return KeyEventResult.ignored;
+    }
     if (isEditableFocused()) {
       for (final entry in shortcuts.entries) {
         if (!entry.key.accepts(event, HardwareKeyboard.instance)) continue;
@@ -306,7 +321,10 @@ class _KeyboardShortcutHandlerState
   void initState() {
     super.initState();
     _shortcutManager = _PlannerShortcutManager(
+      isDesktop: () => _isDesktop,
       isEditableFocused: _focusOwnsEditableControl,
+      focusOwnsPopupRoute: _focusOwnsPopupRoute,
+      focusOwnsKey: _focusOwnsKey,
       pageSearchAvailable: () => _pageSearch.current != null,
     );
   }
@@ -364,6 +382,51 @@ class _KeyboardShortcutHandlerState
     final focusContext = FocusManager.instance.primaryFocus?.context;
     if (focusContext == null) return false;
     return ModalRoute.of(focusContext) is PopupRoute<void>;
+  }
+
+  /// True when the focused control uses [event] itself: Enter and Space on
+  /// anything that handles [ActivateIntent], and the arrows on that or on a
+  /// menu, slider or segmented control. Keys with a modifier stay planner
+  /// shortcuts.
+  bool _focusOwnsKey(KeyEvent event) {
+    final key = event.logicalKey;
+    final activates =
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space;
+    final arrow =
+        key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight ||
+        key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown;
+    if (!activates && !arrow) return false;
+    final keyboard = HardwareKeyboard.instance;
+    if (keyboard.isControlPressed ||
+        keyboard.isShiftPressed ||
+        keyboard.isAltPressed ||
+        keyboard.isMetaPressed) {
+      return false;
+    }
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+    if (Actions.maybeFind<ActivateIntent>(focusContext) != null) return true;
+    if (!arrow) return false;
+    bool usesArrows(Widget widget) =>
+        widget is MenuAnchor ||
+        widget is MenuBar ||
+        widget is Slider ||
+        widget is RangeSlider ||
+        widget is SegmentedButton;
+    if (usesArrows(focusContext.widget)) return true;
+    var owns = false;
+    focusContext.visitAncestorElements((element) {
+      if (usesArrows(element.widget)) {
+        owns = true;
+        return false;
+      }
+      return true;
+    });
+    return owns;
   }
 
   bool _isBlocked(PlannerShortcutAction action) {

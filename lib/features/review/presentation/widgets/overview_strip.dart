@@ -286,12 +286,6 @@ class OverviewTileFrame extends StatefulWidget {
 }
 
 class _OverviewTileFrameState extends State<OverviewTileFrame> {
-  static const _shortcuts = <ShortcutActivator, Intent>{
-    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-    SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
-    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-  };
-
   late bool _selected = widget.selected.value;
   bool _hovered = false;
   bool _focused = false;
@@ -364,7 +358,6 @@ class _OverviewTileFrameState extends State<OverviewTileFrame> {
       excludeSemantics: true,
       child: FocusableActionDetector(
         mouseCursor: SystemMouseCursors.click,
-        shortcuts: _shortcuts,
         actions: _actions,
         onShowHoverHighlight: (value) => setState(() => _hovered = value),
         onShowFocusHighlight: (value) => setState(() => _focused = value),

@@ -271,6 +271,41 @@ void main() {
     await finish(tester, container);
   });
 
+  // FB03 B63: Enter in the name field saves like the Save button.
+  testWidgets('Enter in the name field saves the category', (tester) async {
+    final container = await pumpCategories(tester);
+
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('category-name')),
+      'Reading',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+
+    expect(find.byKey(const ValueKey('save-category')), findsNothing);
+    expect(await categoryNames(tester, container), contains('Reading'));
+    await finish(tester, container);
+  });
+
+  testWidgets('Enter on a blank name shows the same inline error', (
+    tester,
+  ) async {
+    final container = await pumpCategories(tester);
+    final before = await categoryNames(tester, container);
+
+    await tester.tap(find.byKey(const ValueKey('add-category')));
+    await settle(tester);
+    await tester.enterText(find.byKey(const ValueKey('category-name')), '  ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+
+    expect(nameFieldText('Enter a category name'), findsOneWidget);
+    expect(await categoryNames(tester, container), before);
+    await finish(tester, container);
+  });
+
   testWidgets('a blank name shows an inline error instead of doing nothing', (
     tester,
   ) async {

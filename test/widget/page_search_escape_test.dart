@@ -140,8 +140,9 @@ void main() {
   });
 
   // Today the planner's own Esc binding consumes the key above a dialog, so
-  // Esc does not dismiss the dialog itself; that is unchanged here. What this
-  // fix owes is that page search stays open while a dialog has focus.
+  // Esc dismisses the dialog (FB03/B02) and is not also run as the global
+  // escape. What UAT-002 owes is that page search stays open while a dialog
+  // has focus.
   _desktopTest('dialog on top: Esc leaves page search open', (tester) async {
     await tester.pumpWidget(_app());
     await _pushProbe(tester);
@@ -157,12 +158,10 @@ void main() {
 
     await _esc(tester);
 
-    expect(controller.isOpen.value, isTrue);
-    expect(_cancelRequests(tester), before + 1);
-
-    appNavigatorKey.currentState!.pop();
-    await tester.pumpAndSettle();
     expect(find.text('dialog body'), findsNothing);
+    expect(controller.isOpen.value, isTrue);
+    expect(_cancelRequests(tester), before);
+
     expect(controller.isOpen.value, isTrue);
 
     await _esc(tester);

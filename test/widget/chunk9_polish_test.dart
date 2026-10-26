@@ -188,11 +188,14 @@ void main() {
     );
     expect(find.text('Ctrl+↑'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('Save and close the task editor'),
+      find.text('Save the form you are in (task editor, reviews, Inbox)'),
       300,
       scrollable: find.byType(Scrollable).last,
     );
-    expect(find.text('Save and close the task editor'), findsOneWidget);
+    expect(
+      find.text('Save the form you are in (task editor, reviews, Inbox)'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Close'));
     await finish(tester, container);

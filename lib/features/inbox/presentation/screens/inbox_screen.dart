@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/search/page_search.dart';
@@ -23,16 +22,6 @@ enum _Segment { open, done, dropped }
 
 /// How many Done (or Dropped) rows show before "Show 30 more".
 const _donePage = 30;
-
-/// The desktop planner binds Enter ("edit the selected task") and Space
-/// ("cycle its status") above every screen, and those would swallow the key
-/// before a focused row or button could use it. Inside the Inbox, Enter and
-/// Space activate the focused control again; a text field has no activate
-/// action, so typing is untouched.
-const _activateKeys = <ShortcutActivator, Intent>{
-  SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-  SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-};
 
 /// The few board values the screen itself needs. Equal when the sections and
 /// counts are equal, so a change inside one row never rebuilds the screen;
@@ -384,65 +373,62 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         title: const PageSearchTitle('Inbox'),
         actions: const [PageSearchAction(), SyncStatusAction()],
       ),
-      body: Shortcuts(
-        shortcuts: _activateKeys,
-        child: ColoredBox(
-          color: tokens.canvas,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: experimentColumnMaxWidth,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const InboxQuickAdd(),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: SegmentedButton<_Segment>(
-                          key: const ValueKey('inbox-segments'),
-                          showSelectedIcon: false,
-                          style: SegmentedButton.styleFrom(
-                            minimumSize: const Size(0, 44),
-                          ),
-                          segments: [
-                            _segmentOf(
-                              _Segment.open,
-                              'Open',
-                              state.loaded
-                                  ? matches?.open ?? state.openCount
-                                  : null,
-                            ),
-                            _segmentOf(
-                              _Segment.done,
-                              'Done',
-                              state.loaded
-                                  ? matches?.done ?? state.done.length
-                                  : null,
-                            ),
-                            _segmentOf(
-                              _Segment.dropped,
-                              'Dropped',
-                              state.loaded
-                                  ? matches?.dropped ?? state.dropped.length
-                                  : null,
-                            ),
-                          ],
-                          selected: {_segment},
-                          onSelectionChanged: (selection) =>
-                              setState(() => _segment = selection.first),
+      body: ColoredBox(
+        color: tokens.canvas,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: experimentColumnMaxWidth,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const InboxQuickAdd(),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SegmentedButton<_Segment>(
+                        key: const ValueKey('inbox-segments'),
+                        showSelectedIcon: false,
+                        style: SegmentedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
                         ),
+                        segments: [
+                          _segmentOf(
+                            _Segment.open,
+                            'Open',
+                            state.loaded
+                                ? matches?.open ?? state.openCount
+                                : null,
+                          ),
+                          _segmentOf(
+                            _Segment.done,
+                            'Done',
+                            state.loaded
+                                ? matches?.done ?? state.done.length
+                                : null,
+                          ),
+                          _segmentOf(
+                            _Segment.dropped,
+                            'Dropped',
+                            state.loaded
+                                ? matches?.dropped ?? state.dropped.length
+                                : null,
+                          ),
+                        ],
+                        selected: {_segment},
+                        onSelectionChanged: (selection) =>
+                            setState(() => _segment = selection.first),
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Expanded(child: body),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Expanded(child: body),
+                ],
               ),
             ),
           ),

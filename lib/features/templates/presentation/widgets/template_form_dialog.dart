@@ -134,6 +134,7 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
                 key: const ValueKey('template-form-name'),
                 controller: _nameController,
                 autofocus: true,
+                onSubmitted: (_) => _save(),
                 decoration: const InputDecoration(labelText: 'Name'),
               ),
               const SizedBox(height: AppSpacing.md),

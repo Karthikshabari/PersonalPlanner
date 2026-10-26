@@ -80,28 +80,25 @@ class _ReviewSearchResultsState extends ConsumerState<ReviewSearchResults> {
     }
     final shown = hits.length < _shown ? hits.length : _shown;
     return FocusTraversalGroup(
-      child: Shortcuts(
-        shortcuts: pageSearchResultKeys,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final hit in hits.take(shown))
-              _ResultCard(
-                hit: hit,
-                weekly: widget.weekly,
-                onTap: () => widget.onOpen(hit.date),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final hit in hits.take(shown))
+            _ResultCard(
+              hit: hit,
+              weekly: widget.weekly,
+              onTap: () => widget.onOpen(hit.date),
+            ),
+          if (shown < hits.length)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                key: const ValueKey('review-search-more'),
+                onPressed: () => setState(() => _shown += _pageSize),
+                child: Text('Show $_pageSize more'),
               ),
-            if (shown < hits.length)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  key: const ValueKey('review-search-more'),
-                  onPressed: () => setState(() => _shown += _pageSize),
-                  child: Text('Show $_pageSize more'),
-                ),
-              ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

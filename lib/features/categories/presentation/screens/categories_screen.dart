@@ -166,6 +166,75 @@ class CategoriesScreen extends ConsumerWidget {
     String? saveError;
     final repo = ref.read(categoryRepositoryProvider);
 
+    var saving = false;
+    Future<void> save(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      if (saving) return;
+      saving = true;
+      try {
+        final name = nameController.text.trim();
+        final error = name.isEmpty
+            ? 'Enter a category name'
+            : name.length > AppConstants.maxCategoryNameLength
+            ? 'Name must be ${AppConstants.maxCategoryNameLength} '
+                  'characters or fewer'
+            : null;
+        setDialogState(() {
+          nameError = error;
+          saveError = null;
+        });
+        if (error != null) return;
+        // Duplicates stay allowed, but only after a warning (F-012).
+        if (_hasCategoryNamed(
+          ref.read(categoriesProvider).value,
+          name,
+          excludingId: existing?.id,
+        )) {
+          final createAnyway = await _confirmDuplicateName(
+            dialogContext,
+            name,
+            renaming: existing != null,
+          );
+          if (createAnyway != true || !dialogContext.mounted) return;
+        }
+        try {
+          if (existing == null) {
+            final current =
+                ref.read(categoriesProvider).value ?? const <Category>[];
+            await repo.insertCategory(
+              Category(
+                id: '',
+                name: name,
+                colorHex: selectedColor,
+                sortOrder: current.isEmpty
+                    ? 0
+                    : current
+                              .map((c) => c.sortOrder)
+                              .reduce((a, b) => a > b ? a : b) +
+                          1,
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+              ),
+            );
+          } else {
+            await repo.updateCategory(
+              existing.copyWith(name: name, colorHex: selectedColor),
+            );
+          }
+        } catch (error) {
+          if (dialogContext.mounted) {
+            setDialogState(() => saveError = friendlyErrorMessage(error));
+          }
+          return;
+        }
+        if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+      } finally {
+        saving = false;
+      }
+    }
+
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -177,6 +246,7 @@ class CategoriesScreen extends ConsumerWidget {
               TextField(
                 key: const ValueKey('category-name'),
                 controller: nameController,
+                onSubmitted: (_) => save(dialogContext, setDialogState),
                 maxLength: AppConstants.maxCategoryNameLength,
                 maxLengthEnforcement: MaxLengthEnforcement.none,
                 onChanged: (_) {
@@ -222,67 +292,7 @@ class CategoriesScreen extends ConsumerWidget {
             ),
             FilledButton(
               key: const ValueKey('save-category'),
-              onPressed: () async {
-                final name = nameController.text.trim();
-                final error = name.isEmpty
-                    ? 'Enter a category name'
-                    : name.length > AppConstants.maxCategoryNameLength
-                    ? 'Name must be ${AppConstants.maxCategoryNameLength} '
-                          'characters or fewer'
-                    : null;
-                setDialogState(() {
-                  nameError = error;
-                  saveError = null;
-                });
-                if (error != null) return;
-                // Duplicates stay allowed, but only after a warning (F-012).
-                if (_hasCategoryNamed(
-                  ref.read(categoriesProvider).value,
-                  name,
-                  excludingId: existing?.id,
-                )) {
-                  final createAnyway = await _confirmDuplicateName(
-                    dialogContext,
-                    name,
-                    renaming: existing != null,
-                  );
-                  if (createAnyway != true || !dialogContext.mounted) return;
-                }
-                try {
-                  if (existing == null) {
-                    final current =
-                        ref.read(categoriesProvider).value ??
-                        const <Category>[];
-                    await repo.insertCategory(
-                      Category(
-                        id: '',
-                        name: name,
-                        colorHex: selectedColor,
-                        sortOrder: current.isEmpty
-                            ? 0
-                            : current
-                                      .map((c) => c.sortOrder)
-                                      .reduce((a, b) => a > b ? a : b) +
-                                  1,
-                        createdAt: DateTime.now(),
-                        updatedAt: DateTime.now(),
-                      ),
-                    );
-                  } else {
-                    await repo.updateCategory(
-                      existing.copyWith(name: name, colorHex: selectedColor),
-                    );
-                  }
-                } catch (error) {
-                  if (dialogContext.mounted) {
-                    setDialogState(
-                      () => saveError = friendlyErrorMessage(error),
-                    );
-                  }
-                  return;
-                }
-                if (dialogContext.mounted) Navigator.of(dialogContext).pop();
-              },
+              onPressed: () => save(dialogContext, setDialogState),
               child: const Text('Save'),
             ),
           ],
