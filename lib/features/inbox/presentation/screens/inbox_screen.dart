@@ -302,7 +302,9 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         child: Center(
           child: Text(
             switch (_segment) {
-              _Segment.open => 'Nothing open. Type an idea above.',
+              _Segment.open =>
+                'Nothing open. Type an idea above. An idea can get a dated '
+                    'session that becomes a block on Day.',
               _Segment.done => 'Nothing finished yet.',
               _Segment.dropped => 'Nothing dropped.',
             },
@@ -396,6 +398,9 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                         showSelectedIcon: false,
                         style: SegmentedButton.styleFrom(
                           minimumSize: const Size(0, 44),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.md,
+                          ),
                         ),
                         segments: [
                           _segmentOf(

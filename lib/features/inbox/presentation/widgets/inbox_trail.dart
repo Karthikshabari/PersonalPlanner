@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,6 +35,9 @@ String _shortDayText(DateTime instant) =>
 String _clockText(DateTime instant) =>
     formatClock24(PlannerTimeZone.toPlannerLocal(instant));
 
+/// How many trail lines show before the earlier ones fold away.
+const _foldAfterEntries = 6;
+
 enum _Panel { none, dates, close, letGo }
 
 enum _Action {
@@ -61,8 +66,18 @@ class InboxTrail extends ConsumerStatefulWidget {
 class _InboxTrailState extends ConsumerState<InboxTrail> {
   _Panel _panel = _Panel.none;
   bool _busy = false;
+  bool _showEarlier = false;
   String? _error;
   final _footerFocus = FocusNode(debugLabel: 'inbox-footer-first');
+
+  @override
+  void initState() {
+    super.initState();
+    // Picks left unsaved when another idea was opened bring their panel back.
+    if (ref.read(inboxDatesDraftProvider(widget.view.item.id)) != null) {
+      _panel = _Panel.dates;
+    }
+  }
 
   @override
   void dispose() {
@@ -178,6 +193,7 @@ class _InboxTrailState extends ConsumerState<InboxTrail> {
     final textTheme = Theme.of(context).textTheme;
     final lineStyle = textTheme.bodySmall;
 
+    final description = inboxSessionText(view.item.text).description;
     final entries = <_Entry>[
       _Entry(
         view.item.createdAt,
@@ -210,6 +226,10 @@ class _InboxTrailState extends ConsumerState<InboxTrail> {
       ],
     ]..sort(_Entry.compare);
 
+    // A long trail shows its latest lines; the rest is one tap away.
+    final hidden = _showEarlier
+        ? 0
+        : math.max(0, entries.length - _foldAfterEntries);
     final actions = _actions(view);
     final footer = switch (_panel) {
       _Panel.dates => Padding(
@@ -220,6 +240,8 @@ class _InboxTrailState extends ConsumerState<InboxTrail> {
           onSaved: () => setState(() => _panel = _Panel.none),
           onCancel: _closePanel,
           onStartExperiment: () {
+            ref.read(inboxDatesDraftProvider(view.item.id).notifier).state =
+                null;
             setState(() => _panel = _Panel.none);
             _startExperiment();
           },
@@ -255,7 +277,29 @@ class _InboxTrailState extends ConsumerState<InboxTrail> {
       key: ValueKey('inbox-trail-${view.item.id}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final entry in entries)
+        if (description != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+              description,
+              key: ValueKey('inbox-description-${view.item.id}'),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: lineStyle?.copyWith(
+                color: AppThemeTokens.of(context).textMuted,
+              ),
+            ),
+          ),
+        if (hidden > 0)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const ValueKey('inbox-show-earlier'),
+              onPressed: () => setState(() => _showEarlier = true),
+              child: Text('Show earlier ($hidden)'),
+            ),
+          ),
+        for (final entry in entries.skip(hidden))
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
             child: entry.child,

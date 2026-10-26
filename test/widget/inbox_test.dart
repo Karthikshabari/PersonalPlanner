@@ -522,7 +522,10 @@ void main() {
       tester,
     ) async {
       final (container, _) = await pumpInbox(tester);
-      expect(find.text('Nothing open. Type an idea above.'), findsOneWidget);
+      expect(
+        find.textContaining('Nothing open. Type an idea above.'),
+        findsOneWidget,
+      );
       expect(find.text('Open (0)'), findsOneWidget);
       expect(find.text('Done (0)'), findsOneWidget);
       expect(find.text('Dropped (0)'), findsOneWidget);
@@ -598,7 +601,7 @@ void main() {
       expect(find.text('Finished idea'), findsNothing);
       expect(find.text('Closed idea'), findsNothing);
       // The Left over row says when it was missed.
-      expect(find.text('Missed Sat, Oct 10 · 09:00'), findsOneWidget);
+      expect(find.text('Sat, Oct 10 · 09:00'), findsOneWidget);
       expect(find.text('Next Wed, Oct 14 · 09:00 · 1 session'), findsOneWidget);
 
       await pickSegment(tester, 'Done (1)');

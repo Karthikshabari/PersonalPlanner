@@ -9,6 +9,7 @@ import '../../../core/providers/reactive_stats_stream.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
 import '../data/inbox_repository.dart';
 import '../domain/inbox_board.dart';
+import '../domain/inbox_dates.dart';
 import '../domain/inbox_source.dart';
 import '../../../core/providers/database_provider.dart';
 import '../../../core/utils/date_utils.dart';
@@ -274,6 +275,13 @@ final inboxBoardProvider = Provider.autoDispose<AsyncValue<InboxBoard>>((ref) {
 
 /// The idea whose trail is open; only one at a time.
 final inboxExpandedItemProvider = StateProvider<String?>((ref) => null);
+
+/// The unsaved picks of an idea's dates panel, by idea id. Kept here so that
+/// opening another idea does not lose them; cleared by Save and Cancel, and
+/// gone on restart.
+final inboxDatesDraftProvider = StateProvider.family<InboxDatesDraft?, String>(
+  (ref, id) => null,
+);
 
 /// Set by Search to open the Inbox with this idea expanded.
 final inboxFocusItemProvider = StateProvider<String?>((ref) => null);

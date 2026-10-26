@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/providers/database_provider.dart';
+import '../../../../core/widgets/app_toast.dart';
 import 'inbox_capture_editor.dart';
 import '../../providers/inbox_provider.dart';
 
@@ -53,6 +54,7 @@ Future<void> showInboxEditDialog(
         constraints: const BoxConstraints(maxWidth: 520),
         child: InboxCaptureEditor(
           title: 'Edit Inbox capture',
+          note: 'Sessions already placed on Day keep their old title.',
           initialContent: initialContent,
           onSubmit: (content, _) async {
             final snapshot = await repository.getTaskWithRevision(taskId);
@@ -90,6 +92,7 @@ class _InboxQuickAddState extends ConsumerState<InboxQuickAdd> {
       initialContent: _draft.state,
       onDraftChanged: (text) => _draft.state = text,
       onSubmit: (content, _) => _repository.addToInbox(content),
+      onCommitted: () => showAppToast(context, 'Added to Ideas'),
     );
   }
 }

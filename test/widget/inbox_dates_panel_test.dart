@@ -9,6 +9,7 @@ import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
+import 'package:personal_planner/features/inbox/providers/inbox_provider.dart';
 
 import '../helpers/inbox_fixtures.dart';
 import '../helpers/inbox_screen_harness.dart';
@@ -133,26 +134,131 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('today is off once 09:00 has passed and on again at 23:00', (
+  testWidgets(
+    'today is offered at the next whole hour, with a reason when off',
+    (tester) async {
+      late Task idea;
+      final (container, _) = await pumpInbox(
+        tester,
+        seed: (h) async => idea = await h.idea('Research SAP'),
+      );
+      await openDates(tester, idea);
+      // It is 12:00, so 09:00 has passed and the default is 13:00.
+      expect(find.text('Time for all 13:00 ▾'), findsOneWidget);
+      expect(enabled(tester, '2026-10-12'), isTrue);
+      expect(find.byKey(const ValueKey('inbox-today-off')), findsNothing);
+      await tapChip(tester, '2026-10-12');
+      expect(pickedDates(tester), ['2026-10-12']);
+      expect(find.text('13:00 ▾'), findsOneWidget);
+      await tapChip(tester, '2026-10-12');
+
+      await setAllTime(tester, 9, 0);
+      expect(enabled(tester, '2026-10-12'), isFalse);
+      expect(enabled(tester, '2026-10-13'), isTrue);
+      expect(find.textContaining('Pick a later time for all'), findsOneWidget);
+      await finish(tester, container);
+    },
+  );
+
+  testWidgets('today stays off with a visible reason after 23:00', (
     tester,
   ) async {
     late Task idea;
     final (container, _) = await pumpInbox(
       tester,
+      clock: () =>
+          PlannerTimeZone.calendarDate(2026, 10, 12, hour: 23, minute: 30),
       seed: (h) async => idea = await h.idea('Research SAP'),
     );
     await openDates(tester, idea);
-    // The default time is 09:00 and it is 12:00 now.
+    expect(find.text('Time for all 09:00 ▾'), findsOneWidget);
     expect(enabled(tester, '2026-10-12'), isFalse);
-    expect(enabled(tester, '2026-10-13'), isTrue);
+    expect(find.textContaining('no time is left today'), findsOneWidget);
+    await finish(tester, container);
+  });
 
-    await setAllTime(tester, 23, 0);
-    expect(find.text('Time for all 23:00 ▾'), findsOneWidget);
-    expect(enabled(tester, '2026-10-12'), isTrue);
-    await tapChip(tester, '2026-10-12');
-    expect(pickedDates(tester), ['2026-10-12']);
-    expect(find.text('23:00 ▾'), findsOneWidget);
+  testWidgets('Edit dates keeps each session length and Length changes them', (
+    tester,
+  ) async {
+    late Task idea;
+    final (container, h) = await pumpInbox(
+      tester,
+      seed: (h) async {
+        idea = await h.idea('Research SAP');
+        await h.session(idea.id, start: h.at(2, 9), minutes: 30);
+        await h.session(idea.id, start: h.at(3, 9), minutes: 120);
+      },
+    );
+    await openDates(tester, idea);
+    await tapChip(tester, '2026-10-16');
+    await save(tester);
+    List<int> lengths(List<Task> tasks) => [
+      for (final t in tasks) t.endTime!.difference(t.startTime!).inMinutes,
+    ];
+    expect(lengths(await liveSessions(tester, h, idea.id)), [30, 120, 30]);
+
+    await tester.tap(find.byKey(const ValueKey('inbox-action-dates')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('inbox-length-90')));
+    await settle(tester);
+    await save(tester);
+    expect(lengths(await liveSessions(tester, h, idea.id)), [90, 90, 90]);
+    await finish(tester, container);
+  });
+
+  testWidgets('a left over idea opens with tomorrow at its last missed slot', (
+    tester,
+  ) async {
+    late Task idea;
+    final (container, h) = await pumpInbox(
+      tester,
+      seed: (h) async {
+        idea = await h.idea('Research SAP');
+        await h.session(idea.id, start: h.at(-3, 9), minutes: 30);
+        await h.session(idea.id, start: h.at(-1, 15), minutes: 90);
+      },
+    );
+    await openDates(tester, idea);
+    expect(pickedDates(tester), ['2026-10-13']);
+    expect(find.text('Time for all 15:00 ▾'), findsOneWidget);
     expect(submitEnabled(tester), isTrue);
+    await save(tester);
+    final sessions = await liveSessions(tester, h, idea.id);
+    expect(sessions.last.startTime, sameInstant(h.at(1, 15)));
+    expect(sessions.last.endTime, sameInstant(h.at(1, 16, 30)));
+    await finish(tester, container);
+  });
+
+  testWidgets('the picks of one idea survive opening another', (tester) async {
+    late Task first;
+    late Task second;
+    final (container, _) = await pumpInbox(
+      tester,
+      seed: (h) async {
+        first = await h.idea('First idea');
+        second = await h.idea('Second idea');
+      },
+    );
+    await openDates(tester, first);
+    await tapChip(tester, '2026-10-14');
+    await expandRow(tester, second.id);
+    await expandRow(tester, first.id);
+    expect(pickedDates(tester), ['2026-10-14']);
+    expect(submitEnabled(tester), isTrue);
+
+    await tester.tap(find.byKey(const ValueKey('inbox-panel-cancel')));
+    await settle(tester);
+    expect(container.read(inboxDatesDraftProvider(first.id)), isNull);
+    await expandRow(tester, second.id);
+    await expandRow(tester, first.id);
+    expect(find.byKey(const ValueKey('inbox-dates-panel')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('inbox-action-dates')));
+    await settle(tester);
+    await tapChip(tester, '2026-10-15');
+    expect(container.read(inboxDatesDraftProvider(first.id)), isNotNull);
+    await save(tester);
+    expect(container.read(inboxDatesDraftProvider(first.id)), isNull);
     await finish(tester, container);
   });
 
@@ -245,12 +351,12 @@ void main() {
           ),
         )
         .data!;
-    expect(timeOf('2026-10-14'), '09:00 ▾');
+    expect(timeOf('2026-10-14'), '13:00 ▾');
 
     await tester.tap(find.byKey(const ValueKey('inbox-time-2026-10-14')));
     await settle(tester);
     await pickTime(tester, 18, 30);
-    expect(timeOf('2026-10-13'), '09:00 ▾');
+    expect(timeOf('2026-10-13'), '13:00 ▾');
     expect(timeOf('2026-10-14'), '18:30 ▾');
 
     await setAllTime(tester, 20, 0);
@@ -287,8 +393,8 @@ void main() {
           Task(
             id: '',
             title: 'Gym',
-            startTime: h.at(2, 9, 30),
-            endTime: h.at(2, 10, 30),
+            startTime: h.at(2, 13, 30),
+            endTime: h.at(2, 14, 30),
             createdAt: h.now,
             updatedAt: h.now,
           ),
@@ -304,7 +410,7 @@ void main() {
     await tapChip(tester, '2026-10-14');
     expect(
       find.text(
-        'Overlaps "Gym" 09:30–10:30. Change the time or save to keep both.',
+        'Overlaps "Gym" 13:30–14:30. Change the time or save to keep both.',
       ),
       findsOneWidget,
     );
@@ -315,7 +421,7 @@ void main() {
     final sessions = await liveSessions(tester, h, idea.id);
     expect(sessions, hasLength(2));
     final stillThere = await runDb(tester, () => h.reload(gym.id));
-    expect(stillThere.startTime, sameInstant(h.at(2, 9, 30)));
+    expect(stillThere.startTime, sameInstant(h.at(2, 13, 30)));
     await finish(tester, container);
   });
 

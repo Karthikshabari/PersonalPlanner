@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -24,6 +25,9 @@ class InboxCaptureEditor extends StatefulWidget {
   /// the draft outside the widget.
   final ValueChanged<String>? onDraftChanged;
   final String title;
+
+  /// A muted line under the field.
+  final String? note;
   final bool compact;
   final bool clearOnSuccess;
 
@@ -36,6 +40,7 @@ class InboxCaptureEditor extends StatefulWidget {
     this.onCancel,
     this.onDraftChanged,
     this.title = 'Add to Inbox',
+    this.note,
     this.compact = false,
     this.clearOnSuccess = false,
   });
@@ -43,6 +48,12 @@ class InboxCaptureEditor extends StatefulWidget {
   @override
   State<InboxCaptureEditor> createState() => _InboxCaptureEditorState();
 }
+
+/// The same platform check as `KeyboardShortcutHandler._isDesktop`: the
+/// shortcut does nothing on Android and iOS.
+bool get _showsShortcutHint =>
+    defaultTargetPlatform != TargetPlatform.android &&
+    defaultTargetPlatform != TargetPlatform.iOS;
 
 class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
   late final TextEditingController _contentController;
@@ -114,8 +125,24 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
       textInputAction: TextInputAction.newline,
       decoration: InputDecoration(
         labelText: widget.compact ? null : 'Content',
-        hintText: 'Capture a thought…',
+        hintText: widget.compact && _showsShortcutHint
+            ? 'Capture a thought… ${usesCommandModifier ? 'Cmd' : 'Ctrl'}+Enter to add'
+            : 'Capture a thought…',
         prefixIcon: widget.compact ? const Icon(Icons.add) : null,
+        suffixIcon: widget.compact
+            ? IconButton(
+                key: const ValueKey('inbox-capture-submit'),
+                tooltip: 'Add',
+                onPressed: _busy ? null : _submit,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send),
+              )
+            : null,
         alignLabelWithHint: true,
         isDense: widget.compact,
       ),
@@ -131,6 +158,14 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
           const SizedBox(height: AppSpacing.md),
         ],
         field,
+        if (widget.note != null) ...[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            widget.note!,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: tokens.textMuted),
+          ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
@@ -139,28 +174,30 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ],
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (widget.onCancel != null)
-              TextButton(
-                onPressed: _busy ? null : widget.onCancel,
-                child: const Text('Cancel'),
+        if (!widget.compact) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              if (widget.onCancel != null)
+                TextButton(
+                  onPressed: _busy ? null : widget.onCancel,
+                  child: const Text('Cancel'),
+                ),
+              FilledButton(
+                key: const ValueKey('inbox-capture-submit'),
+                onPressed: _busy ? null : _submit,
+                child: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
               ),
-            FilledButton(
-              key: const ValueKey('inbox-capture-submit'),
-              onPressed: _busy ? null : _submit,
-              child: _busy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(widget.compact ? 'Add' : 'Save'),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ],
     );
 

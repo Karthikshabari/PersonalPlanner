@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/models/inbox_closure.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -108,58 +109,61 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
                       focusNode: _headerFocus,
                       borderRadius: BorderRadius.circular(tokens.radiusSmall),
                       onTap: () => _toggle(expanded),
-                      child: Padding(
-                        padding: const EdgeInsets.all(AppSpacing.xs),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              alignment: Alignment.center,
-                              decoration: BoxDecoration(
-                                color: tint.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(
-                                  tokens.radiusSmall,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.xs),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: tint.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(
+                                    tokens.radiusSmall,
+                                  ),
+                                ),
+                                child: Icon(icon, size: 17, color: tint),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Tooltip(
+                                      message: title,
+                                      excludeFromSemantics: true,
+                                      child: Text(
+                                        title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: textTheme.labelLarge,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Wrap(
+                                      spacing: AppSpacing.sm,
+                                      runSpacing: AppSpacing.xs,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        Text(
+                                          line,
+                                          style: textTheme.bodySmall?.copyWith(
+                                            color: tokens.textMuted,
+                                          ),
+                                        ),
+                                        ?badge,
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
-                              child: Icon(icon, size: 17, color: tint),
-                            ),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Tooltip(
-                                    message: title,
-                                    excludeFromSemantics: true,
-                                    child: Text(
-                                      title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: textTheme.labelLarge,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Wrap(
-                                    spacing: AppSpacing.sm,
-                                    runSpacing: AppSpacing.xs,
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    children: [
-                                      Text(
-                                        line,
-                                        style: textTheme.bodySmall?.copyWith(
-                                          color: tokens.textMuted,
-                                        ),
-                                      ),
-                                      ?badge,
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -167,7 +171,7 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
                 ),
                 PopupMenuButton<String>(
                   key: ValueKey('inbox-menu-${view.item.id}'),
-                  icon: const Icon(Icons.more_vert, size: 16),
+                  icon: const Icon(Icons.more_vert),
                   tooltip: 'More actions',
                   onSelected: (value) {
                     if (value == 'edit') {
@@ -223,9 +227,9 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
     switch (view.status) {
       case InboxItemStatus.left:
         final start = view.lastMissedStart;
-        if (start == null) return 'Missed';
+        if (start == null) return captured;
         final local = PlannerTimeZone.toPlannerLocal(start);
-        return 'Missed ${DateFormat('EEE, MMM d').format(local)}'
+        return '${DateFormat('EEE, MMM d').format(local)}'
             ' · ${formatClock24(local)}';
       case InboxItemStatus.soon:
         final start = view.nextStart;
@@ -260,16 +264,20 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
     };
   }
 
-  (IconData, Color) _icon(
-    AppThemeTokens tokens,
-    InboxIdeaView view,
-  ) => switch (view.status) {
-    InboxItemStatus.left => (Icons.history, tokens.warning),
-    InboxItemStatus.idea => (Icons.inbox_outlined, tokens.info),
-    InboxItemStatus.soon => (Icons.event, tokens.info),
-    InboxItemStatus.finished => (Icons.check_circle_outline, tokens.success),
-    InboxItemStatus.closed => (Icons.check_circle_outline, tokens.textMuted),
-  };
+  (IconData, Color) _icon(AppThemeTokens tokens, InboxIdeaView view) =>
+      switch (view.status) {
+        InboxItemStatus.left => (Icons.history, tokens.warning),
+        InboxItemStatus.idea => (Icons.inbox_outlined, tokens.info),
+        InboxItemStatus.soon => (Icons.event, tokens.info),
+        InboxItemStatus.finished => (
+          Icons.check_circle_outline,
+          tokens.success,
+        ),
+        InboxItemStatus.closed =>
+          view.closure?.kind == InboxCloseKind.experiment
+              ? (Icons.check_circle_outline, tokens.textMuted)
+              : (Icons.remove_circle_outline, tokens.textMuted),
+      };
 }
 
 /// An idea can be deleted unless a session is still upcoming or in progress

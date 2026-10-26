@@ -16,6 +16,40 @@ const inboxSlotLengths = <int>[30, 60, 90, 120];
 const inboxDefaultStartHour = 9;
 const inboxDefaultLengthMin = 60;
 
+/// The next whole planner hour after [now], or null when none is left today.
+int? inboxNextWholeHour(DateTime now) {
+  final hour = PlannerTimeZone.toPlannerLocal(now).hour + 1;
+  return hour < 24 ? hour : null;
+}
+
+/// The hour 'Time for all' starts at: 09:00, or the next whole hour once
+/// 09:00 has passed so that Today can still be picked. Back to 09:00 when no
+/// hour is left today.
+int inboxDefaultHour(DateTime now) {
+  final next = inboxNextWholeHour(now);
+  return next == null || next <= inboxDefaultStartHour
+      ? inboxDefaultStartHour
+      : next;
+}
+
+/// What the dates panel holds for one idea while it is closed: the picked
+/// dates with their minute of the day, the time and length for the rest, and
+/// the length each existing session keeps.
+@immutable
+class InboxDatesDraft {
+  const InboxDatesDraft({
+    required this.pickedMinutes,
+    required this.allMinutes,
+    required this.length,
+    required this.ownLengths,
+  });
+
+  final Map<String, int> pickedMinutes;
+  final int allMinutes;
+  final int length;
+  final Map<String, int> ownLengths;
+}
+
 /// One session the user picked: a start instant and a length. Its date is the
 /// planner date of the start.
 @immutable

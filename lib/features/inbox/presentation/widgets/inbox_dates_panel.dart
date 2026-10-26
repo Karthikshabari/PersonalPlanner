@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../core/layout/breakpoints.dart';
+import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/models/task.dart';
 import '../../../../core/providers/database_provider.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -61,7 +63,12 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
   /// Picked planner dates (`yyyy-MM-dd`) with their own time of day.
   final _picked = <String, TimeOfDay>{};
   late TimeOfDay _allTime;
+
+  /// The length of dates the user adds, and of every date once they change it.
   late int _length;
+
+  /// Existing sessions keep their own length until Length is changed.
+  final _ownLengths = <String, int>{};
 
   /// What the idea holds now; Save stays off until the picks differ from it.
   late final String _initialSignature;
@@ -71,6 +78,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
   bool _busy = false;
   String? _error;
   String? _note;
+  bool _showHorizon = false;
   final _firstFocus = FocusNode(debugLabel: 'inbox-dates-first');
 
   DateTime get _now => ref.read(inboxNowFactoryProvider)();
@@ -82,7 +90,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     final facts = [for (final s in widget.view.sessions) s.facts];
     final replaceable = replaceableInboxSessions(facts, now);
 
-    var time = const TimeOfDay(hour: inboxDefaultStartHour, minute: 0);
+    var time = TimeOfDay(hour: inboxDefaultHour(now), minute: 0);
     var length = inboxDefaultLengthMin;
     if (replaceable.isNotEmpty) {
       final first = replaceable.first;
@@ -95,29 +103,102 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     _allTime = time;
     _length = length;
     for (final session in replaceable) {
-      _picked.putIfAbsent(
-        isoDateString(session.start!),
-        () => TimeOfDay.fromDateTime(
-          PlannerTimeZone.toPlannerLocal(session.start!),
-        ),
+      final date = isoDateString(session.start!);
+      if (_picked.containsKey(date)) continue;
+      _picked[date] = TimeOfDay.fromDateTime(
+        PlannerTimeZone.toPlannerLocal(session.start!),
       );
+      final minutes = session.end!.difference(session.start!).inMinutes;
+      if (inboxSlotLengths.contains(minutes)) _ownLengths[date] = minutes;
     }
     _initialSignature = _signature();
 
+    final draft = ref.read(inboxDatesDraftProvider(widget.view.item.id));
     // A legacy due date inside the window is offered as a pick.
     final due = widget.view.item.dueDate;
-    if (replaceable.isEmpty &&
+    if (draft != null) {
+      _restore(draft, now);
+    } else if (replaceable.isEmpty &&
         due != null &&
         isValidIsoDate(due) &&
         inboxWindowDates(now).contains(due) &&
         _slotErrorFor(due, now) == null) {
       _picked[due] = _allTime;
+    } else if (replaceable.isEmpty &&
+        widget.view.status == InboxItemStatus.left) {
+      _offerTomorrow(now);
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _firstFocus.requestFocus();
     });
     _loadWindowTasks(now);
+  }
+
+  /// A left over idea opens with tomorrow picked at its last missed session's
+  /// time and length. Save is still needed.
+  void _offerTomorrow(DateTime now) {
+    final missed = widget.view.sessions
+        .where((s) => s.status == InboxSessionStatus.missed)
+        .lastOrNull
+        ?.facts;
+    if (missed?.start == null || missed?.end == null) return;
+    final minutes = missed!.end!.difference(missed.start!).inMinutes;
+    if (inboxSlotLengths.contains(minutes)) _length = minutes;
+    _allTime = TimeOfDay.fromDateTime(
+      PlannerTimeZone.toPlannerLocal(missed.start!),
+    );
+    _picked[inboxWindowDates(now)[1]] = _allTime;
+  }
+
+  void _restore(InboxDatesDraft draft, DateTime now) {
+    final window = inboxWindowDates(now).toSet();
+    final locked = _lockedDates(now);
+    TimeOfDay clock(int minutes) =>
+        TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+    _picked
+      ..clear()
+      ..addEntries([
+        for (final entry in draft.pickedMinutes.entries)
+          if (window.contains(entry.key) && !locked.containsKey(entry.key))
+            MapEntry(entry.key, clock(entry.value)),
+      ]);
+    _ownLengths
+      ..clear()
+      ..addEntries([
+        for (final entry in draft.ownLengths.entries)
+          if (_picked.containsKey(entry.key)) entry,
+      ]);
+    _allTime = clock(draft.allMinutes);
+    _length = draft.length;
+  }
+
+  /// Keeps the picks for when the panel is opened again; an untouched panel
+  /// keeps nothing.
+  void _remember() {
+    int minutes(TimeOfDay time) => time.hour * 60 + time.minute;
+    ref
+        .read(inboxDatesDraftProvider(widget.view.item.id).notifier)
+        .state = _signature() == _initialSignature
+        ? null
+        : InboxDatesDraft(
+            pickedMinutes: {
+              for (final entry in _picked.entries)
+                entry.key: minutes(entry.value),
+            },
+            allMinutes: minutes(_allTime),
+            length: _length,
+            ownLengths: Map.of(_ownLengths),
+          );
+  }
+
+  void _discardDraft() =>
+      ref.read(inboxDatesDraftProvider(widget.view.item.id).notifier).state =
+          null;
+
+  void _cancel() {
+    _discardDraft();
+    widget.onCancel();
   }
 
   @override
@@ -143,8 +224,8 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
   String _signature() {
     final dates = _picked.keys.toList()..sort();
     return [
-      for (final date in dates) '$date@${_hhmm(_picked[date]!)}',
-      if (_picked.isNotEmpty) 'len$_length',
+      for (final date in dates)
+        '$date@${_hhmm(_picked[date]!)}/${_ownLengths[date] ?? _length}',
     ].join('|');
   }
 
@@ -152,7 +233,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     final time = _picked[date] ?? _allTime;
     return InboxSlot(
       start: inboxSlotStart(date, hour: time.hour, minute: time.minute),
-      lengthMin: _length,
+      lengthMin: _ownLengths[date] ?? _length,
     );
   }
 
@@ -177,20 +258,33 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     return locked;
   }
 
-  void _toggle(String date) => setState(() {
-    _error = null;
-    if (_picked.remove(date) == null) _picked[date] = _allTime;
-  });
+  void _toggle(String date) {
+    setState(() {
+      _error = null;
+      if (_picked.remove(date) == null) {
+        _picked[date] = _allTime;
+      } else {
+        _ownLengths.remove(date);
+      }
+    });
+    _remember();
+  }
 
-  void _quickPick(InboxQuickPick pick) => setState(() {
-    _error = null;
-    final locked = _lockedDates(_now);
-    final dates = inboxQuickPickDates(pick, _now);
-    _picked.removeWhere((date, _) => !dates.contains(date));
-    for (final date in dates) {
-      if (!locked.containsKey(date)) _picked.putIfAbsent(date, () => _allTime);
-    }
-  });
+  void _quickPick(InboxQuickPick pick) {
+    setState(() {
+      _error = null;
+      final locked = _lockedDates(_now);
+      final dates = inboxQuickPickDates(pick, _now);
+      _picked.removeWhere((date, _) => !dates.contains(date));
+      _ownLengths.removeWhere((date, _) => !_picked.containsKey(date));
+      for (final date in dates) {
+        if (!locked.containsKey(date)) {
+          _picked.putIfAbsent(date, () => _allTime);
+        }
+      }
+    });
+    _remember();
+  }
 
   Future<void> _pickAllTime() async {
     final time = await showTimePicker24h(
@@ -204,6 +298,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
         _picked[date] = time;
       }
     });
+    _remember();
   }
 
   Future<void> _pickRowTime(String date) async {
@@ -213,6 +308,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     );
     if (time == null || !mounted) return;
     setState(() => _picked[date] = time);
+    _remember();
   }
 
   /// A new day began while the panel was open: drop picks before today.
@@ -222,6 +318,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     if (stale.isEmpty) return;
     setState(() {
       stale.forEach(_picked.remove);
+      _ownLengths.removeWhere((date, _) => !_picked.containsKey(date));
       _note = 'It is a new day. Yesterday was removed from your picks.';
     });
   }
@@ -250,12 +347,14 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     final slots = [for (final date in dates) _slot(date)];
     final repository = ref.read(inboxRepositoryProvider);
     final id = widget.view.item.id;
+    final draft = ref.read(inboxDatesDraftProvider(id).notifier);
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       await repository.saveDates(id, slots, now);
+      draft.state = null;
       if (!mounted) return;
       showAppToast(context, slots.isEmpty ? 'Dates removed' : 'Dates saved');
       widget.onSaved();
@@ -293,184 +392,255 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
     );
     final afterWindow = inboxAfterWindowSessions(facts, now).length;
     final canSave = _canSave(now);
+    final todayOff =
+        !_picked.containsKey(window.first) &&
+        !locked.containsKey(window.first) &&
+        _slotErrorFor(window.first, now) != null;
+
+    final compact = DaySizeClass.of(context).isCompact;
+    final fields = <Widget>[
+      Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.xs,
+        children: [
+          ActionChip(
+            key: const ValueKey('inbox-quick-tomorrow'),
+            focusNode: _firstFocus,
+            label: const Text('Tomorrow'),
+            onPressed: () => _quickPick(InboxQuickPick.tomorrow),
+          ),
+          ActionChip(
+            key: const ValueKey('inbox-quick-3days'),
+            label: const Text('Next 3 days'),
+            onPressed: () => _quickPick(InboxQuickPick.nextThreeDays),
+          ),
+          ActionChip(
+            key: const ValueKey('inbox-quick-5weekdays'),
+            label: const Text('Next 5 weekdays'),
+            onPressed: () => _quickPick(InboxQuickPick.nextFiveWeekdays),
+          ),
+          ActionChip(
+            key: const ValueKey('inbox-quick-clear'),
+            label: const Text('Clear'),
+            onPressed: () => _quickPick(InboxQuickPick.clear),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      Wrap(
+        spacing: AppSpacing.xs + 2,
+        runSpacing: AppSpacing.xs + 2,
+        children: [
+          for (var i = 0; i < window.length; i++)
+            _dateChip(window[i], today: i == 0, now: now, locked: locked),
+        ],
+      ),
+      if (todayOff)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Text(
+            inboxNextWholeHour(now) == null
+                ? 'Today is not available: no time is left today.'
+                : 'Today is not available: that time has passed. '
+                      'Pick a later time for all.',
+            key: const ValueKey('inbox-today-off'),
+            style: muted,
+          ),
+        ),
+      const SizedBox(height: AppSpacing.sm),
+      _horizon(muted, compact),
+      const SizedBox(height: AppSpacing.sm),
+      Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.xs,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton(
+            key: const ValueKey('inbox-time-all'),
+            onPressed: _busy ? null : _pickAllTime,
+            child: Text('Time for all ${_hhmm(_allTime)} ▾'),
+          ),
+          Text('Length', style: textTheme.bodySmall),
+          for (final entry in _lengthLabels.entries)
+            ChoiceChip(
+              key: ValueKey('inbox-length-${entry.key}'),
+              label: Text(entry.value),
+              selected: _length == entry.key,
+              onSelected: _busy
+                  ? null
+                  : (_) {
+                      setState(() {
+                        _length = entry.key;
+                        _ownLengths.clear();
+                        _error = null;
+                      });
+                      _remember();
+                    },
+            ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      for (final entry in locked.entries)
+        _lockedRow(entry.key, entry.value, muted),
+      for (final date in pickedDates)
+        if (!locked.containsKey(date))
+          _pickedRow(date, now, overlaps[date], muted),
+      if (afterWindow > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Text(
+            afterWindow == 1
+                ? '1 session after the 2-week window stays as planned in Day.'
+                : '$afterWindow sessions after the 2-week window stay as planned in Day.',
+            key: const ValueKey('inbox-after-window'),
+            style: muted,
+          ),
+        ),
+      if (_note != null)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Text(
+            _note!,
+            key: const ValueKey('inbox-dates-note'),
+            style: muted,
+          ),
+        ),
+      if (_picked.length > 7) ...[
+        const SizedBox(height: AppSpacing.sm),
+        AppSurface(
+          key: const ValueKey('inbox-experiment-hint'),
+          color: tokens.surfaceSubtle,
+          padding: const EdgeInsets.all(AppSpacing.sm),
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Text(
+                  'That is a lot of days for one errand. If you want to '
+                  'see how it is going, start an experiment in Insights '
+                  'instead.',
+                  style: textTheme.bodySmall,
+                ),
+              ),
+              TextButton(
+                key: const ValueKey('inbox-hint-experiment'),
+                onPressed: _busy ? null : widget.onStartExperiment,
+                child: const Text('Start as an experiment'),
+              ),
+            ],
+          ),
+        ),
+      ],
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Text(
+            _error!,
+            key: const ValueKey('inbox-panel-error'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
+    ];
+    final actions = Wrap(
+      alignment: WrapAlignment.end,
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.xs,
+      children: [
+        TextButton(
+          key: const ValueKey('inbox-panel-cancel'),
+          onPressed: _busy ? null : _cancel,
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('inbox-panel-submit'),
+          onPressed: canSave ? _save : null,
+          child: const Text('Save'),
+        ),
+      ],
+    );
 
     return CallbackShortcuts(
       bindings: {
         primaryShortcut(LogicalKeyboardKey.enter): _save,
-        const SingleActivator(LogicalKeyboardKey.escape): widget.onCancel,
+        const SingleActivator(LogicalKeyboardKey.escape): _cancel,
       },
+      // On a phone the picks scroll inside the panel so Save stays next to
+      // them instead of three screens down.
       child: Column(
         key: const ValueKey('inbox-dates-panel'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              ActionChip(
-                key: const ValueKey('inbox-quick-tomorrow'),
-                focusNode: _firstFocus,
-                label: const Text('Tomorrow'),
-                onPressed: () => _quickPick(InboxQuickPick.tomorrow),
+          if (compact)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
               ),
-              ActionChip(
-                key: const ValueKey('inbox-quick-3days'),
-                label: const Text('Next 3 days'),
-                onPressed: () => _quickPick(InboxQuickPick.nextThreeDays),
-              ),
-              ActionChip(
-                key: const ValueKey('inbox-quick-5weekdays'),
-                label: const Text('Next 5 weekdays'),
-                onPressed: () => _quickPick(InboxQuickPick.nextFiveWeekdays),
-              ),
-              ActionChip(
-                key: const ValueKey('inbox-quick-clear'),
-                label: const Text('Clear'),
-                onPressed: () => _quickPick(InboxQuickPick.clear),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.xs + 2,
-            runSpacing: AppSpacing.xs + 2,
-            children: [
-              for (var i = 0; i < window.length; i++)
-                _dateChip(window[i], today: i == 0, now: now, locked: locked),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: Text(
-                  'You can plan up to 2 weeks ahead. Errands planned further '
-                  'out usually get moved before you reach them, and Review '
-                  'looks at one week at a time. To repeat something for a '
-                  'month, start an experiment in Insights.',
-                  key: const ValueKey('inbox-horizon-copy'),
-                  style: muted,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: fields,
                 ),
               ),
-              TextButton(
-                key: const ValueKey('inbox-open-insights'),
-                onPressed: () => context.go('/analytics'),
-                child: const Text('Open Insights'),
-              ),
-            ],
-          ),
+            )
+          else
+            ...fields,
           const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton(
-                key: const ValueKey('inbox-time-all'),
-                onPressed: _busy ? null : _pickAllTime,
-                child: Text('Time for all ${_hhmm(_allTime)} ▾'),
-              ),
-              Text('Length', style: textTheme.bodySmall),
-              for (final entry in _lengthLabels.entries)
-                ChoiceChip(
-                  key: ValueKey('inbox-length-${entry.key}'),
-                  label: Text(entry.value),
-                  selected: _length == entry.key,
-                  onSelected: _busy
-                      ? null
-                      : (_) => setState(() {
-                          _length = entry.key;
-                          _error = null;
-                        }),
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          for (final entry in locked.entries)
-            _lockedRow(entry.key, entry.value, muted),
-          for (final date in pickedDates)
-            if (!locked.containsKey(date))
-              _pickedRow(date, now, overlaps[date], muted),
-          if (afterWindow > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                afterWindow == 1
-                    ? '1 session after the 2-week window stays as planned in Day.'
-                    : '$afterWindow sessions after the 2-week window stay as planned in Day.',
-                key: const ValueKey('inbox-after-window'),
-                style: muted,
-              ),
-            ),
-          if (_note != null)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                _note!,
-                key: const ValueKey('inbox-dates-note'),
-                style: muted,
-              ),
-            ),
-          if (_picked.length > 7) ...[
-            const SizedBox(height: AppSpacing.sm),
-            AppSurface(
-              key: const ValueKey('inbox-experiment-hint'),
-              color: tokens.surfaceSubtle,
-              padding: const EdgeInsets.all(AppSpacing.sm),
-              child: Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                alignment: WrapAlignment.spaceBetween,
-                children: [
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 480),
-                    child: Text(
-                      'That is a lot of days for one errand. If you want to '
-                      'see how it is going, start an experiment in Insights '
-                      'instead.',
-                      style: textTheme.bodySmall,
-                    ),
-                  ),
-                  TextButton(
-                    key: const ValueKey('inbox-hint-experiment'),
-                    onPressed: _busy ? null : widget.onStartExperiment,
-                    child: const Text('Start as an experiment'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.xs),
-              child: Text(
-                _error!,
-                key: const ValueKey('inbox-panel-error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              TextButton(
-                key: const ValueKey('inbox-panel-cancel'),
-                onPressed: _busy ? null : widget.onCancel,
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                key: const ValueKey('inbox-panel-submit'),
-                onPressed: canSave ? _save : null,
-                child: const Text('Save'),
-              ),
-            ],
-          ),
+          actions,
         ],
       ),
+    );
+  }
+
+  /// The two-week rule. On a phone it is one line with an info toggle.
+  Widget _horizon(TextStyle? muted, bool compact) {
+    final open = TextButton(
+      key: const ValueKey('inbox-open-insights'),
+      onPressed: () => context.go('/analytics'),
+      child: const Text('Open Insights'),
+    );
+    final copy = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Text(
+        'You can plan up to 2 weeks ahead. Errands planned further '
+        'out usually get moved before you reach them, and Review '
+        'looks at one week at a time. To repeat something for a '
+        'month, start an experiment in Insights.',
+        key: const ValueKey('inbox-horizon-copy'),
+        style: muted,
+      ),
+    );
+    if (!compact) {
+      return Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [copy, open],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('You can plan up to 2 weeks ahead.', style: muted),
+            ),
+            IconButton(
+              key: const ValueKey('inbox-horizon-toggle'),
+              tooltip: _showHorizon ? 'Hide details' : 'Why 2 weeks?',
+              isSelected: _showHorizon,
+              icon: const Icon(Icons.info_outline),
+              selectedIcon: const Icon(Icons.info),
+              onPressed: () => setState(() => _showHorizon = !_showHorizon),
+            ),
+          ],
+        ),
+        if (_showHorizon) ...[
+          copy,
+          Align(alignment: Alignment.centerRight, child: open),
+        ],
+      ],
     );
   }
 
@@ -494,7 +664,7 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
         : passed && !selected
         ? '${today ? 'Today' : spoken}, not available, that time has passed'
         : selected
-        ? '$spoken, selected, $time for ${_lengthWords(_length)}'
+        ? '$spoken, selected, $time for ${_lengthWords(_slot(date).lengthMin)}'
         : '$spoken, not selected';
     return Semantics(
       label: semantics,
