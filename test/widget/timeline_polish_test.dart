@@ -444,11 +444,11 @@ void main() {
           );
         }
       }
-      // One line (ellipsis, never scaled down) inside the 28 dp box.
+      // One line (never scaled down) inside the 28 dp box.
       final label = tester.renderObject<RenderParagraph>(
         find.descendant(
           of: find.byType(TimelineOverlapAction),
-          matching: find.byType(RichText),
+          matching: find.text('2'),
         ),
       );
       expect(label.size.height, lessThanOrEqualTo(28), reason: 'scale $scale');

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../models/enums/task_status.dart';
 import '../theme/app_spacing.dart';
@@ -16,18 +17,30 @@ class StatusBadge extends StatelessWidget {
     _ => current,
   };
 
+  static Color colorFor(AppThemeTokens tokens, TaskStatus status) =>
+      switch (status) {
+        TaskStatus.completed => tokens.success,
+        TaskStatus.skipped => tokens.offline,
+        TaskStatus.cancelled => tokens.textMuted,
+        TaskStatus.rescheduled => tokens.warning,
+        TaskStatus.inProgress => tokens.pending,
+        TaskStatus.planned => tokens.info,
+      };
+
+  static IconData iconFor(TaskStatus status) => switch (status) {
+    TaskStatus.planned => Icons.radio_button_unchecked,
+    TaskStatus.inProgress => Icons.play_arrow,
+    TaskStatus.completed => Icons.check_circle,
+    TaskStatus.skipped => Icons.skip_next,
+    TaskStatus.cancelled => Icons.cancel_outlined,
+    TaskStatus.rescheduled => Icons.schedule,
+  };
+
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    final color = switch (status) {
-      TaskStatus.completed => tokens.success,
-      TaskStatus.skipped => tokens.offline,
-      TaskStatus.cancelled => tokens.textMuted,
-      TaskStatus.rescheduled => tokens.warning,
-      TaskStatus.inProgress => tokens.pending,
-      TaskStatus.planned => tokens.info,
-    };
-    return Semantics(
+    final color = colorFor(tokens, status);
+    final badge = Semantics(
       button: onTap != null,
       label: 'Status: ${status.label}',
       hint: onTap == null ? null : 'Change status',
@@ -49,7 +62,7 @@ class StatusBadge extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_iconFor(status), size: 10, color: color),
+              Icon(iconFor(status), size: 10, color: color),
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
@@ -68,14 +81,51 @@ class StatusBadge extends StatelessWidget {
         ),
       ),
     );
+    return onTap == null ? badge : MinTapTarget(child: badge);
   }
+}
 
-  IconData _iconFor(TaskStatus status) => switch (status) {
-    TaskStatus.planned => Icons.radio_button_unchecked,
-    TaskStatus.inProgress => Icons.play_arrow,
-    TaskStatus.completed => Icons.check_circle,
-    TaskStatus.skipped => Icons.skip_next,
-    TaskStatus.cancelled => Icons.cancel_outlined,
-    TaskStatus.rescheduled => Icons.schedule,
-  };
+/// Keeps [child]'s size and look but lets taps within [size] dp of its centre
+/// reach it. The extra area is limited by the ancestors' own bounds: a parent
+/// never passes a tap outside its box down to its children.
+class MinTapTarget extends SingleChildRenderObjectWidget {
+  final double size;
+
+  const MinTapTarget({super.key, this.size = 48, super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMinTapTarget(size);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderObject renderObject) {
+    (renderObject as _RenderMinTapTarget).minSize = size;
+  }
+}
+
+class _RenderMinTapTarget extends RenderProxyBox {
+  double minSize;
+
+  _RenderMinTapTarget(this.minSize);
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final slackX = ((minSize - size.width) / 2).clamp(0.0, double.infinity);
+    final slackY = ((minSize - size.height) / 2).clamp(0.0, double.infinity);
+    if (position.dx < -slackX ||
+        position.dx >= size.width + slackX ||
+        position.dy < -slackY ||
+        position.dy >= size.height + slackY) {
+      return false;
+    }
+    // Hand the child the nearest point inside it, so its own bounds check
+    // and gesture handling work unchanged.
+    return super.hitTest(
+      result,
+      position: Offset(
+        position.dx.clamp(0.0, size.width - 0.01),
+        position.dy.clamp(0.0, size.height - 0.01),
+      ),
+    );
+  }
 }

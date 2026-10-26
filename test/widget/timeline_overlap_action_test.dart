@@ -43,13 +43,15 @@ void main() {
       ),
     );
 
-    expect(find.text('3 overlapping tasks'), findsOneWidget);
+    // The chip shows only the count; the full label is its semantics label.
+    expect(find.text('3 overlapping tasks'), findsNothing);
+    expect(find.bySemanticsLabel('3 overlapping tasks'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('timeline-overlap-action-overlap-0')),
     );
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
-    expect(find.text('3 overlapping tasks'), findsNWidgets(2));
+    expect(find.text('3 overlapping tasks'), findsOneWidget);
     expect(find.textContaining('09:00'), findsWidgets);
     expect(find.text('Open'), findsNWidgets(3));
 

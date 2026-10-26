@@ -92,25 +92,38 @@ class TimelineOverlapAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: _label,
-      hint: 'Show overlapping tasks',
-      onTap: () => _showComponent(context),
-      child: Material(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.94),
-        child: InkWell(
-          key: ValueKey('timeline-overlap-action-${geometry.task.id}'),
-          onTap: () => _showComponent(context),
-          child: Center(
+    final theme = Theme.of(context);
+    final style = DayStyle.secondary(context);
+    // A small corner chip, so the task title underneath stays readable.
+    return Align(
+      alignment: Alignment.topRight,
+      child: Semantics(
+        button: true,
+        label: _label,
+        hint: 'Show overlapping tasks',
+        onTap: () => _showComponent(context),
+        excludeSemantics: true,
+        child: Material(
+          color: theme.colorScheme.surface.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(DayStyle.small(context)),
+          child: InkWell(
+            key: ValueKey('timeline-overlap-action-${geometry.task.id}'),
+            borderRadius: BorderRadius.circular(DayStyle.small(context)),
+            onTap: () => _showComponent(context),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Text(
-                _label,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: DayStyle.secondary(context),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.layers_outlined, size: 12, color: style.color),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${geometry.componentTaskIds.length}',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: style,
+                  ),
+                ],
               ),
             ),
           ),

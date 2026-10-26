@@ -2,6 +2,7 @@ import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/layout/breakpoints.dart';
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -490,10 +491,15 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   // Status cycling
   // ------------------------------------------------------------------
 
-  void _cycleStatus(Task task) {
+  Future<void> _cycleStatus(Task task) async {
     final next = StatusBadge.nextStatus(task.status);
     if (next == task.status) return;
-    TimelineActions.setStatus(ref, task, next);
+    try {
+      await TimelineActions.setStatus(ref, task, next);
+    } catch (error) {
+      // The task may have been deleted or changed by a sync pull meanwhile.
+      if (mounted) showAppToast(context, friendlyErrorMessage(error));
+    }
   }
 
   void _finishTaskRemoval(String taskId) {
@@ -934,23 +940,32 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     );
     final visualHeight = height.toDouble();
     final compactCard = visualHeight < TaskBlockWidget.compactHeightThreshold;
-    final renderedHeight = ResizableHandle.isTouchPlatform
-        ? visualHeight
-              .clamp(ResizableHandle.touchTargetHeight, double.infinity)
-              .toDouble()
-        : compactCard
+    final touch = ResizableHandle.isTouchPlatform;
+    // What is drawn: never shorter than a readable title, on touch as on
+    // desktop. On touch the block sits inside a 48 dp hit area.
+    final drawnHeight = compactCard
         ? visualHeight
               .clamp(TaskBlockWidget.compactMinHeight, double.infinity)
               .toDouble()
         : visualHeight;
-    final centerVisualMinimum = ResizableHandle.isTouchPlatform || compactCard;
+    final renderedHeight = touch
+        ? drawnHeight
+              .clamp(ResizableHandle.touchTargetHeight, double.infinity)
+              .toDouble()
+        : drawnHeight;
+    final centerVisualMinimum = touch || compactCard;
     final outerTop = centerVisualMinimum
         ? (startMinutes * _pixelsPerMinute -
                   (renderedHeight - visualHeight) / 2)
               .clamp(0.0, double.infinity)
               .toDouble()
         : startMinutes * _pixelsPerMinute;
-    final visualTop = startMinutes * _pixelsPerMinute - outerTop;
+    final visualTop =
+        (startMinutes * _pixelsPerMinute -
+                outerTop +
+                (visualHeight - drawnHeight) / 2)
+            .clamp(0.0, renderedHeight - drawnHeight)
+            .toDouble();
     final laneCount = compactVisualLane?.count ?? displayGeometry.laneCount;
     final laneIndex = compactVisualLane?.index ?? displayGeometry.laneIndex;
     final laneWidth = availableLaneWidth / laneCount;
@@ -994,10 +1009,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
           width: ResizableHandle.isTouchPlatform
               ? ResizableHandle.touchTargetHeight
               : null,
-          height: ResizableHandle.isTouchPlatform
-              ? ResizableHandle.touchTargetHeight
-                    .clamp(12, visualHeight)
-                    .toDouble()
+          height: touch
+              ? math.min(
+                  ResizableHandle.touchTargetHeight,
+                  math.max(12.0, drawnHeight),
+                )
               : AppConstants.resizeHandleHeight,
           child: ResizableHandle(
             onResizeStart: () => _startResize(task),
@@ -1025,7 +1041,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       ],
     );
 
-    final dragChild = ResizableHandle.isTouchPlatform
+    final dragChild = touch
         ? Stack(
             fit: StackFit.expand,
             children: [
@@ -1041,7 +1057,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                 top: visualTop,
                 left: 0,
                 right: 0,
-                height: visualHeight,
+                height: drawnHeight,
                 child: block,
               ),
             ],

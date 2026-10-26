@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/category.dart';
+import '../models/enums/task_status.dart';
 import '../models/task.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
@@ -217,7 +219,7 @@ class TaskBlockWidget extends ConsumerWidget {
                       ),
                       child: LayoutBuilder(
                         builder: (context, constraints) {
-                          final compactBlock =
+                          final shortBlock =
                               compact ||
                               (geometry == null
                                   ? constraints.maxHeight <
@@ -232,6 +234,13 @@ class TaskBlockWidget extends ConsumerWidget {
                                               compactHeightThreshold
                                         : constraints.maxHeight >= 48
                                   : constraints.maxHeight >= 58);
+                          // A lane too narrow for the status row falls back to the
+                          // one-line layout.
+                          final narrowLane = constraints.maxWidth < 64;
+                          final compactBlock = shortBlock || narrowLane;
+                          final dimTitle =
+                              task.status == TaskStatus.skipped ||
+                              task.status == TaskStatus.cancelled;
                           final titleStyle = Theme.of(context)
                               .textTheme
                               .titleSmall
@@ -240,6 +249,28 @@ class TaskBlockWidget extends ConsumerWidget {
                                 fontWeight: FontWeight.w600,
                                 color: taskFillForeground,
                               );
+                          // Compact cards drop the status badge, so Skipped and
+                          // Cancelled are shown by dimming and striking the title.
+                          final titleTextStyle = compactBlock && dimTitle
+                              ? titleStyle?.copyWith(
+                                  color:
+                                      (titleStyle.color ??
+                                              colorScheme.onSurface)
+                                          .withValues(alpha: 0.6),
+                                  decoration: TextDecoration.lineThrough,
+                                )
+                              : titleStyle;
+                          final statusGlyph =
+                              compactBlock &&
+                                  !narrowLane &&
+                                  constraints.maxWidth >= 96 &&
+                                  task.status != TaskStatus.planned &&
+                                  !dimTitle
+                              ? _StatusGlyph(
+                                  status: task.status,
+                                  onTap: onStatusTap,
+                                )
+                              : null;
                           final title = Tooltip(
                             message: planChange == null
                                 ? task.title
@@ -251,7 +282,7 @@ class TaskBlockWidget extends ConsumerWidget {
                                     task.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: titleStyle,
+                                    style: titleTextStyle,
                                   ),
                                 ),
                                 if (planChange != null &&
@@ -309,27 +340,39 @@ class TaskBlockWidget extends ConsumerWidget {
                                   ),
                                 ),
                               if (compactBlock && showPriorTitle)
-                                Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  mainAxisSize: MainAxisSize.min,
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Text(
-                                      planChange.previousTitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: titleStyle?.copyWith(
-                                        fontWeight: FontWeight.w400,
-                                        decoration: TextDecoration.lineThrough,
+                                    if (statusGlyph != null)
+                                      const SizedBox(width: _StatusGlyph.width),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            planChange.previousTitle,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: titleStyle?.copyWith(
+                                              fontWeight: FontWeight.w400,
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                            ),
+                                          ),
+                                          title,
+                                        ],
                                       ),
                                     ),
-                                    title,
                                   ],
                                 )
                               else if (compactBlock)
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
+                                    if (statusGlyph != null)
+                                      const SizedBox(width: _StatusGlyph.width),
                                     Expanded(child: title),
                                     if (subtaskLabel != null) ...[
                                       const SizedBox(width: AppSpacing.xs),
@@ -390,18 +433,40 @@ class TaskBlockWidget extends ConsumerWidget {
                                           ),
                                         ),
                                       ),
-                                    Row(
-                                      children: [
-                                        StatusBadge(
-                                          status: task.status,
-                                          onTap: onStatusTap,
+                                    // Hidden when the card (at this text size) has no
+                                    // room left for it.
+                                    Flexible(
+                                      child: _HideIfClipped(
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Flexible(
+                                              child: StatusBadge(
+                                                status: task.status,
+                                                onTap: onStatusTap,
+                                              ),
+                                            ),
+                                            // The duration is dropped when the lane
+                                            // is too narrow to hold both.
+                                            if (durationLabel != null &&
+                                                constraints.maxWidth >= 128)
+                                              durationLabel,
+                                          ],
                                         ),
-                                        const Spacer(),
-                                        durationLabel ??
-                                            const SizedBox.shrink(),
-                                      ],
+                                      ),
                                     ),
                                   ],
+                                ),
+                              // Added after the title so a tap near the glyph
+                              // reaches it before the title beside it.
+                              if (statusGlyph != null)
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: _StatusGlyph.width,
+                                  child: statusGlyph,
                                 ),
                               if (hasOverlap)
                                 Positioned(
@@ -490,4 +555,104 @@ class _StripesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _StripesPainter oldDelegate) => false;
+}
+
+/// The status mark of a compact card, which has no room for the badge: a
+/// check for Completed, a play mark for In Progress, a clock for Rescheduled.
+/// It is also the tap-to-cycle control, with a 48 dp tap area where the card
+/// is large enough to pass taps through.
+class _StatusGlyph extends StatelessWidget {
+  static const double width = 24;
+
+  final TaskStatus status;
+  final VoidCallback? onTap;
+
+  const _StatusGlyph({required this.status, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = StatusBadge.colorFor(AppThemeTokens.of(context), status);
+    final glyph = SizedBox(
+      key: ValueKey('compact-status-${status.name}'),
+      width: width,
+      child: Center(
+        child: Icon(StatusBadge.iconFor(status), size: 16, color: color),
+      ),
+    );
+    if (onTap == null) {
+      return Semantics(
+        label: 'Status: ${status.label}',
+        excludeSemantics: true,
+        child: glyph,
+      );
+    }
+    return MinTapTarget(
+      child: Semantics(
+        button: true,
+        label: 'Status: ${status.label}',
+        hint: 'Change status',
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: glyph,
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows [child] only when it fits the height it is offered, and otherwise
+/// takes no space and paints nothing. Used for the status row of a card, which
+/// must give way to the title at large text sizes.
+class _HideIfClipped extends SingleChildRenderObjectWidget {
+  const _HideIfClipped({required Widget child}) : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHideIfClipped();
+}
+
+class _RenderHideIfClipped extends RenderProxyBox {
+  bool _fits = true;
+
+  @override
+  void performLayout() {
+    final child = this.child!;
+    child.layout(
+      constraints.copyWith(maxHeight: double.infinity),
+      parentUsesSize: true,
+    );
+    _fits =
+        !constraints.hasBoundedHeight ||
+        child.size.height <= constraints.maxHeight + 0.01;
+    size = constraints.constrain(
+      _fits ? child.size : Size(child.size.width, 0),
+    );
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final childSize = child!.getDryLayout(
+      constraints.copyWith(maxHeight: double.infinity),
+    );
+    final fits =
+        !constraints.hasBoundedHeight ||
+        childSize.height <= constraints.maxHeight + 0.01;
+    return constraints.constrain(fits ? childSize : Size(childSize.width, 0));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (_fits) super.paint(context, offset);
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      _fits && super.hitTestChildren(result, position: position);
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) {
+    if (_fits) super.visitChildrenForSemantics(visitor);
+  }
 }
