@@ -29,7 +29,7 @@ void main() {
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     rules = RecurringRepository(db);
-    recurrence = RecurrenceService(db);
+    recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
     tasks = TaskRepository(db);
     await rules.createRule(
       RecurringRule(

@@ -3,7 +3,42 @@ import 'package:drift/drift.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/daos/category_dao.dart';
 import '../../../core/models/category.dart';
+import '../../../core/utils/planner_time_zone.dart';
 import '../../../core/utils/uuid.dart';
+
+/// What deleting a category touches, for the confirm dialog.
+class CategoryUsage {
+  /// Live tasks in the category, finished and past ones included.
+  final int tasks;
+
+  /// Of [tasks], those whose day is before today. They keep the category.
+  final int pastTasks;
+  final int rules;
+  final int templates;
+
+  const CategoryUsage({
+    required this.tasks,
+    required this.pastTasks,
+    required this.rules,
+    required this.templates,
+  });
+}
+
+/// The rows [CategoryRepository.deleteCategory] cleared, so
+/// [CategoryRepository.undoDelete] can put back exactly those.
+class CategoryDeletion {
+  final String categoryId;
+  final List<String> taskIds;
+  final List<String> ruleIds;
+  final List<String> templateIds;
+
+  const CategoryDeletion({
+    required this.categoryId,
+    required this.taskIds,
+    required this.ruleIds,
+    required this.templateIds,
+  });
+}
 
 class CategoryRepository {
   static const String _defaultsSeededKey = 'default_categories_seeded';
@@ -65,8 +100,10 @@ class CategoryRepository {
       generateDeterministicUuid('default-category:$key');
 
   final AppDatabase _db;
+  final DateTime Function() _clock;
 
-  CategoryRepository(this._db);
+  CategoryRepository(this._db, {DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   CategoryDao get _dao => _db.categoryDao;
 
@@ -97,16 +134,76 @@ class CategoryRepository {
     return effective;
   }
 
-  Future<void> deleteCategory(String categoryId) async {
-    // Per planner.md Chunk 3 #6: deleting a category sets tasks in it to
-    // category = null instead of deleting them.
+  /// Start of today in the planner time zone, as the UTC text stored in
+  /// `tasks.start_time`.
+  String _todayStartIso() =>
+      PlannerTimeZone.startOfDay(_clock()).toUtc().toIso8601String();
+
+  /// Tasks that lose the category on delete: unfinished and not in the past.
+  /// Past and finished (completed, skipped, cancelled, rescheduled) tasks
+  /// keep it, so history and focus minutes stay attributed.
+  static const _clearableTasks =
+      'category_id = ? AND deleted_at IS NULL '
+      "AND status IN ('planned', 'in_progress') "
+      'AND (start_time IS NULL OR start_time >= ?)';
+
+  Future<CategoryUsage> usageOf(String categoryId) async {
+    final row = await _db
+        .customSelect(
+          'SELECT '
+          '(SELECT COUNT(*) FROM tasks WHERE category_id = ? '
+          'AND deleted_at IS NULL) AS tasks, '
+          '(SELECT COUNT(*) FROM tasks WHERE category_id = ? '
+          'AND deleted_at IS NULL AND start_time < ?) AS past_tasks, '
+          '(SELECT COUNT(*) FROM recurring_rules WHERE category_id = ? '
+          'AND deleted_at IS NULL) AS rules, '
+          '(SELECT COUNT(*) FROM task_templates WHERE category_id = ? '
+          'AND deleted_at IS NULL) AS templates',
+          variables: [
+            Variable<String>(categoryId),
+            Variable<String>(categoryId),
+            Variable<String>(_todayStartIso()),
+            Variable<String>(categoryId),
+            Variable<String>(categoryId),
+          ],
+          readsFrom: {_db.tasks, _db.recurringRules, _db.taskTemplates},
+        )
+        .getSingle();
+    return CategoryUsage(
+      tasks: row.read<int>('tasks'),
+      pastTasks: row.read<int>('past_tasks'),
+      rules: row.read<int>('rules'),
+      templates: row.read<int>('templates'),
+    );
+  }
+
+  /// Soft-deletes the category. It is cleared only from unfinished tasks that
+  /// are not in the past, and from rules and templates; the returned record
+  /// feeds [undoDelete].
+  Future<CategoryDeletion> deleteCategory(String categoryId) async {
     final now = DateTime.now().toUtc().toIso8601String();
+    final todayIso = _todayStartIso();
+    late CategoryDeletion deletion;
     await _db.transaction(() async {
+      final taskVariables = [
+        Variable<String>(categoryId),
+        Variable<String>(todayIso),
+      ];
+      final taskIds = await _idsWhere('tasks', _clearableTasks, taskVariables);
+      final ruleIds = await _idsWhere(
+        'recurring_rules',
+        'category_id = ? AND deleted_at IS NULL',
+        [Variable<String>(categoryId)],
+      );
+      final templateIds = await _idsWhere(
+        'task_templates',
+        'category_id = ? AND deleted_at IS NULL',
+        [Variable<String>(categoryId)],
+      );
       await _db.customUpdate(
         'UPDATE tasks SET category_id = NULL, updated_at = ?, '
-        'sync_status = 1, revision = revision + 1 '
-        'WHERE category_id = ? AND deleted_at IS NULL',
-        variables: [Variable<String>(now), Variable<String>(categoryId)],
+        'sync_status = 1, revision = revision + 1 WHERE $_clearableTasks',
+        variables: [Variable<String>(now), ...taskVariables],
         updates: {_db.tasks},
       );
       await _db.customUpdate(
@@ -135,7 +232,68 @@ class CategoryRepository {
         updates: {_db.categories},
       );
       await _db.statsDao.invalidateAll();
+      deletion = CategoryDeletion(
+        categoryId: categoryId,
+        taskIds: taskIds,
+        ruleIds: ruleIds,
+        templateIds: templateIds,
+      );
     });
+    return deletion;
+  }
+
+  /// Brings the category back and re-attaches it to the rows [deleteCategory]
+  /// cleared. A row that has been given another category, or deleted, since
+  /// is left as it is. Every write goes through the normal sync triggers.
+  Future<void> undoDelete(CategoryDeletion deletion) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    await _db.transaction(() async {
+      await _db.customUpdate(
+        'UPDATE categories SET deleted_at = NULL, updated_at = ?, '
+        'sync_status = 1, revision = revision + 1 '
+        'WHERE id = ? AND deleted_at IS NOT NULL',
+        variables: [
+          Variable<String>(now),
+          Variable<String>(deletion.categoryId),
+        ],
+        updates: {_db.categories},
+      );
+      for (final (table, ids, entity) in <(String, List<String>, TableInfo)>[
+        ('tasks', deletion.taskIds, _db.tasks),
+        ('recurring_rules', deletion.ruleIds, _db.recurringRules),
+        ('task_templates', deletion.templateIds, _db.taskTemplates),
+      ]) {
+        for (final id in ids) {
+          await _db.customUpdate(
+            'UPDATE $table SET category_id = ?, updated_at = ?, '
+            'sync_status = 1, revision = revision + 1 '
+            'WHERE id = ? AND category_id IS NULL AND deleted_at IS NULL',
+            variables: [
+              Variable<String>(deletion.categoryId),
+              Variable<String>(now),
+              Variable<String>(id),
+            ],
+            updates: {entity},
+          );
+        }
+      }
+      await _db.statsDao.invalidateAll();
+    });
+  }
+
+  Future<List<String>> _idsWhere(
+    String table,
+    String where,
+    List<Variable> variables,
+  ) async {
+    final rows = await _db
+        .customSelect(
+          'SELECT id FROM $table WHERE $where',
+          variables: variables,
+          readsFrom: {_db.tasks, _db.recurringRules, _db.taskTemplates},
+        )
+        .get();
+    return [for (final row in rows) row.read<String>('id')];
   }
 
   /// Persists a new sort order for the category list.

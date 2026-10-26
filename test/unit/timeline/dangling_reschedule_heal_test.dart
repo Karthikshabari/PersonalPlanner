@@ -165,7 +165,7 @@ void main() {
 
   test('series delete: delete, Undo, Redo, Undo keep one live copy', () async {
     final rules = RecurringRepository(db);
-    final recurrence = RecurrenceService(db);
+    final recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
     final rule = await rules.createRule(
       RecurringRule(
         id: 'rule-uat-r',

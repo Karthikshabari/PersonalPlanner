@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/error_panel.dart';
+import '../../data/category_repository.dart';
 import '../../providers/category_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 
@@ -335,13 +336,27 @@ class CategoriesScreen extends ConsumerWidget {
     WidgetRef ref,
     Category category,
   ) async {
+    final repo = ref.read(categoryRepositoryProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final CategoryUsage usage;
+    try {
+      usage = await repo.usageOf(category.id);
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(friendlyErrorMessage(error))),
+      );
+      return;
+    }
+    if (!context.mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete category?'),
         content: Text(
-          '"${category.name}" will be removed. Tasks in this category will '
-          'keep their data but lose the category.',
+          '"${category.name}" will be removed.\n\n${_usageLine(usage)} '
+          'Past and finished tasks keep the category, so earlier days and '
+          'focus time stay as they were. Other tasks, rules and templates '
+          'lose it.',
         ),
         actions: [
           TextButton(
@@ -356,12 +371,46 @@ class CategoriesScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed == true && context.mounted) {
-      await _runCategoryMutation(
-        context,
-        () => ref.read(categoryRepositoryProvider).deleteCategory(category.id),
+    if (confirmed != true) return;
+    final CategoryDeletion deletion;
+    try {
+      deletion = await repo.deleteCategory(category.id);
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(friendlyErrorMessage(error))),
       );
+      return;
     }
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Deleted "${category.name}"'),
+        // A snackbar with an action never times out unless told to.
+        persist: false,
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            try {
+              await repo.undoDelete(deletion);
+            } catch (error) {
+              messenger.showSnackBar(
+                SnackBar(content: Text(friendlyErrorMessage(error))),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  static String _usageLine(CategoryUsage usage) {
+    if (usage.tasks == 0 && usage.rules == 0 && usage.templates == 0) {
+      return 'No tasks, rules or templates use this.';
+    }
+    String count(int n, String noun) => '$n $noun${n == 1 ? '' : 's'}';
+    return '${count(usage.tasks, 'task')} (${usage.pastTasks} in the past), '
+        '${count(usage.rules, 'rule')}, '
+        '${count(usage.templates, 'template')} use this.';
   }
 }
 

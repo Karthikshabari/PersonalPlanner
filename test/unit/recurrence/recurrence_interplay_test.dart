@@ -24,7 +24,7 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     tasks = TaskRepository(db);
     inbox = InboxRepository(db);
-    recurrence = RecurrenceService(db);
+    recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
   });
 
   tearDown(() => db.close());

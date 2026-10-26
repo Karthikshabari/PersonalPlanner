@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/recurring_rule.dart';
 import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/core/models/task_template.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/features/recurring/data/recurring_repository.dart';
+import 'package:personal_planner/features/templates/data/template_repository.dart';
 
 import '../helpers/test_container.dart';
 
@@ -114,6 +119,102 @@ void main() {
       );
       expect(reloaded!.categoryId, isNull);
       expect(reloaded.title, 'Categorized');
+      await finish(tester, container);
+    },
+  );
+
+  testWidgets(
+    'delete dialog shows counts; past tasks keep the category; Undo restores',
+    (tester) async {
+      final container = await pumpCategories(tester);
+      final db = container.read(appDatabaseProvider);
+      final work = await runDb(
+        tester,
+        () async =>
+            (await container
+                    .read(categoryRepositoryProvider)
+                    .getAllCategories())
+                .singleWhere((c) => c.name == 'Work'),
+      );
+      final now = DateTime.now();
+      Future<Task> seed(
+        String title,
+        int daysAway,
+        TaskStatus status,
+      ) => container
+          .read(taskRepositoryProvider)
+          .insertTask(
+            Task(
+              id: '',
+              title: title,
+              categoryId: work.id,
+              startTime: DateTime(now.year, now.month, now.day + daysAway, 9),
+              endTime: DateTime(now.year, now.month, now.day + daysAway, 10),
+              status: status,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+      final (past, future, rule, template) = await runDb(tester, () async {
+        final past = await seed('Past', -7, TaskStatus.completed);
+        final future = await seed('Future', 7, TaskStatus.planned);
+        final rule = await RecurringRepository(db).createRule(
+          RecurringRule(
+            id: '',
+            rrule: 'FREQ=DAILY',
+            taskTitle: 'Rule',
+            durationMin: 30,
+            startTimeOfDay: '09:00',
+            startDate: now,
+            categoryId: work.id,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        final template = await TemplateRepository(db).insertTemplate(
+          TaskTemplate(
+            id: '',
+            name: 'Template',
+            durationMin: 30,
+            categoryId: work.id,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        return (past, future, rule, template);
+      });
+
+      await tester.tap(find.byKey(const ValueKey('delete-category-Work')));
+      await settle(tester);
+      expect(
+        find.textContaining('2 tasks (1 in the past), 1 rule, 1 template'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Past and finished tasks keep'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('confirm-delete-category')));
+      await settle(tester);
+
+      Future<List<String?>> categoryIds() => runDb(
+        tester,
+        () async => [
+          (await db.taskDao.getTaskById(past.id))!.categoryId,
+          (await db.taskDao.getTaskById(future.id))!.categoryId,
+          (await RecurringRepository(db).getRuleById(rule.id))!.categoryId,
+          (await TemplateRepository(db).getTemplateById(template.id))!
+              .categoryId,
+        ],
+      );
+      expect(await categoryIds(), [work.id, null, null, null]);
+      expect(find.text('Deleted "Work"'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await settle(tester);
+
+      expect(await categoryIds(), [work.id, work.id, work.id, work.id]);
+      expect(find.text('Work'), findsOneWidget);
       await finish(tester, container);
     },
   );

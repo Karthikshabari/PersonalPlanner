@@ -94,6 +94,7 @@ class TaskAggregateSnapshot {
       await repository.updateTask(
         TaskRepository.fromRow(task).copyWith(deletedAt: null),
         allowStatusTransition: true,
+        restore: true,
       );
     }
 

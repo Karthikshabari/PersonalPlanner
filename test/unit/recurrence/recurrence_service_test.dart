@@ -39,7 +39,7 @@ void main() {
     templates = TemplateRepository(db);
     tasks = TaskRepository(db);
     categories = CategoryRepository(db);
-    recurrence = RecurrenceService(db);
+    recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
     await categories.seedDefaultsIfEmpty();
   });
 
@@ -64,6 +64,62 @@ void main() {
     createdAt: DateTime.now(),
     updatedAt: DateTime.now(),
   );
+
+  group('RecurrenceService.materializeForDate (past days)', () {
+    // Today is pinned to 2026-10-26 so "past" does not depend on the run date.
+    late RecurrenceService pinned;
+    final today = DateTime(2026, 10, 26);
+
+    setUp(() {
+      pinned = RecurrenceService(db, clock: () => DateTime(2026, 10, 26, 12));
+    });
+
+    Future<int> taskCount() async => (await db.select(db.tasks).get()).length;
+    Future<int> logCount() async => (await db.select(db.syncLog).get()).length;
+
+    test('a past day creates nothing and queues no sync work', () async {
+      await rules.createRule(dailyRule(startDate: DateTime(2026, 10, 5)));
+      final tasksBefore = await taskCount();
+      final logBefore = await logCount();
+
+      expect(await pinned.materializeForDate(DateTime(2026, 10, 20)), 0);
+      expect(
+        await pinned.materializeForDate(DateTime(2026, 10, 25, 23, 59)),
+        0,
+      );
+
+      expect(await taskCount(), tasksBefore);
+      expect(await logCount(), logBefore);
+    });
+
+    test('today and a future day still materialize', () async {
+      await rules.createRule(dailyRule(startDate: DateTime(2026, 10, 5)));
+
+      expect(await pinned.materializeForDate(today), 1);
+      expect(await pinned.materializeForDate(DateTime(2026, 10, 27)), 1);
+      expect(await taskCount(), 2);
+    });
+
+    test(
+      'paging back 14 days on a rule started 21 days ago changes nothing',
+      () async {
+        await rules.createRule(dailyRule(startDate: DateTime(2026, 10, 5)));
+        final tasksBefore = await taskCount();
+        final logBefore = await logCount();
+
+        for (var back = 1; back <= 14; back++) {
+          expect(
+            await pinned.materializeForDate(addDays(today, -back)),
+            0,
+            reason: '$back day(s) back',
+          );
+        }
+
+        expect(await taskCount(), tasksBefore);
+        expect(await logCount(), logBefore);
+      },
+    );
+  });
 
   group('RecurrenceService.materializeForDate', () {
     test('daily rule materializes once per day and never duplicates', () async {
@@ -564,7 +620,10 @@ void main() {
     try {
       var reopened = AppDatabase(NativeDatabase(file));
       final reopenedRules = RecurringRepository(reopened);
-      var reopenedService = RecurrenceService(reopened);
+      var reopenedService = RecurrenceService(
+        reopened,
+        clock: () => DateTime(2026, 1, 1),
+      );
       final monday = DateTime(2026, 9, 14);
       final tuesday = DateTime(2026, 9, 15);
       final original = await reopenedRules.createRule(
@@ -579,12 +638,18 @@ void main() {
       await reopened.close();
 
       reopened = AppDatabase(NativeDatabase(file));
-      reopenedService = RecurrenceService(reopened);
+      reopenedService = RecurrenceService(
+        reopened,
+        clock: () => DateTime(2026, 1, 1),
+      );
       expect(await reopenedService.materializeForDate(tuesday), 1);
       await reopened.close();
 
       reopened = AppDatabase(NativeDatabase(file));
-      reopenedService = RecurrenceService(reopened);
+      reopenedService = RecurrenceService(
+        reopened,
+        clock: () => DateTime(2026, 1, 1),
+      );
       expect(await reopenedService.materializeForDate(tuesday), 0);
       final occurrenceId = generateDeterministicUuid(
         'recurring-occurrence:${original.id}:2026-09-15',

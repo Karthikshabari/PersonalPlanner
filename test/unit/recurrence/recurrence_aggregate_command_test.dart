@@ -623,7 +623,7 @@ void main() {
     final tuesday = DateTime(2026, 9, 15);
     try {
       final rules = RecurringRepository(db);
-      final recurrence = RecurrenceService(db);
+      final recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
       final original = await rules.createRule(
         RecurringRule(
           id: 'rule-provenance-undo',
@@ -693,7 +693,7 @@ void main() {
     final monday = DateTime(2026, 9, 14);
     try {
       final rules = RecurringRepository(db);
-      final recurrence = RecurrenceService(db);
+      final recurrence = RecurrenceService(db, clock: () => DateTime(2026, 1, 1));
       final rule = await rules.createRule(
         RecurringRule(
           id: 'rule-delete-undo',

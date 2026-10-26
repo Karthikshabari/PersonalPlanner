@@ -124,7 +124,13 @@ void main() {
                 updatedAt: DateTime.utc(2026, 1, 1),
               ),
             );
-        expect(await RecurrenceService(db).materializeForDate(day), 1);
+        expect(
+          await RecurrenceService(
+            db,
+            clock: () => DateTime(2026, 1, 1),
+          ).materializeForDate(day),
+          1,
+        );
         gateway.onApply = (table, recordId, payload) {
           if (table != 'tasks') {
             return {

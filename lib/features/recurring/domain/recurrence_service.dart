@@ -19,8 +19,10 @@ import 'rrule_utils.dart';
 /// (planner.md Chunk 4 #3; architecture.md §8 "Recurring task materialization").
 class RecurrenceService {
   final AppDatabase _db;
+  final DateTime Function() _clock;
 
-  RecurrenceService(this._db);
+  RecurrenceService(this._db, {DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   RecurringRepository get _rules => RecurringRepository(_db);
   TaskRepository get _tasks => TaskRepository(_db);
@@ -29,8 +31,12 @@ class RecurrenceService {
   /// many were created. Idempotent: an instance that already exists for a
   /// rule on this day is never duplicated. The dedupe-check + insert runs
   /// inside a transaction so concurrent triggers cannot double-create.
+  ///
+  /// Only today (planner time zone) and later are materialized. A past day is
+  /// history: browsing it must not create, miss-stamp or sync new tasks.
   Future<int> materializeForDate(DateTime date) async {
     final dayStart = startOfDay(date);
+    if (dayStart.isBefore(startOfDay(_clock()))) return 0;
     final dateIso = isoDateString(dayStart);
     final dayStartUtcIso = dayStart.toUtc().toIso8601String();
     final nextDayUtcIso = addDays(dayStart, 1).toUtc().toIso8601String();
@@ -322,6 +328,7 @@ class RecurrenceService {
         deletedAt: null,
       ),
       allowStatusTransition: true,
+      restore: true,
     );
     final activeTagIds = <String>{};
     for (final tagId in rule.tags) {

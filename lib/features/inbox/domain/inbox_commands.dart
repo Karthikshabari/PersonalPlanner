@@ -207,7 +207,7 @@ class RescheduleOverdueCommand implements SchedulingCommand {
     await snapshot.softDelete(repository.database);
     final current = await TaskRepository(repository.database)
         .getTaskById(originalId);
-    if (current != null) {
+    if (current != null && current.deletedAt == null) {
       await TaskRepository(repository.database).updateTask(
         current.copyWith(
           status: before.status,

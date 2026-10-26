@@ -82,6 +82,9 @@ class TaskRepository {
     bool allowRescheduledTransition = false,
     bool allowStatusTransition = false,
     int? expectedRevision,
+    // True only for the paths that bring a deleted task back (Undo, restore,
+    // recurrence re-activation). Without it a deleted row is never written.
+    bool restore = false,
   }) async {
     final now = _clock();
     final effective = _normalizeScheduling(task).copyWith(updatedAt: now);
@@ -98,6 +101,13 @@ class TaskRepository {
         throw StateError('Task ${effective.id} not found');
       }
       row = current;
+      // A copy loaded before a delete must not clear the tombstone or write
+      // over the deleted row; only an explicit restore may.
+      if (current.deletedAt != null && !restore) {
+        throw StateError(
+          'Task ${effective.id} is deleted; pass restore: true to bring it back.',
+        );
+      }
       if (expectedRevision != null && current.revision != expectedRevision) {
         throw StateError(
           'Task ${effective.id} changed while it was being edited; reload it before saving.',
@@ -274,8 +284,11 @@ class TaskRepository {
     ];
   }
 
-  Future<Task> restoreTask(Task task) =>
-      updateTask(task.copyWith(deletedAt: null), allowStatusTransition: true);
+  Future<Task> restoreTask(Task task) => updateTask(
+    task.copyWith(deletedAt: null),
+    allowStatusTransition: true,
+    restore: true,
+  );
 
   /// The only repository operation that may transition an unfinished task
   /// into the rescheduled state.

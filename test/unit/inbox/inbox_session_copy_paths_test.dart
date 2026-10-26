@@ -127,8 +127,10 @@ void main() {
           updatedAt: h.now,
         ),
       );
-      final created = await RecurrenceService(db)
-          .materializeForDate(h.at(2, 0));
+      final created = await RecurrenceService(
+        db,
+        clock: () => DateTime(2026, 1, 1),
+      ).materializeForDate(h.at(2, 0));
       expect(created, 1);
       final instance = (await db.select(db.tasks).get()).singleWhere(
         (row) => row.recurringRuleId == rule.id,
