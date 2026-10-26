@@ -18,6 +18,11 @@ class InboxCaptureEditor extends StatefulWidget {
   final Future<void> Function(String content, String? dueDate) onSubmit;
   final VoidCallback? onCommitted;
   final VoidCallback? onCancel;
+
+  /// Called with the field text on every edit and with '' once it has been
+  /// cleared after a successful add ([clearOnSuccess]); lets a caller keep
+  /// the draft outside the widget.
+  final ValueChanged<String>? onDraftChanged;
   final String title;
   final bool compact;
   final bool clearOnSuccess;
@@ -29,6 +34,7 @@ class InboxCaptureEditor extends StatefulWidget {
     required this.onSubmit,
     this.onCommitted,
     this.onCancel,
+    this.onDraftChanged,
     this.title = 'Add to Inbox',
     this.compact = false,
     this.clearOnSuccess = false,
@@ -77,6 +83,9 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
     try {
       await widget.onSubmit(content, null);
       _lastSuccessAt = DateTime.now();
+      // Before the mounted check: the page may have been left while the add
+      // ran, and the kept draft must not bring the added text back.
+      if (widget.clearOnSuccess) widget.onDraftChanged?.call('');
       if (!mounted) return;
       if (widget.clearOnSuccess) {
         _contentController.clear();
@@ -110,6 +119,7 @@ class _InboxCaptureEditorState extends State<InboxCaptureEditor> {
         alignLabelWithHint: true,
         isDense: widget.compact,
       ),
+      onChanged: widget.onDraftChanged,
       onSubmitted: (_) => _submit(),
     );
     final body = Column(

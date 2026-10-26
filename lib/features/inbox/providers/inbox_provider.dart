@@ -277,3 +277,7 @@ final inboxExpandedItemProvider = StateProvider<String?>((ref) => null);
 
 /// Set by Search to open the Inbox with this idea expanded.
 final inboxFocusItemProvider = StateProvider<String?>((ref) => null);
+
+/// Text typed into the Inbox capture box and not yet added. Kept here, not in
+/// the field, because switching tabs rebuilds the page (flat ShellRoute).
+final inboxCaptureDraftProvider = StateProvider<String>((ref) => '');

@@ -5,6 +5,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/task_time_metrics.dart';
+import '../../../../core/widgets/discard_changes_dialog.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../platform/desktop/primary_shortcut.dart';
 import '../../domain/scheduled_task_draft.dart';
@@ -81,9 +82,28 @@ class _TaskQuickCreateState extends State<TaskQuickCreate> {
     end: _end,
   );
 
-  void _cancel() {
-    if (_saving) return;
-    widget.onCancel();
+  bool _confirmingDiscard = false;
+
+  /// Esc: closes at once, unless the title or description holds text that
+  /// was not there when the form opened.
+  Future<void> _cancel() async {
+    if (_saving || _confirmingDiscard) return;
+    final typed =
+        _titleController.text != widget.initialTitle ||
+        _descriptionController.text != widget.initialDescription;
+    if (!typed ||
+        (_titleController.text.isEmpty &&
+            _descriptionController.text.isEmpty)) {
+      widget.onCancel();
+      return;
+    }
+    _confirmingDiscard = true;
+    try {
+      final discard = await confirmDiscardChanges(context);
+      if (discard && mounted && !_saving) widget.onCancel();
+    } finally {
+      _confirmingDiscard = false;
+    }
   }
 
   Future<void> _submit() async {

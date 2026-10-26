@@ -18,6 +18,7 @@ import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/utils/task_time_metrics.dart';
 import '../../../../core/utils/uuid.dart';
 import '../../../../core/widgets/app_toast.dart';
+import '../../../../core/widgets/discard_changes_dialog.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../../core/widgets/app_surface.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
@@ -398,30 +399,51 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     _closeImmediately();
   }
 
+  /// True while the discard prompt for a selection change is up (and while
+  /// its answer is applied). The selection is put back on the block being
+  /// edited at once, so nothing follows the click until the user has answered.
+  bool _confirmingSwitch = false;
+
+  /// Another block, empty space or Esc changed the selection while this panel
+  /// holds unsaved edits: ask first, like the Close button. Keep editing
+  /// leaves the selection on the block being edited; Discard applies it.
+  void _onSelectionChanged(String? previous, String? next) {
+    final editing = _editingTaskId;
+    if (_confirmingSwitch ||
+        editing == null ||
+        next == editing ||
+        _saving ||
+        !_hasDraftChanges) {
+      return;
+    }
+    _confirmingSwitch = true;
+    ref.read(selectedTaskIdProvider.notifier).state = editing;
+    unawaited(_confirmSwitchTo(next));
+  }
+
+  Future<void> _confirmSwitchTo(String? next) async {
+    try {
+      final discard = await confirmDiscardChanges(context);
+      if (discard && mounted) {
+        // Drop the draft before moving on, so reselecting this block later
+        // cannot bring the discarded text back. [_confirmingSwitch] is still
+        // set, so the change below is not asked about again.
+        _syncFromTask(null, force: true);
+        ref.read(selectedTaskIdProvider.notifier).state = next;
+      }
+    } finally {
+      _confirmingSwitch = false;
+    }
+  }
+
   Future<void> _requestClose() async {
     if (_saving) return;
     if (!_hasDraftChanges) {
       _closeImmediately();
       return;
     }
-    final discard = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Discard unsaved changes?'),
-        content: const Text('Your edits will be lost if you close the editor.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep editing'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Discard'),
-          ),
-        ],
-      ),
-    );
-    if (discard == true && mounted) _closeImmediately();
+    final discard = await confirmDiscardChanges(context);
+    if (discard && mounted) _closeImmediately();
   }
 
   Future<_ExternalMergeChoice?> _showExternalConflictDialog(
@@ -1120,11 +1142,18 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     });
   }
 
+  /// Fills the title, description and category that are still empty; what the
+  /// user already typed or chose is kept. The duration always follows the
+  /// template on a scheduled block.
   Future<void> _applyTemplate(TaskTemplate template, Task task) async {
     setState(() {
-      _titleController.text = template.name;
-      _descriptionController.text = template.description ?? '';
-      _categoryId = template.categoryId;
+      if (_titleController.text.trim().isEmpty) {
+        _titleController.text = template.name;
+      }
+      if (_descriptionController.text.trim().isEmpty) {
+        _descriptionController.text = template.description ?? '';
+      }
+      _categoryId ??= template.categoryId;
       if (_startInstant != null) {
         _scheduleDirty = true;
         _endInstant = _startInstant!.add(
@@ -1132,6 +1161,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
         );
       }
     });
+    if (mounted) showAppToast(context, 'Template applied');
   }
 
   Widget _persistentHeader(BuildContext context) {
@@ -1225,6 +1255,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(selectedTaskIdProvider, _onSelectionChanged);
     ref.listen<int>(taskEditorSaveRequestProvider, (previous, next) {
       if (previous == next || _activeTask == null) return;
       unawaited(_save(_activeTask!, close: true));

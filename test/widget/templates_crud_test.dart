@@ -243,14 +243,11 @@ void main() {
     await tester.tap(find.text('Gym session').last);
     await settle(tester);
 
-    // Fields pre-filled (title/description/duration/category).
+    // Empty fields are filled; the block's own title is kept (FB04 B18).
     final titleField = find.byWidgetPredicate(
       (w) => w is TextField && w.decoration?.labelText == 'Title',
     );
-    expect(
-      tester.widget<TextField>(titleField).controller!.text,
-      'Gym session',
-    );
+    expect(tester.widget<TextField>(titleField).controller!.text, 'Empty slot');
     final descField = find.byWidgetPredicate(
       (w) => w is TextField && w.decoration?.labelText == 'Description',
     );

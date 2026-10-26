@@ -77,13 +77,19 @@ Future<void> showInboxEditDialog(
 }
 
 class _InboxQuickAddState extends ConsumerState<InboxQuickAdd> {
+  // Read once: an add can finish after this widget is gone, and the draft
+  // still has to be cleared then.
+  late final _draft = ref.read(inboxCaptureDraftProvider.notifier);
+  late final _repository = ref.read(inboxRepositoryProvider);
+
   @override
   Widget build(BuildContext context) {
     return InboxCaptureEditor(
       compact: true,
       clearOnSuccess: true,
-      onSubmit: (content, _) =>
-          ref.read(inboxRepositoryProvider).addToInbox(content),
+      initialContent: _draft.state,
+      onDraftChanged: (text) => _draft.state = text,
+      onSubmit: (content, _) => _repository.addToInbox(content),
     );
   }
 }
