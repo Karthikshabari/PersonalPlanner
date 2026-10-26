@@ -93,13 +93,14 @@ Future<void> mouseDrag(WidgetTester tester, Finder finder, Offset delta) async {
   await tester.pump();
 }
 
+/// A finger drag: touch needs a press-and-hold (300 ms) before a block moves.
 Future<void> touchDrag(WidgetTester tester, Finder finder, Offset delta) async {
   final center = tester.getCenter(finder);
   final gesture = await tester.startGesture(
     center,
     kind: PointerDeviceKind.touch,
   );
-  await tester.pump(const Duration(milliseconds: 20));
+  await tester.pump(const Duration(milliseconds: 400));
   const steps = 6.0;
   for (var i = 0; i < steps; i++) {
     await gesture.moveBy(delta / steps);
@@ -179,7 +180,7 @@ void main() {
     await finish(tester, container);
   });
 
-  testWidgets('mobile intentional movement drags immediately after insertion', (
+  testWidgets('mobile press-and-hold then drag moves a block after insertion', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;

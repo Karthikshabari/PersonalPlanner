@@ -99,6 +99,10 @@ class _DayViewScreenState extends ConsumerState<DayViewScreen> {
           Expanded(
             child: TimelineWidget(
               onEditTask: (task) => _requestEdit(task, sidePanel: sidePanel),
+              // The phone's New task button floats over the right-hand lane:
+              // leave room to scroll the last blocks (and their resize
+              // corner) clear of it.
+              bottomInset: sizeClass.isCompact ? AppSpacing.huge : 0,
             ),
           ),
         ],

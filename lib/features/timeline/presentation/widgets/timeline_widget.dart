@@ -88,7 +88,16 @@ class TimelineWidget extends ConsumerStatefulWidget {
   final void Function(Task task)? onTaskSelected;
   final void Function(Task task)? onEditTask;
 
-  const TimelineWidget({super.key, this.onTaskSelected, this.onEditTask});
+  /// Extra empty space under the day, so the last blocks can be scrolled clear
+  /// of a floating action button.
+  final double bottomInset;
+
+  const TimelineWidget({
+    super.key,
+    this.onTaskSelected,
+    this.onEditTask,
+    this.bottomInset = 0,
+  });
 
   @override
   ConsumerState<TimelineWidget> createState() => _TimelineWidgetState();
@@ -108,12 +117,18 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   final _hoverSlot = ValueNotifier<int?>(null);
   int? _lastHoverSnap;
 
+  /// Pointer distance of the move-drag in progress; drives only the ghost, so
+  /// a drag update never rebuilds every block of the day.
+  final _dragDeltaPx = ValueNotifier<double>(0);
+
   double get _pixelsPerMinute => AppConstants.pixelsPerMinute;
 
   PlannerDayAxis get _dayAxis => PlannerDayAxis(ref.read(selectedDateProvider));
 
   double get _totalHeight =>
-      _dayAxis.durationMinutes * _pixelsPerMinute + AppSpacing.huge;
+      _dayAxis.durationMinutes * _pixelsPerMinute +
+      AppSpacing.huge +
+      widget.bottomInset;
 
   int get _gridMinutes =>
       ref.watch(gridIntervalProvider).value ?? AppConstants.defaultGridMinutes;
@@ -149,6 +164,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     _removalTimers.clear();
     _scrollController.dispose();
     _hoverSlot.dispose();
+    _dragDeltaPx.dispose();
     super.dispose();
   }
 
@@ -333,6 +349,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
   void _startDrag(Task task) {
     if (_drag != null || _resize != null || task.startTime == null) return;
+    _dragDeltaPx.value = 0;
     setState(() {
       _drag = _DragPreview(
         task: task,
@@ -349,7 +366,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
   void _updateDrag(double dyPx) {
     final drag = _drag;
     if (drag == null) return;
-    setState(() => drag.deltaPx = dyPx);
+    drag.deltaPx = dyPx;
+    _dragDeltaPx.value = dyPx;
   }
 
   Future<void> _endDrag() async {
@@ -359,7 +377,12 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
     final grid = _gridMinutes;
     final deltaMinutes = (drag.deltaPx / _pixelsPerMinute).round();
-    var newStartMin = snapSlotStart(drag.origStartMinutes + deltaMinutes, grid);
+    // Snap the distance, not the absolute start: an off-grid task keeps its
+    // offset, and a net move under half a step (an out-and-back drag
+    // included) is no change instead of a re-snap to the grid.
+    final snappedDelta = (deltaMinutes / grid).round() * grid;
+    if (snappedDelta == 0) return;
+    var newStartMin = drag.origStartMinutes + snappedDelta;
     final earliestStart = drag.durationMinutes >= _dayAxis.durationMinutes
         ? -(drag.durationMinutes - grid)
         : 0;
@@ -800,30 +823,32 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                   : null,
                               compactVisualLane: compactVisualLanes[task.id],
                             ),
-                          if (_drag != null)
-                            GhostPreview(
-                              title: _drag!.task.title,
-                              topPx:
-                                  (_drag!.origStartMinutes * _pixelsPerMinute +
-                                          _drag!.deltaPx)
-                                      .clamp(
-                                        -(_drag!.durationMinutes - _gridMinutes)
-                                                .clamp(
-                                                  0,
-                                                  _dayAxis.durationMinutes,
-                                                ) *
-                                            _pixelsPerMinute,
-                                        _totalHeight -
-                                            _gridMinutes * _pixelsPerMinute,
-                                      ),
-                              heightPx:
-                                  _drag!.durationMinutes * _pixelsPerMinute,
-                              left: AppConstants.hourLabelWidth + 8,
-                              right: AppSpacing.md + editActionGutter,
-                              accentColor: _accentColor(
-                                categoryFor(_drag!.task),
+                          if (_drag case final drag?)
+                            ValueListenableBuilder<double>(
+                              valueListenable: _dragDeltaPx,
+                              builder: (context, deltaPx, _) => GhostPreview(
+                                title: drag.task.title,
+                                topPx:
+                                    (drag.origStartMinutes * _pixelsPerMinute +
+                                            deltaPx)
+                                        .clamp(
+                                          -(drag.durationMinutes - grid).clamp(
+                                                0,
+                                                _dayAxis.durationMinutes,
+                                              ) *
+                                              _pixelsPerMinute,
+                                          _totalHeight -
+                                              grid * _pixelsPerMinute,
+                                        ),
+                                heightPx:
+                                    drag.durationMinutes * _pixelsPerMinute,
+                                left: AppConstants.hourLabelWidth + 8,
+                                right: AppSpacing.md + editActionGutter,
+                                accentColor: _accentColor(
+                                  categoryFor(drag.task),
+                                ),
+                                durationMinutes: drag.durationMinutes,
                               ),
-                              durationMinutes: _drag!.durationMinutes,
                             ),
                           if (selectedTask != null &&
                               selectedTaskGeometry != null)
