@@ -7,4 +7,8 @@ abstract final class AppSpacing {
   static const double xxl = 24;
   static const double xxxl = 32;
   static const double huge = 48;
+
+  /// Bottom padding that keeps a list's last row clear of a
+  /// [FloatingActionButton].
+  static const double fabClearance = 88;
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/error_panel.dart';
 import '../../../categories/providers/category_providers.dart';
@@ -48,8 +49,9 @@ class CategoryDropdown extends ConsumerWidget {
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: Color(
-                      int.parse(category.colorHex.replaceFirst('#', '0xFF')),
+                    color: AppColors.categoryColor(
+                      category.colorHex,
+                      Theme.of(context).brightness,
                     ),
                     shape: BoxShape.circle,
                   ),

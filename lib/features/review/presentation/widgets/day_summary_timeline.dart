@@ -116,7 +116,10 @@ class DaySummaryTimeline extends StatelessWidget {
     final category = _categoryFor(task);
     final accent = category == null
         ? AppColors.primary
-        : AppColors.parseHex(category.colorHex);
+        : AppColors.categoryColor(
+            category.colorHex,
+            Theme.of(context).brightness,
+          );
     return Positioned(
       key: ValueKey('review-block-${task.id}'),
       top: startMinutes * pixelsPerMinute + 1,

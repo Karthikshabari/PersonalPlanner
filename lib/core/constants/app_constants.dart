@@ -36,4 +36,10 @@ abstract final class AppConstants {
 
   /// Upper bound of `categories.name` (Drift `withLength(max: 100)`).
   static const int maxCategoryNameLength = 100;
+
+  /// Upper bound of `task_templates.name` (Drift `withLength(max: 500)`).
+  static const int maxTemplateNameLength = 500;
+
+  /// Longest template duration (minutes): one day.
+  static const int maxTemplateDurationMinutes = 1440;
 }

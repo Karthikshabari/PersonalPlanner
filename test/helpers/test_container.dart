@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/app.dart';
 import 'package:personal_planner/core/database/app_database.dart';
@@ -18,6 +19,7 @@ Future<ProviderContainer> buildTestContainer(
   MinuteClockFactory? minuteClockFactory,
   InsightsNowFactory? insightsNowFactory,
   DateTime Function()? inboxNowFactory,
+  List<Override> overrides = const [],
 }) async {
   setupSqliteForTests();
   late ProviderContainer container;
@@ -41,6 +43,7 @@ Future<ProviderContainer> buildTestContainer(
           insightsNowFactoryProvider.overrideWithValue(insightsNowFactory),
         if (inboxNowFactory != null)
           inboxNowFactoryProvider.overrideWithValue(inboxNowFactory),
+        ...overrides,
       ],
     );
     await container.read(categoryRepositoryProvider).seedDefaultsIfEmpty();

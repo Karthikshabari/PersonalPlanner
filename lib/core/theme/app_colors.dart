@@ -44,6 +44,34 @@ abstract final class AppColors {
         _ => planned,
       };
 
+  /// 3:1 against white needs a relative luminance of at most 1.05 / 3 - 0.05.
+  static const double _maxLuminanceOnWhite = 1.05 / 3 - 0.05;
+
+  /// A category's colour for stripes and dots. In the light theme a colour
+  /// that is under 3:1 against white is darkened, keeping its hue, until it
+  /// reaches it; the dark theme shows the stored colour.
+  static Color categoryColor(String hex, Brightness brightness) {
+    final color = parseHex(hex);
+    if (brightness == Brightness.dark ||
+        color.computeLuminance() <= _maxLuminanceOnWhite) {
+      return color;
+    }
+    final hsl = HSLColor.fromColor(color);
+    // Lightness 0 always passes; find the lightest value that still does.
+    var passing = 0.0;
+    var failing = hsl.lightness;
+    for (var i = 0; i < 8; i++) {
+      final middle = (passing + failing) / 2;
+      if (hsl.withLightness(middle).toColor().computeLuminance() <=
+          _maxLuminanceOnWhite) {
+        passing = middle;
+      } else {
+        failing = middle;
+      }
+    }
+    return hsl.withLightness(passing).toColor();
+  }
+
   static Color parseHex(String hex) {
     final normalized = hex.replaceFirst('#', '');
     final value = int.parse(normalized, radix: 16);

@@ -66,7 +66,7 @@ class TaskBlockWidget extends ConsumerWidget {
     final taskFillForeground = geometry == null ? null : tokens.onTaskFill;
     final categoryColor = category == null
         ? null
-        : AppColors.parseHex(category!.colorHex);
+        : AppColors.categoryColor(category!.colorHex, colorScheme.brightness);
     final duration = task.scheduledDuration;
     final actualMinutes = task.actualDurationMin ?? 0;
     final planChange = task.displayPlanChange;

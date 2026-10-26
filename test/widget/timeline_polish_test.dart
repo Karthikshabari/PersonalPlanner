@@ -247,7 +247,8 @@ void main() {
     expect(find.byKey(const ValueKey('empty-day-hint')), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const ValueKey('empty-day-hint'))).data,
-      'Tap a time slot or pull something from Inbox.',
+      'Tap a time slot or pull something from Inbox. '
+      'Pick a category in the editor.',
     );
 
     // Other days anchor at 07:00; the card is one hour below that minute and

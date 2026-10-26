@@ -94,6 +94,15 @@ class BackupService {
     );
   }
 
+  /// Checks, without writing anything, that [source] is a valid backup and
+  /// that this database may be replaced. Throws [BackupValidationException]
+  /// otherwise, so the caller can refuse before it saves a recovery copy or
+  /// asks the user to confirm.
+  Future<void> preflightReplace(String source) async {
+    _decodeAndValidate(source);
+    await _requireReplaceEligible();
+  }
+
   /// Replaces all user-domain rows after explicit confirmation and validation
   /// of a recoverable pre-import document. Deletes, imports, derived rebuild,
   /// and integrity checks run in one recoverable transaction.
@@ -110,6 +119,14 @@ class BackupService {
     }
     _decodeAndValidate(preImportBackup);
     final data = _decodeAndValidate(source);
+    await _requireReplaceEligible();
+    await _db.transaction(() async {
+      await _db.customStatement('PRAGMA defer_foreign_keys = ON');
+      await BackupDatabaseApplier(_db).applyReplace(data);
+    });
+  }
+
+  Future<void> _requireReplaceEligible() async {
     if (accountScoped) {
       throw const BackupValidationException(
         'Replace is unavailable for a cloud-connected account. Use merge or export first.',
@@ -125,10 +142,6 @@ class BackupService {
         'Replace is unavailable for a synchronized account. Use merge or export first.',
       );
     }
-    await _db.transaction(() async {
-      await _db.customStatement('PRAGMA defer_foreign_keys = ON');
-      await BackupDatabaseApplier(_db).applyReplace(data);
-    });
   }
 
   Map<String, dynamic> _decodeAndValidate(String source) {

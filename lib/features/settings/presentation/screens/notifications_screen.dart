@@ -64,21 +64,36 @@ class NotificationsScreen extends ConsumerWidget {
                 key: const ValueKey('reminder-toggle'),
                 secondary: const Icon(Icons.notifications_outlined),
                 title: const Text('Daily review reminder'),
-                subtitle: const Text('Nudges you to fill in the daily review'),
-                value: enabled,
-                onChanged: (value) => _runNotificationChange(
-                  context,
-                  () => ref
-                      .read(reviewReminderEnabledProvider.notifier)
-                      .setEnabled(value),
+                subtitle: Text(
+                  nativeScheduling
+                      ? 'Nudges you to fill in the daily review'
+                      : 'Only available on Android. This device cannot '
+                            'schedule the reminder.',
                 ),
+                value: enabled && nativeScheduling,
+                onChanged: !nativeScheduling
+                    ? null
+                    : (value) => _runNotificationChange(context, () async {
+                        final applied = await ref
+                            .read(reviewReminderEnabledProvider.notifier)
+                            .setEnabled(value);
+                        if (!applied && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Notifications are blocked in system settings',
+                              ),
+                            ),
+                          );
+                        }
+                      }),
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Card(
               child: ListTile(
                 key: const ValueKey('reminder-time-tile'),
-                enabled: enabled,
+                enabled: enabled && nativeScheduling,
                 leading: const Icon(Icons.schedule_outlined),
                 title: const Text('Reminder time'),
                 trailing: Text(
@@ -110,8 +125,7 @@ class NotificationsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                 child: Text(
                   'Task reminders fire as desktop notifications on this '
-                  'device. The daily review reminder is scheduled on Android '
-                  'only; here this setting is saved but does not fire.',
+                  'device.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),

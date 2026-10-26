@@ -75,27 +75,48 @@ class ReviewReminderEnabledNotifier extends AsyncNotifier<bool> {
     return row?.value != 'false'; // enabled unless explicitly disabled
   }
 
-  Future<void> setEnabled(bool value) async {
+  /// Turns the reminder on or off. Returns `false` when it was asked to turn
+  /// on but cannot run (notifications blocked, or scheduling failed); it is
+  /// then left off.
+  Future<bool> setEnabled(bool value) async {
     final previous = state.value ?? true;
     try {
-      if (value && ref.read(notificationServiceProvider).schedulingSupported) {
-        await ref
-            .read(notificationPermissionControllerProvider)
-            .ensureForFeatureUse();
+      final permitted =
+          !value ||
+          !ref.read(notificationServiceProvider).schedulingSupported ||
+          await ref
+              .read(notificationPermissionControllerProvider)
+              .ensureForFeatureUse();
+      await _commit(value && permitted);
+      if (!value || !permitted) {
+        await _apply();
+        return !value;
       }
-      // Optimistic update for the UI…
-      state = AsyncData(value);
-      await _persist(value);
-      // …then converge to the persisted truth (heals any racing initial
-      // build that read a pre-write snapshot).
-      ref.invalidateSelf();
-      await future;
-
-      await _apply();
+      if (await _apply()) return true;
+      await _commit(false);
+      return false;
     } catch (_) {
       state = AsyncData(previous);
       rethrow;
     }
+  }
+
+  /// Applies the stored reminder settings to the OS schedule, for settings
+  /// that changed behind this notifier (a backup import).
+  Future<void> reschedule() async {
+    ref.invalidateSelf();
+    await future;
+    await _apply();
+  }
+
+  Future<void> _commit(bool value) async {
+    // Optimistic update for the UI…
+    state = AsyncData(value);
+    await _persist(value);
+    // …then converge to the persisted truth (heals any racing initial
+    // build that read a pre-write snapshot).
+    ref.invalidateSelf();
+    await future;
   }
 
   Future<void> _persist(bool value) async {
@@ -113,8 +134,7 @@ class ReviewReminderEnabledNotifier extends AsyncNotifier<bool> {
       await ref.read(notificationServiceProvider).cancelReminder();
       return true;
     }
-    final minutes =
-        ref.read(reviewReminderMinutesProvider).value ?? defaultReminderMinutes;
+    final minutes = await ref.read(reviewReminderMinutesProvider.future);
     return ref
         .read(notificationServiceProvider)
         .scheduleDailyReminder(hour: minutes ~/ 60, minute: minutes % 60);

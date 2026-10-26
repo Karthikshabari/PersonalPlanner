@@ -43,6 +43,7 @@ class CategoriesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final categoriesAsync = ref.watch(categoriesProvider);
+    final taskCounts = ref.watch(categoryTaskCountsProvider).value;
     final repo = ref.read(categoryRepositoryProvider);
     final tokens = AppThemeTokens.of(context);
     return Scaffold(
@@ -65,86 +66,153 @@ class CategoriesScreen extends ConsumerWidget {
         ),
         error: (e, _) => ErrorPanel(message: friendlyErrorMessage(e)),
         data: (categories) => ReorderableListView.builder(
+          buildDefaultDragHandles: false,
+          header: Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+              'Focus counts toward focus time in reviews',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
           padding: EdgeInsets.all(
             MediaQuery.sizeOf(context).width < 600
                 ? AppSpacing.md
                 : AppSpacing.xl,
-          ),
+          ).copyWith(bottom: AppSpacing.fabClearance),
           itemCount: categories.length,
-          onReorderItem: (oldIndex, newIndex) async {
-            final ids = categories.map((c) => c.id).toList();
-            final moved = ids.removeAt(oldIndex);
-            ids.insert(newIndex, moved);
-            await _runCategoryMutation(
-              context,
-              () => repo.reorderCategories(ids),
-            );
-          },
+          onReorderItem: (oldIndex, newIndex) =>
+              _move(context, repo, categories, oldIndex, newIndex),
           proxyDecorator: (child, index, animation) => ScaleTransition(
             scale: Tween(begin: 1.0, end: 1.02).animate(animation),
             child: child,
           ),
           itemBuilder: (context, index) {
             final category = categories[index];
-            return Card(
+            // Three 48 px buttons would leave the name almost no room.
+            final compact = MediaQuery.sizeOf(context).width < 360;
+            void toggleFocus() => _runCategoryMutation(
+              context,
+              () => repo.updateCategory(
+                category.copyWith(isFocus: !category.isFocus),
+              ),
+            );
+            void edit() => _showEditDialog(context, ref, category);
+            void delete() => _confirmDelete(context, ref, category);
+            // The whole row still drags after a long press, as before.
+            return ReorderableDelayedDragStartListener(
               key: ValueKey('category-${category.id}'),
-              child: ListTile(
-                leading: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: AppColors.parseHex(category.colorHex),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: Text(category.name),
-                subtitle: Text(
-                  category.colorHex,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: 'Focus category',
-                      icon: Icon(
-                        Icons.center_focus_strong,
-                        semanticLabel: category.isFocus
-                            ? 'Focus category, on'
-                            : 'Focus category, off',
-                        size: 20,
-                        color: category.isFocus
-                            ? AppColors.primary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
+              index: index,
+              child: Card(
+                child: ListTile(
+                  horizontalTitleGap: compact ? AppSpacing.sm : null,
+                  contentPadding: compact
+                      ? const EdgeInsets.symmetric(horizontal: AppSpacing.sm)
+                      : null,
+                  leading: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ReorderHandle(
+                        index: index,
+                        onMoveUp: index == 0
+                            ? null
+                            : () => _move(
+                                context,
+                                repo,
+                                categories,
+                                index,
+                                index - 1,
+                              ),
+                        onMoveDown: index == categories.length - 1
+                            ? null
+                            : () => _move(
+                                context,
+                                repo,
+                                categories,
+                                index,
+                                index + 1,
+                              ),
                       ),
-                      onPressed: () => _runCategoryMutation(
-                        context,
-                        () => repo.updateCategory(
-                          category.copyWith(isFocus: !category.isFocus),
+                      const SizedBox(width: AppSpacing.sm),
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: AppColors.categoryColor(
+                            category.colorHex,
+                            Theme.of(context).brightness,
+                          ),
+                          shape: BoxShape.circle,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Edit category',
-                      key: ValueKey('edit-category-${category.name}'),
-                      icon: const Icon(
-                        Icons.edit_outlined,
-                        semanticLabel: 'Edit category',
-                        size: 18,
-                      ),
-                      onPressed: () => _showEditDialog(context, ref, category),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete category',
-                      key: ValueKey('delete-category-${category.name}'),
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        semanticLabel: 'Delete category',
-                        size: 18,
-                      ),
-                      onPressed: () => _confirmDelete(context, ref, category),
-                    ),
-                  ],
+                    ],
+                  ),
+                  title: Text(category.name),
+                  subtitle: _usageSubtitle(
+                    taskCounts?[category.id],
+                    category.isFocus,
+                  ),
+                  trailing: compact
+                      ? PopupMenuButton<VoidCallback>(
+                          key: ValueKey('category-menu-${category.name}'),
+                          tooltip: 'Category actions',
+                          onSelected: (action) => action(),
+                          itemBuilder: (_) => [
+                            CheckedPopupMenuItem(
+                              value: toggleFocus,
+                              checked: category.isFocus,
+                              child: const Text('Focus category'),
+                            ),
+                            PopupMenuItem(
+                              value: edit,
+                              child: const Text('Edit'),
+                            ),
+                            PopupMenuItem(
+                              value: delete,
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Focus category',
+                              icon: Icon(
+                                Icons.center_focus_strong,
+                                semanticLabel: category.isFocus
+                                    ? 'Focus category, on'
+                                    : 'Focus category, off',
+                                size: 20,
+                                color: category.isFocus
+                                    ? AppColors.primary
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                              ),
+                              onPressed: toggleFocus,
+                            ),
+                            IconButton(
+                              tooltip: 'Edit category',
+                              key: ValueKey('edit-category-${category.name}'),
+                              icon: const Icon(
+                                Icons.edit_outlined,
+                                semanticLabel: 'Edit category',
+                                size: 18,
+                              ),
+                              onPressed: edit,
+                            ),
+                            IconButton(
+                              tooltip: 'Delete category',
+                              key: ValueKey('delete-category-${category.name}'),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                semanticLabel: 'Delete category',
+                                size: 18,
+                              ),
+                              onPressed: delete,
+                            ),
+                          ],
+                        ),
                 ),
               ),
             );
@@ -152,6 +220,30 @@ class CategoriesScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Moves the category at [oldIndex] to [newIndex] (the index it ends up at).
+  Future<void> _move(
+    BuildContext context,
+    CategoryRepository repo,
+    List<Category> categories,
+    int oldIndex,
+    int newIndex,
+  ) {
+    final ids = categories.map((c) => c.id).toList();
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(newIndex, moved);
+    return _runCategoryMutation(context, () => repo.reorderCategories(ids));
+  }
+
+  /// "12 tasks" and/or "Focus"; nothing while the counts are loading.
+  static Widget? _usageSubtitle(int? tasks, bool isFocus) {
+    final parts = [
+      if (tasks != null)
+        tasks == 0 ? 'No tasks' : '$tasks task${tasks == 1 ? '' : 's'}',
+      if (isFocus) 'Focus',
+    ];
+    return parts.isEmpty ? null : Text(parts.join(' · '));
   }
 
   Future<void> _showEditDialog(
@@ -422,6 +514,79 @@ class CategoriesScreen extends ConsumerWidget {
         '${count(usage.rules, 'rule')}, '
         '${count(usage.templates, 'template')} use this.';
   }
+}
+
+/// The drag handle of a category row, with Move up / Move down buttons as the
+/// keyboard and screen-reader way to reorder.
+class _ReorderHandle extends StatelessWidget {
+  final int index;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+
+  const _ReorderHandle({
+    required this.index,
+    required this.onMoveUp,
+    required this.onMoveDown,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ReorderableDragStartListener(
+          index: index,
+          child: Tooltip(
+            message: 'Drag to reorder',
+            child: const MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: Padding(
+                padding: EdgeInsets.all(AppSpacing.xs),
+                child: Icon(Icons.drag_indicator, size: 20),
+              ),
+            ),
+          ),
+        ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MoveButton(
+              tooltip: 'Move up',
+              icon: Icons.keyboard_arrow_up,
+              onPressed: onMoveUp,
+            ),
+            _MoveButton(
+              tooltip: 'Move down',
+              icon: Icons.keyboard_arrow_down,
+              onPressed: onMoveDown,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MoveButton extends StatelessWidget {
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  const _MoveButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    icon: Icon(icon, size: 20),
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints.tightFor(width: 32, height: 24),
+    style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+    onPressed: onPressed,
+  );
 }
 
 /// One palette choice: a 44 px target that announces its colour name and

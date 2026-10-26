@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/constants/app_constants.dart';
@@ -35,6 +37,10 @@ import '../../../timeline/presentation/providers/grid_settings_provider.dart';
 import '../../providers/week_start_provider.dart';
 import '../../../../core/utils/date_utils.dart' show WeekStartDay;
 import '../../../sync/presentation/widgets/sync_status_action.dart';
+import '../../../../platform/desktop/keyboard_shortcuts.dart';
+
+/// Widest the Settings content grows; wider windows get side margins.
+const double _contentMaxWidth = 720;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -89,312 +95,338 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         actions: const [SyncStatusAction()],
       ),
       body: LayoutBuilder(
-        builder: (context, constraints) => ListView(
-          padding: EdgeInsets.all(
-            constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl,
-          ),
-          children: [
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.label_outline),
-                title: const Text('Categories'),
-                subtitle: const Text('Manage categories and colors'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/categories'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: ListTile(
-                key: const ValueKey('templates-tile'),
-                leading: const Icon(Icons.bookmark_border_outlined),
-                title: const Text('Task Templates'),
-                subtitle: const Text('Reusable task presets'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/templates'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: ListTile(
-                key: const ValueKey('notifications-tile'),
-                leading: const Icon(Icons.notifications_outlined),
-                title: const Text('Notifications'),
-                subtitle: const Text('Daily review reminder'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/settings/notifications'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: ListTile(
-                key: const ValueKey('day-contexts-tile'),
-                leading: const Icon(Icons.event_note_outlined),
-                title: const Text('Day contexts'),
-                subtitle: const Text('Presets and break days'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/settings/day-contexts'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              key: const ValueKey('settings-review-reasons'),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.rate_review_outlined),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            'Review reasons',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    const ReviewPresetEditor(),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              key: const ValueKey('settings-follow-through-target'),
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Row(
-                  children: [
-                    const Icon(Icons.flag_outlined),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Follow-through target',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(
-                            'Share of planned time a day needs to count '
-                            'toward the Insights streak',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    DropdownButton<double>(
-                      key: const ValueKey('follow-through-target-dropdown'),
-                      value:
-                          ref.watch(followThroughTargetProvider).value ??
-                          defaultFollowThroughTarget,
-                      items: [
-                        for (final target in followThroughTargetChoices)
-                          DropdownMenuItem(
-                            value: target,
-                            child: Text(
-                              '${followThroughTargetPercent(target)}%',
+        builder: (context, constraints) {
+          final gutter = constraints.maxWidth < 600
+              ? AppSpacing.md
+              : AppSpacing.xl;
+          final side = max(
+            gutter,
+            (constraints.maxWidth - _contentMaxWidth) / 2,
+          );
+          return ListView(
+            padding: EdgeInsets.symmetric(horizontal: side, vertical: gutter),
+            children: [
+              _SectionHeading('General'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.brightness_6_outlined),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Appearance',
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                          ),
-                      ],
-                      onChanged: (target) {
-                        if (target == null) return;
-                        _runPreferenceChange(
-                          () => ref
-                              .read(followThroughTargetProvider.notifier)
-                              .setTarget(target),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: ListTile(
-                key: const ValueKey('sync-tile'),
-                leading: const Icon(Icons.cloud_outlined),
-                title: const Text('Sync'),
-                subtitle: const Text('Account, offline mode and sync status'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openSecondary(context, '/settings/sync'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.grid_on_outlined),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            'Timeline grid interval',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
+                            Text(
+                              'System, light or dark',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Snap spacing for drag, resize and quick create',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: DropdownButton<int>(
-                        key: const ValueKey('grid-interval-dropdown'),
-                        value: gridInterval,
+                      ),
+                      DropdownButton<ThemeMode>(
+                        key: const ValueKey('theme-mode-dropdown'),
+                        value: themeMode,
                         items: [
-                          for (final minutes in AppConstants.gridOptions)
+                          for (final mode in ThemeMode.values)
                             DropdownMenuItem(
-                              value: minutes,
-                              child: Text('$minutes min'),
+                              value: mode,
+                              child: Text(_themeModeLabel(mode)),
                             ),
                         ],
-                        onChanged: (minutes) {
-                          if (minutes == null) return;
-                          _runPreferenceChange(
-                            () => ref
-                                .read(gridIntervalProvider.notifier)
-                                .setInterval(minutes),
-                          );
+                        onChanged: (mode) {
+                          if (mode != null) {
+                            _runPreferenceChange(
+                              () => ref
+                                  .read(themeModeProvider.notifier)
+                                  .setMode(mode),
+                            );
+                          }
                         },
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.view_week_outlined),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Text(
-                            'Week starts on',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'First day of the Week view, reviews and Insights',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: DropdownButton<WeekStartDay>(
-                        key: const ValueKey('week-start-dropdown'),
-                        value:
-                            ref.watch(weekStartDayProvider).value ??
-                            WeekStartDay.monday,
-                        items: const [
-                          DropdownMenuItem(
-                            value: WeekStartDay.monday,
-                            child: Text('Monday'),
-                          ),
-                          DropdownMenuItem(
-                            value: WeekStartDay.sunday,
-                            child: Text('Sunday'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          _runPreferenceChange(
-                            () => ref
-                                .read(weekStartDayProvider.notifier)
-                                .setWeekStart(value),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: Row(
-                  children: [
-                    const Icon(Icons.brightness_6_outlined),
-                    const SizedBox(width: AppSpacing.md),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Appearance',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(
-                            'System, light or dark',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                    DropdownButton<ThemeMode>(
-                      key: const ValueKey('theme-mode-dropdown'),
-                      value: themeMode,
-                      items: [
-                        for (final mode in ThemeMode.values)
-                          DropdownMenuItem(
-                            value: mode,
-                            child: Text(_themeModeLabel(mode)),
-                          ),
-                      ],
-                      onChanged: (mode) {
-                        if (mode != null) {
-                          _runPreferenceChange(
-                            () => ref
-                                .read(themeModeProvider.notifier)
-                                .setMode(mode),
-                          );
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            _buildBackupCard(context),
-            if (_backupMessage != null || _backupError != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              if (_backupError != null)
-                ErrorPanel(message: _backupError!, compact: true)
-              else
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.check_circle_outline),
-                    title: Text(_backupMessage!),
+                    ],
                   ),
                 ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.view_week_outlined),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              'Week starts on',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'First day of the Week view, reviews and Insights',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: DropdownButton<WeekStartDay>(
+                          key: const ValueKey('week-start-dropdown'),
+                          value:
+                              ref.watch(weekStartDayProvider).value ??
+                              WeekStartDay.monday,
+                          items: const [
+                            DropdownMenuItem(
+                              value: WeekStartDay.monday,
+                              child: Text('Monday'),
+                            ),
+                            DropdownMenuItem(
+                              value: WeekStartDay.sunday,
+                              child: Text('Sunday'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            _runPreferenceChange(
+                              () => ref
+                                  .read(weekStartDayProvider.notifier)
+                                  .setWeekStart(value),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.grid_on_outlined),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              'Timeline grid interval',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        'Snap spacing for drag, resize and quick create',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: DropdownButton<int>(
+                          key: const ValueKey('grid-interval-dropdown'),
+                          value: gridInterval,
+                          items: [
+                            for (final minutes in AppConstants.gridOptions)
+                              DropdownMenuItem(
+                                value: minutes,
+                                child: Text('$minutes min'),
+                              ),
+                          ],
+                          onChanged: (minutes) {
+                            if (minutes == null) return;
+                            _runPreferenceChange(
+                              () => ref
+                                  .read(gridIntervalProvider.notifier)
+                                  .setInterval(minutes),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (keyboardShortcutsAvailable) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Card(
+                  child: ListTile(
+                    key: const ValueKey('shortcuts-tile'),
+                    leading: const Icon(Icons.keyboard_outlined),
+                    title: const Text('Keyboard shortcuts'),
+                    subtitle: const Text('Keys for the Day view and forms'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => showShortcutHelp(context),
+                  ),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.xl),
+              _SectionHeading('Planning'),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.label_outline),
+                  title: const Text('Categories'),
+                  subtitle: const Text('Manage categories and colors'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _openSecondary(context, '/categories'),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                child: ListTile(
+                  key: const ValueKey('templates-tile'),
+                  leading: const Icon(Icons.bookmark_border_outlined),
+                  title: const Text('Task Templates'),
+                  subtitle: const Text('Reusable task presets'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _openSecondary(context, '/templates'),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                child: ListTile(
+                  key: const ValueKey('day-contexts-tile'),
+                  leading: const Icon(Icons.event_note_outlined),
+                  title: const Text('Day contexts'),
+                  subtitle: const Text('Presets and break days'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () =>
+                      _openSecondary(context, '/settings/day-contexts'),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                key: const ValueKey('settings-review-reasons'),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.rate_review_outlined),
+                          const SizedBox(width: AppSpacing.md),
+                          Expanded(
+                            child: Text(
+                              'Review reasons',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      const ReviewPresetEditor(),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Card(
+                key: const ValueKey('settings-follow-through-target'),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.flag_outlined),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Follow-through target',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              'Share of planned time a day needs to count '
+                              'toward the Insights streak',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownButton<double>(
+                        key: const ValueKey('follow-through-target-dropdown'),
+                        value:
+                            ref.watch(followThroughTargetProvider).value ??
+                            defaultFollowThroughTarget,
+                        items: [
+                          for (final target in followThroughTargetChoices)
+                            DropdownMenuItem(
+                              value: target,
+                              child: Text(
+                                '${followThroughTargetPercent(target)}%',
+                              ),
+                            ),
+                        ],
+                        onChanged: (target) {
+                          if (target == null) return;
+                          _runPreferenceChange(
+                            () => ref
+                                .read(followThroughTargetProvider.notifier)
+                                .setTarget(target),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              _SectionHeading('Notifications'),
+              Card(
+                child: ListTile(
+                  key: const ValueKey('notifications-tile'),
+                  leading: const Icon(Icons.notifications_outlined),
+                  title: const Text('Notifications'),
+                  subtitle: const Text('Daily review reminder'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () =>
+                      _openSecondary(context, '/settings/notifications'),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              _SectionHeading('Data'),
+              Card(
+                child: ListTile(
+                  key: const ValueKey('sync-tile'),
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: const Text('Sync'),
+                  subtitle: const Text('Account, offline mode and sync status'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _openSecondary(context, '/settings/sync'),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _buildBackupCard(context),
+              if (_backupMessage != null || _backupError != null) ...[
+                const SizedBox(height: AppSpacing.sm),
+                if (_backupError != null)
+                  ErrorPanel(message: _backupError!, compact: true)
+                else
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.check_circle_outline),
+                      title: Text(_backupMessage!),
+                    ),
+                  ),
+              ],
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -438,6 +470,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
+          if (_backupBusy) ...[
+            const LinearProgressIndicator(semanticsLabel: 'Working on backup'),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
@@ -486,8 +522,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         allowedExtensions: ['json'],
       );
       if (uri == null) return;
+      final name = uri.pathSegments.lastOrNull;
       if (mounted) {
-        setState(() => _backupMessage = 'Backup exported to $uri');
+        setState(
+          () => _backupMessage = name == null
+              ? 'Saved'
+              : 'Saved ${p.basename(name)}',
+        );
       }
     } catch (error) {
       if (mounted) setState(() => _backupError = friendlyErrorMessage(error));
@@ -499,6 +540,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _showImportDialog() async {
     var replace = false;
     var ownershipConfirmed = false;
+    final cloudScoped = ref.read(openAccountScopeProvider) != null;
     final choice = await showDialog<({bool replace, bool ownershipConfirmed})>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -528,11 +570,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   value: replace,
-                  onChanged: (value) =>
-                      setDialogState(() => replace = value ?? false),
+                  onChanged: cloudScoped
+                      ? null
+                      : (value) =>
+                            setDialogState(() => replace = value ?? false),
                   title: const Text('Replace local data'),
-                  subtitle: const Text(
-                    'Merge is safer. Replace needs confirmation and creates a pre-import backup.',
+                  subtitle: Text(
+                    cloudScoped
+                        ? 'Not available while this account is connected to the cloud. Use merge.'
+                        : 'Merge is safer. Replace needs confirmation and creates a pre-import backup.',
                   ),
                 ),
               ],
@@ -590,6 +636,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         accountScoped: ref.read(openAccountScopeProvider) != null,
       );
       if (replace) {
+        try {
+          await service.preflightReplace(source);
+        } on BackupValidationException catch (error) {
+          if (mounted) setState(() => _backupError = error.message);
+          return;
+        }
         final preImport = await service.exportJson();
         final directory = await getApplicationDocumentsDirectory();
         final recovery = await BackupRecoveryWriter.write(
@@ -639,6 +691,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           );
         }
       }
+      // The import may have rewritten the reminder settings.
+      if (mounted) {
+        await ref.read(reviewReminderEnabledProvider.notifier).reschedule();
+      }
     } catch (error) {
       if (mounted) setState(() => _backupError = friendlyErrorMessage(error));
     } finally {
@@ -675,4 +731,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ThemeMode.light => 'Light',
     ThemeMode.dark => 'Dark',
   };
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Padding(
+      padding: const EdgeInsets.only(
+        left: AppSpacing.xs,
+        bottom: AppSpacing.sm,
+      ),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.primary),
+      ),
+    ),
+  );
 }

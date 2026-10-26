@@ -84,6 +84,72 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('a name over 500 characters is rejected inline and not saved', (
+    tester,
+  ) async {
+    final container = await pumpTemplates(tester);
+
+    await tester.tap(find.byKey(const ValueKey('add-template-fab')));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('template-form-name')),
+      'x' * 501,
+    );
+    await tester.tap(find.byKey(const ValueKey('template-form-save')));
+    await settle(tester);
+
+    expect(find.text('Name must be 500 characters or fewer'), findsOneWidget);
+    expect(find.byKey(const ValueKey('template-form-save')), findsOneWidget);
+    expect(find.textContaining('backup'), findsNothing);
+    final all = await runDb(
+      tester,
+      () => container.read(templateRepositoryProvider).getAllTemplates(),
+    );
+    expect(all, isEmpty);
+    await finish(tester, container);
+  });
+
+  testWidgets('a duration over 24 hours is rejected inline, not capped', (
+    tester,
+  ) async {
+    final container = await pumpTemplates(tester);
+
+    await tester.tap(find.byKey(const ValueKey('add-template-fab')));
+    await settle(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('template-form-name')),
+      'Marathon',
+    );
+    final durationField = find.byWidgetPredicate(
+      (w) => w is TextField && w.decoration?.labelText == 'Duration (minutes)',
+    );
+    await tester.enterText(durationField, '1441');
+    await tester.tap(find.byKey(const ValueKey('template-form-save')));
+    await settle(tester);
+
+    expect(
+      find.text('Duration must be 1440 minutes (24 hours) or less'),
+      findsOneWidget,
+    );
+    expect(
+      await runDb(
+        tester,
+        () => container.read(templateRepositoryProvider).getAllTemplates(),
+      ),
+      isEmpty,
+    );
+
+    await tester.enterText(durationField, '1440');
+    await tester.tap(find.byKey(const ValueKey('template-form-save')));
+    await settle(tester);
+    final all = await runDb(
+      tester,
+      () => container.read(templateRepositoryProvider).getAllTemplates(),
+    );
+    expect(all.single.durationMin, 1440);
+    await finish(tester, container);
+  });
+
   testWidgets('create a template via the FAB form', (tester) async {
     final container = await pumpTemplates(tester);
 

@@ -972,6 +972,44 @@ void main() {
     expect(await database.select(database.tasks).get(), hasLength(tasksBefore));
   });
 
+  group('replace preflight (no writes)', () {
+    test('accepts a valid file on an eligible database', () async {
+      final valid = await BackupService(database).exportJson();
+
+      await BackupService(database).preflightReplace(valid);
+    });
+
+    test('refuses a corrupt file', () async {
+      await expectLater(
+        BackupService(database).preflightReplace('{"not": "a backup"'),
+        throwsA(isA<BackupValidationException>()),
+      );
+    });
+
+    test('refuses any file for an account-scoped database', () async {
+      final valid = await BackupService(database).exportJson();
+
+      await expectLater(
+        BackupService(database, accountScoped: true).preflightReplace(valid),
+        throwsA(isA<BackupValidationException>()),
+      );
+    });
+
+    test('refuses any file once the database has synchronized state', () async {
+      final valid = await BackupService(database).exportJson();
+      await database.syncDao.advanceCursor(
+        'account-a',
+        12,
+        DateTime.utc(2026, 8, 30),
+      );
+
+      await expectLater(
+        BackupService(database).preflightReplace(valid),
+        throwsA(isA<BackupValidationException>()),
+      );
+    });
+  });
+
   test(
     'new tag with an existing active name is a conflict, not an insert',
     () async {

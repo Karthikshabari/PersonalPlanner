@@ -112,16 +112,14 @@ void main() {
     await finish(tester, c);
   });
 
-  testWidgets('the Break day subtitle shows only on rows with Break on', (
-    tester,
-  ) async {
+  testWidgets('every row labels its Break switch', (tester) async {
     final c = await pumpScreen(tester);
     final presets = presetsOf(c);
     for (var i = 0; i < presets.length; i++) {
       final tile = find.byKey(ValueKey('day-context-preset-$i'));
       expect(
         find.descendant(of: tile, matching: find.text('Break day')),
-        presets[i].isBreak ? findsOneWidget : findsNothing,
+        findsOneWidget,
         reason: presets[i].name,
       );
     }

@@ -44,6 +44,28 @@ void main() {
     await finish(tester, container);
   });
 
+  testWidgets('Move up and Move down reorder the categories', (tester) async {
+    final container = await pumpCategories(tester);
+    Future<List<String>> names() async => (await runDb(
+      tester,
+      () => container.read(categoryRepositoryProvider).getAllCategories(),
+    )).map((c) => c.name).toList();
+    final original = await names();
+    Finder inRow(String name, String tooltip) => find.descendant(
+      of: find.ancestor(of: find.text(name), matching: find.byType(Card)),
+      matching: find.byTooltip(tooltip),
+    );
+
+    await tester.tap(inRow(original[1], 'Move up'));
+    await settle(tester);
+    expect(await names(), [original[1], original[0], ...original.skip(2)]);
+
+    await tester.tap(inRow(original[1], 'Move down'));
+    await settle(tester);
+    expect(await names(), original);
+    await finish(tester, container);
+  });
+
   testWidgets('edit renames a category', (tester) async {
     final container = await pumpCategories(tester);
     await tester.tap(find.byKey(const ValueKey('edit-category-Work')));

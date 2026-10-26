@@ -54,14 +54,27 @@ enum PlannerShortcutAction {
   help,
 }
 
+/// The sections of the shortcut help.
+enum PlannerShortcutGroup {
+  day('Day'),
+  navigate('Navigate'),
+  edit('Edit');
+
+  const PlannerShortcutGroup(this.label);
+
+  final String label;
+}
+
 class PlannerShortcutDefinition {
   final PlannerShortcutAction action;
+  final PlannerShortcutGroup group;
   final String shortcut;
   final String description;
   final List<ShortcutActivator> activators;
 
   const PlannerShortcutDefinition({
     required this.action,
+    required this.group,
     required this.shortcut,
     required this.description,
     required this.activators,
@@ -73,18 +86,21 @@ abstract final class PlannerShortcutRegistry {
   static const definitions = <PlannerShortcutDefinition>[
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.newTask,
+      group: PlannerShortcutGroup.day,
       shortcut: 'N',
       description: 'New task block at the selected time slot',
       activators: [SingleActivator(LogicalKeyboardKey.keyN)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.addInbox,
+      group: PlannerShortcutGroup.day,
       shortcut: 'I',
       description: 'Add a new item to the Inbox',
       activators: [SingleActivator(LogicalKeyboardKey.keyI)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.edit,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'E / Enter',
       description: 'Edit the selected task',
       activators: [
@@ -94,6 +110,7 @@ abstract final class PlannerShortcutRegistry {
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.delete,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Delete / Backspace',
       description: 'Delete the selected task (with confirmation)',
       activators: [
@@ -103,24 +120,28 @@ abstract final class PlannerShortcutRegistry {
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.duplicate,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'D',
       description: 'Duplicate the selected task',
       activators: [SingleActivator(LogicalKeyboardKey.keyD)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.cycleStatus,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Space',
       description: 'Cycle the selected task status',
       activators: [SingleActivator(LogicalKeyboardKey.space)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.undo,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Ctrl+Z',
       description: 'Undo the last scheduling operation',
       activators: [SingleActivator(LogicalKeyboardKey.keyZ, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.redo,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Ctrl+Shift+Z',
       description: 'Redo the last scheduling operation',
       activators: [
@@ -129,48 +150,56 @@ abstract final class PlannerShortcutRegistry {
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.previousDay,
+      group: PlannerShortcutGroup.day,
       shortcut: '←',
       description: 'Navigate to the previous day',
       activators: [SingleActivator(LogicalKeyboardKey.arrowLeft)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.nextDay,
+      group: PlannerShortcutGroup.day,
       shortcut: '→',
       description: 'Navigate to the next day',
       activators: [SingleActivator(LogicalKeyboardKey.arrowRight)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.today,
+      group: PlannerShortcutGroup.day,
       shortcut: 'T',
       description: 'Jump to today',
       activators: [SingleActivator(LogicalKeyboardKey.keyT)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.search,
+      group: PlannerShortcutGroup.navigate,
       shortcut: 'Ctrl+F',
       description: 'Search this page, or open Search',
       activators: [SingleActivator(LogicalKeyboardKey.keyF, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.previousTask,
+      group: PlannerShortcutGroup.navigate,
       shortcut: '↑',
       description: 'Select the previous task block',
       activators: [SingleActivator(LogicalKeyboardKey.arrowUp)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.nextTask,
+      group: PlannerShortcutGroup.navigate,
       shortcut: '↓',
       description: 'Select the next task block',
       activators: [SingleActivator(LogicalKeyboardKey.arrowDown)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.moveUp,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Ctrl+↑',
       description: 'Move the selected task up one grid slot',
       activators: [SingleActivator(LogicalKeyboardKey.arrowUp, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.moveDown,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Ctrl+↓',
       description: 'Move the selected task down one grid slot',
       activators: [
@@ -179,42 +208,49 @@ abstract final class PlannerShortcutRegistry {
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.resizeUp,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Shift+↑',
       description: 'Shorten the selected task by one grid slot',
       activators: [SingleActivator(LogicalKeyboardKey.arrowUp, shift: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.resizeDown,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Shift+↓',
       description: 'Lengthen the selected task by one grid slot',
       activators: [SingleActivator(LogicalKeyboardKey.arrowDown, shift: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.saveAndClose,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Ctrl+Enter',
       description: 'Save the form you are in (task editor, reviews, Inbox)',
       activators: [SingleActivator(LogicalKeyboardKey.enter, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.escape,
+      group: PlannerShortcutGroup.edit,
       shortcut: 'Esc',
       description: 'Close a dialog or menu, the editor, or cancel a drag',
       activators: [SingleActivator(LogicalKeyboardKey.escape)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.week,
+      group: PlannerShortcutGroup.day,
       shortcut: 'W',
       description: 'Switch between Day and Week view',
       activators: [SingleActivator(LogicalKeyboardKey.keyW)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.dailyReview,
+      group: PlannerShortcutGroup.navigate,
       shortcut: 'Ctrl+R',
       description: 'Open Daily Review',
       activators: [SingleActivator(LogicalKeyboardKey.keyR, control: true)],
     ),
     PlannerShortcutDefinition(
       action: PlannerShortcutAction.help,
+      group: PlannerShortcutGroup.navigate,
       shortcut: '?',
       description: 'Show keyboard shortcut help',
       activators: [
@@ -241,6 +277,91 @@ abstract final class PlannerShortcutRegistry {
       usesCommandModifier
       ? definition.shortcut.replaceAll('Ctrl+', '⌘')
       : definition.shortcut;
+}
+
+/// Whether this platform has keyboard shortcuts; off desktop nothing is
+/// matched.
+bool get keyboardShortcutsAvailable =>
+    defaultTargetPlatform != TargetPlatform.android &&
+    defaultTargetPlatform != TargetPlatform.iOS;
+
+/// Opens the shortcut help dialog, the same one the `?` key shows.
+Future<void> showShortcutHelp(BuildContext context) {
+  final rows = <Widget>[];
+  for (final group in PlannerShortcutGroup.values) {
+    rows.add(_ShortcutHelpHeading(group.label));
+    for (final definition in PlannerShortcutRegistry.definitions) {
+      if (definition.group != group) continue;
+      rows.add(
+        _ShortcutHelpRow(
+          PlannerShortcutRegistry.label(definition),
+          definition.description,
+        ),
+      );
+    }
+    if (group == PlannerShortcutGroup.edit) {
+      rows.add(
+        const _ShortcutHelpRow('Enter', "In a dialog's name field: save it"),
+      );
+    }
+  }
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      key: const ValueKey('shortcut-help-dialog'),
+      title: const Text('Keyboard shortcuts'),
+      content: SizedBox(
+        width: 440,
+        height: 520,
+        child: ListView(children: rows),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ShortcutHelpHeading extends StatelessWidget {
+  const _ShortcutHelpHeading(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    header: true,
+    child: Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.md, bottom: AppSpacing.xs),
+      child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+    ),
+  );
+}
+
+class _ShortcutHelpRow extends StatelessWidget {
+  const _ShortcutHelpRow(this.shortcut, this.description);
+
+  final String shortcut;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 130,
+          child: Text(
+            shortcut,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Expanded(child: Text(description)),
+      ],
+    ),
+  );
 }
 
 class _PlannerIntent extends Intent {
@@ -335,9 +456,7 @@ class _KeyboardShortcutHandlerState
     super.dispose();
   }
 
-  bool get _isDesktop =>
-      defaultTargetPlatform != TargetPlatform.android &&
-      defaultTargetPlatform != TargetPlatform.iOS;
+  bool get _isDesktop => keyboardShortcutsAvailable;
 
   BuildContext? get _navigatorContext =>
       appNavigatorKey.currentState?.overlay?.context;
@@ -621,48 +740,9 @@ class _KeyboardShortcutHandlerState
   }
 
   Future<void> _showHelp() {
-    final navigator = appNavigatorKey.currentState;
-    final overlayContext = navigator?.overlay?.context;
+    final overlayContext = appNavigatorKey.currentState?.overlay?.context;
     if (overlayContext == null) return Future<void>.value();
-    return showDialog<void>(
-      context: overlayContext,
-      builder: (dialogContext) => AlertDialog(
-        key: const ValueKey('shortcut-help-dialog'),
-        title: const Text('Keyboard shortcuts'),
-        content: SizedBox(
-          width: 440,
-          height: 520,
-          child: ListView.separated(
-            itemCount: PlannerShortcutRegistry.definitions.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (_, index) {
-              final definition = PlannerShortcutRegistry.definitions[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 130,
-                      child: Text(
-                        PlannerShortcutRegistry.label(definition),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Expanded(child: Text(definition.description)),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+    return showShortcutHelp(overlayContext);
   }
 
   @override

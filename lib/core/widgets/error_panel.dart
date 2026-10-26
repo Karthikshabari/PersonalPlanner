@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../features/settings/data/backup_format.dart';
+
 /// Converts infrastructure failures into a safe, actionable message. Raw
 /// exceptions may contain SQL, URLs, account identifiers, or auth details and
 /// are intentionally never shown in the UI.
 String friendlyErrorMessage(Object error) {
   final message = error.toString().toLowerCase();
-  if (message.contains('checksum')) {
-    return 'This backup is damaged or was changed. Choose another file.';
-  }
-  if (message.contains('backup') ||
-      message.contains('json') ||
-      message.contains('schema')) {
-    return 'The backup file is invalid or from an unsupported version.';
+  if (error is BackupValidationException) {
+    return message.contains('checksum')
+        ? 'This backup is damaged or was changed. Choose another file.'
+        : 'The backup file is invalid or from an unsupported version.';
   }
   if (message.contains('foreign key') || message.contains('integrity')) {
     return 'The operation failed an integrity check. No partial changes were saved.';

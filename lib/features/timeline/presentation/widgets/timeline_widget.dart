@@ -1301,7 +1301,8 @@ class _EmptyDayCard extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Tap a time slot or pull something from Inbox.',
+                'Tap a time slot or pull something from Inbox. '
+                'Pick a category in the editor.',
                 key: const ValueKey('empty-day-hint'),
                 style: DayStyle.secondary(context),
               ),

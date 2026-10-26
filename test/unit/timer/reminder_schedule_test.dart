@@ -115,38 +115,111 @@ void main() {
       );
     });
 
-    test(
-      'daily-review preference stays enabled when permission is denied',
-      () async {
-        final denied = _PermissionNotificationService();
-        final store = _MemoryKeyValueStore();
-        final isolated = ProviderContainer(
-          overrides: [
-            appDatabaseProvider.overrideWithValue(db),
-            notificationServiceProvider.overrideWithValue(denied),
-            notificationPermissionControllerProvider.overrideWithValue(
-              NotificationPermissionController(
-                notifications: denied,
-                store: store,
-                runtimePermissionRequired: () => true,
-              ),
+    test('denied permission turns the reminder back off', () async {
+      final denied = _PermissionNotificationService();
+      final store = _MemoryKeyValueStore();
+      final isolated = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          notificationServiceProvider.overrideWithValue(denied),
+          notificationPermissionControllerProvider.overrideWithValue(
+            NotificationPermissionController(
+              notifications: denied,
+              store: store,
+              runtimePermissionRequired: () => true,
             ),
-          ],
-        );
-        addTearDown(isolated.dispose);
+          ),
+        ],
+      );
+      addTearDown(isolated.dispose);
+      await isolated
+          .read(reviewReminderEnabledProvider.notifier)
+          .setEnabled(false);
 
+      final applied = await isolated
+          .read(reviewReminderEnabledProvider.notifier)
+          .setEnabled(true);
+
+      expect(applied, isFalse);
+      expect(
+        await isolated.read(reviewReminderEnabledProvider.future),
+        isFalse,
+      );
+      expect(await setting(reminderEnabledKey), 'false');
+      expect(denied.permissionRequests, 1);
+    });
+
+    test('a reminder that cannot be scheduled turns back off', () async {
+      final granted = _RecordingReminderService(scheduleResult: false);
+      final isolated = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          notificationServiceProvider.overrideWithValue(granted),
+          notificationPermissionControllerProvider.overrideWithValue(
+            NotificationPermissionController(
+              notifications: granted,
+              store: _MemoryKeyValueStore(),
+              runtimePermissionRequired: () => false,
+            ),
+          ),
+        ],
+      );
+      addTearDown(isolated.dispose);
+      await isolated
+          .read(reviewReminderEnabledProvider.notifier)
+          .setEnabled(false);
+
+      final applied = await isolated
+          .read(reviewReminderEnabledProvider.notifier)
+          .setEnabled(true);
+
+      expect(applied, isFalse);
+      expect(
+        await isolated.read(reviewReminderEnabledProvider.future),
+        isFalse,
+      );
+      expect(await setting(reminderEnabledKey), 'false');
+    });
+
+    test('rescheduling follows reminder settings written behind the '
+        'providers (backup import)', () async {
+      final service = _RecordingReminderService();
+      final isolated = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          notificationServiceProvider.overrideWithValue(service),
+        ],
+      );
+      addTearDown(isolated.dispose);
+      expect(await isolated.read(reviewReminderEnabledProvider.future), isTrue);
+      await isolated.read(reviewReminderMinutesProvider.future);
+
+      Future<void> importSettings(String enabled, String minutes) async {
+        for (final entry in {
+          reminderEnabledKey: enabled,
+          reminderTimeKey: minutes,
+        }.entries) {
+          await db.customStatement(
+            'INSERT INTO app_settings (key, value) VALUES (?, ?) '
+            'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+            [entry.key, entry.value],
+          );
+        }
+        isolated
+          ..invalidate(reviewReminderEnabledProvider)
+          ..invalidate(reviewReminderMinutesProvider);
         await isolated
             .read(reviewReminderEnabledProvider.notifier)
-            .setEnabled(true);
+            .reschedule();
+      }
 
-        expect(
-          await isolated.read(reviewReminderEnabledProvider.future),
-          isTrue,
-        );
-        expect(await setting(reminderEnabledKey), 'true');
-        expect(denied.permissionRequests, 1);
-      },
-    );
+      await importSettings('true', '${8 * 60 + 35}');
+      expect(service.scheduled, [(8, 35)]);
+
+      await importSettings('false', '${9 * 60}');
+      expect(service.scheduled, [(8, 35)]);
+      expect(service.cancelCount, 1);
+    });
   });
 
   group('Android notification permission', () {
@@ -1119,6 +1192,29 @@ class _MemoryKeyValueStore implements SecureKeyValueStore {
   Future<void> write({required String key, required String value}) async {
     _values[key] = value;
   }
+}
+
+class _RecordingReminderService extends NotificationService {
+  _RecordingReminderService({this.scheduleResult = true});
+
+  final bool scheduleResult;
+  final scheduled = <(int, int)>[];
+  int cancelCount = 0;
+
+  @override
+  bool get schedulingSupported => true;
+
+  @override
+  Future<bool> scheduleDailyReminder({
+    required int hour,
+    required int minute,
+  }) async {
+    if (scheduleResult) scheduled.add((hour, minute));
+    return scheduleResult;
+  }
+
+  @override
+  Future<void> cancelReminder() async => cancelCount++;
 }
 
 class _PermissionNotificationService extends NotificationService {

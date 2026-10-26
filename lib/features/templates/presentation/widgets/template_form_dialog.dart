@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/task_template.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/error_panel.dart';
@@ -38,6 +40,8 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
   String? _categoryId;
   bool _saving = false;
   String? _error;
+  String? _nameError;
+  String? _durationError;
 
   @override
   void initState() {
@@ -62,16 +66,27 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
   Future<void> _save() async {
     if (_saving) return;
     final name = _nameController.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = 'Template name must not be blank.');
-      return;
-    }
     final parsedDuration = int.tryParse(_durationController.text.trim());
-    if (parsedDuration == null || parsedDuration <= 0) {
-      setState(() => _error = 'Duration must be a positive whole number.');
+    final nameError = name.isEmpty
+        ? 'Template name must not be blank.'
+        : name.length > AppConstants.maxTemplateNameLength
+        ? 'Name must be ${AppConstants.maxTemplateNameLength} '
+              'characters or fewer'
+        : null;
+    final durationError = parsedDuration == null || parsedDuration <= 0
+        ? 'Duration must be a positive whole number.'
+        : parsedDuration > AppConstants.maxTemplateDurationMinutes
+        ? 'Duration must be ${AppConstants.maxTemplateDurationMinutes} '
+              'minutes (24 hours) or less'
+        : null;
+    if (nameError != null || durationError != null) {
+      setState(() {
+        _nameError = nameError;
+        _durationError = durationError;
+      });
       return;
     }
-    final duration = parsedDuration.clamp(1, 10000);
+    final duration = parsedDuration!;
     final now = DateTime.now();
     final template =
         (widget.existing ??
@@ -94,6 +109,8 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
     setState(() {
       _saving = true;
       _error = null;
+      _nameError = null;
+      _durationError = null;
     });
     try {
       if (widget.existing == null) {
@@ -135,7 +152,15 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
                 controller: _nameController,
                 autofocus: true,
                 onSubmitted: (_) => _save(),
-                decoration: const InputDecoration(labelText: 'Name'),
+                maxLength: AppConstants.maxTemplateNameLength,
+                maxLengthEnforcement: MaxLengthEnforcement.none,
+                onChanged: (_) {
+                  if (_nameError != null) setState(() => _nameError = null);
+                },
+                decoration: InputDecoration(
+                  labelText: 'Name',
+                  errorText: _nameError,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               TextField(
@@ -147,8 +172,14 @@ class _TemplateFormDialogState extends ConsumerState<_TemplateFormDialog> {
               TextField(
                 controller: _durationController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
+                onChanged: (_) {
+                  if (_durationError != null) {
+                    setState(() => _durationError = null);
+                  }
+                },
+                decoration: InputDecoration(
                   labelText: 'Duration (minutes)',
+                  errorText: _durationError,
                 ),
               ),
               const SizedBox(height: AppSpacing.md),

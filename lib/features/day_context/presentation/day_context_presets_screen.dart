@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_theme_tokens.dart';
+import '../../sync/presentation/widgets/sync_status_action.dart';
 import '../domain/day_context_presets.dart';
 import '../providers/day_context_presets_provider.dart';
 
@@ -21,7 +22,10 @@ class DayContextPresetsScreen extends ConsumerWidget {
     final notifier = ref.read(dayContextPresetsProvider.notifier);
     return Scaffold(
       backgroundColor: tokens.canvas,
-      appBar: AppBar(title: const Text('Day contexts')),
+      appBar: AppBar(
+        title: const Text('Day contexts'),
+        actions: const [SyncStatusAction()],
+      ),
       body: presets == null
           ? Center(
               child: async.hasError
@@ -44,15 +48,33 @@ class DayContextPresetsScreen extends ConsumerWidget {
                         ListTile(
                           key: ValueKey('day-context-preset-$i'),
                           title: Text(presets[i].name),
-                          subtitle: presets[i].isBreak
-                              ? const Text('Break day')
-                              : null,
-                          leading: Semantics(
-                            label: 'Break day: ${presets[i].name}',
-                            child: Switch(
-                              key: ValueKey('day-context-preset-break-$i'),
-                              value: presets[i].isBreak,
-                              onChanged: (value) => notifier.setBreak(i, value),
+                          leading: FittedBox(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Semantics(
+                                  label: 'Break day: ${presets[i].name}',
+                                  child: Switch(
+                                    key: ValueKey(
+                                      'day-context-preset-break-$i',
+                                    ),
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    value: presets[i].isBreak,
+                                    onChanged: (value) =>
+                                        notifier.setBreak(i, value),
+                                  ),
+                                ),
+                                // The switch already announces "Break day".
+                                ExcludeSemantics(
+                                  child: Text(
+                                    'Break day',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           trailing: Row(
