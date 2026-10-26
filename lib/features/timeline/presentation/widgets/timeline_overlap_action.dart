@@ -106,24 +106,28 @@ class TimelineOverlapAction extends StatelessWidget {
         child: Material(
           color: theme.colorScheme.surface.withValues(alpha: 0.94),
           borderRadius: BorderRadius.circular(DayStyle.small(context)),
-          child: InkWell(
-            key: ValueKey('timeline-overlap-action-${geometry.task.id}'),
-            borderRadius: BorderRadius.circular(DayStyle.small(context)),
-            onTap: () => _showComponent(context),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.layers_outlined, size: 12, color: style.color),
-                  const SizedBox(width: 2),
-                  Text(
-                    '${geometry.componentTaskIds.length}',
-                    maxLines: 1,
-                    softWrap: false,
-                    style: style,
-                  ),
-                ],
+          child: Tooltip(
+            message: [for (final task in _componentTasks) task.title]
+                .join('\n'),
+            child: InkWell(
+              key: ValueKey('timeline-overlap-action-${geometry.task.id}'),
+              borderRadius: BorderRadius.circular(DayStyle.small(context)),
+              onTap: () => _showComponent(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.layers_outlined, size: 12, color: style.color),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${geometry.componentTaskIds.length}',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: style,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

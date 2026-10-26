@@ -15,6 +15,7 @@ import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/planner_day_axis.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
+import 'package:personal_planner/features/timeline/presentation/widgets/task_quick_create.dart';
 
 import '../helpers/test_container.dart';
 
@@ -215,12 +216,14 @@ void main() {
       ValueKey('week-grid-${isoDateString(weekStart)}'),
     );
     expect(tester.getTopLeft(mondayGrid).dy, tester.getTopLeft(grid).dy);
-    // The indicator is owned by the page-level timeline stack, so its
-    // horizontal span covers every displayed day column while task geometry
-    // remains anchored to its individual column.
+    // The line is bounded to today's column, whichever one it is.
     expect(
       tester.getSize(line).width,
-      closeTo(tester.getSize(mondayGrid).width * 7, 0.01),
+      closeTo(tester.getSize(grid).width, 0.01),
+    );
+    expect(
+      tester.getTopLeft(line).dx,
+      closeTo(tester.getTopLeft(grid).dx, 0.01),
     );
 
     await tester.tap(find.byKey(const ValueKey('weekview-next')));
@@ -327,13 +330,15 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.tap(
-      find.byKey(
-        ValueKey(
-          'week-day-selector-${isoDateString(monday().add(const Duration(days: 6)))}',
-        ),
+    // The strip scrolls sideways, so Sunday starts off screen.
+    final sunday = find.byKey(
+      ValueKey(
+        'week-day-selector-${isoDateString(monday().add(const Duration(days: 6)))}',
       ),
     );
+    await tester.ensureVisible(sunday);
+    await tester.pump();
+    await tester.tap(sunday);
     await settle(tester);
     expect(
       isSameDay(
@@ -396,6 +401,60 @@ void main() {
       findsOneWidget,
     );
     expect(isSameDay(container.read(selectedDateProvider), tuesday), isTrue);
+    await finish(tester, container);
+  });
+
+  testWidgets('tapping an empty Week slot opens Day there with quick-create', (
+    tester,
+  ) async {
+    final container = await pumpDay(tester);
+    await openWeekView(tester);
+
+    final wednesday = monday().add(const Duration(days: 2));
+    final grid = find.byKey(ValueKey('week-grid-${isoDateString(wednesday)}'));
+    // Scroll the grid to the top so the 10:00 row is on screen.
+    await tester.drag(grid, const Offset(0, 5000));
+    await settle(tester);
+    final slotY = AppConstants.hourRowHeight * 10 + 8;
+    await tester.tapAt(tester.getTopLeft(grid) + Offset(20, slotY));
+    await settle(tester);
+
+    expect(isSameDay(container.read(selectedDateProvider), wednesday), isTrue);
+    expect(find.byKey(const ValueKey('quick-create-input')), findsOneWidget);
+    expect(
+      tester.widget<TaskQuickCreate>(find.byType(TaskQuickCreate)).initialStart,
+      PlannerDayAxis(wednesday).instantAt(10 * 60),
+    );
+    await finish(tester, container);
+  });
+
+  testWidgets('selecting a day that is already on screen keeps the page', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    final container = await buildTestContainer(tester);
+    final sunday = monday().add(const Duration(days: 6));
+    final saturday = monday().add(const Duration(days: 5));
+    container.read(selectedWeekStartProvider.notifier).state = monday();
+    container.read(selectedDateProvider.notifier).state = sunday;
+    appRouter.go('/week');
+    // Three columns per page: the last page shows Friday to Sunday.
+    await pumpApp(tester, container, surface: const Size(700, 900));
+    expect(
+      find.byKey(ValueKey('week-header-${isoDateString(sunday)}')),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(ValueKey('week-day-selector-${isoDateString(saturday)}')),
+    );
+    await settle(tester);
+
+    expect(isSameDay(container.read(selectedDateProvider), saturday), isTrue);
+    expect(
+      find.byKey(ValueKey('week-header-${isoDateString(sunday)}')),
+      findsOneWidget,
+    );
     await finish(tester, container);
   });
 

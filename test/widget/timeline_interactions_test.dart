@@ -8,12 +8,14 @@ import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/core/widgets/status_badge.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/day_tasks_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/grid_settings_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart'
     as date_provider;
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
+import 'package:personal_planner/features/timeline/presentation/providers/undo_stack_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/ghost_preview.dart';
 
 import '../helpers/test_container.dart';
@@ -465,6 +467,72 @@ void main() {
     expect(find.textContaining('Redo:'), findsOneWidget);
     await finish(tester, container);
   });
+
+  testWidgets(
+    'touch move, resize and status change each leave one undo entry and '
+    'the toast Undo restores the previous state',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final container = await buildTestContainer(tester);
+      container.read(date_provider.selectedDateProvider.notifier).state =
+          viewDay;
+      await pumpApp(tester, container, surface: const Size(393, 844));
+      final task = await insertTask(
+        tester,
+        container,
+        taskSpec('Undo me', 480, 540),
+      );
+      int undoDepth() => container.read(undoStackProvider).undoStack.length;
+      final handle = find.descendant(
+        of: blockOf(task),
+        matching: find.byKey(const ValueKey('resize-handle')),
+      );
+      final badge = find.descendant(
+        of: blockOf(task),
+        matching: find.byType(StatusBadge),
+      );
+
+      await tester.tap(blockOf(task));
+      await settle(tester);
+      for (final (gesture, changed)
+          in <(Future<void> Function(), bool Function(Task))>[
+            (
+              () => touchDrag(tester, blockOf(task), const Offset(0, -64)),
+              (t) => t.startTime != task.startTime,
+            ),
+            (
+              () => mouseDrag(tester, handle, const Offset(0, 64)),
+              (t) => t.endTime != task.endTime,
+            ),
+            (
+              () async {
+                await tester.tap(badge);
+                await tester.pump();
+              },
+              (t) => t.status != task.status,
+            ),
+          ]) {
+        // Each gesture starts from the original task.
+        final before = undoDepth();
+        await gesture();
+        await settle(tester);
+        expect(undoDepth(), before + 1);
+        expect(
+          changed((await streamedTaskById(tester, container, task.id))!),
+          isTrue,
+        );
+
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Undo'));
+        await settle(tester);
+        expect(undoDepth(), before);
+        final restored = (await streamedTaskById(tester, container, task.id))!;
+        expect(restored.startTime, task.startTime);
+        expect(restored.endTime, task.endTime);
+        expect(restored.status, task.status);
+      }
+      await finish(tester, container);
+    },
+  );
 
   testWidgets('D key duplicates the selected task into the next free slot', (
     tester,

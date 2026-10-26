@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show StateController;
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/models/enums/task_status.dart';
@@ -11,6 +14,7 @@ import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/confirm_dialog.dart';
+import '../../../../core/widgets/error_panel.dart';
 import '../../../recurring/presentation/widgets/recurrence_scope_dialog.dart';
 import '../../../recurring/domain/recurrence_aggregate_command.dart';
 import '../../../recurring/providers/recurring_providers.dart';
@@ -136,19 +140,63 @@ abstract final class TimelineActions {
   /// One conflict-aware commit boundary for all scheduled-task entry points.
   /// Candidate rows are re-read after any user dialog and before the command
   /// runs, so a newly inserted overlap never gets silently ignored.
+  ///
+  /// [doneMessage] is the toast shown, with an Undo action, once the change is
+  /// committed. Touch gestures pass it because they have no Ctrl+Z.
   static Future<bool> commitScheduledChange(
     BuildContext context,
     WidgetRef ref, {
     required SchedulingCommand primary,
     required Task hypothetical,
     DateTime? anchorDate,
+    String? doneMessage,
   }) => _commitConflictAware(
     context,
     ref,
     primary,
     hypothetical,
     anchorDate: anchorDate,
+    doneMessage: doneMessage,
   );
+
+  /// Shows [message] with an Undo action that reverts the latest history
+  /// entry. The notifiers are read now, so tapping Undo after the caller has
+  /// left the tree still works.
+  static void showUndoToast(
+    BuildContext context,
+    WidgetRef ref,
+    String message,
+  ) {
+    final history = ref.read(undoStackProvider.notifier);
+    final overlapIds = ref.read(keepOverlapIdsProvider.notifier);
+    showAppToast(
+      context,
+      message,
+      actionLabel: 'Undo',
+      onAction: () => unawaited(_undoLast(context, history, overlapIds)),
+    );
+  }
+
+  /// Reverts the latest history entry, like Ctrl+Z.
+  static Future<void> undoLast(BuildContext context, WidgetRef ref) =>
+      _undoLast(
+        context,
+        ref.read(undoStackProvider.notifier),
+        ref.read(keepOverlapIdsProvider.notifier),
+      );
+
+  static Future<void> _undoLast(
+    BuildContext context,
+    UndoStackNotifier history,
+    StateController<Set<String>> overlapIds,
+  ) async {
+    overlapIds.state = const <String>{};
+    try {
+      await history.undo();
+    } on Object catch (error) {
+      if (context.mounted) showAppToast(context, friendlyErrorMessage(error));
+    }
+  }
 
   /// Plans a session of an Inbox idea (or reschedules an overdue task)
   /// through the same conflict-aware command path used by timeline drops. An
@@ -339,7 +387,7 @@ abstract final class TimelineActions {
       ),
     );
     if (!context.mounted) return;
-    showAppToast(context, 'Duplicated "${task.title}"');
+    showUndoToast(context, ref, 'Duplicated "${task.title}"');
   }
 
   /// Asks for confirmation, then soft-deletes via [DeleteTaskCommand].
@@ -520,6 +568,7 @@ abstract final class TimelineActions {
     SchedulingCommand primary,
     Task hypothetical, {
     DateTime? anchorDate,
+    String? doneMessage,
   }) async {
     final repository = ref.read(taskRepositoryProvider);
     final DateTime anchor = anchorDate ?? ref.read(selectedDateProvider);
@@ -555,6 +604,9 @@ abstract final class TimelineActions {
           beforeExecute: beforeExecute,
         ),
       );
+      if (doneMessage != null && context.mounted) {
+        showUndoToast(context, ref, doneMessage);
+      }
       return true;
     }
     if (!context.mounted) return false;
@@ -576,6 +628,9 @@ abstract final class TimelineActions {
         hypothetical.id,
         for (final conflict in conflicts) conflict.id,
       };
+      if (doneMessage != null && context.mounted) {
+        showUndoToast(context, ref, doneMessage);
+      }
       return true;
     }
     final plan = SchedulingConflictService.plan(
@@ -611,13 +666,19 @@ abstract final class TimelineActions {
           .where((id) => id != hypothetical.id)
           .length;
       if (unshifted > 0 && context.mounted) {
-        showAppToast(
-          context,
-          unshifted == 1
-              ? '1 block could not be shifted without overlapping and was left in place'
-              : '$unshifted blocks could not be shifted without overlapping and were left in place',
-        );
+        final warning = unshifted == 1
+            ? '1 block could not be shifted without overlapping and was left in place'
+            : '$unshifted blocks could not be shifted without overlapping and were left in place';
+        if (doneMessage == null) {
+          showAppToast(context, warning);
+        } else {
+          showUndoToast(context, ref, warning);
+        }
+        return true;
       }
+    }
+    if (doneMessage != null && context.mounted) {
+      showUndoToast(context, ref, doneMessage);
     }
     return true;
   }

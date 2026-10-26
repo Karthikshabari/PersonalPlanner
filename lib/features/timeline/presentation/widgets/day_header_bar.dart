@@ -22,10 +22,12 @@ import '../../../review/providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
+import '../providers/day_view_controller.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
 import '../providers/timeline_action_provider.dart';
+import '../providers/undo_stack_provider.dart';
 import 'day_layout.dart';
 import 'day_style.dart';
 
@@ -306,8 +308,8 @@ class _DayContextChip extends ConsumerWidget {
   }
 }
 
-/// "Day context..." always; "Previous day" and "Next day" on compact, where
-/// stepping is otherwise only the swipe.
+/// "Undo" and "Day context..." always; "Previous day" and "Next day" on
+/// compact, where stepping is otherwise only the swipe.
 class _OverflowMenu extends ConsumerWidget {
   const _OverflowMenu({required this.date, required this.includeStepping});
 
@@ -319,6 +321,18 @@ class _OverflowMenu extends ConsumerWidget {
     final current = ref.watch(dayContextForDateProvider(date)).value;
     return MenuAnchor(
       menuChildren: [
+        // Built only while the menu is open, so a closed header does not
+        // rebuild on every history change.
+        Consumer(
+          builder: (_, ref, _) => MenuItemButton(
+            key: const ValueKey('day-overflow-undo'),
+            leadingIcon: const Icon(Icons.undo),
+            onPressed: ref.watch(undoStackProvider.select((s) => s.canUndo))
+                ? () => TimelineActions.undoLast(context, ref)
+                : null,
+            child: const Text('Undo'),
+          ),
+        ),
         MenuItemButton(
           key: const ValueKey('day-overflow-context'),
           leadingIcon: Icon(dayContextIcon(current?.kind)),

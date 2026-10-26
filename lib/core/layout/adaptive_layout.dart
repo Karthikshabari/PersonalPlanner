@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../constants/app_constants.dart';
 
 bool isDesktopWidth(double width) => width >= AppConstants.desktopBreakpoint;
@@ -47,9 +49,7 @@ class WeekViewportLayout {
     if (width < 600) return 1;
     final minimum = defaultMinimumDayWidth * scale;
     final ruler = rulerWidth ?? defaultRulerWidth * scale;
-    final capacity = ((width - ruler) / minimum).floor();
-    if (width >= 1200 && capacity >= 7) return 7;
-    return capacity.clamp(1, 3);
+    return ((width - ruler) / minimum).floor().clamp(1, 7);
   }
 
   double columnWidthFor(double width) {
@@ -60,12 +60,21 @@ class WeekViewportLayout {
     return available / daysPerPage;
   }
 
+  /// Number of horizontal pages needed for [count] consecutive days.
+  int pageCountFor(int count) => (count / daysPerPage).ceil();
+
+  /// Index of the first day on [page]. The last page is pulled back so it
+  /// shows [daysPerPage] days (for example Friday to Sunday) instead of a
+  /// lone Sunday beside blank columns.
+  int firstDayOfPage(int page, int count) =>
+      math.min(page * daysPerPage, math.max(0, count - daysPerPage));
+
   List<List<T>> pagesOf<T>(List<T> values) {
-    final pages = <List<T>>[];
-    for (var offset = 0; offset < values.length; offset += daysPerPage) {
-      final end = (offset + daysPerPage).clamp(0, values.length);
-      pages.add(List<T>.unmodifiable(values.sublist(offset, end)));
-    }
-    return List<List<T>>.unmodifiable(pages);
+    return List<List<T>>.unmodifiable([
+      for (var page = 0; page < pageCountFor(values.length); page++)
+        List<T>.unmodifiable(
+          values.skip(firstDayOfPage(page, values.length)).take(daysPerPage),
+        ),
+    ]);
   }
 }

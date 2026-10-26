@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/enums/task_status.dart';
 import '../../../../core/models/task.dart';
-import '../../../../core/widgets/app_toast.dart';
 import '../../../task_editor/presentation/screens/task_editor_panel.dart';
 import '../../../task_editor/presentation/widgets/save_as_template_dialog.dart';
 import '../../../timer/presentation/timer_actions.dart';
@@ -83,7 +82,7 @@ Future<void> showTaskContextMenu(
       if (status != null) {
         await TimelineActions.setStatus(ref, task, status);
         if (!context.mounted) return;
-        showAppToast(context, 'Status: ${status.label}');
+        TimelineActions.showUndoToast(context, ref, 'Status: ${status.label}');
       }
       break;
     case 'start-timer':

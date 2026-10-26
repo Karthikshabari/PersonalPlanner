@@ -18,6 +18,10 @@ class GhostPreview extends StatelessWidget {
   final Color accentColor;
   final int durationMinutes;
 
+  /// Start time the block would take if dropped now; shown before the
+  /// duration.
+  final String? timeLabel;
+
   const GhostPreview({
     super.key,
     required this.title,
@@ -27,6 +31,7 @@ class GhostPreview extends StatelessWidget {
     required this.right,
     required this.accentColor,
     required this.durationMinutes,
+    this.timeLabel,
   });
 
   @override
@@ -44,8 +49,9 @@ class GhostPreview extends StatelessWidget {
       style: Theme.of(context).textTheme.titleSmall
           ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600),
     );
+    final durationLabel = Duration(minutes: durationMinutes).shortLabel;
     final duration = Text(
-      Duration(minutes: durationMinutes).shortLabel,
+      timeLabel == null ? durationLabel : '$timeLabel · $durationLabel',
       style: DayStyle.secondary(context)
           .copyWith(color: colorScheme.onSurfaceVariant),
     );

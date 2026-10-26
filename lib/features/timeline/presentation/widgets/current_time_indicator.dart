@@ -15,8 +15,8 @@ class CurrentTimeIndicator extends StatefulWidget {
   /// Horizontal bounds within the containing timeline stack.
   ///
   /// The default keeps the indicator scoped to a single day column. Week
-  /// pages override these bounds so the same indicator can span every
-  /// displayed day without changing its time calculation.
+  /// pages override these bounds so the same indicator sits in today's column
+  /// of the page stack without changing its time calculation.
   final double left;
   final double right;
 

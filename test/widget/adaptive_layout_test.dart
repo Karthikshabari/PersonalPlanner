@@ -10,18 +10,41 @@ import '../helpers/test_container.dart';
 
 void main() {
   group('WeekViewportLayout', () {
-    test('uses content capacity at phone, intermediate and desktop widths', () {
-      expect(WeekViewportLayout.capacityFor(320), 1);
-      expect(WeekViewportLayout.capacityFor(599), 1);
-      expect(WeekViewportLayout.capacityFor(600), 3);
-      expect(WeekViewportLayout.capacityFor(768), 3);
-      expect(WeekViewportLayout.capacityFor(1199), 3);
-      expect(WeekViewportLayout.capacityFor(1200), 7);
-      expect(WeekViewportLayout.capacityFor(1440), 7);
-    });
+    test(
+      'column count follows the body width with a 160 px minimum column',
+      () {
+        final expected = {
+          320.0: 1,
+          599.0: 1,
+          600.0: 3,
+          800.0: 4,
+          // 1280 px window minus the extended rail.
+          1075.0: 6,
+          1175.0: 6,
+          1176.0: 7,
+          1280.0: 7,
+          1440.0: 7,
+          1920.0: 7,
+        };
+        expected.forEach((width, columns) {
+          expect(
+            WeekViewportLayout.capacityFor(width),
+            columns,
+            reason: '$width',
+          );
+          if (width >= 600) {
+            expect(
+              WeekViewportLayout.forWidth(width).columnWidthFor(width),
+              greaterThanOrEqualTo(WeekViewportLayout.defaultMinimumDayWidth),
+              reason: '$width',
+            );
+          }
+        });
+      },
+    );
 
     test('text scaling raises the minimum column width before paging', () {
-      expect(WeekViewportLayout.capacityFor(1200, textScale: 1.5), 3);
+      expect(WeekViewportLayout.capacityFor(1200, textScale: 1.5), 4);
       expect(WeekViewportLayout.capacityFor(1800, textScale: 1.5), 7);
       expect(
         WeekViewportLayout.forWidth(1200, textScale: 1.5).minimumDayWidth,
@@ -29,14 +52,45 @@ void main() {
       );
     });
 
-    test('pages preserve consecutive order and final short page', () {
-      final layout = WeekViewportLayout.forWidth(600);
-      expect(layout.pagesOf([0, 1, 2, 3, 4, 5, 6]), [
-        [0, 1, 2],
-        [3, 4, 5],
-        [6],
-      ]);
-    });
+    test(
+      'the last page is clamped to the last N days, for 1 to 7 per page',
+      () {
+        const days = [0, 1, 2, 3, 4, 5, 6];
+        for (var perPage = 1; perPage <= 7; perPage++) {
+          final layout = WeekViewportLayout(
+            daysPerPage: perPage,
+            minimumDayWidth: 160,
+            rulerWidth: 56,
+          );
+          final pages = layout.pagesOf(days);
+          expect(pages, hasLength((7 / perPage).ceil()), reason: '$perPage');
+          for (final (index, page) in pages.indexed) {
+            expect(page, hasLength(perPage), reason: '$perPage page $index');
+            expect(page.first, layout.firstDayOfPage(index, days.length));
+            // Consecutive days.
+            expect(page, [for (var i = 0; i < perPage; i++) page.first + i]);
+          }
+          expect(pages.last.last, 6, reason: '$perPage');
+          // Every day is on a page, and the page its index falls in shows it.
+          for (final day in days) {
+            expect(pages[day ~/ perPage], contains(day), reason: '$perPage');
+          }
+        }
+        // Three per page used to end with a lone Sunday.
+        expect(
+          WeekViewportLayout(
+            daysPerPage: 3,
+            minimumDayWidth: 160,
+            rulerWidth: 56,
+          ).pagesOf(days),
+          [
+            [0, 1, 2],
+            [3, 4, 5],
+            [4, 5, 6],
+          ],
+        );
+      },
+    );
   });
 
   testWidgets('large width shows an extended rail with seven labelled items', (

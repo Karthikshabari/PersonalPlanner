@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/task_template.dart';
+import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/widgets/async_value_view.dart';
 import '../../../templates/providers/template_providers.dart';
 
@@ -19,7 +20,14 @@ class UseTemplateDropdown extends ConsumerWidget {
       value: templatesAsync,
       onRetry: () => ref.invalidate(templatesProvider),
       builder: (templates) {
-        if (templates.isEmpty) return const SizedBox.shrink();
+        if (templates.isEmpty) {
+          return Text(
+            'No templates yet. Add one in Settings > Templates.',
+            key: const ValueKey('use-template-empty'),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: AppThemeTokens.of(context).textSecondary),
+          );
+        }
         return DropdownButtonFormField<String>(
           key: const ValueKey('use-template-dropdown'),
           initialValue: null,

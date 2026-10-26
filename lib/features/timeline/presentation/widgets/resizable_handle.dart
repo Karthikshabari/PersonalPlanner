@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -16,6 +17,8 @@ class ResizableHandle extends StatefulWidget {
   final VoidCallback onResizeCancel;
   final VoidCallback? onIncrease;
   final VoidCallback? onDecrease;
+  final VoidCallback? onMoveEarlier;
+  final VoidCallback? onMoveLater;
   final VoidCallback? onTap;
   final VoidCallback? onDoubleTap;
 
@@ -27,6 +30,8 @@ class ResizableHandle extends StatefulWidget {
     required this.onResizeCancel,
     this.onIncrease,
     this.onDecrease,
+    this.onMoveEarlier,
+    this.onMoveLater,
     this.onTap,
     this.onDoubleTap,
   });
@@ -79,9 +84,18 @@ class _ResizableHandleState extends State<ResizableHandle> {
         child: Semantics(
           label: 'Resize task',
           button: true,
-          hint: 'Use increase and decrease actions to change duration',
+          hint:
+              'Use increase and decrease actions to change duration, '
+              'or move earlier and move later to change the time',
           onIncrease: widget.onIncrease,
           onDecrease: widget.onDecrease,
+          customSemanticsActions: {
+            if (widget.onMoveEarlier != null)
+              CustomSemanticsAction(label: 'Move earlier'):
+                  widget.onMoveEarlier!,
+            if (widget.onMoveLater != null)
+              CustomSemanticsAction(label: 'Move later'): widget.onMoveLater!,
+          },
           child: SizedBox(
             height: ResizableHandle.isTouchPlatform
                 ? ResizableHandle.touchTargetHeight

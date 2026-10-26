@@ -28,13 +28,16 @@ import '../../../recurring/providers/recurring_providers.dart';
 import '../../../review/providers/review_providers.dart';
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../domain/conflict_detector.dart';
+import '../../domain/snap_to_grid.dart';
 import '../../domain/timeline_geometry.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
 import '../providers/selected_task_provider.dart';
+import '../providers/timeline_action_provider.dart';
 import '../widgets/current_time_indicator.dart';
+import '../widgets/day_style.dart';
 import '../widgets/timeline_hour_grid.dart';
 import '../widgets/timeline_overlap_action.dart';
 
@@ -52,7 +55,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
   PageController? _pageController;
   final _pageScrollControllers = <int, ScrollController>{};
   final _positionedPages = <int>{};
-  int? _capacity;
+  WeekViewportLayout? _layout;
   double? _verticalOffset;
 
   @override
@@ -79,19 +82,29 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
   ScrollController _scrollControllerFor(int page) =>
       _pageScrollControllers.putIfAbsent(page, ScrollController.new);
 
-  void _ensurePageController(int page, int capacity) {
+  int get _daysPerPage => _layout?.daysPerPage ?? 1;
+
+  /// Whether [dayIndex] is on screen while the pager rests on [page]. Pages
+  /// overlap after the last-page clamp, so a day can be on more than one.
+  bool _pageShows(int page, int dayIndex) {
+    final first = _layout?.firstDayOfPage(page, 7) ?? 0;
+    return dayIndex >= first && dayIndex < first + _daysPerPage;
+  }
+
+  void _ensurePageController(int page, WeekViewportLayout layout) {
+    final previous = _layout;
+    _layout = layout;
     if (_pageController == null) {
       _pageController = PageController(initialPage: page);
-      _capacity = capacity;
       return;
     }
-    if (_capacity == capacity) return;
-    _capacity = capacity;
+    if (previous?.daysPerPage == layout.daysPerPage) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController!.hasClients) return;
       final selected = ref.read(selectedDateProvider);
       final weekStart = ref.read(selectedWeekStartProvider);
-      final target = _selectedDayIndex(weekStart, selected) ~/ capacity;
+      final target =
+          _selectedDayIndex(weekStart, selected) ~/ layout.daysPerPage;
       _pageController!.jumpToPage(target);
     });
   }
@@ -131,9 +144,10 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
     if (!navigate || _pageController == null || !_pageController!.hasClients) {
       return;
     }
-    final page = _selectedDayIndex(weekStart, date) ~/ (_capacity ?? 1);
+    final index = _selectedDayIndex(weekStart, date);
+    if (_pageShows(_pageController!.page?.round() ?? 0, index)) return;
     _pageController!.animateToPage(
-      page,
+      index ~/ _daysPerPage,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
@@ -158,7 +172,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
         return;
       }
       _pageController!.animateToPage(
-        _selectedDayIndex(startOfWeek(today), today) ~/ (_capacity ?? 1),
+        _selectedDayIndex(startOfWeek(today), today) ~/ _daysPerPage,
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
       );
@@ -173,7 +187,7 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
       return;
     }
     _selectDate(today);
-    final page = _selectedDayIndex(weekStart, today) ~/ (_capacity ?? 1);
+    final page = _selectedDayIndex(weekStart, today) ~/ _daysPerPage;
     final controller = _scrollControllerFor(page);
     final axis = PlannerDayAxis(today);
     final target =
@@ -204,9 +218,11 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
     // off-screen page cannot lose an auto-disposed subscription while it is
     // being activated or deactivated during Day/Week navigation.
     ref.watch(categoriesProvider);
+    var weekEmpty = true;
     for (final day in days) {
       ref.watch(dayMaterializationProvider(day));
-      ref.watch(activeDayTasksForDateProvider(day));
+      final tasks = ref.watch(activeDayTasksForDateProvider(day));
+      weekEmpty &= tasks.hasValue && tasks.requireValue.isEmpty;
       ref.watch(dayContextForDateProvider(day));
     }
 
@@ -232,100 +248,136 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
       body: SafeArea(
         top: true,
         bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Not a Flexible: a flex-1 header would split the free height 50/50
-            // with the grid's Expanded even when it needs far less. Cap it at
-            // half the screen and let it scroll when taller.
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
-              ),
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: _buildHeader(context, weekStart, selectedDate, days),
-              ),
-            ),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final scale = MediaQuery.textScalerOf(context).scale(1);
-                  final rulerWidth = TimelineHourGrid.measuredRulerWidth(
-                    context,
-                    days.first,
-                    textScale: scale,
-                  );
-                  final layout = WeekViewportLayout.forWidth(
-                    constraints.maxWidth,
-                    textScale: scale,
-                    rulerWidth: rulerWidth,
-                  );
-                  final selectedIndex = _selectedDayIndex(
-                    weekStart,
-                    selectedDate,
-                  );
-                  final selectedPage = selectedIndex ~/ layout.daysPerPage;
-                  _ensurePageController(selectedPage, layout.daysPerPage);
-                  final gridHeight =
-                      days
-                              .map((day) => PlannerDayAxis(day).durationMinutes)
-                              .reduce(math.max) *
-                          AppConstants.pixelsPerMinute +
-                      AppSpacing.huge;
-                  final pageCount = (days.length / layout.daysPerPage).ceil();
-                  return PageView.builder(
-                    key: const ValueKey('week-pages'),
-                    controller: _pageController,
-                    itemCount: pageCount,
-                    onPageChanged: (page) {
-                      final first = page * layout.daysPerPage;
-                      if (first < days.length &&
-                          !isSameDay(selectedDate, days[first])) {
-                        _selectDate(days[first], navigate: false);
-                      }
-                    },
-                    itemBuilder: (context, page) {
-                      final first = page * layout.daysPerPage;
-                      final pageDays = days.sublist(
-                        first,
-                        math.min(first + layout.daysPerPage, days.length),
-                      );
-                      return _WeekPage(
-                        key: ValueKey('week-page-$page-${layout.daysPerPage}'),
-                        days: pageDays,
-                        pageCapacity: layout.daysPerPage,
-                        columnWidth: layout.columnWidthFor(
-                          constraints.maxWidth,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final scale = MediaQuery.textScalerOf(context).scale(1);
+            final rulerWidth = TimelineHourGrid.measuredRulerWidth(
+              context,
+              days.first,
+              textScale: scale,
+            );
+            final layout = WeekViewportLayout.forWidth(
+              constraints.maxWidth,
+              textScale: scale,
+              rulerWidth: rulerWidth,
+            );
+            final selectedIndex = _selectedDayIndex(weekStart, selectedDate);
+            _ensurePageController(selectedIndex ~/ layout.daysPerPage, layout);
+            final gridHeight =
+                days
+                        .map((day) => PlannerDayAxis(day).durationMinutes)
+                        .reduce(math.max) *
+                    AppConstants.pixelsPerMinute +
+                AppSpacing.huge;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Not a Flexible: a flex-1 header would split the free height
+                // 50/50 with the grid's Expanded even when it needs far less.
+                // Cap it at half the screen and let it scroll when taller.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+                  ),
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: _buildHeader(
+                      context,
+                      weekStart,
+                      selectedDate,
+                      days,
+                      layout.daysPerPage,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      PageView.builder(
+                        key: const ValueKey('week-pages'),
+                        controller: _pageController,
+                        itemCount: layout.pageCountFor(days.length),
+                        onPageChanged: (page) {
+                          final first = layout.firstDayOfPage(
+                            page,
+                            days.length,
+                          );
+                          // Keep a selection that is on the new page.
+                          if (selectedIndex < first ||
+                              selectedIndex >= first + layout.daysPerPage) {
+                            _selectDate(days[first], navigate: false);
+                          }
+                        },
+                        itemBuilder: (context, page) {
+                          final first = layout.firstDayOfPage(
+                            page,
+                            days.length,
+                          );
+                          final pageDays = days.sublist(
+                            first,
+                            first + layout.daysPerPage,
+                          );
+                          return _WeekPage(
+                            key: ValueKey(
+                              'week-page-$page-${layout.daysPerPage}',
+                            ),
+                            days: pageDays,
+                            columnWidth: layout.columnWidthFor(
+                              constraints.maxWidth,
+                            ),
+                            rulerWidth: layout.rulerWidth,
+                            headerHeight: _columnHeaderHeight(
+                              layout.daysPerPage,
+                            ),
+                            inlineHeader: layout.daysPerPage == 1,
+                            gridMinutes: gridMinutes,
+                            gridHeight: gridHeight,
+                            selectedDate: selectedDate,
+                            now: now,
+                            onSelectDate: (date) => _selectDate(date),
+                            onHeaderTap: (date) {
+                              _selectDate(date, navigate: false);
+                              context.go('/day');
+                            },
+                            onSlotTap: (date, minutes) {
+                              _selectDate(date, navigate: false);
+                              ref
+                                      .read(
+                                        timelineQuickCreateSlotProvider
+                                            .notifier,
+                                      )
+                                      .state =
+                                  minutes;
+                              context.go('/day');
+                            },
+                            onTaskTap: (task, date) {
+                              ref.read(selectedDateProvider.notifier).state =
+                                  date;
+                              ref.read(selectedTaskIdProvider.notifier).state =
+                                  task.id;
+                              ref.read(taskEditorOpenProvider.notifier).state =
+                                  true;
+                              context.go('/day');
+                            },
+                            scrollController: _scrollControllerFor(page),
+                            onScroll: _recordScroll,
+                            onReady: () => _positionPage(page, pageDays),
+                          );
+                        },
+                      ),
+                      if (weekEmpty)
+                        Positioned(
+                          top: _columnHeaderHeight(layout.daysPerPage) + 8,
+                          left: layout.rulerWidth,
+                          right: 0,
+                          child: const IgnorePointer(child: _EmptyWeekHint()),
                         ),
-                        rulerWidth: layout.rulerWidth,
-                        gridMinutes: gridMinutes,
-                        gridHeight: gridHeight,
-                        selectedDate: selectedDate,
-                        now: now,
-                        onSelectDate: (date) => _selectDate(date),
-                        onHeaderTap: (date) {
-                          _selectDate(date, navigate: false);
-                          context.go('/day');
-                        },
-                        onTaskTap: (task, date) {
-                          ref.read(selectedDateProvider.notifier).state = date;
-                          ref.read(selectedTaskIdProvider.notifier).state =
-                              task.id;
-                          ref.read(taskEditorOpenProvider.notifier).state =
-                              true;
-                          context.go('/day');
-                        },
-                        scrollController: _scrollControllerFor(page),
-                        onScroll: _recordScroll,
-                        onReady: () => _positionPage(page, pageDays),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -336,9 +388,55 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
     DateTime weekStart,
     DateTime selectedDate,
     List<DateTime> days,
+    int daysPerPage,
   ) {
     final tokens = AppThemeTokens.of(context);
     final offset = _selectedDayIndex(weekStart, selectedDate);
+    final compact = daysPerPage == 1;
+    final target = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(DayStyle.minTarget),
+    );
+    final previous = IconButton(
+      key: const ValueKey('weekview-prev'),
+      style: target,
+      tooltip: 'Previous week',
+      icon: const Icon(Icons.chevron_left, semanticLabel: 'Previous week'),
+      onPressed: () => _navigateWeek(-1),
+    );
+    final next = IconButton(
+      key: const ValueKey('weekview-next'),
+      style: target,
+      tooltip: 'Next week',
+      icon: const Icon(Icons.chevron_right, semanticLabel: 'Next week'),
+      onPressed: () => _navigateWeek(1),
+    );
+    final range = Text(
+      weekRangeLabel(weekStart),
+      style: Theme.of(context).textTheme.titleLarge,
+    );
+    final switcher = SegmentedButton<String>(
+      key: const ValueKey('day-week-switcher'),
+      style: target,
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(value: 'day', label: Text('Day')),
+        ButtonSegment(value: 'week', label: Text('Week')),
+      ],
+      selected: const {'week'},
+      onSelectionChanged: (selection) {
+        if (selection.contains('day')) context.go('/day');
+      },
+    );
+    final dateChips = [
+      for (var index = 0; index < days.length; index++)
+        ChoiceChip(
+          key: ValueKey('week-day-selector-${isoDateString(days[index])}'),
+          materialTapTargetSize: MaterialTapTargetSize.padded,
+          selected: index == offset,
+          label: Text(DateFormat('EEE d').format(days[index])),
+          onSelected: (_) => _selectDate(days[index]),
+        ),
+    ];
     return Container(
       color: tokens.surface,
       padding: const EdgeInsets.fromLTRB(
@@ -347,82 +445,143 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
         AppSpacing.sm,
         AppSpacing.sm,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.start,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              IconButton(
-                key: const ValueKey('weekview-prev'),
-                tooltip: 'Previous week',
-                icon: const Icon(
-                  Icons.chevron_left,
-                  semanticLabel: 'Previous week',
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: switcher,
+                        ),
+                      ),
+                    ),
+                    const GlobalSearchAction(),
+                    const SyncStatusAction(),
+                    PopupMenuButton<VoidCallback>(
+                      key: const ValueKey('week-overflow'),
+                      style: target,
+                      tooltip: 'More actions',
+                      onSelected: (action) => action(),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          key: const ValueKey('weekview-this-week'),
+                          value: _goToToday,
+                          child: const Text('This Week'),
+                        ),
+                        PopupMenuItem(
+                          key: const ValueKey('week-scroll-to-now'),
+                          value: _scrollToNow,
+                          child: const Text('Now'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                onPressed: () => _navigateWeek(-1),
-              ),
-              Text(
-                weekRangeLabel(weekStart),
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              IconButton(
-                key: const ValueKey('weekview-next'),
-                tooltip: 'Next week',
-                icon: const Icon(
-                  Icons.chevron_right,
-                  semanticLabel: 'Next week',
+                Row(
+                  children: [
+                    previous,
+                    Expanded(
+                      child: FittedBox(fit: BoxFit.scaleDown, child: range),
+                    ),
+                    next,
+                  ],
                 ),
-                onPressed: () => _navigateWeek(1),
-              ),
-              OutlinedButton(
-                key: const ValueKey('weekview-this-week'),
-                onPressed: _goToToday,
-                child: const Text('This Week'),
-              ),
-              OutlinedButton.icon(
-                key: const ValueKey('week-scroll-to-now'),
-                onPressed: _scrollToNow,
-                icon: const Icon(Icons.my_location, size: 16),
-                label: const Text('Now'),
-              ),
-              SegmentedButton<String>(
-                key: const ValueKey('day-week-switcher'),
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'day', label: Text('Day')),
-                  ButtonSegment(value: 'week', label: Text('Week')),
-                ],
-                selected: const {'week'},
-                onSelectionChanged: (selection) {
-                  if (selection.contains('day')) context.go('/day');
-                },
-              ),
-              const GlobalSearchAction(),
-              const SyncStatusAction(),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Wrap(
-            key: const ValueKey('week-date-selector'),
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: [
-              for (var index = 0; index < days.length; index++)
-                ChoiceChip(
-                  key: ValueKey(
-                    'week-day-selector-${isoDateString(days[index])}',
+                SingleChildScrollView(
+                  key: const ValueKey('week-date-selector'),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final chip in dateChips) ...[
+                        chip,
+                        const SizedBox(width: AppSpacing.xs),
+                      ],
+                    ],
                   ),
-                  selected: index == offset,
-                  label: Text(DateFormat('EEE d').format(days[index])),
-                  onSelected: (_) => _selectDate(days[index]),
                 ),
-            ],
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.start,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    previous,
+                    range,
+                    next,
+                    OutlinedButton(
+                      key: const ValueKey('weekview-this-week'),
+                      style: target,
+                      onPressed: _goToToday,
+                      child: const Text('This Week'),
+                    ),
+                    OutlinedButton.icon(
+                      key: const ValueKey('week-scroll-to-now'),
+                      style: target,
+                      onPressed: _scrollToNow,
+                      icon: const Icon(Icons.my_location, size: 16),
+                      label: const Text('Now'),
+                    ),
+                    switcher,
+                    const GlobalSearchAction(),
+                    const SyncStatusAction(),
+                  ],
+                ),
+                // Every date is a column already, so the chips would only
+                // repeat them.
+                if (daysPerPage < days.length) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Wrap(
+                    key: const ValueKey('week-date-selector'),
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: dateChips,
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+/// Height of the date row above the grid: one line on a single-column page,
+/// where the day context button sits beside the date, otherwise two 48 dp
+/// rows plus the 2 px underline.
+double _columnHeaderHeight(int daysPerPage) => daysPerPage == 1 ? 56 : 100;
+
+class _EmptyWeekHint extends StatelessWidget {
+  const _EmptyWeekHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = AppThemeTokens.of(context);
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: tokens.surfaceRaised,
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
           ),
-        ],
+          child: Text(
+            'Nothing planned this week. Tap a time slot to add a task.',
+            key: const ValueKey('week-empty-hint'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium
+                ?.copyWith(color: tokens.textSecondary),
+          ),
+        ),
       ),
     );
   }
@@ -430,15 +589,17 @@ class _WeekViewScreenState extends ConsumerState<WeekViewScreen> {
 
 class _WeekPage extends StatelessWidget {
   final List<DateTime> days;
-  final int pageCapacity;
   final double columnWidth;
   final double rulerWidth;
+  final double headerHeight;
+  final bool inlineHeader;
   final int gridMinutes;
   final double gridHeight;
   final DateTime selectedDate;
   final DateTime now;
   final ValueChanged<DateTime> onSelectDate;
   final ValueChanged<DateTime> onHeaderTap;
+  final void Function(DateTime date, int minutes) onSlotTap;
   final void Function(Task task, DateTime date) onTaskTap;
   final ScrollController scrollController;
   final ValueChanged<double> onScroll;
@@ -447,15 +608,17 @@ class _WeekPage extends StatelessWidget {
   const _WeekPage({
     super.key,
     required this.days,
-    required this.pageCapacity,
     required this.columnWidth,
     required this.rulerWidth,
+    required this.headerHeight,
+    required this.inlineHeader,
     required this.gridMinutes,
     required this.gridHeight,
     required this.selectedDate,
     required this.now,
     required this.onSelectDate,
     required this.onHeaderTap,
+    required this.onSlotTap,
     required this.onTaskTap,
     required this.scrollController,
     required this.onScroll,
@@ -466,13 +629,14 @@ class _WeekPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstAxis = PlannerDayAxis(days.first);
     final tokens = AppThemeTokens.of(context);
+    final todayIndex = days.indexWhere((date) => isSameDay(date, now));
     return Stack(
       children: [
         Positioned(
           top: 0,
           left: 0,
           right: 0,
-          height: 80,
+          height: headerHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -495,17 +659,15 @@ class _WeekPage extends StatelessWidget {
                     key: ValueKey('week-header-${isoDateString(date)}'),
                     date: date,
                     selected: isSameDay(date, selectedDate),
+                    inline: inlineHeader,
                     onTap: () => onHeaderTap(date),
                   ),
                 ),
-              if (days.length < pageCapacity)
-                for (var i = days.length; i < pageCapacity; i++)
-                  SizedBox(width: columnWidth, child: const SizedBox()),
             ],
           ),
         ),
         Positioned(
-          top: 80,
+          top: headerHeight,
           left: 0,
           right: 0,
           bottom: 0,
@@ -551,24 +713,24 @@ class _WeekPage extends StatelessWidget {
                                     PlannerDayAxis(days[index]),
                                   ),
                               gridMinutes: gridMinutes,
+                              onSlotTap: onSlotTap,
                               onTaskTap: onTaskTap,
                               onReady: onReady,
                             ),
                           ),
-                        if (days.length < pageCapacity)
-                          for (var i = days.length; i < pageCapacity; i++)
-                            SizedBox(width: columnWidth),
                       ],
                     ),
-                    if (days.any((date) => isSameDay(date, now)))
+                    if (todayIndex >= 0)
                       CurrentTimeIndicator(
                         key: ValueKey(
                           'week-current-time-${isoDateString(now)}',
                         ),
                         pixelsPerMinute: AppConstants.pixelsPerMinute,
-                        day: days.firstWhere((date) => isSameDay(date, now)),
+                        day: days[todayIndex],
                         now: now,
-                        left: rulerWidth,
+                        // Bounded to today's column only.
+                        left: rulerWidth + todayIndex * columnWidth,
+                        right: (days.length - 1 - todayIndex) * columnWidth,
                       ),
                   ],
                 ),
@@ -584,12 +746,16 @@ class _WeekPage extends StatelessWidget {
 class _WeekHeaderCell extends ConsumerWidget {
   final DateTime date;
   final bool selected;
+
+  /// Puts the day context button beside the date instead of under it.
+  final bool inline;
   final VoidCallback onTap;
 
   const _WeekHeaderCell({
     super.key,
     required this.date,
     required this.selected,
+    required this.inline,
     required this.onTap,
   });
 
@@ -609,6 +775,69 @@ class _WeekHeaderCell extends ConsumerWidget {
     final breakLabel = ref.watch(breakLabelForDateProvider(date));
     final tokens = AppThemeTokens.of(context);
     final isToday = isSameDay(date, DateTime.now());
+    final dateButton = Tooltip(
+      message: 'Open ${DateFormat('EEE d').format(date)} in Day',
+      child: InkWell(
+        key: ValueKey('week-column-${isoDateString(date)}'),
+        onTap: onTap,
+        child: SizedBox(
+          height: 48,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: AppSpacing.xs,
+                children: [
+                  Text(
+                    DateFormat('EEE d').format(date),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  if (breakLabel != null)
+                    Text(
+                      breakLabel,
+                      key: ValueKey('day-break-${isoDateString(date)}'),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: tokens.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  else if (tasksAsync.hasValue && tasks.isNotEmpty)
+                    Text(
+                      '$completed/${tasks.length}',
+                      key: ValueKey('day-count-${isoDateString(date)}'),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  if (isToday)
+                    const Icon(
+                      Icons.today,
+                      key: ValueKey('week-today-marker'),
+                      size: 14,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final contextButton = SizedBox(
+      height: 48,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: DayContextAction(
+          key: ValueKey('week-context-${isoDateString(date)}'),
+          date: date,
+          compact: true,
+        ),
+      ),
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
@@ -620,72 +849,14 @@ class _WeekHeaderCell extends ConsumerWidget {
           ),
         ),
       ),
-      child: Column(
-        children: [
-          InkWell(
-            key: ValueKey('week-column-${isoDateString(date)}'),
-            onTap: onTap,
-            child: SizedBox(
-              height: 48,
-              child: Center(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppSpacing.xs,
-                    children: [
-                      Text(
-                        DateFormat('EEE d').format(date),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      if (breakLabel != null)
-                        Text(
-                          breakLabel,
-                          key: ValueKey('day-break-${isoDateString(date)}'),
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: tokens.textMuted,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        )
-                      else if (tasksAsync.hasValue && tasks.isNotEmpty)
-                        Text(
-                          '$completed/${tasks.length}',
-                          key: ValueKey('day-count-${isoDateString(date)}'),
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      if (isToday)
-                        const Icon(
-                          Icons.today,
-                          key: ValueKey('week-today-marker'),
-                          size: 14,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SizedBox(
-            height: 30,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: DayContextAction(
-                key: ValueKey('week-context-${isoDateString(date)}'),
-                date: date,
-                compact: true,
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: inline
+          ? Row(
+              children: [
+                Expanded(child: dateButton),
+                contextButton,
+              ],
+            )
+          : Column(children: [dateButton, contextButton]),
     );
   }
 }
@@ -696,6 +867,7 @@ class _WeekDayGrid extends ConsumerWidget {
   final double rulerWidth;
   final bool showInternalRuler;
   final int gridMinutes;
+  final void Function(DateTime date, int minutes) onSlotTap;
   final void Function(Task task, DateTime date) onTaskTap;
   final VoidCallback onReady;
 
@@ -706,6 +878,7 @@ class _WeekDayGrid extends ConsumerWidget {
     required this.rulerWidth,
     required this.showInternalRuler,
     required this.gridMinutes,
+    required this.onSlotTap,
     required this.onTaskTap,
     required this.onReady,
   });
@@ -759,11 +932,23 @@ class _WeekDayGrid extends ConsumerWidget {
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(
-          child: TimelineHourGrid(
-            date: date,
-            gridMinutes: gridMinutes,
-            rulerWidth: internalRuler,
-            showRuler: showInternalRuler,
+          // Blocks sit above and take their own taps; this is empty space.
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) => onSlotTap(
+              date,
+              snapSlotStart(
+                (details.localPosition.dy / AppConstants.pixelsPerMinute)
+                    .round(),
+                gridMinutes,
+              ).clamp(0, PlannerDayAxis(date).durationMinutes - gridMinutes),
+            ),
+            child: TimelineHourGrid(
+              date: date,
+              gridMinutes: gridMinutes,
+              rulerWidth: internalRuler,
+              showRuler: showInternalRuler,
+            ),
           ),
         ),
         for (final geometry in geometries)

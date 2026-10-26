@@ -37,6 +37,7 @@ import '../../domain/scheduled_task_draft.dart';
 import '../../domain/snap_to_grid.dart';
 import '../providers/day_tasks_provider.dart';
 import '../providers/day_view_controller.dart';
+import '../providers/double_click_tip_provider.dart';
 import '../providers/grid_settings_provider.dart';
 import '../providers/overlap_flags_provider.dart';
 import '../providers/selected_date_provider.dart';
@@ -211,6 +212,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
         draft,
       );
       if (saved == null || !mounted) return false;
+      // The "tap an empty slot" tip has done its job once a task exists.
+      if (ref.read(dayCreateTipDismissedProvider).value == false) {
+        unawaited(ref.read(dayCreateTipDismissedProvider.notifier).dismiss());
+      }
       ref.read(selectedDateProvider.notifier).state = startOfDay(
         saved.startTime!,
       );
@@ -317,7 +322,13 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     // The detector is attached to the content-sized background grid, so its
     // local position is already expressed in timeline-content coordinates.
     final snapped = _freeSlotAt(details.localPosition.dy);
-    if (snapped == null) return;
+    if (snapped == null) {
+      showAppToast(
+        context,
+        'That slot is taken. Use New task or pick a free hour.',
+      );
+      return;
+    }
     setState(() => _quickCreateSlot = snapped);
   }
 
@@ -370,29 +381,33 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     _dragDeltaPx.value = dyPx;
   }
 
-  Future<void> _endDrag() async {
-    final drag = _drag;
-    if (drag == null) return;
-    setState(() => _drag = null);
-
+  /// The start (minutes on the day axis) a drag released at [deltaPx] would
+  /// commit. Snap the distance, not the absolute start: an off-grid task keeps
+  /// its offset, and a net move under half a step (an out-and-back drag
+  /// included) is no change instead of a re-snap to the grid.
+  int _dragTargetStart(_DragPreview drag, double deltaPx) {
     final grid = _gridMinutes;
-    final deltaMinutes = (drag.deltaPx / _pixelsPerMinute).round();
-    // Snap the distance, not the absolute start: an off-grid task keeps its
-    // offset, and a net move under half a step (an out-and-back drag
-    // included) is no change instead of a re-snap to the grid.
+    final deltaMinutes = (deltaPx / _pixelsPerMinute).round();
     final snappedDelta = (deltaMinutes / grid).round() * grid;
-    if (snappedDelta == 0) return;
-    var newStartMin = drag.origStartMinutes + snappedDelta;
+    if (snappedDelta == 0) return drag.origStartMinutes;
     final earliestStart = drag.durationMinutes >= _dayAxis.durationMinutes
         ? -(drag.durationMinutes - grid)
         : 0;
     final latestStart = drag.durationMinutes < _dayAxis.durationMinutes
         ? _dayAxis.durationMinutes - drag.durationMinutes
         : _dayAxis.durationMinutes - grid;
-    newStartMin = newStartMin.clamp(
+    return (drag.origStartMinutes + snappedDelta).clamp(
       earliestStart,
       latestStart > earliestStart ? latestStart : earliestStart,
     );
+  }
+
+  Future<void> _endDrag() async {
+    final drag = _drag;
+    if (drag == null) return;
+    setState(() => _drag = null);
+
+    final newStartMin = _dragTargetStart(drag, drag.deltaPx);
     if (newStartMin == drag.origStartMinutes) return; // no effective change
 
     final newStart = _dayAxis.instantAt(newStartMin.toDouble());
@@ -407,7 +422,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       startTime: newStart,
       endTime: newEnd,
     );
-    await _resolveConflictsAndCommit(primary, hypothetical);
+    await _resolveConflictsAndCommit(
+      primary,
+      hypothetical,
+      'Moved to ${formatClock24(PlannerTimeZone.toPlannerLocal(newStart))}',
+    );
   }
 
   // ------------------------------------------------------------------
@@ -458,7 +477,7 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       newEnd: newEnd,
     );
     final hypothetical = resize.task.copyWith(endTime: newEnd);
-    await _resolveConflictsAndCommit(primary, hypothetical);
+    await _resolveConflictsAndCommit(primary, hypothetical, 'Resized');
   }
 
   void _resizeBySemantic(Task task, int deltaMinutes) {
@@ -471,7 +490,11 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       newEnd: newEnd,
     );
     unawaited(
-      _resolveConflictsAndCommit(primary, task.copyWith(endTime: newEnd)),
+      _resolveConflictsAndCommit(
+        primary,
+        task.copyWith(endTime: newEnd),
+        'Resized',
+      ),
     );
   }
 
@@ -498,16 +521,19 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
 
   /// Runs conflict detection for the hypothetical result of [primary] and
   /// either commits directly or asks the user how to resolve overlaps.
-  /// Returns true when a command was committed to history.
+  /// Returns true when a command was committed to history, after which
+  /// [doneMessage] is shown with an Undo action.
   Future<bool> _resolveConflictsAndCommit(
     SchedulingCommand primary,
     Task hypothetical,
+    String doneMessage,
   ) => TimelineActions.commitScheduledChange(
     context,
     ref,
     primary: primary,
     hypothetical: hypothetical,
     anchorDate: ref.read(selectedDateProvider),
+    doneMessage: doneMessage,
   );
 
   // ------------------------------------------------------------------
@@ -519,6 +545,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     if (next == task.status) return;
     try {
       await TimelineActions.setStatus(ref, task, next);
+      if (mounted) {
+        TimelineActions.showUndoToast(context, ref, 'Status: ${next.label}');
+      }
     } catch (error) {
       // The task may have been deleted or changed by a sync pull meanwhile.
       if (mounted) showAppToast(context, friendlyErrorMessage(error));
@@ -848,6 +877,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
                                   categoryFor(drag.task),
                                 ),
                                 durationMinutes: drag.durationMinutes,
+                                timeLabel: formatClock24(
+                                  PlannerTimeZone.toPlannerLocal(
+                                    _dayAxis.instantAt(
+                                      _dragTargetStart(
+                                        drag,
+                                        deltaPx,
+                                      ).toDouble(),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           if (selectedTask != null &&
@@ -1047,6 +1086,10 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             onResizeCancel: _cancelResize,
             onIncrease: () => _resizeBySemantic(task, _gridMinutes),
             onDecrease: () => _resizeBySemantic(task, -_gridMinutes),
+            onMoveEarlier: () =>
+                unawaited(TimelineActions.moveByGrid(context, ref, task, -1)),
+            onMoveLater: () =>
+                unawaited(TimelineActions.moveByGrid(context, ref, task, 1)),
             onTap: selectTask,
             onDoubleTap: editTask,
           ),
