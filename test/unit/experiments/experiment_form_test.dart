@@ -179,6 +179,16 @@ void main() {
       expect(v.canSubmit, isTrue);
     });
 
+    test('both targets 0 shows the inline error and blocks Start', () {
+      final both = form(weekday: '0', weekend: '0').validate(tags: const []);
+      expect(both.targetsError, experimentTargetsBothZeroMessage);
+      expect(both.canSubmit, isFalse);
+      expect(
+        form(weekday: '0', weekend: '30').validate(tags: const []).targetsError,
+        isNull,
+      );
+    });
+
     test('parseExperimentTarget', () {
       expect(parseExperimentTarget('60'), 60);
       expect(parseExperimentTarget(' 7 '), 7);

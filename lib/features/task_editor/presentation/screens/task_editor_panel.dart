@@ -1484,6 +1484,7 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
                     selectedTagId: _tagId,
                     pendingName: _pendingTagName,
                     enabled: !_saving,
+                    inSeries: _originalRuleId != null,
                     onChanged: (tagId, pendingName) => setState(() {
                       _tagId = tagId;
                       _pendingTagName = pendingName;

@@ -192,7 +192,7 @@ int keptStepUp(int minutes) =>
     math.min(keptTargetMaxMinutes, minutes + keptTargetStepMinutes);
 
 int keptStepDown(int minutes) =>
-    math.max(keptTargetMinMinutes, minutes - keptTargetStepMinutes);
+    keptClampTarget(minutes - keptTargetStepMinutes);
 
 int keptClampTarget(int minutes) =>
     minutes.clamp(keptTargetMinMinutes, keptTargetMaxMinutes);

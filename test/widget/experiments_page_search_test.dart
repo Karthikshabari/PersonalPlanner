@@ -118,7 +118,8 @@ final _title = find.descendant(
 
 Finder _running(int n) => find.text('Running ($n)');
 Finder _kept(int n) => find.text(keptSegmentLabel(n));
-Finder _concluded(int n) => find.text('Concluded ($n)');
+Finder _concluded(int n, [int kept = 0]) =>
+    find.text(concludedSegmentLabel(n, kept));
 
 Finder _row(Experiment e) => find.byKey(ValueKey('experiment-row-${e.id}'));
 Finder _keptRow(Experiment e) => find.byKey(ValueKey('kept-row-${e.id}'));
@@ -147,7 +148,7 @@ void main() {
     expect(_title, findsOneWidget);
     expect(_running(2), findsOneWidget);
     expect(_kept(2), findsOneWidget);
-    expect(_concluded(3), findsOneWidget);
+    expect(_concluded(3, 2), findsOneWidget);
     expect(_row(_learn), findsOneWidget);
     expect(_row(_cold), findsOneWidget);
     await finish(tester, container);
@@ -188,7 +189,7 @@ void main() {
     await _type(tester, 'ing');
     expect(_running(0), findsOneWidget);
     expect(_kept(2), findsOneWidget);
-    expect(_concluded(2), findsOneWidget);
+    expect(_concluded(2, 2), findsOneWidget);
 
     await _pickSegment(tester, _kept(2));
     expect(_keptRow(_pages), findsOneWidget);
@@ -200,7 +201,7 @@ void main() {
     expect(_keptRow(_pages), findsNothing);
 
     // Concluded lists kept experiments too, as it does without a search.
-    await _pickSegment(tester, _concluded(1));
+    await _pickSegment(tester, _concluded(1, 1));
     expect(_row(_stretch), findsOneWidget);
     expect(_row(_read), findsNothing);
     await finish(tester, container);
@@ -268,7 +269,7 @@ void main() {
     expect(_title, findsOneWidget);
     expect(_running(2), findsOneWidget);
     expect(_kept(2), findsOneWidget);
-    expect(_concluded(3), findsOneWidget);
+    expect(_concluded(3, 2), findsOneWidget);
     expect(_row(_cold), findsOneWidget);
     await finish(tester, container);
   });

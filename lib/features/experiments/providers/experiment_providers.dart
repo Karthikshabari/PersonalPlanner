@@ -50,6 +50,16 @@ typedef ExperimentEndedEntry = ({
 final experimentEndedProvider =
     StateProvider.autoDispose<ExperimentEndedEntry?>((ref) => null);
 
+/// An experiment that was just concluded from its end panel, shown as a
+/// one-line message with Undo on the Experiments card. [revision] is the one
+/// the conclusion produced.
+typedef ExperimentConcludedEntry = ({String experimentId, int revision});
+
+/// The experiment concluded last. Auto-disposed like
+/// [experimentDeletedProvider]; a newer one replaces it.
+final experimentConcludedProvider =
+    StateProvider.autoDispose<ExperimentConcludedEntry?>((ref) => null);
+
 final experimentRepositoryProvider = Provider<ExperimentRepository>((ref) {
   return ExperimentRepository(ref.watch(appDatabaseProvider));
 });

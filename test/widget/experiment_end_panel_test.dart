@@ -377,15 +377,48 @@ void main() {
     await teardownApp(tester, container);
   });
 
+  testWidgets('Conclude waits for a choice and Undo brings the panel back', (
+    tester,
+  ) async {
+    final container = await open(tester);
+    final e = await create(tester, container);
+    await settle(tester);
+
+    FilledButton submit() => tester.widget<FilledButton>(
+      find.byKey(ValueKey('conclude-submit-${e.id}')),
+    );
+    expect(submit().onPressed, isNull, reason: 'no outcome chosen yet');
+    await tapKey(tester, 'conclude-outcome-continue_habit');
+    expect(submit().onPressed, isNotNull);
+    await tapKey(tester, 'conclude-outcome-continue_habit');
+    expect(submit().onPressed, isNull, reason: 'a second tap clears it');
+    await tapKey(tester, 'conclude-outcome-continue_habit');
+    await tapKey(tester, 'conclude-submit-${e.id}');
+
+    expect(panel(e), findsNothing);
+    expect(find.text('Concluded.'), findsOneWidget);
+    await tapKey(tester, 'experiment-undo-conclude-${e.id}');
+    await settle(tester);
+
+    expect(find.text('Concluded.'), findsNothing);
+    expect(panel(e), findsOneWidget);
+    expect(find.text('Running (1)'), findsOneWidget);
+
+    await teardownApp(tester, container);
+  });
+
   testWidgets('concluding with a note shows the note', (tester) async {
     final container = await open(tester);
     final e = await create(tester, container);
     await settle(tester);
 
     await enter(tester, 'conclude-note-${e.id}', '  It stuck.  ');
+    await tapKey(tester, 'conclude-outcome-continue_habit');
     await tapKey(tester, 'conclude-submit-${e.id}');
 
-    await tester.tap(find.text('Concluded (1)'));
+    // The longer label pushes the segment past the card edge in the test font.
+    await show(tester, find.text('Concluded (1, 1 also kept)'));
+    await tester.tap(find.text('Concluded (1, 1 also kept)'));
     await tester.pump();
 
     expect(find.text('Keep it'), findsOneWidget);
@@ -431,6 +464,7 @@ void main() {
       reason: 'the reason is kept so it can be tried again',
     );
 
+    await tapKey(tester, 'conclude-outcome-continue_habit');
     await tapKey(tester, 'conclude-submit-${e.id}');
     expect(find.text('That change was not saved. Try again.'), findsOneWidget);
     expect(find.text('Concluded Oct 7'), findsNothing);

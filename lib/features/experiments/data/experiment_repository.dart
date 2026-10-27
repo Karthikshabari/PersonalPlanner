@@ -192,6 +192,42 @@ class ExperimentRepository {
     });
   }
 
+  /// Undoes [concludeExperiment]: makes the experiment run again while it is
+  /// still concluded, not retired, and its revision is [expectedRevision], the
+  /// one the conclusion returned. Otherwise it throws and writes nothing.
+  Future<Experiment> restoreConcluded(
+    String experimentId, {
+    required int expectedRevision,
+  }) async {
+    return _db.writeTransaction(() async {
+      final row = await _dao.getExperimentById(experimentId);
+      if (row == null || row.deletedAt != null) {
+        throw StateError('Experiment $experimentId not found');
+      }
+      if (row.revision != expectedRevision) {
+        throw StateError(
+          'Experiment $experimentId changed after it was concluded.',
+        );
+      }
+      if (row.status != ExperimentStatus.concluded.dbValue ||
+          row.retiredAt != null) {
+        throw StateError('Experiment $experimentId cannot be reopened');
+      }
+      await _dao.updateExperiment(
+        row.copyWith(
+          status: ExperimentStatus.running.dbValue,
+          outcome: const Value(null),
+          conclusionNote: const Value(null),
+          concludedOn: const Value(null),
+          updatedAt: _clock().toUtc(),
+          syncStatus: 1,
+          revision: row.revision + 1,
+        ),
+      );
+      return _load(experimentId);
+    });
+  }
+
   /// Moves the end date of a running experiment to [today], so the end panel
   /// shows at once. Allowed only while `start <= today < end`. Writes
   /// `end_date` and nothing else (a shortening cannot be recorded in

@@ -452,7 +452,11 @@ class PageSearchAction extends StatelessWidget {
 
 /// The empty state of a page search, with a way into the universal Search.
 class PageSearchNoMatches extends StatelessWidget {
-  const PageSearchNoMatches({super.key});
+  const PageSearchNoMatches({super.key, this.message = 'No matches'});
+
+  /// The line above the link; a page whose results are split in segments says
+  /// where the matches are.
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -463,7 +467,7 @@ class PageSearchNoMatches extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'No matches',
+            message,
             style: Theme.of(context).textTheme.bodyMedium
                 ?.copyWith(color: tokens.textMuted),
           ),

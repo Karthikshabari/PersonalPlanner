@@ -16,6 +16,22 @@ class ExperimentSearchMatches {
   final int running;
   final int kept;
   final int concluded;
+
+  /// "No matches here, 1 in Kept" for an empty segment called [here], naming
+  /// the other segments that have matches; null when none has.
+  String? noMatchesHere(String here) {
+    final elsewhere = [
+      for (final (name, count) in [
+        ('Running', running),
+        (keptName, kept),
+        ('Concluded', concluded),
+      ])
+        if (name != here && count > 0) '$count in $name',
+    ];
+    return elsewhere.isEmpty
+        ? null
+        : 'No matches here, ${elsewhere.join(' and ')}';
+  }
 }
 
 /// The experiments of [dashboard] whose name or description contains

@@ -15,8 +15,10 @@ import '../../domain/kept_copy.dart';
 import '../../providers/experiment_providers.dart';
 import 'experiment_actions_menu.dart'
     show
+        experimentConcludedLine,
         experimentDeletedLine,
         experimentEndedLine,
+        experimentUndoConcludeFailed,
         experimentUndoDeleteFailed,
         experimentUndoEndFailed;
 import 'experiment_row.dart';
@@ -193,6 +195,27 @@ class _BodyState extends ConsumerState<_Body> {
     }
   }
 
+  /// Undoes the conclusion shown in the "Concluded. Undo" line; the line goes
+  /// away either way.
+  Future<void> _undoConclude() async {
+    final entry = ref.read(experimentConcludedProvider);
+    if (entry == null || _undoing) return;
+    _undoing = true;
+    final repository = ref.read(experimentRepositoryProvider);
+    final concluded = ref.read(experimentConcludedProvider.notifier);
+    try {
+      await repository.restoreConcluded(
+        entry.experimentId,
+        expectedRevision: entry.revision,
+      );
+    } catch (_) {
+      if (mounted) showAppToast(context, experimentUndoConcludeFailed);
+    } finally {
+      _undoing = false;
+      if (concluded.state == entry) concluded.state = null;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -341,11 +364,33 @@ class _BodyState extends ConsumerState<_Body> {
             undoKey: ValueKey('experiment-undo-end-${ended.experimentId}'),
             onUndo: _undoEnd,
           );
+    final concluded = ref.watch(experimentConcludedProvider);
+    final concludedLine = concluded == null
+        ? null
+        : _UndoLine(
+            key: ValueKey('experiment-concluded-${concluded.experimentId}'),
+            text: experimentConcludedLine,
+            undoKey: ValueKey(
+              'experiment-undo-conclude-${concluded.experimentId}',
+            ),
+            onUndo: _undoConclude,
+          );
     if (dashboard.isEmpty) {
-      final empty = Text(
-        'No experiments yet. Start one to follow how it is going here.',
-        key: const ValueKey('experiments-empty'),
-        style: mutedBody,
+      final empty = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'No experiments yet. Start one to follow how it is going here.',
+            key: const ValueKey('experiments-empty'),
+            style: mutedBody,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Tag your blocks in the task editor. Completed tagged blocks '
+            'count as progress.',
+            style: mutedBody,
+          ),
+        ],
       );
       return deletedLine == null
           ? empty
@@ -405,7 +450,10 @@ class _BodyState extends ConsumerState<_Body> {
                 ButtonSegment(
                   value: _Segment.concluded,
                   label: Text(
-                    'Concluded (${matches?.concluded ?? dashboard.concludedCount})',
+                    concludedSegmentLabel(
+                      matches?.concluded ?? dashboard.concludedCount,
+                      matches?.kept ?? dashboard.keptCount,
+                    ),
                   ),
                 ),
               ],
@@ -423,17 +471,29 @@ class _BodyState extends ConsumerState<_Body> {
           const SizedBox(height: AppSpacing.lg),
           endedLine,
         ],
+        if (concludedLine != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          concludedLine,
+        ],
         if (kept) ...[
           SizedBox(key: _results, height: AppSpacing.lg),
           // The const instance stays when no search is active, so a rebuild
           // of the card skips the list.
           matches == null
               ? const KeptExperimentList()
-              : KeptExperimentList(matchIds: matches.ids),
+              : KeptExperimentList(
+                  matchIds: matches.ids,
+                  noMatchesMessage: matches.noMatchesHere(keptName),
+                ),
         ] else if (shown.isEmpty) ...[
           SizedBox(key: _results, height: AppSpacing.lg),
           if (matches != null)
-            const PageSearchNoMatches(key: ValueKey('experiments-search-empty'))
+            PageSearchNoMatches(
+              key: const ValueKey('experiments-search-empty'),
+              message:
+                  matches.noMatchesHere(running ? 'Running' : 'Concluded') ??
+                  'No matches',
+            )
           else ...[
             Text(
               running
@@ -468,7 +528,8 @@ class _BodyState extends ConsumerState<_Body> {
 }
 
 /// A one-line message with an Undo link: "Deleted {name}. Undo" replaces a
-/// deleted row, "Ended today. Undo" follows End today.
+/// deleted row, "Ended today. Undo" follows End today and "Concluded. Undo"
+/// follows Conclude.
 class _UndoLine extends StatelessWidget {
   const _UndoLine({
     super.key,

@@ -221,6 +221,34 @@ void main() {
     },
   );
 
+  testWidgets('two presses in one frame save once and show no error', (
+    tester,
+  ) async {
+    final container = await open(tester);
+    final e = await create(tester, container);
+    await settle(tester);
+
+    await writeNote(tester, e, 'Pressed twice');
+    final press = tester
+        .widget<FilledButton>(find.byKey(ValueKey('checkin-save-${e.id}')))
+        .onPressed!;
+    press();
+    press();
+    await settle(tester);
+
+    expect(find.textContaining('was not saved'), findsNothing);
+    final rows = await runDb(
+      tester,
+      () => container
+          .read(appDatabaseProvider)
+          .experimentDao
+          .getCheckInsForExperiment(e.id),
+    );
+    expect(rows, hasLength(1));
+
+    await teardownApp(tester, container);
+  });
+
   testWidgets('past check-ins list newest first and the toggle reads right', (
     tester,
   ) async {

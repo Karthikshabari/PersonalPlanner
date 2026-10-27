@@ -23,10 +23,14 @@ typedef KeptRetiredEntry = ({
 /// Without [matchIds] it takes no arguments, so a rebuild of the card skips
 /// it; it rebuilds only when [keptSegmentProvider] changes.
 class KeptExperimentList extends ConsumerStatefulWidget {
-  const KeptExperimentList({super.key, this.matchIds});
+  const KeptExperimentList({super.key, this.matchIds, this.noMatchesMessage});
 
   /// While a page search is active: only these experiments show.
   final Set<String>? matchIds;
+
+  /// The empty line of a search with no match in Kept, when other segments
+  /// have some.
+  final String? noMatchesMessage;
 
   @override
   ConsumerState<KeptExperimentList> createState() => _KeptExperimentListState();
@@ -98,7 +102,13 @@ class _KeptExperimentListState extends ConsumerState<KeptExperimentList> {
     ]..sort(_compare);
     if (items.isEmpty) {
       if (matchIds != null) {
-        return const PageSearchNoMatches(key: ValueKey('kept-search-empty'));
+        final message = widget.noMatchesMessage;
+        return message == null
+            ? const PageSearchNoMatches(key: ValueKey('kept-search-empty'))
+            : PageSearchNoMatches(
+                key: const ValueKey('kept-search-empty'),
+                message: message,
+              );
       }
       return Text(
         keptEmptyText(),

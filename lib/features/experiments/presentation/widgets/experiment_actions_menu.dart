@@ -14,6 +14,9 @@ const experimentUndoDeleteFailed =
 const experimentUndoEndFailed =
     "Couldn't undo. The experiment changed since it was ended.";
 
+const experimentUndoConcludeFailed =
+    "Couldn't undo. The experiment changed since it was concluded.";
+
 String experimentDeletedLine(String name) => 'Deleted $name.';
 
 String experimentDeleteMessage(String name, int checkIns) =>
@@ -26,6 +29,8 @@ String experimentDeleteMessage(String name, int checkIns) =>
     'Your blocks keep the tag "$name" and their time.';
 
 const experimentEndedLine = 'Ended today.';
+
+const experimentConcludedLine = 'Concluded.';
 
 String experimentEndTodayMessage(String name, String oldEnd, String today) {
   String monthDay(String iso) => DateFormat('MMM d').format(parseIsoDate(iso));

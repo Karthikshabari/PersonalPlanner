@@ -18,6 +18,11 @@ import 'experiment_past_check_ins.dart';
 import 'experiment_progress_bar.dart';
 import 'experiment_ui.dart';
 
+/// Below this row width, or above this text scale, the title and status chip
+/// stack and so do the three stats; side by side they break words.
+const _stackWidth = 360.0;
+const _stackTextScale = 1.3;
+
 /// One experiment on the Experiments card. (Named `ExperimentRowView` so it
 /// does not clash with the Drift row class `ExperimentRow`.)
 class ExperimentRowView extends StatelessWidget {
@@ -36,6 +41,9 @@ class ExperimentRowView extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < experimentNarrowWidth;
+        final stacked =
+            constraints.maxWidth < _stackWidth ||
+            MediaQuery.textScalerOf(context).scale(10) / 10 > _stackTextScale;
         return DecoratedBox(
           key: ValueKey('experiment-${experiment.id}'),
           decoration: BoxDecoration(
@@ -45,8 +53,12 @@ class ExperimentRowView extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(narrow ? AppSpacing.lg : AppSpacing.xl),
             child: concluded
-                ? _ConcludedBody(view: view, onShowKept: onShowKept)
-                : _RunningBody(view: view),
+                ? _ConcludedBody(
+                    view: view,
+                    stacked: stacked,
+                    onShowKept: onShowKept,
+                  )
+                : _RunningBody(view: view, stacked: stacked),
           ),
         );
       },
@@ -70,9 +82,10 @@ Widget _blocks(List<Widget> blocks) => Column(
 );
 
 class _RunningBody extends StatelessWidget {
-  const _RunningBody({required this.view});
+  const _RunningBody({required this.view, required this.stacked});
 
   final ExperimentView view;
+  final bool stacked;
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +99,7 @@ class _RunningBody extends StatelessWidget {
         ? styles.amber
         : styles.done;
     return _blocks([
-      _Header(view: view),
+      _Header(view: view, stacked: stacked),
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -95,6 +108,7 @@ class _RunningBody extends StatelessWidget {
           ExperimentProgressBar(experimentId: id, progress: progress),
           const SizedBox(height: AppSpacing.lg),
           _StatRow(
+            stacked: stacked,
             cells: [
               _Stat(
                 key: ValueKey('experiment-pace-$id'),
@@ -142,9 +156,14 @@ class _RunningBody extends StatelessWidget {
 /// A concluded experiment: the outcome first, then the final result. The
 /// chart and the written check-ins sit behind one "Show details" toggle.
 class _ConcludedBody extends StatefulWidget {
-  const _ConcludedBody({required this.view, this.onShowKept});
+  const _ConcludedBody({
+    required this.view,
+    required this.stacked,
+    this.onShowKept,
+  });
 
   final ExperimentView view;
+  final bool stacked;
   final VoidCallback? onShowKept;
 
   @override
@@ -166,7 +185,7 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
         ? '${(progress.doneMin * 100 / progress.totalMin).round()}%'
         : '—';
     return _blocks([
-      _Header(view: view),
+      _Header(view: view, stacked: widget.stacked),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -228,6 +247,7 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
           ),
           const SizedBox(height: AppSpacing.lg),
           _StatRow(
+            stacked: widget.stacked,
             cells: [
               _Stat(
                 key: ValueKey('experiment-completion-$id'),
@@ -301,9 +321,10 @@ class _ConcludedBodyState extends State<_ConcludedBody> {
 
 /// Name and status chip, the meta line, the extension line and the purpose.
 class _Header extends StatelessWidget {
-  const _Header({required this.view});
+  const _Header({required this.view, required this.stacked});
 
   final ExperimentView view;
+  final bool stacked;
 
   @override
   Widget build(BuildContext context) {
@@ -311,49 +332,60 @@ class _Header extends StatelessWidget {
     final experiment = view.experiment;
     final id = experiment.id;
     final purpose = experiment.purpose;
+    final chip = _StatusChip(text: view.progress.statusChip);
+    final menu = ExperimentActionsMenu(
+      experimentId: id,
+      name: experiment.tagName,
+      revision: experiment.revision,
+      startDate: experiment.status == ExperimentStatus.running
+          ? experiment.startDate
+          : null,
+      endDate: experiment.status == ExperimentStatus.running
+          ? experiment.endDate
+          : null,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) => Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+        if (stacked) ...[
+          PageSearchHighlight(experiment.tagName, style: styles.cardTitle),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: PageSearchHighlight(
-                  experiment.tagName,
-                  style: styles.cardTitle,
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              // The chip text wraps inside its pill when large text leaves
-              // too little room for chip and menu.
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: constraints.maxWidth * .55,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: _StatusChip(text: view.progress.statusChip),
-                    ),
-                    ExperimentActionsMenu(
-                      experimentId: id,
-                      name: experiment.tagName,
-                      revision: experiment.revision,
-                      startDate: experiment.status == ExperimentStatus.running
-                          ? experiment.startDate
-                          : null,
-                      endDate: experiment.status == ExperimentStatus.running
-                          ? experiment.endDate
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
+              Flexible(child: chip),
+              menu,
             ],
           ),
-        ),
+        ] else
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: PageSearchHighlight(
+                    experiment.tagName,
+                    style: styles.cardTitle,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                // The chip text wraps inside its pill when large text leaves
+                // too little room for chip and menu.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * .55,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(child: chip),
+                      menu,
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         const SizedBox(height: AppSpacing.xs),
         Text(_metaLine(experiment), style: styles.caption),
         if (view.extensionLine != null) ...[
@@ -452,14 +484,27 @@ class _ProgressHeadline extends StatelessWidget {
   }
 }
 
-/// Three equal cells with hairline vertical dividers.
+/// Three equal cells with hairline vertical dividers, or one above the other
+/// when [stacked].
 class _StatRow extends StatelessWidget {
-  const _StatRow({required this.cells});
+  const _StatRow({required this.cells, required this.stacked});
 
   final List<_Stat> cells;
+  final bool stacked;
 
   @override
   Widget build(BuildContext context) {
+    if (stacked) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < cells.length; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.md),
+            cells[i],
+          ],
+        ],
+      );
+    }
     final divider = BorderSide(
       color: Theme.of(context).colorScheme.outlineVariant,
     );

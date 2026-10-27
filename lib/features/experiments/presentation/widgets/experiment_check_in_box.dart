@@ -98,6 +98,7 @@ class _ExperimentCheckInBoxState extends ConsumerState<ExperimentCheckInBox> {
   }
 
   Future<void> _save(String slotDate) async {
+    if (_saving) return;
     setState(() => _saving = true);
     var saved = false;
     try {

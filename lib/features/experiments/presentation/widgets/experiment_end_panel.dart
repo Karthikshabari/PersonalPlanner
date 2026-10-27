@@ -35,7 +35,7 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
   final _reason = TextEditingController();
   final _note = TextEditingController();
   int _days = 14;
-  ExperimentOutcome _outcome = ExperimentOutcome.keep;
+  ExperimentOutcome? _outcome;
   bool _busy = false;
 
   @override
@@ -46,6 +46,7 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
   }
 
   Future<void> _run(Future<void> Function(String today) action) async {
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final today = isoDateString(ref.read(insightsNowProvider));
@@ -71,16 +72,20 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
     if (mounted) _reason.clear();
   });
 
-  Future<void> _conclude() => _run((today) async {
-    await ref
+  Future<void> _conclude(ExperimentOutcome outcome) => _run((today) async {
+    final concluded = ref.read(experimentConcludedProvider.notifier);
+    final ended = ref.read(experimentEndedProvider.notifier);
+    final done = await ref
         .read(experimentRepositoryProvider)
         .concludeExperiment(
           widget.experiment.id,
-          outcome: _outcome,
+          outcome: outcome,
           note: _note.text,
           today: today,
           expectedRevision: widget.experiment.revision,
         );
+    if (ended.state?.experimentId == done.id) ended.state = null;
+    concluded.state = (experimentId: done.id, revision: done.revision);
   });
 
   @override
@@ -92,6 +97,7 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
       color: tokens.textSecondary,
     );
     final canExtend = !_busy && _reason.text.trim().isNotEmpty;
+    final outcome = _outcome;
 
     return AppSurface(
       key: ValueKey('end-panel-$id'),
@@ -159,6 +165,7 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
           const Divider(height: AppSpacing.xxl),
           SegmentedButton<ExperimentOutcome>(
             showSelectedIcon: false,
+            emptySelectionAllowed: true,
             segments: [
               for (final outcome in ExperimentOutcome.values)
                 ButtonSegment(
@@ -170,10 +177,11 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
                   ),
                 ),
             ],
-            selected: {_outcome},
+            selected: {?_outcome},
             onSelectionChanged: _busy
                 ? null
-                : (selection) => setState(() => _outcome = selection.first),
+                : (selection) =>
+                      setState(() => _outcome = selection.firstOrNull),
           ),
           const SizedBox(height: AppSpacing.md),
           ExcludeSemantics(child: Text(_learnedLabel, style: labelStyle)),
@@ -200,7 +208,9 @@ class _ExperimentEndPanelState extends ConsumerState<ExperimentEndPanel> {
             alignment: Alignment.centerRight,
             child: FilledButton(
               key: ValueKey('conclude-submit-$id'),
-              onPressed: _busy ? null : _conclude,
+              onPressed: _busy || outcome == null
+                  ? null
+                  : () => _conclude(outcome),
               child: const Text('Conclude'),
             ),
           ),

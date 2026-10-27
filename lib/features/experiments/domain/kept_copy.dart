@@ -33,7 +33,17 @@ class KeptTextPart {
 String keptPartsText(List<KeptTextPart> parts) =>
     parts.map((part) => part.text).join();
 
+const keptOutOfRangeNote =
+    'A minimum must be 15 to 240 minutes to save. '
+    'Use the + or − of each one outside that range.';
+
 String keptSegmentLabel(int n) => '$keptName ($n)';
+
+/// Kept experiments are also concluded, so the Concluded label says how many
+/// of its [concluded] are in Kept.
+String concludedSegmentLabel(int concluded, int kept) => kept == 0
+    ? 'Concluded ($concluded)'
+    : 'Concluded ($concluded, $kept also ${keptName.toLowerCase()})';
 
 String keptEmptyText() =>
     'Nothing ${keptName.toLowerCase()} yet. '

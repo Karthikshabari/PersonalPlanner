@@ -470,6 +470,55 @@ void main() {
     });
   });
 
+  group('restoreConcluded', () {
+    Future<Experiment> concludeKept(Experiment e) => repo.concludeExperiment(
+      e.id,
+      outcome: ExperimentOutcome.keep,
+      note: 'Like it',
+      today: '2026-10-30',
+      expectedRevision: e.revision,
+    );
+
+    test('puts the running state back and bumps the revision', () async {
+      final e = await create();
+      final done = await concludeKept(e);
+      final back = await repo.restoreConcluded(
+        e.id,
+        expectedRevision: done.revision,
+      );
+      expect(back.status, ExperimentStatus.running);
+      expect(back.outcome, isNull);
+      expect(back.conclusionNote, isNull);
+      expect(back.concludedOn, isNull);
+      expect(back.endDate, e.endDate);
+      expect(back.revision, done.revision + 1);
+    });
+
+    test('writes nothing when the revision changed or it is retired', () async {
+      final e = await create();
+      final done = await concludeKept(e);
+      await expectLater(
+        repo.restoreConcluded(e.id, expectedRevision: done.revision - 1),
+        throwsStateError,
+      );
+      final retired = await repo.retireKeptExperiment(
+        e.id,
+        expectedRevision: done.revision,
+      );
+      await expectLater(
+        repo.restoreConcluded(e.id, expectedRevision: done.revision),
+        throwsStateError,
+      );
+      await expectLater(
+        repo.restoreConcluded(e.id, expectedRevision: retired.revision),
+        throwsStateError,
+      );
+      final stored = await db.experimentDao.getExperimentById(e.id);
+      expect(stored!.status, ExperimentStatus.concluded.dbValue);
+      expect(stored.revision, retired.revision);
+    });
+  });
+
   group('saveCheckIn', () {
     test('saves a valid slot with the deterministic id', () async {
       final e = await create();

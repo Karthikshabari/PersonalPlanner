@@ -335,7 +335,7 @@ void main() {
     expect(find.byKey(const ValueKey('experiments-filter')), findsOneWidget);
     expect(find.text('Running (0)'), findsOneWidget);
     expect(find.text('Kept (3)'), findsOneWidget);
-    expect(find.text('Concluded (3)'), findsOneWidget);
+    expect(find.text('Concluded (3, 3 also kept)'), findsOneWidget);
 
     await teardownApp(tester, container);
   });
@@ -702,6 +702,47 @@ void main() {
 
       await teardownApp(tester, container);
     });
+
+    testWidgets('an untouched target is never rewritten to fit 15 to 240', (
+      tester,
+    ) async {
+      final container = await build(tester);
+      final e = await keepExperiment(
+        tester,
+        container,
+        'Long sessions',
+        weekday: 600,
+      );
+      await open(tester, container);
+      await showKept(tester, 1);
+      final id = e.id;
+      final sheet = find.byKey(ValueKey('kept-adjust-sheet-$id'));
+
+      await tapKey(tester, 'kept-adjust-$id');
+      await settle(tester);
+      expect(
+        find.descendant(of: sheet, matching: find.text('600m')),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'kept-stepper-weekend-$id-plus');
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(ValueKey('kept-adjust-save-$id')))
+            .onPressed,
+        isNull,
+        reason: '600 cannot be stored, so Save waits',
+      );
+      expect(find.byKey(ValueKey('kept-out-of-range-$id')), findsOneWidget);
+
+      final stored = await runDb(
+        tester,
+        () => dbOf(container).experimentDao.getExperimentById(id),
+      );
+      expect(stored!.weekdayTargetMin, 600);
+      expect(stored.targetChangesJson, '[]');
+
+      await teardownApp(tester, container);
+    });
   });
 
   testWidgets('Retire shows the one-line message, Undo brings the row back '
@@ -745,7 +786,7 @@ void main() {
 
     await retire();
     expect(find.text('Kept (2)'), findsOneWidget);
-    await tapText(tester, 'Concluded (3)');
+    await tapText(tester, 'Concluded (3, 2 also kept)');
     expect(
       within('experiment-retired-chip-$id', find.text('Retired Oct 10')),
       findsOneWidget,
@@ -767,7 +808,7 @@ void main() {
     final container = await build(tester);
     final e = await seedV1(tester, container);
     await open(tester, container);
-    await tapText(tester, 'Concluded (1)');
+    await tapText(tester, 'Concluded (1, 1 also kept)');
 
     final id = e.id;
     expect(
@@ -815,7 +856,7 @@ void main() {
     await settle(tester);
     expect(habit(), findsNothing, reason: 'Kept with Retire open');
 
-    await tapText(tester, 'Concluded (3)');
+    await tapText(tester, 'Concluded (3, 3 also kept)');
     expect(habit(), findsNothing, reason: 'Concluded');
 
     await teardownApp(tester, container);

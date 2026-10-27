@@ -10,6 +10,9 @@ const experimentTargetsMessage = 'Targets must be numbers, 0 or more.';
 
 const experimentTargetTooLargeMessage = 'A day has 1440 minutes';
 
+const experimentTargetsBothZeroMessage =
+    'Set a target above 0 for weekdays or weekends.';
+
 /// Minutes in a day: the most a per-day target can sensibly be.
 const maxExperimentDayTargetMin = 1440;
 
@@ -69,7 +72,8 @@ class ExperimentFormValidation {
   /// "The end date must be on or after the start date." or null.
   final String? endDateError;
 
-  /// "Targets must be numbers, 0 or more." or null.
+  /// "Targets must be numbers, 0 or more.", the too-large text, the both-zero
+  /// text, or null.
   final String? targetsError;
 
   /// The new-tag or existing-tag message, or null while the name is empty,
@@ -131,6 +135,8 @@ class ExperimentFormState {
         : weekday > maxExperimentDayTargetMin ||
               weekend > maxExperimentDayTargetMin
         ? experimentTargetTooLargeMessage
+        : weekday == 0 && weekend == 0
+        ? experimentTargetsBothZeroMessage
         : null;
 
     String? info;

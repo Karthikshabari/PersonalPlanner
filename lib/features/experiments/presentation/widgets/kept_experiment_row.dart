@@ -109,7 +109,11 @@ class _KeptExperimentRowState extends ConsumerState<KeptExperimentRow> {
     final id = view.experimentId;
     final styles = ExperimentStyles.of(context);
     final caution = view.chipTone == KeptTone.caution;
-    final chipColor = caution ? styles.caution : styles.done;
+    final chipColor = switch (view.chipTone) {
+      KeptTone.positive => styles.done,
+      KeptTone.neutral => null,
+      KeptTone.caution => styles.caution,
+    };
     final planColor = switch (view.planState) {
       KeptPlanState.targetReached => styles.scheme.onSurface,
       KeptPlanState.reachesMinimum => styles.done,

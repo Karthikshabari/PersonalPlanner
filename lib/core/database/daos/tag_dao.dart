@@ -13,6 +13,7 @@ class TagOptionRow {
     required this.createdAt,
     required this.hasExperiment,
     this.hasDeletedExperiment = false,
+    this.hasRunningExperiment = false,
   });
 
   final String id;
@@ -28,6 +29,9 @@ class TagOptionRow {
   /// True when only a deleted experiment is linked to this tag. Its name
   /// cannot start a new experiment (one experiment row per tag).
   final bool hasDeletedExperiment;
+
+  /// True when a live experiment of this tag is still running (not concluded).
+  final bool hasRunningExperiment;
 }
 
 /// How many blocks carry a tag, and when the earliest one starts.
@@ -86,8 +90,8 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
     return count > 0;
   }
 
-  /// Active tags with flags telling whether a live or a deleted experiment
-  /// uses them, ordered by name. Reads `experiments` too, so the stream fires when an
+  /// Active tags with flags telling whether a live, a running or a deleted
+  /// experiment uses them, ordered by name. Reads `experiments` too, so the stream fires when an
   /// experiment is created.
   Stream<List<TagOptionRow>> watchTagOptions() {
     return customSelect(
@@ -95,7 +99,10 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
       'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id '
       'AND e.deleted_at IS NULL) AS has_experiment, '
       'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id '
-      'AND e.deleted_at IS NOT NULL) AS has_deleted_experiment '
+      'AND e.deleted_at IS NOT NULL) AS has_deleted_experiment, '
+      'EXISTS (SELECT 1 FROM experiments e WHERE e.tag_id = t.id '
+      "AND e.deleted_at IS NULL AND e.status = 'running') "
+      'AS has_running_experiment '
       'FROM tags t WHERE t.deleted_at IS NULL ORDER BY t.name',
       readsFrom: {tags, attachedDatabase.experiments},
     ).watch().map(
@@ -107,6 +114,7 @@ class TagDao extends DatabaseAccessor<AppDatabase> with _$TagDaoMixin {
             createdAt: row.read<String>('created_at'),
             hasExperiment: row.read<int>('has_experiment') != 0,
             hasDeletedExperiment: row.read<int>('has_deleted_experiment') != 0,
+            hasRunningExperiment: row.read<int>('has_running_experiment') != 0,
           ),
       ],
     );

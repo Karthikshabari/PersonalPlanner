@@ -16,8 +16,9 @@ const keptWeekBarCount = 9;
 /// A day column is full at 90 minutes.
 const keptDayFullScaleMinutes = 90;
 
-/// The colour family of the status chip: green or muted amber, never red.
-enum KeptTone { positive, caution }
+/// The colour family of the status chip: green, muted amber, or neutral while
+/// a pace that is behind can still be made up by the planned time; never red.
+enum KeptTone { positive, neutral, caution }
 
 /// Which of the four planned-strip texts applies (7.3).
 enum KeptPlanState {
@@ -200,6 +201,7 @@ String keptPaceText(int paceMin, DurationFormatter formatDuration) {
   required int doneMin,
   required int targetMin,
   required int paceMin,
+  required bool minimumReachable,
   required DurationFormatter formatDuration,
 }) {
   if (doneMin >= targetMin) {
@@ -212,7 +214,11 @@ String keptPaceText(int paceMin, DurationFormatter formatDuration) {
   }
   return (
     text: keptPaceText(paceMin, formatDuration),
-    tone: paceMin >= 0 ? KeptTone.positive : KeptTone.caution,
+    tone: paceMin >= 0
+        ? KeptTone.positive
+        : minimumReachable
+        ? KeptTone.neutral
+        : KeptTone.caution,
   );
 }
 
@@ -258,10 +264,16 @@ KeptExperimentView buildKeptExperimentView({
     breakDates: breakDates,
   );
   final paceMin = doneMin - expectedMin;
+  final planState = keptPlanState(
+    doneMin: doneMin,
+    targetMin: targetMin,
+    plannedMin: plannedMin,
+  );
   final chip = keptStatusChip(
     doneMin: doneMin,
     targetMin: targetMin,
     paceMin: paceMin,
+    minimumReachable: planState == KeptPlanState.reachesMinimum,
     formatDuration: formatDuration,
   );
   final remainingMin = math.max(0, targetMin - doneMin);
@@ -359,11 +371,7 @@ KeptExperimentView buildKeptExperimentView({
     paceMin: paceMin,
     chipText: chip.text,
     chipTone: chip.tone,
-    planState: keptPlanState(
-      doneMin: doneMin,
-      targetMin: targetMin,
-      plannedMin: plannedMin,
-    ),
+    planState: planState,
     remainingMin: remainingMin,
     shortMin: math.max(0, remainingMin - plannedMin),
     doneFraction: targetMin <= 0

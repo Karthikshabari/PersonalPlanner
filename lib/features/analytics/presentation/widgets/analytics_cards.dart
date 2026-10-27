@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:intl/intl.dart';
 
 import '../../../../core/theme/app_spacing.dart';
@@ -9,6 +10,7 @@ import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../../core/utils/planner_time_zone.dart';
 import '../../domain/analytics_models.dart';
+import '../../domain/follow_through_target.dart';
 
 class InsightsSectionCard extends StatelessWidget {
   const InsightsSectionCard({
@@ -126,25 +128,30 @@ class ConsistencyGrid extends StatelessWidget {
             : weeks.first;
         final gridWidth = weeks.length * cellSize + (weeks.length - 1) * gap;
         final calendarWidth = labelWidth + gridWidth;
+        final tokens = AppThemeTokens.of(context);
         final calendar = SizedBox(
           width: calendarWidth,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.only(left: labelWidth),
-                child: SizedBox(
-                  width: gridWidth,
-                  height: 20,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: _monthLabels(
-                      context,
-                      weeks,
-                      shownStart,
-                      visibleEndExclusive,
-                      cellSize,
-                      gap,
+              // Month and weekday labels are visual; the grid below says the
+              // same in its own labels.
+              ExcludeSemantics(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: labelWidth),
+                  child: SizedBox(
+                    width: gridWidth,
+                    height: 20,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: _monthLabels(
+                        context,
+                        weeks,
+                        shownStart,
+                        visibleEndExclusive,
+                        cellSize,
+                        gap,
+                      ),
                     ),
                   ),
                 ),
@@ -152,67 +159,72 @@ class ConsistencyGrid extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: labelWidth,
-                    child: Column(
-                      children: [
-                        for (final label
-                            in plannerWeekStartDay == WeekStartDay.sunday
-                                ? const ['Sun', '', 'Tue', '', 'Thu', '', 'Sat']
-                                : const [
-                                    'Mon',
-                                    '',
-                                    'Wed',
-                                    '',
-                                    'Fri',
-                                    '',
-                                    'Sun',
-                                  ])
-                          SizedBox(
-                            height: cellSize + gap,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                label,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: AppThemeTokens.of(context)
-                                          .textMuted,
-                                    ),
+                  ExcludeSemantics(
+                    child: SizedBox(
+                      width: labelWidth,
+                      child: Column(
+                        children: [
+                          for (final label
+                              in plannerWeekStartDay == WeekStartDay.sunday
+                                  ? const [
+                                      'Sun',
+                                      '',
+                                      'Tue',
+                                      '',
+                                      'Thu',
+                                      '',
+                                      'Sat',
+                                    ]
+                                  : const [
+                                      'Mon',
+                                      '',
+                                      'Wed',
+                                      '',
+                                      'Fri',
+                                      '',
+                                      'Sun',
+                                    ])
+                            SizedBox(
+                              height: cellSize + gap,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  label,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(color: tokens.textMuted),
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                  SizedBox(
-                    width: gridWidth,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (
-                          var weekIndex = 0;
-                          weekIndex < weeks.length;
-                          weekIndex++
-                        ) ...[
-                          if (weekIndex > 0) const SizedBox(width: gap),
-                          Column(
-                            children: [
-                              for (var weekday = 0; weekday < 7; weekday++) ...[
-                                _dayCell(
-                                  context,
-                                  addDays(weeks[weekIndex], weekday),
-                                  days[isoDateString(
-                                    addDays(weeks[weekIndex], weekday),
-                                  )],
-                                  cellSize,
-                                ),
-                                if (weekday < 6) const SizedBox(height: gap),
-                              ],
-                            ],
-                          ),
+                  // One group for the whole grid; each week is one stop whose
+                  // custom actions open that week's days.
+                  Semantics(
+                    container: true,
+                    label: 'Consistency calendar, ${weeks.length} weeks',
+                    child: SizedBox(
+                      width: gridWidth,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (
+                            var weekIndex = 0;
+                            weekIndex < weeks.length;
+                            weekIndex++
+                          ) ...[
+                            if (weekIndex > 0) const SizedBox(width: gap),
+                            _weekColumn(
+                              context,
+                              weeks[weekIndex],
+                              days,
+                              cellSize,
+                              gap,
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ],
@@ -220,10 +232,12 @@ class ConsistencyGrid extends StatelessWidget {
             ],
           ),
         );
+        // The compact grid opens on its newest weeks, so today is in view.
         final calendarViewport = compact
             ? SingleChildScrollView(
                 key: const ValueKey('consistency-grid-scroll'),
                 scrollDirection: Axis.horizontal,
+                reverse: calendarWidth > constraints.maxWidth,
                 child: calendar,
               )
             : calendar;
@@ -238,6 +252,8 @@ class ConsistencyGrid extends StatelessWidget {
                 ),
               ),
             calendarViewport,
+            const SizedBox(height: AppSpacing.md),
+            _legend(context, constraints.maxWidth),
           ],
         );
       },
@@ -305,21 +321,176 @@ class ConsistencyGrid extends StatelessWidget {
     return labels;
   }
 
+  ConsistencyDay _resolveDay(DateTime date, ConsistencyDay? day) =>
+      day ??
+      ConsistencyDay(
+        date: date,
+        plannedMinutes: 0,
+        completedPlannedMinutes: 0,
+        actualMinutes: 0,
+        isFuture: date.isAfter(startOfDay(snapshot.generatedFor)),
+      );
+
+  /// One week of cells as a single screen-reader stop: it says how many days
+  /// were a success and offers each day's details as a custom action.
+  Widget _weekColumn(
+    BuildContext context,
+    DateTime weekStart,
+    Map<String, ConsistencyDay> days,
+    double cellSize,
+    double gap,
+  ) {
+    final results = <ConsistencyDay, DayResult?>{};
+    for (var weekday = 0; weekday < 7; weekday++) {
+      final date = addDays(weekStart, weekday);
+      final day = _resolveDay(date, days[isoDateString(date)]);
+      results[day] = classifyDay(day, target: snapshot.followThroughTarget);
+    }
+    final successes = results.values
+        .where((result) => result == DayResult.success)
+        .length;
+    return Semantics(
+      container: true,
+      label:
+          'Week of ${DateFormat('MMM d, yyyy').format(weekStart)}: '
+          '$successes successful ${successes == 1 ? 'day' : 'days'}',
+      customSemanticsActions: {
+        for (final entry in results.entries)
+          CustomSemanticsAction(
+            label: _dayTooltip(entry.key, entry.value),
+          ): () =>
+              _showDayDetails(context, entry.key, entry.value),
+      },
+      child: ExcludeSemantics(
+        child: Column(
+          children: [
+            for (var weekday = 0; weekday < 7; weekday++) ...[
+              _dayCell(
+                context,
+                addDays(weekStart, weekday),
+                days[isoDateString(addDays(weekStart, weekday))],
+                cellSize,
+              ),
+              if (weekday < 6) SizedBox(height: gap),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// What the shades, the neutral cell and the hatching mean, and the
+  /// follow-through percent a day needs to be a Success.
+  Widget _legend(BuildContext context, double maxWidth) {
+    final tokens = AppThemeTokens.of(context);
+    final style = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: tokens.textMuted);
+    Widget swatch(Color color, {bool outlined = false, bool hatched = false}) =>
+        SizedBox(
+          width: 12,
+          height: 12,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(3),
+              border: outlined ? Border.all(color: tokens.outline) : null,
+            ),
+            child: hatched
+                ? CustomPaint(painter: _BreakHatchPainter(tokens.outline))
+                : null,
+          ),
+        );
+    // Large text wraps inside an item instead of running past the card.
+    Widget item(List<Widget> children) => ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(width: AppSpacing.xs),
+            children[i] is Text ? Flexible(child: children[i]) : children[i],
+          ],
+        ],
+      ),
+    );
+    return Column(
+      key: const ValueKey('consistency-legend'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: AppSpacing.lg,
+          runSpacing: AppSpacing.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            item([
+              Text('Less', style: style),
+              for (final intensity in const [
+                ConsistencyIntensity.low,
+                ConsistencyIntensity.medium,
+                ConsistencyIntensity.high,
+                ConsistencyIntensity.strong,
+              ])
+                swatch(_intensityColor(tokens, intensity)),
+              Text('More', style: style),
+            ]),
+            item([
+              swatch(_intensityColor(tokens, ConsistencyIntensity.neutral)),
+              Text('Missed', style: style),
+            ]),
+            item([
+              swatch(
+                _intensityColor(tokens, ConsistencyIntensity.neutral),
+                outlined: true,
+              ),
+              Text('No plan', style: style),
+            ]),
+            item([
+              swatch(
+                _intensityColor(tokens, ConsistencyIntensity.neutral),
+                outlined: true,
+                hatched: true,
+              ),
+              Text('Break', style: style),
+            ]),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Success is ${followThroughTargetPercent(snapshot.followThroughTarget)}% '
+          'of planned time done.',
+          style: style,
+        ),
+      ],
+    );
+  }
+
+  static Color _intensityColor(
+    AppThemeTokens tokens,
+    ConsistencyIntensity intensity,
+  ) => switch (intensity) {
+    ConsistencyIntensity.neutral => tokens.surfaceSubtle,
+    ConsistencyIntensity.low => Color.alphaBlend(
+      tokens.success.withValues(alpha: 0.18),
+      tokens.surfaceRaised,
+    ),
+    ConsistencyIntensity.medium => Color.alphaBlend(
+      tokens.success.withValues(alpha: 0.42),
+      tokens.surfaceRaised,
+    ),
+    ConsistencyIntensity.high => Color.alphaBlend(
+      tokens.success.withValues(alpha: 0.68),
+      tokens.surfaceRaised,
+    ),
+    ConsistencyIntensity.strong => tokens.success,
+  };
+
   Widget _dayCell(
     BuildContext context,
     DateTime date,
     ConsistencyDay? day,
     double size,
   ) {
-    final effectiveDay =
-        day ??
-        ConsistencyDay(
-          date: date,
-          plannedMinutes: 0,
-          completedPlannedMinutes: 0,
-          actualMinutes: 0,
-          isFuture: date.isAfter(startOfDay(snapshot.generatedFor)),
-        );
+    final effectiveDay = _resolveDay(date, day);
     final tokens = AppThemeTokens.of(context);
     final result = classifyDay(
       effectiveDay,
@@ -338,54 +509,37 @@ class ConsistencyGrid extends StatelessWidget {
             ? ConsistencyIntensity.low
             : ConsistencyIntensity.neutral,
     };
-    final color = switch (intensity) {
-      ConsistencyIntensity.neutral => tokens.surfaceSubtle,
-      ConsistencyIntensity.low => Color.alphaBlend(
-        tokens.success.withValues(alpha: 0.18),
-        tokens.surfaceRaised,
-      ),
-      ConsistencyIntensity.medium => Color.alphaBlend(
-        tokens.success.withValues(alpha: 0.42),
-        tokens.surfaceRaised,
-      ),
-      ConsistencyIntensity.high => Color.alphaBlend(
-        tokens.success.withValues(alpha: 0.68),
-        tokens.surfaceRaised,
-      ),
-      ConsistencyIntensity.strong => tokens.success,
-    };
+    final color = _intensityColor(tokens, intensity);
     final tooltip = _dayTooltip(effectiveDay, result);
+    // The week column owns the screen-reader node, so the cell has none.
     return Tooltip(
       message: tooltip,
-      child: Semantics(
-        button: true,
-        label: tooltip,
-        child: InkWell(
-          key: ValueKey('consistency-day-${isoDateString(date)}'),
-          borderRadius: BorderRadius.circular(3),
-          onTap: () => _showDayDetails(context, effectiveDay, result),
-          child: SizedBox(
-            width: size,
-            height: size,
-            child: DecoratedBox(
-              // Paint in the cell subtree. An Ink here would target the
-              // outer Scaffold Material and be covered by the opaque card.
-              key: ValueKey('consistency-cell-${isoDateString(date)}'),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(3),
-                border: effectiveDay.isNeutral
-                    ? Border.all(color: tokens.outline)
-                    : null,
-              ),
-              // A break day is hatched so it reads apart from an empty day.
-              child: effectiveDay.isBreak
-                  ? CustomPaint(
-                      key: ValueKey('consistency-break-${isoDateString(date)}'),
-                      painter: _BreakHatchPainter(tokens.outline),
-                    )
+      excludeFromSemantics: true,
+      child: InkWell(
+        key: ValueKey('consistency-day-${isoDateString(date)}'),
+        borderRadius: BorderRadius.circular(3),
+        onTap: () => _showDayDetails(context, effectiveDay, result),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: DecoratedBox(
+            // Paint in the cell subtree. An Ink here would target the
+            // outer Scaffold Material and be covered by the opaque card.
+            key: ValueKey('consistency-cell-${isoDateString(date)}'),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(3),
+              border: effectiveDay.isNeutral
+                  ? Border.all(color: tokens.outline)
                   : null,
             ),
+            // A break day is hatched so it reads apart from an empty day.
+            child: effectiveDay.isBreak
+                ? CustomPaint(
+                    key: ValueKey('consistency-break-${isoDateString(date)}'),
+                    painter: _BreakHatchPainter(tokens.outline),
+                  )
+                : null,
           ),
         ),
       ),

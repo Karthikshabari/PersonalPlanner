@@ -146,6 +146,23 @@ void main() {
     );
   });
 
+  test('behind pace is neutral while the plan still reaches the minimum', () {
+    final walk = testKeptExperiment(
+      tagName: 'Evening walk',
+      weekday: 30,
+      weekend: 30,
+    );
+    final view = build(
+      walk,
+      doneByWeek: const {8: 100},
+      doneByDay: const {0: 30, 1: 30, 2: 0, 3: 30, 4: 10, 5: 0},
+      planned: 110,
+    );
+    expect(view.chipText, '50m behind');
+    expect(view.planState, KeptPlanState.reachesMinimum);
+    expect(view.chipTone, KeptTone.neutral);
+  });
+
   test('V3 Reading is over target', () {
     final reading = testKeptExperiment(
       tagName: 'Reading',

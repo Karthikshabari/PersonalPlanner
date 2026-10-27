@@ -69,11 +69,16 @@ class TagField extends ConsumerStatefulWidget {
     required this.pendingName,
     required this.onChanged,
     this.enabled = true,
+    this.inSeries = false,
   });
 
   final String? selectedTagId;
   final String? pendingName;
   final bool enabled;
+
+  /// The block belongs to a recurring series: a tag is written to this block
+  /// only, which the field says for an experiment tag.
+  final bool inSeries;
   final void Function(String? tagId, String? pendingName) onChanged;
 
   @override
@@ -209,6 +214,26 @@ class _TagFieldState extends ConsumerState<TagField> {
     }
   }
 
+  /// What the field says about the selected tag, or null: the new-tag note, or
+  /// which experiment the tag feeds and that a series tag counts for one block.
+  String? _helperText() {
+    if (_knownPending != null) return 'A new tag is created when you save.';
+    final id = _knownId;
+    if (id == null) return null;
+    TagOptionRow? tag;
+    for (final option in _options) {
+      if (option.id == id) tag = option;
+    }
+    if (tag == null) return null;
+    final lines = [
+      if (tag.hasRunningExperiment)
+        'Counts toward the ${tag.name} experiment when completed.',
+      if (tag.hasRunningExperiment && widget.inSeries)
+        'Counts for this block only. Tag later blocks yourself.',
+    ];
+    return lines.isEmpty ? null : lines.join(' ');
+  }
+
   TagOptionRow? _matchFor(String text) {
     final key = TagRepository.normalizeTagKey(text);
     if (key.isEmpty) return null;
@@ -316,9 +341,8 @@ class _TagFieldState extends ConsumerState<TagField> {
               onChanged: _onTextChanged,
               decoration: InputDecoration(
                 labelText: 'Tag',
-                helperText: _knownPending != null
-                    ? 'A new tag is created when you save.'
-                    : null,
+                helperText: _helperText(),
+                helperMaxLines: 3,
                 suffixIcon: hasValue && widget.enabled
                     ? IconButton(
                         key: const ValueKey('task-tag-clear'),

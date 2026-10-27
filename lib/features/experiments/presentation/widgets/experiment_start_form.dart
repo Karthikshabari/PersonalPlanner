@@ -247,153 +247,176 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
         color: tokens.surfaceRaised,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 720),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('New experiment', style: theme.textTheme.titleLarge),
-                const SizedBox(height: AppSpacing.lg),
-                TextField(
-                  key: const ValueKey('experiment-name'),
-                  controller: _name,
-                  inputFormatters: const [
-                    Utf16LengthLimitingTextInputFormatter(maxTagNameUnits),
-                  ],
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    labelText: 'Name (this becomes the tag)',
-                    errorText: nameError,
-                    errorMaxLines: 3,
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-                if (validation.infoMessage != null) ...[
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    validation.infoMessage!,
-                    key: const ValueKey('experiment-tag-info'),
-                    style: mutedStyle,
-                  ),
-                ],
-                if (validation.showFirstDateButton && firstBlockDate != null)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      key: const ValueKey('experiment-use-first-date'),
-                      onPressed: () =>
-                          setState(() => _startDate = firstBlockDate!),
-                      child: Text(
-                        'Use the first tagged block date '
-                        '(${_longDate(firstBlockDate)})',
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: AppSpacing.md),
-                // A long label would be cut to one line inside the field, so
-                // it is shown as wrapping text above the field instead; the
-                // field carries the same text for screen readers.
-                ExcludeSemantics(
-                  child: Text(_purposeLabel, style: theme.textTheme.bodySmall),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Semantics(
-                  label: _purposeLabel,
-                  child: TextField(
-                    key: const ValueKey('experiment-purpose'),
-                    controller: _purpose,
-                    minLines: 2,
-                    maxLines: 4,
-                    inputFormatters: const [
-                      Utf16LengthLimitingTextInputFormatter(_maxPurposeUnits),
-                    ],
-                    keyboardType: TextInputType.multiline,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  spacing: AppSpacing.lg,
-                  runSpacing: AppSpacing.md,
-                  children: [
-                    _DateButton(
-                      buttonKey: const ValueKey('experiment-start-date'),
-                      label: 'Start date',
-                      value: _longDate(_startDate),
-                      onPressed: () => _pickDate(start: true),
-                    ),
-                    _DateButton(
-                      buttonKey: const ValueKey('experiment-end-date'),
-                      label: 'End date',
-                      value: _longDate(_endDate),
-                      onPressed: () => _pickDate(start: false),
-                    ),
-                  ],
-                ),
-                if (validation.endDateError != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(validation.endDateError!, style: errorStyle),
-                ],
-                const SizedBox(height: AppSpacing.md),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final weekday = _TargetField(
-                      fieldKey: const ValueKey('experiment-weekday-target'),
-                      controller: _weekday,
-                      label: 'Weekday target (min)',
-                      onChanged: () => setState(() {}),
-                    );
-                    final weekend = _TargetField(
-                      fieldKey: const ValueKey('experiment-weekend-target'),
-                      controller: _weekend,
-                      label: 'Weekend target (min)',
-                      onChanged: () => setState(() {}),
-                    );
-                    if (constraints.maxWidth < 440) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          weekday,
-                          const SizedBox(height: AppSpacing.md),
-                          weekend,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('New experiment', style: theme.textTheme.titleLarge),
+                      const SizedBox(height: AppSpacing.lg),
+                      TextField(
+                        key: const ValueKey('experiment-name'),
+                        controller: _name,
+                        inputFormatters: const [
+                          Utf16LengthLimitingTextInputFormatter(
+                            maxTagNameUnits,
+                          ),
                         ],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: weekday),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(child: weekend),
-                      ],
-                    );
-                  },
-                ),
-                if (validation.targetsError != null) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(validation.targetsError!, style: errorStyle),
-                ],
-                const SizedBox(height: AppSpacing.lg),
-                Text(
-                  'How often do you want to write a check-in about how it is going?',
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    for (final days in experimentCheckInFrequencies)
-                      ChoiceChip(
-                        key: ValueKey('experiment-frequency-$days'),
-                        label: Text(experimentFrequencyLabel(days)),
-                        selected: _every == days,
-                        onSelected: (_) => setState(() => _every = days),
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: 'Name (this becomes the tag)',
+                          errorText: nameError,
+                          errorMaxLines: 3,
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
-                  ],
+                      if (validation.infoMessage != null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          validation.infoMessage!,
+                          key: const ValueKey('experiment-tag-info'),
+                          style: mutedStyle,
+                        ),
+                      ],
+                      if (validation.showFirstDateButton &&
+                          firstBlockDate != null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            key: const ValueKey('experiment-use-first-date'),
+                            onPressed: () =>
+                                setState(() => _startDate = firstBlockDate!),
+                            child: Text(
+                              'Use the first tagged block date '
+                              '(${_longDate(firstBlockDate)})',
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: AppSpacing.md),
+                      // A long label would be cut to one line inside the field, so
+                      // it is shown as wrapping text above the field instead; the
+                      // field carries the same text for screen readers.
+                      ExcludeSemantics(
+                        child: Text(
+                          _purposeLabel,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Semantics(
+                        label: _purposeLabel,
+                        child: TextField(
+                          key: const ValueKey('experiment-purpose'),
+                          controller: _purpose,
+                          minLines: 2,
+                          maxLines: 4,
+                          inputFormatters: const [
+                            Utf16LengthLimitingTextInputFormatter(
+                              _maxPurposeUnits,
+                            ),
+                          ],
+                          keyboardType: TextInputType.multiline,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Wrap(
+                        spacing: AppSpacing.lg,
+                        runSpacing: AppSpacing.md,
+                        children: [
+                          _DateButton(
+                            buttonKey: const ValueKey('experiment-start-date'),
+                            label: 'Start date',
+                            value: _longDate(_startDate),
+                            onPressed: () => _pickDate(start: true),
+                          ),
+                          _DateButton(
+                            buttonKey: const ValueKey('experiment-end-date'),
+                            label: 'End date',
+                            value: _longDate(_endDate),
+                            onPressed: () => _pickDate(start: false),
+                          ),
+                        ],
+                      ),
+                      if (validation.endDateError != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(validation.endDateError!, style: errorStyle),
+                      ],
+                      const SizedBox(height: AppSpacing.md),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final weekday = _TargetField(
+                            fieldKey: const ValueKey(
+                              'experiment-weekday-target',
+                            ),
+                            controller: _weekday,
+                            label: 'Weekday target (min)',
+                            onChanged: () => setState(() {}),
+                          );
+                          final weekend = _TargetField(
+                            fieldKey: const ValueKey(
+                              'experiment-weekend-target',
+                            ),
+                            controller: _weekend,
+                            label: 'Weekend target (min)',
+                            onChanged: () => setState(() {}),
+                          );
+                          if (constraints.maxWidth < 440) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                weekday,
+                                const SizedBox(height: AppSpacing.md),
+                                weekend,
+                              ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: weekday),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(child: weekend),
+                            ],
+                          );
+                        },
+                      ),
+                      if (validation.targetsError != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(validation.targetsError!, style: errorStyle),
+                      ],
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        'How often do you want to write a check-in about how it is going?',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          for (final days in experimentCheckInFrequencies)
+                            ChoiceChip(
+                              key: ValueKey('experiment-frequency-$days'),
+                              label: Text(experimentFrequencyLabel(days)),
+                              selected: _every == days,
+                              onSelected: (_) => setState(() => _every = days),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: AppSpacing.xl),
-                Wrap(
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Wrap(
                   alignment: WrapAlignment.end,
                   spacing: AppSpacing.sm,
                   runSpacing: AppSpacing.sm,
@@ -412,8 +435,8 @@ class _ExperimentStartFormState extends ConsumerState<ExperimentStartForm> {
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

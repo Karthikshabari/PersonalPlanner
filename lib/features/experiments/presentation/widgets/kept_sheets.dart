@@ -60,10 +60,16 @@ class KeptAdjustTargetSheet extends ConsumerStatefulWidget {
 }
 
 class _KeptAdjustTargetSheetState extends ConsumerState<KeptAdjustTargetSheet> {
-  late int _weekday = keptClampTarget(widget.view.weekdayTargetMin);
-  late int _weekend = keptClampTarget(widget.view.weekendTargetMin);
+  late int _weekday = widget.view.weekdayTargetMin;
+  late int _weekend = widget.view.weekendTargetMin;
   bool _fromNextWeek = true;
   bool _busy = false;
+
+  /// A minimum outside 15 to 240 minutes cannot be stored in the history; it
+  /// stays as it is until its stepper is used.
+  bool get _outOfRange =>
+      keptClampTarget(_weekday) != _weekday ||
+      keptClampTarget(_weekend) != _weekend;
 
   Future<void> _save() async {
     final view = widget.view;
@@ -168,6 +174,14 @@ class _KeptAdjustTargetSheetState extends ConsumerState<KeptAdjustTargetSheet> {
         ),
         const SizedBox(height: 14),
         Text(keptEarlierWeeksNote, style: styles.note),
+        if (_outOfRange) ...[
+          const SizedBox(height: 14),
+          Text(
+            keptOutOfRangeNote,
+            key: ValueKey('kept-out-of-range-$id'),
+            style: styles.note,
+          ),
+        ],
         const SizedBox(height: 14),
         Align(
           alignment: Alignment.centerRight,
@@ -192,7 +206,7 @@ class _KeptAdjustTargetSheetState extends ConsumerState<KeptAdjustTargetSheet> {
                   background: styles.accent,
                   foreground: styles.scheme.onPrimary,
                 ),
-                onPressed: _busy ? null : _save,
+                onPressed: _busy || _outOfRange ? null : _save,
                 child: const Text(keptSave),
               ),
             ],

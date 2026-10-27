@@ -12,6 +12,7 @@ import '../../domain/weekly_review_history.dart';
 import '../../domain/weekly_review_numbers.dart';
 import '../../providers/review_providers.dart';
 import 'overview_strip.dart';
+import 'review_mode_switcher.dart' show openReviewPath;
 import 'review_theme.dart';
 
 /// Everything one week tile shows, computed once when its window loads.
@@ -53,8 +54,8 @@ class OverviewWeekTile {
 /// Overview › Weeks: a lazy, sideways strip of week tiles, newest at the
 /// right, with the same arrows, edge fades and lazy loading as the day strip,
 /// and the tier legend. The current week starts selected; the selection
-/// (`overviewSelectedWeekProvider`) drives only the highlight, because a week
-/// has no detail line or "open" action to show.
+/// (`overviewSelectedWeekProvider`) drives the highlight, and "Open this
+/// week" shows that week on Weekly.
 class OverviewWeekStrip extends ConsumerStatefulWidget {
   const OverviewWeekStrip({super.key});
 
@@ -157,6 +158,23 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
               child: OverviewWeekTileBody(tile: tile),
             );
           },
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            height: 48,
+            child: OutlinedButton(
+              key: const ValueKey('overview-open-week'),
+              onPressed: () {
+                ref.read(selectedWeekStartProvider.notifier).state = ref.read(
+                  overviewSelectedWeekProvider,
+                );
+                openReviewPath(context, '/review/weekly');
+              },
+              child: const Text('Open this week'),
+            ),
+          ),
         ),
         const SizedBox(height: AppSpacing.md),
         const OverviewLegend(),
