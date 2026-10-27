@@ -5,10 +5,13 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/core/models/experiment.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/analytics/providers/analytics_providers.dart';
 import 'package:personal_planner/features/experiments/data/experiment_repository.dart';
 import 'package:personal_planner/features/experiments/providers/experiment_providers.dart';
+import 'package:personal_planner/features/settings/providers/week_start_provider.dart';
 
 import '../../helpers/sqlite_setup.dart';
 
@@ -153,6 +156,34 @@ void main() {
     expect(container.read(experimentSourceRevisionProvider), 1);
   });
 
+  test('switching the week start recomputes the Kept weeks', () async {
+    final db = await databaseWith('A');
+    addTearDown(db.close);
+    final repo = ExperimentRepository(db);
+    final running = (await db.experimentDao.getExperiments()).single;
+    await repo.concludeExperiment(
+      running.experiment.id,
+      outcome: ExperimentOutcome.keep,
+      today: '2026-10-11',
+      expectedRevision: running.experiment.revision,
+    );
+    addTearDown(() => plannerWeekStartDay = WeekStartDay.monday);
+    final container = ProviderContainer(overrides: overridesFor(db));
+    addTearDown(container.dispose);
+    final sub = container.listen(experimentDashboardProvider, (_, _) {});
+    await container.read(weekStartDayProvider.future);
+
+    var dashboard = await container.read(experimentDashboardProvider.future);
+    expect(dashboard.kept.views.single.weekStart, '2026-10-05');
+
+    await container
+        .read(weekStartDayProvider.notifier)
+        .setWeekStart(WeekStartDay.sunday);
+    dashboard = await container.read(experimentDashboardProvider.future);
+    expect(dashboard.kept.views.single.weekStart, '2026-10-04');
+    sub.close();
+  });
+
   test('a load error is not retried automatically (ED43)', () async {
     final interceptor = _FailingSelects();
     final db = AppDatabase(NativeDatabase.memory().interceptWith(interceptor));
@@ -161,6 +192,8 @@ void main() {
     final container = ProviderContainer(overrides: overridesFor(db));
     addTearDown(container.dispose);
 
+    // The shell has loaded the week start long before Insights opens.
+    await container.read(weekStartDayProvider.future);
     interceptor.failing = true;
     final sub = container.listen(experimentDashboardProvider, (_, _) {});
     await expectLater(

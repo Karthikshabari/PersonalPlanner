@@ -101,8 +101,9 @@ DateTime startOfIsoWeek(DateTime dateTime) =>
 
 /// The canonical Monday under which the weekly review of the week containing
 /// [dateTime] is stored. Saved reviews keep this Monday key whatever the
-/// week-start setting, so switching it never orphans or moves a review: a
-/// Sunday-start week is keyed by the Monday that falls inside it.
+/// week-start setting, so switching it never orphans a review. A review shows
+/// on the week that contains its Monday: under Sunday start that is the
+/// Sunday-to-Saturday week, which starts the day before the Monday.
 DateTime weeklyReviewKey(DateTime dateTime) {
   final start = startOfWeek(dateTime);
   return plannerWeekStartDay == WeekStartDay.sunday ? addDays(start, 1) : start;

@@ -121,6 +121,14 @@ class ReviewDao extends DatabaseAccessor<AppDatabase> with _$ReviewDaoMixin {
         .get();
   }
 
+  Future<int> countActiveWeeklyReviews() async {
+    final count = weeklyReviews.id.count();
+    final query = selectOnly(weeklyReviews)
+      ..addColumns([count])
+      ..where(weeklyReviews.deletedAt.isNull());
+    return (await query.map((row) => row.read(count)).getSingle()) ?? 0;
+  }
+
   Future<WeeklyReviewRow?> getWeeklyReviewById(String id) =>
       (select(weeklyReviews)..where((r) => r.id.equals(id))).getSingleOrNull();
 

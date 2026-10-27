@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/models/experiment.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/analytics/presentation/widgets/analytics_cards.dart'
     show formatMinutes;
@@ -424,6 +425,56 @@ void main() {
     );
     expect(days.first.dayName, 'Mon');
     expect(days[5].isToday, isTrue);
+  });
+
+  group('Sunday week start', () {
+    setUp(() => plannerWeekStartDay = WeekStartDay.sunday);
+    tearDown(() => plannerWeekStartDay = WeekStartDay.monday);
+
+    const change = ExperimentTargetChange(
+      effectiveWeekStart: '2026-10-12',
+      weekdayTargetMin: 75,
+      weekendTargetMin: 90,
+      madeOn: _saturday,
+    );
+
+    test('the nine weeks start on Sundays and end with the current one', () {
+      final starts = keptWeekStarts('2026-10-10');
+      expect(starts, hasLength(9));
+      expect(starts.last, '2026-10-04');
+      expect(starts.every((s) => parseIsoDate(s).weekday == 7), isTrue);
+      expect(keptWeekStarts('2026-10-11').last, '2026-10-11');
+    });
+
+    test('the day columns run Sunday to Saturday', () {
+      final view = build(v1);
+      expect(view.weekStart, '2026-10-04');
+      expect(view.nextWeekStart, '2026-10-11');
+      expect(view.days.first.dayName, 'Sun');
+      expect(view.days.last.dayName, 'Sat');
+      expect(view.days[6].isToday, isTrue);
+    });
+
+    test('a week before the start date is cut at the planner week', () {
+      final late = testKeptExperiment(start: '2026-10-07');
+      final view = build(late, today: '2026-10-17');
+      expect(view.bars.map((b) => b.weekStart), ['2026-10-04', '2026-10-11']);
+    });
+
+    test('the Sunday before a change Monday already uses the change', () {
+      final changed = testKeptExperiment(targetChanges: [change]);
+      expect(keptTargetsForWeek(changed, '2026-10-04').weekdayMin, 60);
+      expect(keptTargetsForWeek(changed, '2026-10-11').weekdayMin, 75);
+      expect(keptTargetsForWeek(changed, '2026-10-12').weekdayMin, 75);
+      expect(keptTargetMonday('2026-10-11'), '2026-10-12');
+      expect(keptTargetMonday('2026-10-12'), '2026-10-12');
+    });
+
+    test('a change is pending until the week that contains its Monday', () {
+      final changed = testKeptExperiment(targetChanges: [change]);
+      expect(keptPendingTargetChange(changed, '2026-10-04'), change);
+      expect(keptPendingTargetChange(changed, '2026-10-11'), isNull);
+    });
   });
 
   group('copy', () {

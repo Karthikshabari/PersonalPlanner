@@ -1234,7 +1234,7 @@ void main() {
 
     final source = await BackupService(database).exportJson();
     final document = jsonDecode(source) as Map<String, dynamic>;
-    expect(document['schema_version'], 8);
+    expect(document['schema_version'], 9);
     final data =
         (document['content'] as Map<String, dynamic>)['data']
             as Map<String, dynamic>;

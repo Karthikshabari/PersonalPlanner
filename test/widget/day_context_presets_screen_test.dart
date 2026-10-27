@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/features/day_context/domain/day_context_presets.dart';
 import 'package:personal_planner/features/day_context/providers/day_context_presets_provider.dart';
+import 'package:personal_planner/features/day_context/providers/day_context_providers.dart';
 
 import '../helpers/test_container.dart';
 
@@ -125,5 +127,146 @@ void main() {
     }
     expect(find.bySemanticsLabel('Break day: Leave'), findsOneWidget);
     await finish(tester, c);
+  });
+
+  group('changes that reclassify past days ask first', () {
+    // Defaults: 3 Leave (break), 4 Travel (not a break), 5 Rest Day (break).
+    Future<ProviderContainer> pumpWithDays(
+      WidgetTester tester,
+      DayContextKind kind,
+      int days,
+    ) async {
+      final c = await buildTestContainer(tester);
+      await runDb(tester, () async {
+        for (var i = 1; i <= days; i++) {
+          await c
+              .read(dayContextRepositoryProvider)
+              .save('2026-09-0$i', kind, null);
+        }
+      });
+      appRouter.go('/settings/day-contexts');
+      await pumpApp(tester, c, surface: const Size(1200, 900));
+      await flush(tester);
+      return c;
+    }
+
+    Finder dialogButton(String label) => find.descendant(
+      of: find.byType(AlertDialog).last,
+      matching: find.text(label),
+    );
+
+    testWidgets('the Break switch shows the count; Cancel writes nothing', (
+      tester,
+    ) async {
+      final c = await pumpWithDays(tester, DayContextKind.travel, 3);
+      final before = presetsOf(c);
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-preset-break-4')),
+      );
+      await flush(tester);
+      expect(
+        find.text('3 past days will count as break days.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(dialogButton('Cancel'));
+      await flush(tester);
+      expect(presetsOf(c), before);
+
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-preset-break-4')),
+      );
+      await flush(tester);
+      await tester.tap(dialogButton('Continue'));
+      await flush(tester);
+      expect(presetsOf(c)[4].isBreak, isTrue);
+      await finish(tester, c);
+    });
+
+    testWidgets('switching a break preset off says the days stop counting', (
+      tester,
+    ) async {
+      final c = await pumpWithDays(tester, DayContextKind.leave, 2);
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-preset-break-3')),
+      );
+      await flush(tester);
+      expect(
+        find.text('2 past days will no longer count as break days.'),
+        findsOneWidget,
+      );
+      await tester.tap(dialogButton('Continue'));
+      await flush(tester);
+      expect(presetsOf(c)[3].isBreak, isFalse);
+      await finish(tester, c);
+    });
+
+    Future<void> rename(WidgetTester tester, int index, String name) async {
+      await tester.tap(
+        find.byKey(ValueKey('day-context-preset-rename-$index')),
+      );
+      await settle(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('day-context-preset-name')),
+        name,
+      );
+      await tester.tap(find.byKey(const ValueKey('day-context-preset-save')));
+      await flush(tester);
+    }
+
+    testWidgets('renaming a break preset asks; Cancel writes nothing', (
+      tester,
+    ) async {
+      final c = await pumpWithDays(tester, DayContextKind.leave, 2);
+      final before = presetsOf(c);
+      await rename(tester, 3, 'Time off');
+      expect(
+        find.text('2 past days will no longer count as break days.'),
+        findsOneWidget,
+      );
+      await tester.tap(dialogButton('Cancel'));
+      await flush(tester);
+      expect(presetsOf(c), before);
+      await finish(tester, c);
+    });
+
+    testWidgets('renaming a non-break preset that days use does not ask', (
+      tester,
+    ) async {
+      final c = await pumpWithDays(tester, DayContextKind.travel, 2);
+      await rename(tester, 4, 'Trip');
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(presetsOf(c)[4].name, 'Trip');
+      await finish(tester, c);
+    });
+
+    testWidgets('deleting a break preset asks before it deletes', (
+      tester,
+    ) async {
+      final c = await pumpWithDays(tester, DayContextKind.leave, 2);
+      final before = presetsOf(c);
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-preset-delete-3')),
+      );
+      await flush(tester);
+      expect(
+        find.text('2 past days will no longer count as break days.'),
+        findsOneWidget,
+      );
+      await tester.tap(dialogButton('Cancel'));
+      await flush(tester);
+      expect(presetsOf(c), before);
+      expect(find.text('Undo'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey('day-context-preset-delete-3')),
+      );
+      await flush(tester);
+      await tester.tap(dialogButton('Continue'));
+      await flush(tester);
+      expect(presetsOf(c).length, before.length - 1);
+      expect(find.text('Undo'), findsOneWidget);
+      await finish(tester, c);
+    });
   });
 }

@@ -206,6 +206,8 @@ class ReviewRepository {
     return row == null ? null : fromWeeklyRow(row);
   }
 
+  Future<int> countActiveWeeklyReviews() => _dao.countActiveWeeklyReviews();
+
   Future<void> deleteWeeklyReview(String id) =>
       _dao.softDeleteWeeklyReview(id, DateTime.now());
 

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/database/daos/experiment_dao.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
+import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/experiment.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
@@ -14,6 +15,7 @@ import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/analytics/presentation/widgets/analytics_cards.dart'
     show formatMinutes;
 import 'package:personal_planner/features/analytics/providers/analytics_providers.dart';
+import 'package:personal_planner/features/day_context/data/day_context_repository.dart';
 import 'package:personal_planner/features/experiments/data/experiment_repository.dart';
 import 'package:personal_planner/features/experiments/domain/experiment_dashboard.dart';
 import 'package:personal_planner/features/experiments/domain/experiment_days.dart';
@@ -323,6 +325,55 @@ void main() {
       final dashboard = await service().load(today: '2026-10-10');
       expect(dashboard.keptCount, 1);
       expect(counter.selects, withoutKept + 3, reason: 'weeks, days, planned');
+    });
+  });
+
+  group('Sunday week start', () {
+    setUp(() => plannerWeekStartDay = WeekStartDay.sunday);
+    tearDown(() => plannerWeekStartDay = WeekStartDay.monday);
+
+    test('Sunday minutes count in the Sunday week', () async {
+      final e = await keepExperiment('Morning pages');
+      await block(
+        start: dt(10, 4, 9),
+        end: dt(10, 4, 10),
+        tagId: e.tagId,
+        actual: 45,
+      );
+      await block(
+        start: dt(10, 3, 9),
+        end: dt(10, 3, 10),
+        tagId: e.tagId,
+        actual: 30,
+      );
+      final view = (await service().load(today: '2026-10-10'))
+          .kept
+          .views
+          .single;
+      expect(view.weekStart, '2026-10-04');
+      expect(view.doneMin, 45);
+      expect(view.days.first.doneMin, 45);
+      final previous = view.bars.firstWhere((b) => b.weekStart == '2026-09-27');
+      expect(previous.doneMin, 30);
+    });
+
+    test('a break day on the Saturday ending the week is read', () async {
+      final e = await keepExperiment('Morning pages');
+      await block(
+        start: dt(10, 17, 9),
+        end: dt(10, 17, 10),
+        tagId: e.tagId,
+        status: TaskStatus.planned,
+      );
+      await DayContextRepository(db)
+          .save('2026-10-17', DayContextKind.leave, null);
+      final view = (await service().load(today: '2026-10-11'))
+          .kept
+          .views
+          .single;
+      expect(view.weekStart, '2026-10-11');
+      expect(view.days.last.valueLabel, 'break');
+      expect(view.plannedMin, 0);
     });
   });
 

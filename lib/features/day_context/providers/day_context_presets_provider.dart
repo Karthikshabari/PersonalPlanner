@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/day_context.dart';
 import '../../../core/providers/database_provider.dart';
 import '../domain/break_day.dart';
 import '../domain/day_context_presets.dart';
 import 'day_context_providers.dart';
 
 /// The "Day contexts" presets. Stored per device in `app_settings`; not
-/// synced and not part of portable backup.
+/// synced. Portable backup carries them.
 final dayContextPresetsProvider =
     AsyncNotifierProvider<DayContextPresetsNotifier, List<DayContextPreset>>(
       DayContextPresetsNotifier.new,
@@ -26,6 +27,16 @@ class DayContextPresetsNotifier extends AsyncNotifier<List<DayContextPreset>> {
 
   List<DayContextPreset> get _current =>
       state.value ?? defaultDayContextPresets;
+
+  /// How many active days carry the label [name] (case and spaces ignored),
+  /// the days a change to that preset's Break switch or name reclassifies.
+  Future<int> pastDayCountForPreset(String name) async {
+    final wanted = DayContextPresets.normalize(name);
+    final days = await ref.read(dayContextRepositoryProvider).watchAll().first;
+    return days
+        .where((day) => DayContextPresets.normalize(day.label) == wanted)
+        .length;
+  }
 
   /// Returns the validation message, or null once added.
   Future<String?> add(String name) async {

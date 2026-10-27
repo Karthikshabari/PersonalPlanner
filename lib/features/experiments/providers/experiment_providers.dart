@@ -15,6 +15,7 @@ import '../../task_editor/providers/tag_providers.dart';
 import '../data/experiment_repository.dart';
 import '../../day_context/domain/break_day.dart';
 import '../../day_context/providers/day_context_presets_provider.dart';
+import '../../settings/providers/week_start_provider.dart';
 import '../domain/experiment_dashboard.dart';
 import '../domain/kept_experiment.dart';
 
@@ -111,6 +112,7 @@ class ExperimentDashboardCacheEntry {
     required this.revision,
     required this.today,
     this.breakDays,
+    this.weekStart = WeekStartDay.monday,
   });
 
   final ExperimentDashboard dashboard;
@@ -118,6 +120,9 @@ class ExperimentDashboardCacheEntry {
 
   /// The break-day rule the dashboard was computed with.
   final BreakDayRule? breakDays;
+
+  /// The week-start setting the Kept weeks were computed with.
+  final WeekStartDay weekStart;
 
   /// `yyyy-MM-dd`.
   final String today;
@@ -163,11 +168,16 @@ final experimentDashboardProvider =
       );
       final revision = ref.watch(experimentSourceRevisionProvider);
       final breakDays = ref.watch(breakDayRuleProvider);
+      // The Kept weeks follow the setting, which `startOfWeek` reads.
+      final weekStart = ref.watch(
+        weekStartDayProvider.select((v) => v.value ?? WeekStartDay.monday),
+      );
       final cached = ref.read(experimentDashboardCacheProvider);
       if (cached != null &&
           cached.revision == revision &&
           cached.today == today &&
-          cached.breakDays == breakDays) {
+          cached.breakDays == breakDays &&
+          cached.weekStart == weekStart) {
         return cached.dashboard;
       }
       final service = ExperimentDashboardService(
@@ -188,6 +198,7 @@ final experimentDashboardProvider =
                   revision: revision,
                   today: today,
                   breakDays: storedBreakDays,
+                  weekStart: weekStart,
                 ),
               );
         }

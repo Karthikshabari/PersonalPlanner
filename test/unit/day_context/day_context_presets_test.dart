@@ -1,8 +1,18 @@
+import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/day_context.dart';
+import 'package:personal_planner/core/providers/database_provider.dart';
+import 'package:personal_planner/features/day_context/data/day_context_repository.dart';
 import 'package:personal_planner/features/day_context/domain/day_context_presets.dart';
+import 'package:personal_planner/features/day_context/providers/day_context_presets_provider.dart';
+
+import '../../helpers/sqlite_setup.dart';
 
 void main() {
+  setupSqliteForTests();
+
   group('defaults', () {
     test('six presets in order, three of them breaks', () {
       expect(defaultDayContextPresets.map((p) => p.name), [
@@ -130,5 +140,54 @@ void main() {
       DayContextKind.custom,
     );
     expect(DayContextPresets.kindForName('Custom'), DayContextKind.custom);
+  });
+
+  group('pastDayCountForPreset', () {
+    late AppDatabase db;
+    late ProviderContainer container;
+    late DayContextRepository repository;
+
+    setUp(() {
+      db = AppDatabase(NativeDatabase.memory());
+      container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWithValue(db)],
+      );
+      repository = DayContextRepository(db);
+    });
+
+    tearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+
+    Future<int> count(String name) => container
+        .read(dayContextPresetsProvider.notifier)
+        .pastDayCountForPreset(name);
+
+    test('matches labels ignoring case and spaces', () async {
+      await repository.save('2026-09-01', DayContextKind.leave, null);
+      await repository.save(
+        '2026-09-02',
+        DayContextKind.custom,
+        '  rest  DAY ',
+      );
+      await repository.save('2026-09-03', DayContextKind.custom, 'Sabbatical');
+      expect(await count('LEAVE'), 1);
+      expect(await count('Rest Day'), 1);
+      expect(await count('restday'), 1);
+      expect(await count('Never used'), 0);
+    });
+
+    test('ignores soft-deleted days', () async {
+      final day = await repository.save(
+        '2026-09-01',
+        DayContextKind.leave,
+        null,
+      );
+      await repository.save('2026-09-02', DayContextKind.leave, null);
+      expect(await count('Leave'), 2);
+      await repository.remove(day.id, expectedRevision: day.revision);
+      expect(await count('Leave'), 1);
+    });
   });
 }

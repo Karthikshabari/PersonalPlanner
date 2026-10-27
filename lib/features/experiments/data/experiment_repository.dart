@@ -307,8 +307,8 @@ class ExperimentRepository {
   }
 
   /// Changes the weekday and weekend minimum of a kept experiment, from this
-  /// week or from next Monday. Writes nothing when the history would not
-  /// change.
+  /// week or from next week. Both are stored under a Monday. Writes nothing
+  /// when the history would not change.
   Future<Experiment> adjustKeptTarget(
     String experimentId, {
     required int weekdayTargetMin,
@@ -326,8 +326,9 @@ class ExperimentRepository {
         expectedRevision,
         retired: false,
       );
+      // Target changes are keyed by the Monday of the planner week.
       final currentWeekStart = isoDateString(
-        startOfIsoWeek(parseIsoDate(today)),
+        weeklyReviewKey(parseIsoDate(today)),
       );
       final changes = applyKeptTargetChange(
         experiment: fromRow(row, ''),

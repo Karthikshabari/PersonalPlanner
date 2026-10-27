@@ -26,6 +26,30 @@ void main() {
 
   tearDown(() => db.close());
 
+  test('countActiveWeeklyReviews ignores soft-deleted reviews', () async {
+    expect(await reviews.countActiveWeeklyReviews(), 0);
+    final first = await reviews.saveWeeklyReview(
+      WeeklyReview(
+        id: '',
+        weekStartDate: week,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await reviews.saveWeeklyReview(
+      WeeklyReview(
+        id: '',
+        weekStartDate: week.add(const Duration(days: 7)),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      ),
+    );
+    expect(await reviews.countActiveWeeklyReviews(), 2);
+
+    await reviews.deleteWeeklyReview(first.id);
+    expect(await reviews.countActiveWeeklyReviews(), 1);
+  });
+
   test('saveWeeklyReviewDraft stores mood, feeling and note and keeps legacy '
       'fields', () async {
     await reviews.saveWeeklyReview(

@@ -39,7 +39,7 @@ const List<DayContextPreset> defaultDayContextPresets = [
 ];
 
 /// Pure rules for the user's day context presets. Stored per device in
-/// `app_settings`; not synced and not part of portable backup.
+/// `app_settings`; not synced. Portable backup carries them.
 abstract final class DayContextPresets {
   /// The form names are compared in: case and spaces ignored.
   static String normalize(String name) =>

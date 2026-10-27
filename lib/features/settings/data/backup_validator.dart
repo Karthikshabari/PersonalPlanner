@@ -7,6 +7,7 @@ import 'package:personal_planner/core/models/enums/recurrence_removal_reason.dar
 import 'package:personal_planner/core/utils/json_map_utils.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
 import 'package:personal_planner/core/utils/missed_at.dart';
+import 'package:personal_planner/features/day_context/domain/day_context_presets.dart';
 import 'package:personal_planner/features/experiments/domain/experiment_target_changes.dart';
 import 'package:personal_planner/features/inbox/domain/inbox_history.dart';
 import 'package:personal_planner/features/review/domain/weekly_review_text.dart';
@@ -1117,6 +1118,46 @@ class BackupValidator {
             'review_reminder_time is out of range.',
           );
         }
+      case 'week_start_day':
+        if (!const {'monday', 'sunday'}.contains(value)) {
+          throw const BackupValidationException(
+            'week_start_day must be monday or sunday.',
+          );
+        }
+      case 'day_context_presets':
+        _validateDayContextPresets(value);
+    }
+  }
+
+  /// A JSON list of 1 to 8 `{name, break}` presets with unique names. A bad
+  /// list is refused, never replaced by the defaults.
+  void _validateDayContextPresets(String value) {
+    const message = 'day_context_presets is invalid.';
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(value);
+    } on FormatException {
+      throw const BackupValidationException(message);
+    }
+    if (decoded is! List ||
+        decoded.isEmpty ||
+        decoded.length > maxDayContextPresets) {
+      throw const BackupValidationException(message);
+    }
+    final accepted = <DayContextPreset>[];
+    for (final item in decoded) {
+      if (item is! Map<String, dynamic>) {
+        throw const BackupValidationException(message);
+      }
+      _requireKeys(item, const {'name', 'break'}, 'day context preset');
+      final name = item['name'];
+      final isBreak = item['break'];
+      if (name is! String ||
+          isBreak is! bool ||
+          DayContextPresets.validateName(accepted, name) != null) {
+        throw const BackupValidationException(message);
+      }
+      accepted.add(DayContextPreset(name.trim(), isBreak: isBreak));
     }
   }
 

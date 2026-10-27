@@ -85,13 +85,13 @@ void main() {
       jsonDecode(await BackupService(database).exportJson())
           as Map<String, dynamic>;
 
-  test('the format version is 8', () {
-    expect(plannerBackupSchemaVersion, 8);
+  test('the format version is 9', () {
+    expect(plannerBackupSchemaVersion, 9);
   });
 
   test('export carries tag_id, experiments and check-ins', () async {
     final document = await exported();
-    expect(document['schema_version'], 8);
+    expect(document['schema_version'], 9);
     final data = dataOf(document);
 
     final task = (data['tasks'] as List).cast<Map>().singleWhere(

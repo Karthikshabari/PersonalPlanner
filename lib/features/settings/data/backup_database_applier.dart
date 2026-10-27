@@ -85,7 +85,9 @@ class BackupDatabaseApplier {
   Future<void> applyReplace(Map<String, dynamic> data) async {
     await _db.syncDao.runWithoutOutbound(() async {
       await _deleteUserRows();
-      await _deletePortableSettings();
+      await _deletePortableSettings(
+        BackupValidator.map(data['settings'], 'settings'),
+      );
       // A replacement is a complete local snapshot. Any old outbox,
       // conflict, or cursor state describes rows that no longer exist in the
       // restored database and must not survive to a later sync attempt.
@@ -603,10 +605,17 @@ class BackupDatabaseApplier {
     while ((await now()).compareTo(start) <= 0) {}
   }
 
-  Future<void> _deletePortableSettings() async {
+  /// Clears the portable settings before a Replace. A file written before v9
+  /// has no week start or presets to take, so those two keep their local
+  /// value instead of silently going back to the defaults.
+  Future<void> _deletePortableSettings(Map<String, dynamic> incoming) async {
+    const v9Keys = {'week_start_day', 'day_context_presets'};
+    final cleared = portableSettingKeys.where(
+      (key) => !v9Keys.contains(key) || incoming.containsKey(key),
+    );
     await (_db.delete(
       _db.appSettings,
-    )..where((setting) => setting.key.isIn(portableSettingKeys))).go();
+    )..where((setting) => setting.key.isIn(cleared))).go();
   }
 
   String? _stringListJson(Map<String, dynamic> row, String field) {

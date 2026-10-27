@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/experiment.dart';
 import 'package:personal_planner/core/models/task.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/features/experiments/domain/experiment_target_changes.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/utils/uuid.dart';
@@ -750,6 +752,35 @@ void main() {
       );
       expect(adjusted.targetChanges.single.effectiveWeekStart, '2026-10-05');
       expect(adjusted.targetChanges.single.weekendTargetMin, 105);
+    });
+
+    test('under Sunday start a Sunday adjusts to the Monday keys', () async {
+      plannerWeekStartDay = WeekStartDay.sunday;
+      addTearDown(() => plannerWeekStartDay = WeekStartDay.monday);
+      final e = await kept();
+      final thisWeek = await repo.adjustKeptTarget(
+        e.id,
+        weekdayTargetMin: 75,
+        weekendTargetMin: 90,
+        fromNextWeek: false,
+        today: '2026-10-11',
+        expectedRevision: e.revision,
+      );
+      expect(thisWeek.targetChanges.single.effectiveWeekStart, '2026-10-12');
+
+      final nextWeek = await repo.adjustKeptTarget(
+        e.id,
+        weekdayTargetMin: 80,
+        weekendTargetMin: 90,
+        fromNextWeek: true,
+        today: '2026-10-11',
+        expectedRevision: thisWeek.revision,
+      );
+      expect(
+        [for (final c in nextWeek.targetChanges) c.effectiveWeekStart],
+        ['2026-10-12', '2026-10-19'],
+      );
+      validateTargetChanges(nextWeek.targetChanges);
     });
 
     test('an equal adjust is a no-op and adds no sync_log row', () async {

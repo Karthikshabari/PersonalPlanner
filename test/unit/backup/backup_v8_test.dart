@@ -114,13 +114,13 @@ void main() {
         (row) => row['id'] == id,
       );
 
-  test('the format version is 8', () {
-    expect(plannerBackupSchemaVersion, 8);
+  test('the format version is 9', () {
+    expect(plannerBackupSchemaVersion, 9);
   });
 
   test('export carries both keys on every task row', () async {
     final document = await exported();
-    expect(document['schema_version'], 8);
+    expect(document['schema_version'], 9);
     final tasks = (dataOf(document)['tasks'] as List)
         .cast<Map<String, dynamic>>();
     expect(tasks, hasLength(4));

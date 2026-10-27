@@ -115,12 +115,19 @@ void validateTargetChanges(List<ExperimentTargetChange> changes) {
 bool _inRange(int minutes) =>
     minutes >= keptTargetMinMinutes && minutes <= keptTargetMaxMinutes;
 
-/// The change with the greatest effectiveWeekStart <= [weekStart], else the
-/// experiment's own weekday/weekend targets.
+/// The Monday inside the 7-day week that starts on [weekStart] (`yyyy-MM-dd`):
+/// the key target changes are stored under, whatever the week-start setting.
+/// A Monday maps to itself.
+String keptTargetMonday(String weekStart) =>
+    isoDateString(startOfIsoWeek(addDays(parseIsoDate(weekStart), 6)));
+
+/// The change with the greatest effectiveWeekStart <= the Monday of the week
+/// starting [weekStart], else the experiment's own weekday/weekend targets.
 KeptTargets keptTargetsForWeek(Experiment experiment, String weekStart) {
+  final monday = keptTargetMonday(weekStart);
   ExperimentTargetChange? current;
   for (final change in experiment.targetChanges) {
-    if (change.effectiveWeekStart.compareTo(weekStart) <= 0) {
+    if (change.effectiveWeekStart.compareTo(monday) <= 0) {
       current = change;
     } else {
       break;
@@ -138,13 +145,15 @@ KeptTargets keptTargetsForWeek(Experiment experiment, String weekStart) {
   );
 }
 
-/// The first change with effectiveWeekStart > [currentWeekStart], or null.
+/// The first change that takes effect after the week starting
+/// [currentWeekStart], or null.
 ExperimentTargetChange? keptPendingTargetChange(
   Experiment experiment,
   String currentWeekStart,
 ) {
+  final monday = keptTargetMonday(currentWeekStart);
   for (final change in experiment.targetChanges) {
-    if (change.effectiveWeekStart.compareTo(currentWeekStart) > 0) {
+    if (change.effectiveWeekStart.compareTo(monday) > 0) {
       return change;
     }
   }

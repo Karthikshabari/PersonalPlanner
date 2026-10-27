@@ -166,10 +166,10 @@ int keptExpectedByTodayMin(
   _countedDates(experiment, weekStart, before: today, breakDates: breakDates),
 );
 
-/// The Mondays of the 9 weeks ending with the one that contains [today],
-/// oldest first.
+/// The planner week starts (Monday or Sunday, per the week-start setting) of
+/// the 9 weeks ending with the one that contains [today], oldest first.
 List<String> keptWeekStarts(String today) {
-  final thisWeek = startOfIsoWeek(parseIsoDate(today));
+  final thisWeek = startOfWeek(parseIsoDate(today));
   return [
     for (var i = keptWeekBarCount - 1; i >= 0; i--)
       isoDateString(addDays(thisWeek, -7 * i)),
@@ -278,7 +278,7 @@ KeptExperimentView buildKeptExperimentView({
   );
   final remainingMin = math.max(0, targetMin - doneMin);
   final startWeek = isoDateString(
-    startOfIsoWeek(parseIsoDate(experiment.startDate)),
+    startOfWeek(parseIsoDate(experiment.startDate)),
   );
   final startLabel = DateFormat('MMM d');
 

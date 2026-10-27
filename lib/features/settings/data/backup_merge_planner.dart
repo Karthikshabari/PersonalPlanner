@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
+import '../../day_context/domain/day_context_presets.dart';
 import 'backup_codec.dart';
 import 'backup_format.dart';
 import 'backup_validator.dart';
@@ -131,7 +134,9 @@ class BackupMergePlanner {
         entry.value,
         'settings[${entry.key}]',
       );
-      if (old == null) {
+      if (old == null ||
+          (entry.key == dayContextPresetsSettingKey &&
+              _areDefaultPresets(old))) {
         settingsToInsert[entry.key] = value;
       } else if (old == value ||
           settingEquivalence?.call(entry.key, old, value) == true) {
@@ -186,6 +191,10 @@ class BackupMergePlanner {
       conflicts: List.unmodifiable(conflicts),
     );
   }
+
+  /// Presets the user never customised do not outrank the backup's.
+  static bool _areDefaultPresets(String stored) =>
+      listEquals(DayContextPresets.decode(stored), defaultDayContextPresets);
 
   static String _key(String table, String id) => '$table\u0000$id';
 

@@ -35,6 +35,7 @@ import '../../../timeline/presentation/providers/day_tasks_provider.dart';
 import '../../../timeline/presentation/providers/selected_task_provider.dart';
 import '../../../timeline/presentation/providers/grid_settings_provider.dart';
 import '../../providers/week_start_provider.dart';
+import '../../../day_context/providers/day_context_presets_provider.dart';
 import '../../../../core/utils/date_utils.dart' show WeekStartDay;
 import '../../../sync/presentation/widgets/sync_status_action.dart';
 import '../../../../platform/desktop/keyboard_shortcuts.dart';
@@ -174,7 +175,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        'First day of the Week view, reviews and Insights',
+                        'First day of the Week view, reviews, Kept and Insights',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: AppSpacing.sm),
@@ -197,11 +198,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ],
                           onChanged: (value) {
                             if (value == null) return;
-                            _runPreferenceChange(
-                              () => ref
-                                  .read(weekStartDayProvider.notifier)
-                                  .setWeekStart(value),
-                            );
+                            _runPreferenceChange(() => _changeWeekStart(value));
                           },
                         ),
                       ),
@@ -440,6 +437,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             .showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
       }
     }
+  }
+
+  /// Saved weekly reviews keep their Monday key, so a different first day
+  /// shows them on a shifted week; ask before that happens.
+  Future<void> _changeWeekStart(WeekStartDay value) async {
+    final notifier = ref.read(weekStartDayProvider.notifier);
+    if (value == ref.read(weekStartDayProvider).value) return;
+    final reviews = await ref
+        .read(reviewRepositoryProvider)
+        .countActiveWeeklyReviews();
+    if (reviews > 0) {
+      if (!mounted) return;
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Change the first day of the week?',
+        message: reviews == 1
+            ? 'Your 1 saved weekly review stays with the Monday of the week it was written for. With Sunday start, it appears on the Sunday-to-Saturday week that contains that Monday.'
+            : 'Your $reviews saved weekly reviews stay with the Monday of the week they were written for. With Sunday start, each appears on the Sunday-to-Saturday week that contains that Monday.',
+        confirmLabel: 'Change',
+        destructive: false,
+      );
+      if (!confirmed) return;
+    }
+    await notifier.setWeekStart(value);
   }
 
   Widget _buildBackupCard(BuildContext context) => Card(
@@ -722,6 +743,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(selectedTaskByIdProvider);
     ref.invalidate(gridIntervalProvider);
     ref.invalidate(themeModeProvider);
+    ref.invalidate(weekStartDayProvider);
+    ref.invalidate(dayContextPresetsProvider);
     ref.invalidate(reviewReminderEnabledProvider);
     ref.invalidate(reviewReminderMinutesProvider);
   }

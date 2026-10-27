@@ -1,7 +1,7 @@
 // Portable backup format constants and result types.
 
 /// The version of the portable Personal Planner backup document.
-const int plannerBackupSchemaVersion = 8;
+const int plannerBackupSchemaVersion = 9;
 
 /// Inputs larger than this are rejected before JSON parsing. This keeps the
 /// Settings workflow responsive and prevents an accidental giant file from
@@ -16,6 +16,8 @@ const Set<String> portableSettingKeys = {
   'theme_mode',
   'review_reminder_enabled',
   'review_reminder_time',
+  'week_start_day',
+  'day_context_presets',
 };
 
 /// Accepted on import so backups created before the generic guide was removed

@@ -127,7 +127,7 @@ class ExperimentDashboardService {
       // Also covers the Kept weeks: 8 weeks back to the next week start.
       final keptFirst = keptWeekStarts(today).first;
       final keptLast = isoDateString(
-        addDays(startOfIsoWeek(parseIsoDate(today)), 6),
+        addDays(startOfWeek(parseIsoDate(today)), 6),
       );
       final contextRows = await dao.dayContextsBetween(
         firstDate.compareTo(keptFirst) <= 0 ? firstDate : keptFirst,

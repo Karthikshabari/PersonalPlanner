@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_theme_tokens.dart';
+import '../../../core/widgets/confirm_dialog.dart';
 import '../../sync/presentation/widgets/sync_status_action.dart';
 import '../domain/day_context_presets.dart';
 import '../providers/day_context_presets_provider.dart';
 
 /// Settings › Day contexts: the presets the "Add day context" dialog offers,
 /// each with a Break day switch. Renaming or deleting a preset leaves the
-/// days that use it with their old label.
+/// days that use it with their old label, so changing a break preset or its
+/// switch asks first how many past days stop or start counting as breaks.
 class DayContextPresetsScreen extends ConsumerWidget {
   const DayContextPresetsScreen({super.key});
 
@@ -37,7 +39,8 @@ class DayContextPresetsScreen extends ConsumerWidget {
               children: [
                 Text(
                   'A break day counts in nothing: no streak, no totals, no '
-                  'reasons asked.',
+                  'reasons asked. Presets are kept on this device and in '
+                  'backups; other devices keep their own.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -61,8 +64,13 @@ class DayContextPresetsScreen extends ConsumerWidget {
                                     materialTapTargetSize:
                                         MaterialTapTargetSize.shrinkWrap,
                                     value: presets[i].isBreak,
-                                    onChanged: (value) =>
-                                        notifier.setBreak(i, value),
+                                    onChanged: (value) => _setBreak(
+                                      context,
+                                      notifier,
+                                      presets[i],
+                                      i,
+                                      value,
+                                    ),
                                   ),
                                 ),
                                 // The switch already announces "Break day".
@@ -91,7 +99,13 @@ class DayContextPresetsScreen extends ConsumerWidget {
                                   context,
                                   title: 'Rename day context',
                                   initial: presets[i].name,
-                                  submit: (name) => notifier.rename(i, name),
+                                  submit: (name) => _rename(
+                                    context,
+                                    notifier,
+                                    presets,
+                                    i,
+                                    name,
+                                  ),
                                 ),
                               ),
                               IconButton(
@@ -154,8 +168,83 @@ class DayContextPresetsScreen extends ConsumerWidget {
   }
 }
 
-/// Deletes at once; the snackbar's Undo writes the previous list back, but
-/// only while the list is still the one the delete produced.
+/// Asks before a change reclassifies past days: when [preset] is the one that
+/// decides [count] past days, say how many start ([becomesBreak]) or stop
+/// counting as break days. True when there is nothing to ask or the user
+/// agreed.
+Future<bool> _confirmReclassify(
+  BuildContext context,
+  DayContextPresetsNotifier notifier,
+  DayContextPreset preset, {
+  required bool becomesBreak,
+}) async {
+  final count = await notifier.pastDayCountForPreset(preset.name);
+  if (count == 0 || !context.mounted) return count == 0;
+  final days = count == 1 ? '1 past day' : '$count past days';
+  final what = count == 1 ? 'a break day' : 'break days';
+  return showConfirmDialog(
+    context,
+    title: 'Change break days?',
+    message: becomesBreak
+        ? '$days will count as $what.'
+        : '$days will no longer count as $what.',
+    confirmLabel: 'Continue',
+    destructive: false,
+  );
+}
+
+Future<void> _setBreak(
+  BuildContext context,
+  DayContextPresetsNotifier notifier,
+  DayContextPreset preset,
+  int index,
+  bool isBreak,
+) async {
+  if (await _confirmReclassify(
+    context,
+    notifier,
+    preset,
+    becomesBreak: isBreak,
+  )) {
+    await notifier.setBreak(index, isBreak);
+  }
+}
+
+/// Validates [name] first so a refused name never opens the question. Cancel
+/// closes the name dialog and writes nothing.
+Future<String?> _rename(
+  BuildContext context,
+  DayContextPresetsNotifier notifier,
+  List<DayContextPreset> presets,
+  int index,
+  String name,
+) async {
+  final error = DayContextPresets.validateName(
+    presets,
+    name,
+    exceptIndex: index,
+  );
+  if (error != null) return error;
+  final preset = presets[index];
+  final reclassifies =
+      preset.isBreak &&
+      DayContextPresets.normalize(name) !=
+          DayContextPresets.normalize(preset.name);
+  if (reclassifies &&
+      !await _confirmReclassify(
+        context,
+        notifier,
+        preset,
+        becomesBreak: false,
+      )) {
+    return null;
+  }
+  return notifier.rename(index, name);
+}
+
+/// Deletes at once (after the question for a break preset that past days
+/// use); the snackbar's Undo writes the previous list back, but only while the
+/// list is still the one the delete produced.
 Future<void> _delete(
   BuildContext context,
   DayContextPresetsNotifier notifier,
@@ -164,6 +253,15 @@ Future<void> _delete(
 ) async {
   final messenger = ScaffoldMessenger.of(context);
   final name = previous[index].name;
+  if (previous[index].isBreak &&
+      !await _confirmReclassify(
+        context,
+        notifier,
+        previous[index],
+        becomesBreak: false,
+      )) {
+    return;
+  }
   await notifier.remove(index);
   final afterDelete = [...previous]..removeAt(index);
   messenger.hideCurrentSnackBar();
