@@ -810,7 +810,7 @@ class _WeekHeaderCell extends ConsumerWidget {
                       '$completed/${tasks.length}',
                       key: ValueKey('day-count-${isoDateString(date)}'),
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

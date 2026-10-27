@@ -76,6 +76,12 @@ const _moreIcon = Icons.more_horiz;
 /// so the compact sheet lists only Categories and Settings.
 const _morePaths = ['/search', '/categories', '/settings', '/templates'];
 
+/// Whether [path] (a secondary destination) is the one [location] belongs to.
+/// Templates opens from Settings, so Settings stands for it.
+bool _isSecondarySelected(String location, String path) =>
+    location.startsWith(path) ||
+    (path == '/settings' && location.startsWith('/templates'));
+
 class AdaptiveShell extends ConsumerWidget {
   final Widget child;
 
@@ -182,6 +188,10 @@ class AdaptiveShell extends ConsumerWidget {
             child: IconButton(
               key: const ValueKey('home-navigation-shortcut'),
               tooltip: 'Home',
+              constraints: const BoxConstraints.tightFor(
+                width: _railTouchTarget,
+                height: _railTouchTarget,
+              ),
               icon: SizedBox.square(
                 dimension: 24,
                 child: Image.asset(
@@ -216,8 +226,8 @@ class AdaptiveShell extends ConsumerWidget {
                           selectedIcon: d.selectedIcon,
                           label: d.label,
                           extended: extended,
-                          selected: location.startsWith(d.path),
-                          textStyle: location.startsWith(d.path)
+                          selected: _isSecondarySelected(location, d.path),
+                          textStyle: _isSecondarySelected(location, d.path)
                               ? selectedStyle
                               : unselectedStyle,
                           onPressed: () => _navigate(context, d.path),
@@ -228,6 +238,10 @@ class AdaptiveShell extends ConsumerWidget {
           destinations: [
             for (final d in _primaryDestinations)
               NavigationRailDestination(
+                // The rail's own 44 dp destination grows to the touch minimum.
+                padding: const EdgeInsets.symmetric(
+                  vertical: (_railTouchTarget - 44) / 2,
+                ),
                 // A rail with hidden labels has no tooltips of its own.
                 icon: extended
                     ? Icon(d.icon)
@@ -321,6 +335,9 @@ class AdaptiveShell extends ConsumerWidget {
 }
 
 const double _railIconWidth = 56;
+
+/// Smallest touch target of a rail element.
+const double _railTouchTarget = 48;
 
 /// Width of an extended rail item row (the theme's minExtendedWidth less the
 /// divider inset).

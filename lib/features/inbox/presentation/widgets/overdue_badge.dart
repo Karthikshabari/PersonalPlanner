@@ -44,9 +44,9 @@ class OverdueBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: tokens.warning,
+          color: tokens.textPrimary,
         ),
       ),
     );

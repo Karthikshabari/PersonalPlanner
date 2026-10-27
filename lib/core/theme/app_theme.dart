@@ -39,11 +39,15 @@ abstract final class AppTheme {
     final tokens = brightness == Brightness.dark
         ? AppThemeTokens.dark()
         : AppThemeTokens.light();
+    final dark = brightness == Brightness.dark;
+    // Light purple text and icons on the dark surfaces and the selected
+    // navigation indicators; filled buttons keep AppColors.primary below.
     final colorScheme =
         ColorScheme.fromSeed(
           seedColor: AppColors.primary,
           brightness: brightness,
-          primary: AppColors.primary,
+          primary: dark ? tokens.focus : AppColors.primary,
+          onPrimary: dark ? AppColors.onPrimaryDark : AppColors.onPrimary,
           surface: surface,
         ).copyWith(
           surface: surface,
@@ -91,7 +95,7 @@ abstract final class AppTheme {
         labelStyle: TextStyle(color: textSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          borderSide: BorderSide(color: tokens.outline),
+          borderSide: BorderSide(color: tokens.outlineStrong),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(tokens.radiusSmall),
@@ -99,7 +103,7 @@ abstract final class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          borderSide: BorderSide(color: tokens.outline),
+          borderSide: BorderSide(color: tokens.outlineStrong),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(tokens.radiusSmall),
@@ -125,10 +129,10 @@ abstract final class AppTheme {
         useIndicator: true,
         indicatorColor: AppColors.primary.withValues(alpha: 0.2),
         indicatorShape: const StadiumBorder(),
-        selectedIconTheme: const IconThemeData(color: AppColors.primary),
+        selectedIconTheme: IconThemeData(color: tokens.focus),
         unselectedIconTheme: IconThemeData(color: textSecondary),
         selectedLabelTextStyle: TextStyle(
-          color: AppColors.primary,
+          color: tokens.focus,
           fontWeight: FontWeight.w600,
         ),
         unselectedLabelTextStyle: TextStyle(color: textSecondary),
@@ -139,13 +143,13 @@ abstract final class AppTheme {
         indicatorColor: AppColors.primary.withValues(alpha: 0.25),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? const IconThemeData(color: AppColors.primary)
+              ? IconThemeData(color: tokens.focus)
               : IconThemeData(color: textSecondary),
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? const TextStyle(
-                  color: AppColors.primary,
+              ? TextStyle(
+                  color: tokens.focus,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 )
@@ -154,7 +158,7 @@ abstract final class AppTheme {
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: AppColors.primary,
-        foregroundColor: colorScheme.onPrimary,
+        foregroundColor: AppColors.onPrimary,
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusMedium),
@@ -192,8 +196,10 @@ abstract final class AppTheme {
         style: FilledButton.styleFrom(
           minimumSize: Size(0, tokens.controlHeight),
           padding: const EdgeInsets.symmetric(horizontal: 18),
+          backgroundColor: AppColors.primary,
+          foregroundColor: AppColors.onPrimary,
           disabledBackgroundColor: tokens.disabled.withValues(alpha: 0.22),
-          disabledForegroundColor: tokens.textMuted,
+          disabledForegroundColor: tokens.disabledText,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
@@ -204,7 +210,7 @@ abstract final class AppTheme {
           minimumSize: Size(0, tokens.controlHeight),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           side: BorderSide(color: tokens.outlineStrong),
-          disabledForegroundColor: tokens.textMuted,
+          disabledForegroundColor: tokens.disabledText,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
@@ -213,7 +219,7 @@ abstract final class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: Size(0, tokens.controlHeight),
-          disabledForegroundColor: tokens.textMuted,
+          disabledForegroundColor: tokens.disabledText,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
@@ -222,7 +228,7 @@ abstract final class AppTheme {
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           minimumSize: const Size(40, 40),
-          disabledForegroundColor: tokens.textMuted,
+          disabledForegroundColor: tokens.disabledText,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),

@@ -18,6 +18,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
   final Color textPrimary;
   final Color textSecondary;
   final Color textMuted;
+  final Color disabledText;
   final Color focus;
   final Color hover;
   final Color selected;
@@ -46,6 +47,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     required this.textPrimary,
     required this.textSecondary,
     required this.textMuted,
+    required this.disabledText,
     required this.focus,
     required this.hover,
     required this.selected,
@@ -71,12 +73,15 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     surfaceRaised: Color(0xFF252631),
     surfaceSubtle: Color(0xFF18191F),
     outline: Color(0xFF3A3C48),
-    outlineStrong: Color(0xFF5A5D6B),
+    // 3:1 on the input fill; decorative dividers use the lighter [outline].
+    outlineStrong: Color(0xFF73768A),
     textPrimary: AppColors.textPrimaryDark,
     textSecondary: AppColors.textSecondaryDark,
     // Secondary text is intentionally shared here: the muted token is used
     // for readable time/navigation labels, not decorative chrome.
     textMuted: AppColors.textSecondaryDark,
+    // Dimmer than any readable text, so a disabled control reads as off.
+    disabledText: Color(0xFF6C6F7A),
     focus: Color(0xFFB5A8FF),
     hover: Color(0x147C5CFC),
     selected: Color(0x267C5CFC),
@@ -102,10 +107,11 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     surfaceRaised: Color(0xFFFFFFFF),
     surfaceSubtle: Color(0xFFF3F2F8),
     outline: Color(0xFFD7D5E0),
-    outlineStrong: Color(0xFF9995A8),
+    outlineStrong: Color(0xFF86829A),
     textPrimary: AppColors.textPrimaryLight,
     textSecondary: AppColors.textSecondaryLight,
     textMuted: AppColors.textSecondaryLight,
+    disabledText: Color(0xFF9A98A6),
     focus: Color(0xFF5540CC),
     hover: Color(0x107C5CFC),
     selected: Color(0x187C5CFC),
@@ -139,6 +145,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     Color? textPrimary,
     Color? textSecondary,
     Color? textMuted,
+    Color? disabledText,
     Color? focus,
     Color? hover,
     Color? selected,
@@ -166,6 +173,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
     textPrimary: textPrimary ?? this.textPrimary,
     textSecondary: textSecondary ?? this.textSecondary,
     textMuted: textMuted ?? this.textMuted,
+    disabledText: disabledText ?? this.disabledText,
     focus: focus ?? this.focus,
     hover: hover ?? this.hover,
     selected: selected ?? this.selected,
@@ -198,6 +206,7 @@ class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
       textPrimary: Color.lerp(textPrimary, other.textPrimary, t)!,
       textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
       textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      disabledText: Color.lerp(disabledText, other.disabledText, t)!,
       focus: Color.lerp(focus, other.focus, t)!,
       hover: Color.lerp(hover, other.hover, t)!,
       selected: Color.lerp(selected, other.selected, t)!,

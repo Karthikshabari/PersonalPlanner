@@ -81,7 +81,11 @@ void main() {
     );
 
     await pumpRoute(tester, container, '/day');
-    await tester.tap(find.byKey(ValueKey('task-block-${task.id}')));
+    // The title row: the block's centre can fall on the status badge.
+    await tester.tapAt(
+      tester.getRect(find.byKey(ValueKey('task-block-${task.id}'))).topCenter +
+          const Offset(0, 8),
+    );
     await settle(tester);
     // The compact "New task" FAB sits over the lower right of the timeline.
     // Scroll the timeline from its hour ruler so the edit action is clear.

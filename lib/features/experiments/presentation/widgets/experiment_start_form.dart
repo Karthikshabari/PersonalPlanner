@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../core/constants/app_constants.dart';
+import '../../../../core/layout/adaptive_layout.dart';
+import '../../../../core/layout/breakpoints.dart';
 import '../../../../core/models/experiment.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -27,7 +28,7 @@ const _purposeLabel =
     'What are you trying out, and what do you want to find out? (optional)';
 
 /// Presents the start form like the app's other create form (ED26): a dialog
-/// at least [AppConstants.desktopBreakpoint] wide, else a scroll-controlled
+/// at least [Breakpoints.expanded] wide, else a scroll-controlled
 /// bottom sheet that keeps clear of the keyboard. [initialName] pre-fills the
 /// name (the planned "Start as an experiment" from Inbox uses it).
 Future<void> showExperimentStartForm(
@@ -35,9 +36,7 @@ Future<void> showExperimentStartForm(
   String initialName = '',
   Future<void> Function(Experiment created)? onCreated,
 }) {
-  final desktop =
-      MediaQuery.sizeOf(context).width >= AppConstants.desktopBreakpoint;
-  if (desktop) {
+  if (isDesktopWidth(MediaQuery.sizeOf(context).width)) {
     return showDialog<void>(
       context: context,
       barrierDismissible: false,

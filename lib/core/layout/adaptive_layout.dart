@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import '../constants/app_constants.dart';
+import 'breakpoints.dart';
 
-bool isDesktopWidth(double width) => width >= AppConstants.desktopBreakpoint;
+bool isDesktopWidth(double width) => width >= Breakpoints.expanded;
 
 /// Content-driven layout metrics for the seven-day timeline.
 ///

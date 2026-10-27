@@ -62,17 +62,19 @@ class StatusBadge extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(iconFor(status), size: 10, color: color),
+              Icon(iconFor(status), size: 12, color: color),
               const SizedBox(width: AppSpacing.xs),
               Flexible(
                 child: Text(
                   status.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  // The status colour stays on the border and icon; text in
+                  // it fails 4.5:1 over its own tint in the light theme.
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: color,
+                    color: tokens.textPrimary,
                   ),
                 ),
               ),

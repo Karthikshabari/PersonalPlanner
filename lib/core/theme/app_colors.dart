@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 abstract final class AppColors {
-  static const Color primary = Color(0xFF7C5CFC);
+  /// Fill behind white [onPrimary] labels (5.4:1) and the brand accent.
+  static const Color primary = Color(0xFF6B49F0);
+  static const Color onPrimary = Color(0xFFFFFFFF);
+  static const Color onPrimaryDark = Color(0xFF1E1747);
   static const Color primaryDim = Color(0xFF5A3FE0);
 
   static const Color backgroundDark = Color(0xFF121212);

@@ -110,6 +110,7 @@ class TaskBlockWidget extends ConsumerWidget {
       interval,
       task.status.label,
       if (duration != null) 'planned ${duration.inMinutes} minutes',
+      if (renderedSubtaskCount != null) 'subtasks done $renderedSubtaskCount',
       'actual $actualMinutes minutes',
       if (geometry != null && geometry!.overtimeDuration > Duration.zero)
         'overtime ${geometry!.overtimeDuration.inMinutes} minutes',
@@ -123,6 +124,12 @@ class TaskBlockWidget extends ConsumerWidget {
           ? null
           : 'Select task; double tap or use Edit to open the editor',
       onTap: onTap,
+      // One stop per block: the label says everything the title, duration and
+      // badge show, and the badge's tap is this action.
+      excludeSemantics: true,
+      customSemanticsActions: {
+        const CustomSemanticsAction(label: 'Change status'): ?onStatusTap,
+      },
       child: Material(
         color: Colors.transparent,
         child: LayoutBuilder(

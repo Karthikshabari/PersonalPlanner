@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/layout/adaptive_layout.dart';
+import 'package:personal_planner/core/layout/breakpoints.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/widgets/adaptive_shell.dart';
@@ -369,6 +370,32 @@ void main() {
     await settle(tester);
     expect(appRouter.state.uri.path, '/categories');
     expect(find.byType(NavigationBar), findsNothing);
+    await teardownApp(tester, container);
+  });
+
+  test('wide means the expanded size class, once', () {
+    expect(isDesktopWidth(839), isFalse);
+    expect(isDesktopWidth(840), isTrue);
+    expect(isDesktopWidth(Breakpoints.expanded), isTrue);
+  });
+
+  testWidgets('Settings sub-pages replace the route from 840 and push below', (
+    tester,
+  ) async {
+    final container = await buildTestContainer(tester);
+    appRouter.go('/settings');
+    await pumpApp(tester, container, surface: const Size(839, 900));
+    await tester.tap(find.text('Categories'));
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/categories');
+    expect(appRouter.canPop(), isTrue);
+
+    appRouter.go('/settings');
+    await pumpApp(tester, container, surface: const Size(860, 900));
+    await tester.tap(find.text('Categories'));
+    await settle(tester);
+    expect(appRouter.state.uri.path, '/categories');
+    expect(appRouter.canPop(), isFalse);
     await teardownApp(tester, container);
   });
 }

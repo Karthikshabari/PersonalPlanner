@@ -50,6 +50,11 @@ Future<Task> insertTask(
 
 Finder blockOf(Task t) => find.byKey(ValueKey('task-block-${t.id}'));
 
+/// Taps the title row of [block]; its centre can fall on the status badge,
+/// which is wide in the Ahem test font and cycles the status.
+Future<void> tapBlockTitle(WidgetTester tester, Finder block) =>
+    tester.tapAt(tester.getRect(block).topCenter + const Offset(0, 8));
+
 /// Reads the day list through the live Drift watch stream using bounded
 /// pump-polling. Stays entirely inside the FakeAsync zone (no tester.runAsync
 /// after gestures) and always terminates.
@@ -194,7 +199,7 @@ void main() {
       container,
       taskSpec('Touch drag', 480, 540),
     );
-    await tester.tap(blockOf(task));
+    await tapBlockTitle(tester, blockOf(task));
     await settle(tester);
     expect(container.read(selectedTaskIdProvider), task.id);
 
@@ -492,7 +497,7 @@ void main() {
         matching: find.byType(StatusBadge),
       );
 
-      await tester.tap(blockOf(task));
+      await tapBlockTitle(tester, blockOf(task));
       await settle(tester);
       for (final (gesture, changed)
           in <(Future<void> Function(), bool Function(Task))>[

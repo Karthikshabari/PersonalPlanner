@@ -5,7 +5,6 @@ abstract final class AppConstants {
   static const double hourRowHeight = 64.0;
   static const double pixelsPerMinute = hourRowHeight / 60.0;
   static const double hourLabelWidth = 56.0;
-  static const double desktopBreakpoint = 900;
   static const Duration quickCreateDefaultDuration = Duration(hours: 1);
 
   /// Height of the drag handle strip on the bottom edge of a block.
