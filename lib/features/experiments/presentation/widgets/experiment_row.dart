@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../core/models/experiment.dart';
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../analytics/presentation/widgets/analytics_cards.dart'
@@ -318,7 +319,10 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Text(experiment.tagName, style: styles.cardTitle),
+                child: PageSearchHighlight(
+                  experiment.tagName,
+                  style: styles.cardTitle,
+                ),
               ),
               const SizedBox(width: AppSpacing.md),
               // The chip text wraps inside its pill when large text leaves
@@ -362,7 +366,7 @@ class _Header extends StatelessWidget {
         ],
         if (purpose != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(purpose, style: styles.body),
+          PageSearchHighlight(purpose, style: styles.body),
         ],
       ],
     );

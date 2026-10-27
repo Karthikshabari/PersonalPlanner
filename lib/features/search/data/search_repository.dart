@@ -1,5 +1,6 @@
 import '../../../core/database/app_database.dart';
 import '../../../core/models/enums/task_status.dart';
+import '../../../core/search/page_search.dart';
 import '../../categories/data/category_repository.dart';
 import '../domain/search_result.dart';
 
@@ -33,28 +34,64 @@ class SearchRepository {
     final ftsQuery = normalizeQuery(input);
     if (ftsQuery == null) return const <SearchResult>[];
 
-    final rows = await _db.taskDao.searchTasks(ftsQuery);
+    final rows = await _db.taskDao.searchTasks(
+      ftsQuery,
+      limit: searchResultCap,
+    );
     final categories = await CategoryRepository(_db).getAllCategories();
     final categoryById = {
       for (final category in categories) category.id: category,
     };
+    final terms = [
+      for (final word in input.split(RegExp(r'\s+')))
+        if (word.isNotEmpty) foldAccents(word),
+    ];
     return rows
         .map((row) {
           final category = row.categoryId == null
               ? null
               : categoryById[row.categoryId];
+          final title = row.isInbox
+              ? _inboxPreview(row.description)
+              : row.title;
           return SearchResult(
             id: row.id,
-            title: row.isInbox ? _inboxPreview(row.description) : row.title,
+            title: title,
             isInbox: row.isInbox,
             startTime: row.startTime,
             status: TaskStatus.fromDb(row.status),
             categoryId: row.categoryId,
             categoryColorHex: category?.colorHex,
             relevance: row.relevance,
+            snippet: _snippet(title, row.description, row.notes, terms),
           );
         })
         .toList(growable: false);
+  }
+
+  /// The first of [description] and [notes] that holds one of [terms], unless
+  /// the [title] already does. [terms] are folded (see [foldAccents]).
+  static String? _snippet(
+    String title,
+    String? description,
+    String? notes,
+    List<String> terms,
+  ) {
+    String? firstTerm(String? text) {
+      if (text == null) return null;
+      final folded = foldAccents(text);
+      for (final term in terms) {
+        if (folded.contains(term)) return term;
+      }
+      return null;
+    }
+
+    if (firstTerm(title) != null) return null;
+    for (final text in [description, notes]) {
+      final term = firstTerm(text);
+      if (term != null) return pageSearchSnippet(text!, term);
+    }
+    return null;
   }
 
   static String _inboxPreview(String? description) {

@@ -50,6 +50,20 @@ void main() {
   );
 
   test(
+    'a description or notes hit carries a snippet, a title hit does not',
+    () async {
+      await tasks.insertTask(
+        task(title: 'Plan', description: 'Meet at the Café'),
+      );
+      await tasks.insertTask(task(title: 'Café run'));
+
+      final byTitle = {for (final r in await search.search('cafe')) r.title: r};
+      expect(byTitle['Plan']!.snippet, 'Meet at the Café');
+      expect(byTitle['Café run']!.snippet, isNull);
+    },
+  );
+
+  test(
     'normalizeQuery makes only the last word a prefix and stays literal',
     () {
       String? q(String s) => SearchRepository.normalizeQuery(s);

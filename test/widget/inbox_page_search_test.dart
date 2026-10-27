@@ -159,6 +159,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('page-search-everything')));
     await settle(tester);
     expect(find.byKey(const ValueKey('search-input')), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'zzz'), findsOneWidget);
     await finish(tester, container);
   });
 

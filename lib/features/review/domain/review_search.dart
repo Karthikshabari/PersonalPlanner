@@ -19,7 +19,7 @@ extension ReviewSearchSourceLabel on ReviewSearchSource {
 
 /// One searchable text. [lower] is computed once per load, not per keystroke.
 class ReviewSearchText {
-  ReviewSearchText(this.text, this.source) : lower = text.toLowerCase();
+  ReviewSearchText(this.text, this.source) : lower = pageSearchFold(text);
 
   final String text;
   final String lower;

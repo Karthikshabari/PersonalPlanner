@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/layout/breakpoints.dart';
+import '../../../../core/layout/size_class_scope.dart';
 import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -76,28 +78,55 @@ class _InsightsContent extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      InsightsSectionCard(
-        key: const ValueKey('consistency-section'),
-        title: 'Consistency',
+      _HiddenWhileSearchingOnPhone(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ConsistencyGrid(snapshot: snapshot, compact: compact),
-            const SizedBox(height: AppSpacing.xl),
-            StreakSummaryView(streaks: snapshot.streaks),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Break days and days without a plan stay neutral.',
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: AppThemeTokens.of(context).textMuted),
+            InsightsSectionCard(
+              key: const ValueKey('consistency-section'),
+              title: 'Consistency',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ConsistencyGrid(snapshot: snapshot, compact: compact),
+                  const SizedBox(height: AppSpacing.xl),
+                  StreakSummaryView(streaks: snapshot.streaks),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Break days and days without a plan stay neutral.',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: AppThemeTokens.of(context).textMuted),
+                  ),
+                ],
+              ),
             ),
+            const SizedBox(height: AppSpacing.lg),
           ],
         ),
       ),
-      const SizedBox(height: AppSpacing.lg),
       ExperimentsCard(compact: compact),
     ],
   );
+}
+
+/// Shows [child] unless a page search has a query at compact width, where the
+/// results would otherwise start half a screen down.
+class _HiddenWhileSearchingOnPhone extends StatelessWidget {
+  const _HiddenWhileSearchingOnPhone({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final search = PageSearchScope.maybeOf(context);
+    if (search == null || !DaySizeClass.of(context).isCompact) return child;
+    return ValueListenableBuilder<String>(
+      valueListenable: search.needle,
+      child: child,
+      builder: (context, needle, child) =>
+          needle.isEmpty ? child! : const SizedBox.shrink(),
+    );
+  }
 }
 
 class _InsightsLoading extends StatelessWidget {

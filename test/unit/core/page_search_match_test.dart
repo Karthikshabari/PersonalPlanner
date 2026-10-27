@@ -1,11 +1,49 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_planner/core/search/page_search.dart';
+import 'package:personal_planner/features/review/domain/review_search.dart';
 
 void main() {
   group('pageSearchNeedle', () {
     test('trims and lower-cases', () {
       expect(pageSearchNeedle('  Buy MILK \n'), 'buy milk');
       expect(pageSearchNeedle('   '), isEmpty);
+    });
+  });
+
+  group('accents and spaces', () {
+    test('foldAccents folds common Latin accents and leaves other text', () {
+      expect(foldAccents('Café Ñandú Über'), 'cafe nandu uber');
+      expect(foldAccents('東京 Привет'), '東京 привет');
+    });
+
+    test('cafe finds Café, whatever the case, accent or spacing', () {
+      final needle = pageSearchNeedle('  CAFE ');
+      expect(pageSearchHit('Café meeting', needle), isTrue);
+      expect(
+        pageSearchHit('Cafe  meeting', pageSearchNeedle('cafe meeting')),
+        isTrue,
+      );
+      expect(
+        pageSearchHit('cafe\nmeeting', pageSearchNeedle('Café   meeting')),
+        isTrue,
+      );
+      expect(pageSearchHit('Cafeteria', pageSearchNeedle('café')), isTrue);
+      expect(pageSearchHit('tea', needle), isFalse);
+    });
+
+    test('the Review index finds Café for cafe in days and weeks', () {
+      final day = DateTime(2026, 8, 24);
+      final index = ReviewSearchIndex(
+        today: day,
+        days: [
+          ReviewSearchDay(day, [
+            ReviewSearchText('Café meeting', ReviewSearchSource.task),
+          ]),
+        ],
+        weekReviews: const [],
+      );
+      expect(searchReviewDays(index, pageSearchNeedle('cafe')), hasLength(1));
+      expect(searchReviewWeeks(index, pageSearchNeedle('cafe')), hasLength(1));
     });
   });
 

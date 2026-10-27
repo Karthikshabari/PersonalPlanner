@@ -12,24 +12,49 @@ import '../theme/app_spacing.dart';
 import '../theme/app_theme_tokens.dart';
 import '../widgets/global_search_action.dart';
 
-/// The trimmed, lower-cased query that [pageSearchHit] compares against.
-String pageSearchNeedle(String raw) => raw.trim().toLowerCase();
+const _accented = 'àáâãäåçèéêëìíîïñòóôõöùúûüýÿ';
+const _plain = 'aaaaaaceeeeiiiinooooouuuuyy';
+final _spaces = RegExp(r'\s+');
 
-/// Whether [text] contains the whole [needle], ignoring case.
+/// [text] lower-cased with common Latin accents removed, one character for
+/// one character (so 'Café' becomes 'cafe'). Other text is only lower-cased.
+///
+/// Universal Search folds accents too (FTS unicode61), so both find the same.
+String foldAccents(String text) {
+  final lower = text.toLowerCase();
+  final out = StringBuffer();
+  for (final unit in lower.runes) {
+    final char = String.fromCharCode(unit);
+    final at = _accented.indexOf(char);
+    out.write(at < 0 ? char : _plain[at]);
+  }
+  return out.toString();
+}
+
+/// [text] as page search compares it: trimmed, runs of whitespace collapsed
+/// to one space, and passed through [foldAccents].
+String pageSearchFold(String text) =>
+    foldAccents(text.trim().replaceAll(_spaces, ' '));
+
+/// The query that [pageSearchHit] compares against (see [pageSearchFold]).
+String pageSearchNeedle(String raw) => pageSearchFold(raw);
+
+/// Whether [text] contains the whole [needle], ignoring case, accents and
+/// extra spaces.
 ///
 /// Contiguous only: no word splitting, fuzziness or ranking. A blank needle
 /// matches nothing, so an empty field never filters a page.
 bool pageSearchHit(String? text, String needle) =>
-    needle.isNotEmpty && text != null && text.toLowerCase().contains(needle);
+    needle.isNotEmpty && text != null && pageSearchFold(text).contains(needle);
 
 /// One line of [text] around the first match, at most [max] characters long.
 ///
-/// Newlines become spaces and a cut side gets a '…'. Without a match (or with
+/// Runs of whitespace become one space and a cut side gets a '…'. Without a match (or with
 /// text that already fits) it returns the start of [text].
 String pageSearchSnippet(String text, String needle, {int max = 90}) {
-  final flat = text.replaceAll(RegExp(r'[\r\n]+'), ' ').trim();
+  final flat = text.trim().replaceAll(_spaces, ' ');
   if (flat.length <= max) return flat;
-  final lower = flat.toLowerCase();
+  final lower = foldAccents(flat);
   // Lower-casing can change the length (for example 'İ'); then the index of
   // the match does not point into [flat], so fall back to the start.
   final at = needle.isEmpty || lower.length != flat.length
@@ -391,11 +416,16 @@ class PageSearchTitle extends StatelessWidget {
   }
 }
 
+bool get _isTouchPlatform =>
+    defaultTargetPlatform == TargetPlatform.android ||
+    defaultTargetPlatform == TargetPlatform.iOS;
+
 /// The phone top-bar search icon of a searchable page.
 ///
-/// Looks like [GlobalSearchAction] and shows under the same rule (compact
-/// width only), but opens the page's own search. Hidden while the field is
-/// open, since the field has its own close button.
+/// Looks like [GlobalSearchAction] and shows at compact width, but opens the
+/// page's own search. On Android and iOS it shows at every width, since a
+/// touch tablet has no Ctrl+F. Hidden while the field is open, since the
+/// field has its own close button.
 class PageSearchAction extends StatelessWidget {
   const PageSearchAction({super.key});
 
@@ -403,7 +433,9 @@ class PageSearchAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = PageSearchScope.maybeOf(context);
     if (controller == null) return const GlobalSearchAction();
-    if (!DaySizeClass.of(context).isCompact) return const SizedBox.shrink();
+    if (!DaySizeClass.of(context).isCompact && !_isTouchPlatform) {
+      return const SizedBox.shrink();
+    }
     return ValueListenableBuilder<bool>(
       valueListenable: controller.isOpen,
       builder: (context, open, _) => open
@@ -437,10 +469,127 @@ class PageSearchNoMatches extends StatelessWidget {
           ),
           TextButton(
             key: const ValueKey('page-search-everything'),
-            onPressed: () => context.push('/search'),
+            onPressed: () {
+              final query =
+                  PageSearchScope.maybeOf(context)?.text.text.trim() ?? '';
+              context.push(
+                Uri(
+                  path: '/search',
+                  queryParameters: query.isEmpty ? null : {'q': query},
+                ).toString(),
+              );
+            },
             child: const Text('Search everything'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// [text] with every occurrence of any of [terms] marked, ignoring case and
+/// accents ('cafe' marks 'Café').
+///
+/// Used by the universal Search tile with one term per word and by
+/// [PageSearchHighlight] with the whole page-search needle. Without a term, or
+/// when folding changed the length of [text], it is a plain [Text].
+class SearchHighlight extends StatelessWidget {
+  const SearchHighlight(
+    this.text, {
+    super.key,
+    required this.terms,
+    this.style,
+    this.maxLines,
+    this.prefix = '',
+  });
+
+  /// Shown before [text] and never marked, for example a field label.
+  final String prefix;
+  final String text;
+  final List<String> terms;
+  final TextStyle? style;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final folded = foldAccents(text);
+    final wanted = [
+      for (final term in terms)
+        if (term.isNotEmpty) foldAccents(term),
+    ];
+    if (wanted.isEmpty || folded.length != text.length) {
+      return Text(
+        prefix + text,
+        style: style,
+        maxLines: maxLines,
+        overflow: maxLines == null ? null : TextOverflow.ellipsis,
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    final pattern = RegExp(wanted.map(RegExp.escape).join('|'));
+    final spans = <TextSpan>[if (prefix.isNotEmpty) TextSpan(text: prefix)];
+    var cursor = 0;
+    for (final match in pattern.allMatches(folded)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(match.start, match.end),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: scheme.primary,
+            backgroundColor: scheme.primary.withValues(alpha: 0.14),
+          ),
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < text.length) spans.add(TextSpan(text: text.substring(cursor)));
+    return Text.rich(
+      TextSpan(style: style, children: spans),
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// [SearchHighlight] of the current page search. Plain text while the page
+/// has no [PageSearchScope] or no query.
+class PageSearchHighlight extends StatelessWidget {
+  const PageSearchHighlight(
+    this.text, {
+    super.key,
+    this.style,
+    this.maxLines,
+    this.prefix = '',
+  });
+
+  final String prefix;
+  final String text;
+  final TextStyle? style;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = PageSearchScope.maybeOf(context);
+    if (controller == null) {
+      return SearchHighlight(
+        text,
+        terms: const [],
+        style: style,
+        maxLines: maxLines,
+        prefix: prefix,
+      );
+    }
+    return ValueListenableBuilder<String>(
+      valueListenable: controller.needle,
+      builder: (context, needle, _) => SearchHighlight(
+        text,
+        terms: [needle],
+        style: style,
+        maxLines: maxLines,
+        prefix: prefix,
       ),
     );
   }

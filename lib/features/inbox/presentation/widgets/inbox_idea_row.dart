@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../../core/models/inbox_closure.dart';
 import '../../../../core/providers/database_provider.dart';
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
 import '../../../../core/utils/clock_format.dart';
@@ -136,10 +137,9 @@ class _InboxIdeaRowState extends ConsumerState<InboxIdeaRow> {
                                     Tooltip(
                                       message: title,
                                       excludeFromSemantics: true,
-                                      child: Text(
+                                      child: PageSearchHighlight(
                                         title,
                                         maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
                                         style: textTheme.labelLarge,
                                       ),
                                     ),

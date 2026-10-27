@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_theme_tokens.dart';
@@ -18,7 +20,11 @@ import '../../domain/search_result.dart';
 import '../../providers/search_providers.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.initialQuery});
+
+  /// Typed in the field when the screen opens, for example the word from a
+  /// page search that found nothing.
+  final String? initialQuery;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -26,6 +32,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
+  final _focus = FocusNode(debugLabel: 'search-input');
   Timer? _debounce;
   var _requestId = 0;
   AsyncValue<List<SearchResult>> _results = const AsyncValue.data(
@@ -33,9 +40,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   );
 
   @override
+  void initState() {
+    super.initState();
+    final query = widget.initialQuery;
+    if (query != null && query.trim().isNotEmpty) {
+      _controller.text = query;
+      _results = const AsyncValue.loading();
+      _runSearch(query, ++_requestId);
+    }
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -47,6 +66,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return;
     }
     setState(() => _results = const AsyncValue.loading());
+    _runSearch(value, requestId);
+  }
+
+  void _runSearch(String value, int requestId) {
     _debounce = Timer(const Duration(milliseconds: 300), () async {
       try {
         // The family provider owns the repository boundary. The request id
@@ -59,6 +82,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         setState(() => _results = AsyncValue.error(error, stack));
       }
     });
+  }
+
+  /// Esc clears the query, and leaves the screen when it is already empty.
+  /// Ctrl+F puts the cursor back in the field.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_controller.text.isNotEmpty) {
+        _clear();
+      } else if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/day');
+      }
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyF &&
+        HardwareKeyboard.instance.isControlPressed) {
+      _focus.requestFocus();
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  void _clear() {
+    _controller.clear();
+    _onChanged('');
   }
 
   void _openResult(SearchResult result) {
@@ -81,47 +135,50 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final tokens = AppThemeTokens.of(context);
-    return Scaffold(
-      backgroundColor: tokens.canvas,
-      appBar: AppBar(
-        title: const Text('Search'),
-        actions: const [SyncStatusAction()],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) => Padding(
-          padding: EdgeInsets.all(
-            constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl,
-          ),
-          child: Column(
-            children: [
-              TextField(
-                key: const ValueKey('search-input'),
-                controller: _controller,
-                autofocus: true,
-                onChanged: _onChanged,
-                decoration: InputDecoration(
-                  labelText: 'Search tasks',
-                  hintText: 'Title, description, or notes',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _controller.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          icon: const Icon(
-                            Icons.clear,
-                            semanticLabel: 'Clear search',
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _onKey,
+      child: Scaffold(
+        backgroundColor: tokens.canvas,
+        appBar: AppBar(
+          title: const Text('Search'),
+          actions: const [SyncStatusAction()],
+        ),
+        body: LayoutBuilder(
+          builder: (context, constraints) => Padding(
+            padding: EdgeInsets.all(
+              constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl,
+            ),
+            child: Column(
+              children: [
+                TextField(
+                  key: const ValueKey('search-input'),
+                  controller: _controller,
+                  focusNode: _focus,
+                  autofocus: true,
+                  onChanged: _onChanged,
+                  decoration: InputDecoration(
+                    labelText: 'Search tasks',
+                    hintText: 'Matches the start of words in title, description or notes',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _controller.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            icon: const Icon(
+                              Icons.clear,
+                              semanticLabel: 'Clear search',
+                            ),
+                            onPressed: _clear,
                           ),
-                          onPressed: () {
-                            _controller.clear();
-                            _onChanged('');
-                          },
-                        ),
-                  border: const OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              Expanded(child: _buildResults()),
-            ],
+                const SizedBox(height: AppSpacing.lg),
+                Expanded(child: _buildResults()),
+              ],
+            ),
           ),
         ),
       ),
@@ -133,23 +190,45 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     error: (error, _) => ErrorPanel(message: friendlyErrorMessage(error)),
     data: (results) {
       if (_controller.text.trim().isEmpty) {
-        return const Center(child: Text('Search your planned work'));
+        return const Center(
+          child: Text(
+            'Search your planned work.\n'
+            'Search covers title, description and notes.',
+            textAlign: TextAlign.center,
+          ),
+        );
       }
       if (results.isEmpty) {
         return const Center(child: Text('No matching tasks'));
       }
-      return ListView.separated(
-        key: const ValueKey('search-results'),
-        itemCount: results.length,
-        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-        itemBuilder: (context, index) {
-          final result = results[index];
-          return _SearchResultTile(
-            result: result,
-            query: _controller.text,
-            onTap: () => _openResult(result),
-          );
-        },
+      final capped = results.length >= searchResultCap;
+      final count = results.length == 1 ? '1 task' : '${results.length} tasks';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            capped ? 'Showing the first $searchResultCap' : count,
+            key: const ValueKey('search-count'),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: AppThemeTokens.of(context).textMuted),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Expanded(
+            child: ListView.separated(
+              key: const ValueKey('search-results'),
+              itemCount: results.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+              itemBuilder: (context, index) {
+                final result = results[index];
+                return _SearchResultTile(
+                  result: result,
+                  query: _controller.text,
+                  onTap: () => _openResult(result),
+                );
+              },
+            ),
+          ),
+        ],
       );
     },
   );
@@ -169,6 +248,7 @@ class _SearchResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final date = result.startTime;
+    final snippet = result.snippet;
     return Card(
       key: ValueKey('search-result-${result.id}'),
       child: ListTile(
@@ -177,55 +257,38 @@ class _SearchResultTile extends StatelessWidget {
           radius: 9,
           backgroundColor: _categoryColor(result.categoryColorHex),
         ),
-        title: _highlightedTitle(context),
-        subtitle: Text(
-          '${date == null ? 'Inbox' : DateFormat('MMM d, yyyy').format(date)} · '
-          '${result.status.label}',
+        title: SearchHighlight(
+          result.title,
+          terms: _terms,
+          style: Theme.of(context).textTheme.bodyLarge,
+          maxLines: 2,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (snippet != null)
+              SearchHighlight(
+                snippet,
+                terms: _terms,
+                style: Theme.of(context).textTheme.bodySmall,
+                maxLines: 1,
+              ),
+            Text(
+              '${date == null ? 'Inbox' : DateFormat('MMM d, yyyy').format(date)}'
+              ' · ${result.status.label}',
+            ),
+          ],
         ),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
   }
 
-  Widget _highlightedTitle(BuildContext context) {
-    final terms = query
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((term) => term.isNotEmpty)
-        .toList(growable: false);
-    if (terms.isEmpty) return Text(result.title);
-    final pattern = RegExp(
-      terms.map(RegExp.escape).join('|'),
-      caseSensitive: false,
-    );
-    final spans = <TextSpan>[];
-    var cursor = 0;
-    for (final match in pattern.allMatches(result.title)) {
-      if (match.start > cursor) {
-        spans.add(TextSpan(text: result.title.substring(cursor, match.start)));
-      }
-      spans.add(
-        TextSpan(
-          text: result.title.substring(match.start, match.end),
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).colorScheme.primary,
-            backgroundColor: Theme.of(context).colorScheme.primary
-                .withValues(alpha: 0.14),
-          ),
-        ),
-      );
-      cursor = match.end;
-    }
-    if (cursor < result.title.length) {
-      spans.add(TextSpan(text: result.title.substring(cursor)));
-    }
-    return Text.rich(
-      TextSpan(style: Theme.of(context).textTheme.bodyLarge, children: spans),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
+  List<String> get _terms => query
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((term) => term.isNotEmpty)
+      .toList(growable: false);
 
   Color _categoryColor(String? hex) {
     if (hex == null) return AppColors.primary;

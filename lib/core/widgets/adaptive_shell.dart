@@ -72,8 +72,8 @@ const _secondaryDestinations = <_Destination>[
 
 const _moreIcon = Icons.more_horiz;
 
-/// Routes the "More" entry stands for. Search is the compact top-bar action,
-/// so the compact sheet lists only Categories and Settings.
+/// Routes the "More" entry stands for. The compact sheet lists Search,
+/// Categories and Settings; Templates opens from Settings.
 const _morePaths = ['/search', '/categories', '/settings', '/templates'];
 
 /// Whether [path] (a secondary destination) is the one [location] belongs to.
@@ -293,7 +293,7 @@ class AdaptiveShell extends ConsumerWidget {
       builder: (sheetContext) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          for (final d in _secondaryDestinations.skip(1))
+          for (final d in _secondaryDestinations)
             ListTile(
               key: ValueKey('more-sheet-${d.label.toLowerCase()}'),
               minTileHeight: 48,

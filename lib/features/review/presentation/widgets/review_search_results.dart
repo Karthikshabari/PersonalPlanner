@@ -50,7 +50,7 @@ class ReviewSearchResults extends ConsumerStatefulWidget {
     required this.onOpen,
   });
 
-  /// Already trimmed and lower-cased (`pageSearchNeedle`).
+  /// Already folded (`pageSearchNeedle`).
   final String needle;
   final bool weekly;
   final ValueChanged<DateTime> onOpen;
@@ -154,10 +154,10 @@ class _ResultCard extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           title: Text(title),
-          subtitle: Text(
-            '${hit.source.label}: ${hit.snippet}',
+          subtitle: PageSearchHighlight(
+            hit.snippet,
+            prefix: '${hit.source.label}: ',
             maxLines: 2,
-            overflow: TextOverflow.ellipsis,
           ),
           trailing: const Icon(Icons.chevron_right),
         ),

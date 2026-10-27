@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/search/page_search.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/utils/date_utils.dart';
 import '../../../analytics/presentation/widgets/analytics_cards.dart'
@@ -135,7 +136,7 @@ class _KeptExperimentRowState extends ConsumerState<KeptExperimentRow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(view.name, style: styles.cardTitle),
+                  PageSearchHighlight(view.name, style: styles.cardTitle),
                   const SizedBox(height: 2),
                   Text(view.subtitle, style: styles.subtitle),
                 ],
