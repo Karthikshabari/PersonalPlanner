@@ -329,9 +329,13 @@ void main() {
     final container = await buildTestContainer(tester);
     await pumpApp(tester, container, surface: const Size(600, 1000));
 
-    // Go to the Inbox tab. At 600 wide navigation is the icons-only rail, whose
-    // label Text is zero-sized; the icon's tooltip is the real target.
-    await tester.tap(find.byTooltip('Inbox'));
+    // Go to the Inbox tab. At 600 wide navigation is the rail with labels.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationRail),
+        matching: find.text('Inbox'),
+      ),
+    );
     await settle(tester);
 
     await tester.enterText(

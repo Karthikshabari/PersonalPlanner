@@ -170,11 +170,16 @@ class AdaptiveShell extends ConsumerWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final collapsed = constraints.maxHeight < DayLayout.railCollapseHeight;
+        final underIcon = !extended && !collapsed;
         return NavigationRail(
           selectedIndex: index,
           onDestinationSelected: (i) =>
               _navigate(context, _primaryDestinations[i].path),
-          labelType: NavigationRailLabelType.none,
+          // The extended rail has its labels beside the icons; a window too
+          // short for the whole rail has no room for them under the icons.
+          labelType: underIcon
+              ? NavigationRailLabelType.all
+              : NavigationRailLabelType.none,
           extended: extended,
           scrollable: true,
           trailingAtBottom: !collapsed,
@@ -226,6 +231,7 @@ class AdaptiveShell extends ConsumerWidget {
                           selectedIcon: d.selectedIcon,
                           label: d.label,
                           extended: extended,
+                          labelUnderIcon: underIcon,
                           selected: _isSecondarySelected(location, d.path),
                           textStyle: _isSecondarySelected(location, d.path)
                               ? selectedStyle
@@ -242,11 +248,11 @@ class AdaptiveShell extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(
                   vertical: (_railTouchTarget - 44) / 2,
                 ),
-                // A rail with hidden labels has no tooltips of its own.
-                icon: extended
+                // Without labels the rail has no tooltips of its own.
+                icon: underIcon || extended
                     ? Icon(d.icon)
                     : Tooltip(message: d.label, child: Icon(d.icon)),
-                selectedIcon: extended
+                selectedIcon: underIcon || extended
                     ? Icon(d.selectedIcon)
                     : Tooltip(message: d.label, child: Icon(d.selectedIcon)),
                 label: Text(d.label),
@@ -336,6 +342,9 @@ class AdaptiveShell extends ConsumerWidget {
 
 const double _railIconWidth = 56;
 
+/// Width of a rail item with its label under the icon (the theme's minWidth).
+const double _railLabelledWidth = 80;
+
 /// Smallest touch target of a rail element.
 const double _railTouchTarget = 48;
 
@@ -345,14 +354,16 @@ const double _railItemWidth = 192;
 
 /// A rail-styled button for the destinations that sit below the rail's own
 /// group (Search, Categories, Settings, More). It mirrors the destination
-/// look: a stadium indicator around the icon when selected, a tooltip when
-/// labels are hidden, and the label beside the icon when extended.
+/// look: a stadium indicator around the icon when selected, the label beside
+/// the icon when extended or under it when [labelUnderIcon], and a tooltip
+/// when it has no label.
 class _RailItem extends StatelessWidget {
   const _RailItem({
     required this.icon,
     required this.selectedIcon,
     required this.label,
     required this.extended,
+    this.labelUnderIcon = false,
     required this.selected,
     required this.textStyle,
     required this.onPressed,
@@ -362,6 +373,7 @@ class _RailItem extends StatelessWidget {
   final IconData selectedIcon;
   final String label;
   final bool extended;
+  final bool labelUnderIcon;
   final bool selected;
   final TextStyle? textStyle;
   final VoidCallback onPressed;
@@ -398,8 +410,10 @@ class _RailItem extends StatelessWidget {
         customBorder: shape,
         onTap: onPressed,
         child: SizedBox(
-          height: 48,
-          width: extended ? _railItemWidth : _railIconWidth,
+          height: labelUnderIcon ? null : _railTouchTarget,
+          width: extended
+              ? _railItemWidth
+              : (labelUnderIcon ? _railLabelledWidth : _railIconWidth),
           child: extended
               // Same geometry as the rail's own extended destinations: the
               // icon pill, then the label.
@@ -420,13 +434,30 @@ class _RailItem extends StatelessWidget {
                     ),
                   ],
                 )
+              : labelUnderIcon
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    pill,
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: textStyle,
+                    ),
+                  ],
+                )
               : Center(child: pill),
         ),
       ),
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: extended ? button : Tooltip(message: label, child: button),
+      child: extended || labelUnderIcon
+          ? button
+          : Tooltip(message: label, child: button),
     );
   }
 }

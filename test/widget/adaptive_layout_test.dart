@@ -134,15 +134,18 @@ void main() {
     await teardownApp(tester, container);
   });
 
-  testWidgets('medium and expanded widths show an icons-only rail', (
+  testWidgets('medium and expanded widths label every rail destination', (
     tester,
   ) async {
     for (final size in const [
       Size(600, 900),
       Size(700, 900),
+      Size(800, 1280),
+      Size(800, 600),
       Size(839, 900),
       Size(1000, 800),
       Size(1199, 800),
+      Size(1199, 560),
     ]) {
       final container = await buildTestContainer(tester);
       appRouter.go('/day');
@@ -150,7 +153,8 @@ void main() {
       expect(find.byType(NavigationBar), findsNothing, reason: '$size');
       final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
       expect(rail.extended, isFalse, reason: '$size');
-      // Hidden labels still get tooltips; Settings exists once.
+      expect(rail.labelType, NavigationRailLabelType.all, reason: '$size');
+      // Every destination shows its text; Settings exists once.
       for (final label in [
         'Day',
         'Inbox',
@@ -160,7 +164,14 @@ void main() {
         'Categories',
         'Settings',
       ]) {
-        expect(find.byTooltip(label), findsOneWidget, reason: '$label $size');
+        expect(
+          find.descendant(
+            of: find.byType(NavigationRail),
+            matching: find.text(label),
+          ),
+          findsOneWidget,
+          reason: '$label $size',
+        );
       }
       expect(find.text('PLAN'), findsNothing);
       expect(find.byKey(const ValueKey('mobile-search-action')), findsNothing);
@@ -385,14 +396,15 @@ void main() {
     final container = await buildTestContainer(tester);
     appRouter.go('/settings');
     await pumpApp(tester, container, surface: const Size(839, 900));
-    await tester.tap(find.text('Categories'));
+    // The rail also shows "Categories"; the Settings page's row comes last.
+    await tester.tap(find.text('Categories').last);
     await settle(tester);
     expect(appRouter.state.uri.path, '/categories');
     expect(appRouter.canPop(), isTrue);
 
     appRouter.go('/settings');
     await pumpApp(tester, container, surface: const Size(860, 900));
-    await tester.tap(find.text('Categories'));
+    await tester.tap(find.text('Categories').last);
     await settle(tester);
     expect(appRouter.state.uri.path, '/categories');
     expect(appRouter.canPop(), isFalse);

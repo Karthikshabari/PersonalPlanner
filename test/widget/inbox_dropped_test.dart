@@ -301,8 +301,9 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Dropped (12)'), findsOneWidget);
     final box = tester.getRect(find.byKey(const ValueKey('inbox-segments')));
-    // The control scrolls sideways when it must; it never overflows.
+    // The control scales down when it must; it never passes the screen edge.
     expect(box.left, greaterThanOrEqualTo(0));
+    expect(box.right, lessThanOrEqualTo(360));
     await finish(tester, container);
   });
 }

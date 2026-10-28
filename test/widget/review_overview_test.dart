@@ -8,6 +8,7 @@ import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
 import 'package:personal_planner/core/utils/planner_time_zone.dart';
+import 'package:personal_planner/features/review/presentation/widgets/overview_strip.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 
 import '../helpers/test_container.dart';
@@ -163,6 +164,23 @@ void main() {
     await settle(tester);
 
     expect(detail().data, selectedDetail);
+
+    // A far selection is kept too, and the strip opens with its tile in view
+    // and highlighted instead of at the newest end.
+    final far = addDays(today(), -45);
+    container.read(overviewSelectedDayProvider.notifier).state = far;
+    await tester.tap(
+      find.descendant(of: subtabs, matching: find.text('Weeks')),
+    );
+    await settle(tester);
+    await tester.tap(find.descendant(of: subtabs, matching: find.text('Days')));
+    await settle(tester);
+    expect(card(far), findsOneWidget);
+    final inStrip = tester.getRect(strip);
+    final tile = tester.getRect(card(far));
+    expect(tile.left, greaterThanOrEqualTo(inStrip.left));
+    expect(tile.right, lessThanOrEqualTo(inStrip.right));
+    expect(tester.widget<OverviewTileFrame>(card(far)).selected.value, isTrue);
     await drainDisposedStreams(tester);
     await finish(tester, container);
   });

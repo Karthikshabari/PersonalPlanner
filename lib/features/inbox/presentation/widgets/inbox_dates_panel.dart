@@ -17,6 +17,7 @@ import '../../../../core/widgets/app_surface.dart';
 import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/time_picker_24h.dart';
 import '../../../../platform/desktop/primary_shortcut.dart';
+import '../../../review/presentation/widgets/weekly_review_style.dart';
 import '../../domain/inbox_board.dart';
 import '../../domain/inbox_dates.dart';
 import '../../domain/inbox_status.dart';
@@ -131,6 +132,17 @@ class _InboxDatesPanelState extends ConsumerState<InboxDatesPanel> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _firstFocus.requestFocus();
+    });
+    // On a phone the panel opens below the fold. Once the row has grown to
+    // hold it (ReviewAnimatedSize, which may start a frame late), bring Cancel
+    // and Save above the bottom bar.
+    Future<void>.delayed(WeeklyStyle.content * 2, () {
+      if (mounted && DaySizeClass.of(context).isCompact) {
+        Scrollable.ensureVisible(
+          context,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        );
+      }
     });
     _loadWindowTasks(now);
   }

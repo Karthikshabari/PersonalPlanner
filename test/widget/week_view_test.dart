@@ -438,8 +438,9 @@ void main() {
     container.read(selectedWeekStartProvider.notifier).state = monday();
     container.read(selectedDateProvider.notifier).state = sunday;
     appRouter.go('/week');
-    // Three columns per page: the last page shows Friday to Sunday.
-    await pumpApp(tester, container, surface: const Size(700, 900));
+    // Three columns per page: the last page shows Friday to Sunday. The test
+    // font widens the labelled rail to 99 dp, so 720 leaves the 620 dp body.
+    await pumpApp(tester, container, surface: const Size(720, 900));
     expect(
       find.byKey(ValueKey('week-header-${isoDateString(sunday)}')),
       findsOneWidget,

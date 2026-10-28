@@ -391,15 +391,17 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
                   const InboxQuickAdd(),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
+                    // A small phone at large text scales the row down to the
+                    // width instead of cutting a segment off.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       child: SegmentedButton<_Segment>(
                         key: const ValueKey('inbox-segments'),
                         showSelectedIcon: false,
                         style: SegmentedButton.styleFrom(
                           minimumSize: const Size(0, 44),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
+                            horizontal: AppSpacing.sm,
                           ),
                         ),
                         segments: [

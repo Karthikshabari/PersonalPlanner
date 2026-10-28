@@ -181,6 +181,7 @@ class _OverviewDayStripState extends ConsumerState<OverviewDayStrip> {
           onLoadMore: _loadMore,
           olderTooltip: 'Earlier days',
           newerTooltip: 'Later days',
+          selectedIndex: _indexByDate[selection.value] ?? 0,
           itemBuilder: (context, index) {
             final tile = _tiles[index];
             return OverviewTileFrame(

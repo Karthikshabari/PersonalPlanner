@@ -146,6 +146,10 @@ class _OverviewWeekStripState extends ConsumerState<OverviewWeekStrip> {
           onLoadMore: _loadMore,
           olderTooltip: 'Earlier weeks',
           newerTooltip: 'Later weeks',
+          selectedIndex: math.max(
+            0,
+            _weeks.indexWhere((w) => w.weekStart == selection.value),
+          ),
           itemBuilder: (context, index) {
             final tile = _tiles[index];
             return OverviewTileFrame(

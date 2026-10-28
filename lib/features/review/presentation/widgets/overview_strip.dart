@@ -767,6 +767,7 @@ class OverviewStrip extends StatefulWidget {
     required this.onLoadMore,
     required this.olderTooltip,
     required this.newerTooltip,
+    this.selectedIndex = 0,
   });
 
   /// `overview` or `overview-week`: `<prefix>-older`, `-newer`, `-fade-older`
@@ -785,6 +786,9 @@ class OverviewStrip extends StatefulWidget {
   final VoidCallback onLoadMore;
   final String olderTooltip;
   final String newerTooltip;
+
+  /// The selected tile (0 = newest). The strip opens with it in view.
+  final int selectedIndex;
 
   /// Space between two tiles.
   static const double tileGap = 8;
@@ -809,6 +813,9 @@ class _OverviewStripState extends State<OverviewStrip> {
   void initState() {
     super.initState();
     _controller.addListener(_maybeLoadMore);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _controller.hasClients) _revealSelected();
+    });
   }
 
   @override
@@ -829,6 +836,20 @@ class _OverviewStripState extends State<OverviewStrip> {
     _controller.dispose();
     _edges.dispose();
     super.dispose();
+  }
+
+  /// Centres the selected tile when it does not already sit whole in the
+  /// viewport at the newest end, where the strip opens.
+  void _revealSelected() {
+    final position = _controller.position;
+    final start = widget.selectedIndex * _extent;
+    if (start + _extent <= position.viewportDimension) return;
+    _controller.jumpTo(
+      (start - (position.viewportDimension - _extent) / 2).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
   }
 
   void _maybeLoadMore() {
