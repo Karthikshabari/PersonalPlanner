@@ -65,6 +65,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           current.state != SyncEngineState.offline &&
           current.state != SyncEngineState.refreshPaused &&
           current.state != SyncEngineState.notConfigured &&
+          // A conflict is not a failure; its card explains it.
+          !(current.state == SyncEngineState.conflict &&
+              current.message == null) &&
           current.state != previous?.value?.state &&
           context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

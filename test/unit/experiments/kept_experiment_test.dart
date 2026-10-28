@@ -475,6 +475,14 @@ void main() {
       expect(keptPendingTargetChange(changed, '2026-10-04'), change);
       expect(keptPendingTargetChange(changed, '2026-10-11'), isNull);
     });
+
+    test('the pending note starts at the displayed week, not the Monday', () {
+      String note() =>
+          keptPartsText(keptPendingNoteParts(change, formatMinutes));
+      expect(note(), startsWith('From Sun Oct 11 the minimum'));
+      plannerWeekStartDay = WeekStartDay.monday;
+      expect(note(), startsWith('From Mon Oct 12 the minimum'));
+    });
   });
 
   group('copy', () {

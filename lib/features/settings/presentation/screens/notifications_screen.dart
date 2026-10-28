@@ -79,9 +79,15 @@ class NotificationsScreen extends ConsumerWidget {
                             .setEnabled(value);
                         if (!applied && context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
+                            SnackBar(
+                              content: const Text(
                                 'Notifications are blocked in system settings',
+                              ),
+                              action: SnackBarAction(
+                                label: 'Open settings',
+                                onPressed: ref
+                                    .read(notificationServiceProvider)
+                                    .openNotificationSettings,
                               ),
                             ),
                           );

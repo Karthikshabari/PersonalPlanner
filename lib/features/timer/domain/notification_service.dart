@@ -131,6 +131,20 @@ class NotificationService
     }
   }
 
+  /// Opens the app's notification page in the system settings (Android).
+  Future<void> openNotificationSettings() async {
+    if (!_initialized || !Platform.isAndroid) return;
+    try {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.openAppNotificationSettings();
+    } on Object {
+      // Settings stay reachable by hand; the reminder state is unaffected.
+    }
+  }
+
   bool get schedulingSupported => Platform.isAndroid;
 
   static DateTime nextOccurrence(DateTime now, int hour, int minute) {

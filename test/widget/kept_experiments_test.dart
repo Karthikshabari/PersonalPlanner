@@ -17,6 +17,7 @@ import 'package:personal_planner/features/experiments/presentation/widgets/exper
 import 'package:personal_planner/features/experiments/presentation/widgets/experiment_theme.dart';
 import 'package:personal_planner/features/experiments/presentation/widgets/kept_experiment_row.dart';
 import 'package:personal_planner/features/experiments/providers/experiment_providers.dart';
+import 'package:personal_planner/features/settings/providers/week_start_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 
 import '../helpers/sqlite_setup.dart';
@@ -355,6 +356,29 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('kept-list')), findsNothing);
+
+    await teardownApp(tester, container);
+  });
+
+  testWidgets('Kept stays selected when the week-start setting changes', (
+    tester,
+  ) async {
+    addTearDown(() => plannerWeekStartDay = WeekStartDay.monday);
+    final container = await build(tester);
+    final e = await seedV1(tester, container);
+    await open(tester, container);
+    await showKept(tester, 1);
+    expect(find.byKey(ValueKey('kept-row-${e.id}')), findsOneWidget);
+
+    await runDb(
+      tester,
+      () => container
+          .read(weekStartDayProvider.notifier)
+          .setWeekStart(WeekStartDay.sunday),
+    );
+    await settle(tester);
+
+    expect(find.byKey(ValueKey('kept-row-${e.id}')), findsOneWidget);
 
     await teardownApp(tester, container);
   });

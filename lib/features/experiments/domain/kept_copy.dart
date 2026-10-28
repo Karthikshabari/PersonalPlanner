@@ -59,13 +59,14 @@ const keptLegendPlanned = 'Planned';
 const keptLegendExpected = 'Expected by today';
 
 /// "From {EEE MMM d} the minimum becomes **{total}** a week
-/// (5 × {a}m + 2 × {b}m)."
+/// (5 × {a}m + 2 × {b}m)." The date is the first day of the displayed week
+/// that holds the stored Monday.
 List<KeptTextPart> keptPendingNoteParts(
   ExperimentTargetChange change,
   DurationFormatter formatDuration,
 ) {
   final from = DateFormat('EEE MMM d')
-      .format(parseIsoDate(change.effectiveWeekStart));
+      .format(startOfWeek(parseIsoDate(change.effectiveWeekStart)));
   final total = 5 * change.weekdayTargetMin + 2 * change.weekendTargetMin;
   return [
     KeptTextPart('From $from the minimum becomes '),

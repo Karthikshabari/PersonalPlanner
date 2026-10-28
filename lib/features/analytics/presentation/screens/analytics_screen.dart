@@ -39,6 +39,11 @@ class AnalyticsScreen extends ConsumerWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 1160),
                   child: snapshot.when(
+                    // A rebuild (for example the week-start setting changed)
+                    // keeps the page, and with it the Experiments card's
+                    // selected segment, instead of replacing it with the
+                    // loader.
+                    skipLoadingOnReload: true,
                     loading: () {
                       // The snapshot from the last visit, only while it is
                       // still exactly what a fresh calculation would return:
