@@ -1,12 +1,11 @@
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
-import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/review/domain/review_draft.dart';
 import 'package:personal_planner/features/review/providers/review_draft_controller.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
@@ -16,7 +15,8 @@ import '../../helpers/sqlite_setup.dart';
 /// B4: a reason that belongs to a Completed task is invisible and dropped by
 /// Save, so it must not count as an unsaved edit.
 void main() {
-  final day = startOfDay(PlannerTimeZone.calendarDate(2026, 10, 6));
+  setupSqliteForTests();
+  final day = PlannerTimeZone.calendarDate(2026, 10, 6);
 
   group('ReviewDraft.differsFromSaved', () {
     ReviewDraft draft({

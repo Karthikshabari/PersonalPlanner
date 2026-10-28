@@ -14,6 +14,7 @@ import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/theme/app_theme.dart';
 import 'package:personal_planner/core/theme/app_theme_tokens.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/widgets/app_surface.dart';
 import 'package:personal_planner/features/day_context/providers/day_context_providers.dart';
 import 'package:personal_planner/features/review/domain/review_overview.dart';
@@ -852,7 +853,12 @@ void main() {
       }
       final container = await buildTestContainer(tester);
       await runDb(tester, () async {
-        final start = today.add(const Duration(hours: 9));
+        final start = PlannerTimeZone.calendarDate(
+          today.year,
+          today.month,
+          today.day,
+          hour: 9,
+        );
         await container
             .read(taskRepositoryProvider)
             .insertTask(

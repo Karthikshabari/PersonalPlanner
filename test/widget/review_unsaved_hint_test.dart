@@ -2,11 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:personal_planner/core/utils/date_utils.dart';
-import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 import 'package:personal_planner/features/timeline/data/task_repository.dart';
 
@@ -58,10 +58,7 @@ void main() {
       () => container
           .read(appDatabaseProvider)
           .taskDao
-          .getTasksBetween(
-            day,
-            PlannerTimeZone.calendarDate(day.year, day.month, day.day + 1),
-          ),
+          .getTasksBetween(day, addDays(day, 1)),
     );
     container.read(selectedReviewDateProvider.notifier).state = day;
     appRouter.go('/review');
