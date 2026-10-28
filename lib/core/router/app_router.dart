@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/categories/presentation/screens/categories_screen.dart';
@@ -11,6 +12,7 @@ import '../../features/review/presentation/screens/weekly_review_screen.dart';
 import '../../features/settings/presentation/screens/notifications_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
 import '../../features/templates/presentation/screens/task_templates_screen.dart';
+import '../../features/timeline/presentation/providers/selected_task_provider.dart';
 import '../../features/timeline/presentation/screens/day_view_screen.dart';
 import '../../features/timeline/presentation/screens/week_view_screen.dart';
 import '../../features/search/presentation/screens/search_screen.dart';
@@ -56,6 +58,17 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/day',
           builder: (context, state) => const DayViewScreen(),
+          // The one choke point for every `go` away from Day (rail, bottom
+          // bar, Day/Week switcher, shortcuts, notifications): an editor with
+          // unsaved edits asks before Day is left. Screens that are pushed
+          // over Day (More, search) keep it mounted, so nothing is lost.
+          onExit: (context, state) async {
+            final guard = ProviderScope.containerOf(
+              context,
+              listen: false,
+            ).read(taskEditorLeaveGuardProvider);
+            return await guard.confirmLeave?.call() ?? true;
+          },
         ),
         GoRoute(
           path: '/week',

@@ -161,9 +161,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
   RepeatPreset? _loadedPreset;
   CustomRecurrenceConfig? _customConfig;
 
+  late final TaskEditorLeaveGuard _leaveGuard;
+
   @override
   void initState() {
     super.initState();
+    _leaveGuard = ref.read(taskEditorLeaveGuardProvider)
+      ..confirmLeave = _confirmLeave;
     _titleController = TextEditingController();
     _descriptionController = TextEditingController();
     _notesController = TextEditingController();
@@ -180,6 +184,9 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
 
   @override
   void dispose() {
+    if (_leaveGuard.confirmLeave == _confirmLeave) {
+      _leaveGuard.confirmLeave = null;
+    }
     _titleController.dispose();
     _descriptionController.dispose();
     _notesController.dispose();
@@ -434,6 +441,13 @@ class _TaskEditorPanelState extends ConsumerState<TaskEditorPanel> {
     } finally {
       _confirmingSwitch = false;
     }
+  }
+
+  /// Leaving Day (rail, bottom bar, search, shortcuts) with unsaved edits asks
+  /// first, like the Close button. A clean editor, or one mid-save, leaves.
+  Future<bool> _confirmLeave() async {
+    if (_saving || !_hasDraftChanges) return true;
+    return confirmDiscardChanges(context);
   }
 
   Future<void> _requestClose() async {

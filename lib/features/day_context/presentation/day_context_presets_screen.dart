@@ -145,7 +145,10 @@ class DayContextPresetsScreen extends ConsumerWidget {
                               context,
                               title: 'Add day context',
                               initial: '',
-                              submit: notifier.add,
+                              submit: (name) async => (
+                                error: await notifier.add(name),
+                                kept: false,
+                              ),
                             )
                           : null,
                     ),
@@ -211,8 +214,8 @@ Future<void> _setBreak(
 }
 
 /// Validates [name] first so a refused name never opens the question. Cancel
-/// closes the name dialog and writes nothing.
-Future<String?> _rename(
+/// writes nothing and leaves the name dialog open with its text.
+Future<_NameResult> _rename(
   BuildContext context,
   DayContextPresetsNotifier notifier,
   List<DayContextPreset> presets,
@@ -224,7 +227,7 @@ Future<String?> _rename(
     name,
     exceptIndex: index,
   );
-  if (error != null) return error;
+  if (error != null) return (error: error, kept: false);
   final preset = presets[index];
   final reclassifies =
       preset.isBreak &&
@@ -237,9 +240,9 @@ Future<String?> _rename(
         preset,
         becomesBreak: false,
       )) {
-    return null;
+    return (error: null, kept: true);
   }
-  return notifier.rename(index, name);
+  return (error: await notifier.rename(index, name), kept: false);
 }
 
 /// Deletes at once (after the question for a break preset that past days
@@ -309,13 +312,18 @@ Future<void> _confirmReset(
   if (confirmed == true) await notifier.resetToDefaults();
 }
 
-/// A name field with inline validation. [submit] returns the validation
-/// message, or null once the name is stored.
+/// What submitting a name did: [error] is the validation message, null once
+/// the name is stored. [kept] means the user declined a question about it, so
+/// nothing was stored and the dialog stays open.
+typedef _NameResult = ({String? error, bool kept});
+
+/// A name field with inline validation. [submit] reports what became of the
+/// name.
 Future<void> _showNameDialog(
   BuildContext context, {
   required String title,
   required String initial,
-  required Future<String?> Function(String name) submit,
+  required Future<_NameResult> Function(String name) submit,
 }) {
   return showDialog<void>(
     context: context,
@@ -332,7 +340,7 @@ class _NameDialog extends StatefulWidget {
 
   final String title;
   final String initial;
-  final Future<String?> Function(String name) submit;
+  final Future<_NameResult> Function(String name) submit;
 
   @override
   State<_NameDialog> createState() => _NameDialogState();
@@ -353,14 +361,14 @@ class _NameDialogState extends State<_NameDialog> {
 
   Future<void> _save() async {
     setState(() => _busy = true);
-    final error = await widget.submit(_controller.text);
+    final result = await widget.submit(_controller.text);
     if (!mounted) return;
-    if (error == null) {
+    if (result.error == null && !result.kept) {
       Navigator.of(context).pop();
     } else {
       setState(() {
         _busy = false;
-        _error = error;
+        _error = result.error;
       });
     }
   }

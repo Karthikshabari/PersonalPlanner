@@ -214,21 +214,37 @@ void main() {
       await flush(tester);
     }
 
-    testWidgets('renaming a break preset asks; Cancel writes nothing', (
-      tester,
-    ) async {
-      final c = await pumpWithDays(tester, DayContextKind.leave, 2);
-      final before = presetsOf(c);
-      await rename(tester, 3, 'Time off');
-      expect(
-        find.text('2 past days will no longer count as break days.'),
-        findsOneWidget,
-      );
-      await tester.tap(dialogButton('Cancel'));
-      await flush(tester);
-      expect(presetsOf(c), before);
-      await finish(tester, c);
-    });
+    testWidgets(
+      'renaming a break preset asks; Cancel writes nothing and keeps the '
+      'rename dialog and its text; Continue applies',
+      (tester) async {
+        final c = await pumpWithDays(tester, DayContextKind.leave, 2);
+        final before = presetsOf(c);
+        await rename(tester, 3, 'Time off');
+        expect(
+          find.text('2 past days will no longer count as break days.'),
+          findsOneWidget,
+        );
+        await tester.tap(dialogButton('Cancel'));
+        await flush(tester);
+        expect(presetsOf(c), before);
+        expect(find.text('Change break days?'), findsNothing);
+        final nameField = find.byKey(const ValueKey('day-context-preset-name'));
+        expect(nameField, findsOneWidget);
+        expect(
+          tester.widget<TextField>(nameField).controller!.text,
+          'Time off',
+        );
+
+        await tester.tap(find.byKey(const ValueKey('day-context-preset-save')));
+        await flush(tester);
+        await tester.tap(dialogButton('Continue'));
+        await flush(tester);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(presetsOf(c)[3].name, 'Time off');
+        await finish(tester, c);
+      },
+    );
 
     testWidgets('renaming a non-break preset that days use does not ask', (
       tester,
