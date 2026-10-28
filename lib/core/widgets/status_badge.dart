@@ -9,7 +9,19 @@ class StatusBadge extends StatelessWidget {
   final TaskStatus status;
   final VoidCallback? onTap;
 
-  const StatusBadge({super.key, required this.status, this.onTap});
+  /// Height of the laid-out tap area on touch screens, with the chip centred
+  /// in it. Zero keeps the compact desktop size. It is a real layout size,
+  /// because a parent never passes a tap outside its own box to its children.
+  final double tapHeight;
+
+  static const double minTapSize = 48;
+
+  const StatusBadge({
+    super.key,
+    required this.status,
+    this.onTap,
+    this.tapHeight = 0,
+  });
 
   static TaskStatus nextStatus(TaskStatus current) => switch (current) {
     TaskStatus.planned => TaskStatus.inProgress,
@@ -83,7 +95,16 @@ class StatusBadge extends StatelessWidget {
         ),
       ),
     );
-    return onTap == null ? badge : MinTapTarget(child: badge);
+    if (onTap == null || tapHeight <= 0) return badge;
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: minTapSize, minHeight: tapHeight),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: onTap,
+        child: Center(widthFactor: 1, heightFactor: 1, child: badge),
+      ),
+    );
   }
 }
 

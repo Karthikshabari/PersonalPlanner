@@ -105,6 +105,9 @@ class TimelineWidget extends ConsumerStatefulWidget {
 }
 
 class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
+  /// Narrowest overlap lane that still gets the corner chip.
+  static const double _minOverlapActionLaneWidth = 56;
+
   late final ScrollController _scrollController;
   int? _quickCreateSlot;
   _DragPreview? _drag;
@@ -285,14 +288,16 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
     );
   }
 
-  /// The snapped slot at [contentY] (timeline-content coordinates), or null
-  /// when a task already occupies it.
+  /// The grid row under [contentY] (timeline-content coordinates): its start
+  /// in minutes on the day axis. A tap resolves to the row it lands in, not the
+  /// nearest grid line.
+  int _slotAt(double contentY) =>
+      ((contentY / _pixelsPerMinute) / _gridMinutes).floor() * _gridMinutes;
+
+  /// The slot at [contentY], or null when a task already occupies it.
   int? _freeSlotAt(double contentY) {
-    final rawMinutes = contentY / _pixelsPerMinute;
-    final snapped = snapSlotStart(
-      rawMinutes.round(),
-      _gridMinutes,
-    ).clamp(0, _dayAxis.durationMinutes - _gridMinutes);
+    final snapped = _slotAt(contentY)
+        .clamp(0, _dayAxis.durationMinutes - _gridMinutes);
     final slotEnd = snapped + _gridMinutes;
     for (final task in _currentTasks()) {
       final visibleTask = _clipTaskToSelectedDay(task);
@@ -340,10 +345,8 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
       _clearHover();
       return;
     }
-    final snapped = snapSlotStart(
-      (event.localPosition.dy / _pixelsPerMinute).round(),
-      _gridMinutes,
-    ).clamp(0, _dayAxis.durationMinutes - _gridMinutes);
+    final snapped = _slotAt(event.localPosition.dy)
+        .clamp(0, _dayAxis.durationMinutes - _gridMinutes);
     if (snapped == _lastHoverSnap) return;
     _lastHoverSnap = snapped;
     _hoverSlot.value = _freeSlotAt(event.localPosition.dy);
@@ -1094,7 +1097,9 @@ class _TimelineWidgetState extends ConsumerState<TimelineWidget> {
             onDoubleTap: editTask,
           ),
         ),
-        if (dense && laneIndex == 0)
+        // The chip is left out of a lane where it would cover the whole title;
+        // every block there still opens on its own tap and says it overlaps.
+        if (dense && laneIndex == 0 && laneWidth >= _minOverlapActionLaneWidth)
           Positioned.fill(
             child: TimelineOverlapAction(
               geometry: displayGeometry,

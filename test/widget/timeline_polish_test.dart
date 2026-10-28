@@ -14,7 +14,6 @@ import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/widgets/status_badge.dart';
 import 'package:personal_planner/core/widgets/task_block_widget.dart';
 import 'package:personal_planner/features/timeline/domain/timeline_geometry.dart';
-import 'package:personal_planner/features/timeline/domain/snap_to_grid.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_date_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/providers/selected_task_provider.dart';
 import 'package:personal_planner/features/timeline/presentation/widgets/current_time_indicator.dart';
@@ -77,10 +76,9 @@ void main() {
   int expectedSlot(WidgetTester tester, double dy) {
     final contentY = scrollPixels(tester) + dy;
     final axis = PlannerDayAxis(_day);
-    return snapSlotStart(
-      (contentY / _ppm).round(),
-      AppConstants.defaultGridMinutes,
-    ).clamp(0, axis.durationMinutes - AppConstants.defaultGridMinutes);
+    return ((contentY / _ppm / AppConstants.defaultGridMinutes).floor() *
+            AppConstants.defaultGridMinutes)
+        .clamp(0, axis.durationMinutes - AppConstants.defaultGridMinutes);
   }
 
   String clock(DateTime instant) {
@@ -108,6 +106,45 @@ void main() {
       expected.add(const Duration(minutes: AppConstants.defaultGridMinutes)),
     );
     await teardownApp(tester, container);
+  });
+
+  group('a tap resolves against the row under the finger', () {
+    /// A tap `minute` minutes into the day, just right of the 09:00-10:00 block.
+    Future<ProviderContainer> tapAtMinute(
+      WidgetTester tester,
+      int minute,
+    ) async {
+      final container = await pumpDay(
+        tester,
+        tasks: [block('Morning task', 9 * 60, 10 * 60)],
+      );
+      final blockRight = tester.getRect(find.byType(TaskBlockWidget)).right;
+      final dy = minute * _ppm - scrollPixels(tester);
+      await tester.tapAt(
+        Offset(blockRight + 20, tester.getTopLeft(timeline).dy + dy),
+      );
+      await settle(tester);
+      return container;
+    }
+
+    testWidgets('the lower half of an occupied row says the slot is taken', (
+      tester,
+    ) async {
+      final container = await tapAtMinute(tester, 9 * 60 + 40);
+      expect(find.textContaining('That slot is taken'), findsOneWidget);
+      expect(find.text('Create scheduled task'), findsNothing);
+      await teardownApp(tester, container);
+    });
+
+    testWidgets('the lower half of a free row opens quick create at that row', (
+      tester,
+    ) async {
+      final container = await tapAtMinute(tester, 8 * 60 + 40);
+      expect(find.textContaining('That slot is taken'), findsNothing);
+      final form = tester.widget<TaskQuickCreate>(find.byType(TaskQuickCreate));
+      expect(form.initialStart, PlannerDayAxis(_day).instantAt(8 * 60));
+      await teardownApp(tester, container);
+    });
   });
 
   testWidgets('a tap while a task is selected only deselects', (tester) async {

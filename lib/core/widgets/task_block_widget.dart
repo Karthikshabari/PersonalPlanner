@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +17,7 @@ import 'task_progress_background.dart';
 import '../../features/task_editor/providers/subtask_providers.dart';
 import '../../features/timeline/domain/timeline_geometry.dart';
 import '../../features/timeline/presentation/widgets/day_style.dart';
+import '../../features/timeline/presentation/widgets/resizable_handle.dart';
 import 'status_badge.dart';
 
 class TaskBlockWidget extends ConsumerWidget {
@@ -144,6 +147,12 @@ class TaskBlockWidget extends ConsumerWidget {
                   ? DayStyle.medium(context)
                   : DayStyle.small(context),
             );
+            // A lane too narrow for the status row falls back to the one-line
+            // layout, with the tighter side padding of a compact card so the
+            // title keeps some room.
+            final lanePadding = compact ? AppSpacing.xs : AppSpacing.md;
+            // 4 is the width of the category bar on the left edge.
+            final narrowLane = outer.maxWidth - 2 * lanePadding - 4 < 64;
             final baseFill = selected
                 ? Color.alphaBlend(tokens.selected, tokens.surfaceRaised)
                 : tokens.surfaceRaised;
@@ -221,7 +230,9 @@ class TaskBlockWidget extends ConsumerWidget {
                       ),
                     Padding(
                       padding: EdgeInsets.symmetric(
-                        horizontal: compact ? AppSpacing.xs : AppSpacing.md,
+                        horizontal: compact || narrowLane
+                            ? AppSpacing.xs
+                            : AppSpacing.md,
                         vertical: AppSpacing.xs,
                       ),
                       child: LayoutBuilder(
@@ -241,9 +252,6 @@ class TaskBlockWidget extends ConsumerWidget {
                                               compactHeightThreshold
                                         : constraints.maxHeight >= 48
                                   : constraints.maxHeight >= 58);
-                          // A lane too narrow for the status row falls back to the
-                          // one-line layout.
-                          final narrowLane = constraints.maxWidth < 64;
                           final compactBlock = shortBlock || narrowLane;
                           final dimTitle =
                               task.status == TaskStatus.skipped ||
@@ -443,24 +451,41 @@ class TaskBlockWidget extends ConsumerWidget {
                                     // Hidden when the card (at this text size) has no
                                     // room left for it.
                                     Flexible(
-                                      child: _HideIfClipped(
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Flexible(
-                                              child: StatusBadge(
-                                                status: task.status,
-                                                onTap: onStatusTap,
+                                      // On touch the badge's tap area is 48 dp
+                                      // high, or the height left under the title
+                                      // when the block has less room.
+                                      child: LayoutBuilder(
+                                        builder: (context, room) =>
+                                            _HideIfClipped(
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Flexible(
+                                                    child: StatusBadge(
+                                                      status: task.status,
+                                                      onTap: onStatusTap,
+                                                      tapHeight:
+                                                          ResizableHandle
+                                                              .isTouchPlatform
+                                                          ? math.min(
+                                                              StatusBadge
+                                                                  .minTapSize,
+                                                              room.maxHeight,
+                                                            )
+                                                          : 0,
+                                                    ),
+                                                  ),
+                                                  // The duration is dropped when the
+                                                  // lane is too narrow to hold both.
+                                                  if (durationLabel != null &&
+                                                      constraints.maxWidth >=
+                                                          128)
+                                                    durationLabel,
+                                                ],
                                               ),
                                             ),
-                                            // The duration is dropped when the lane
-                                            // is too narrow to hold both.
-                                            if (durationLabel != null &&
-                                                constraints.maxWidth >= 128)
-                                              durationLabel,
-                                          ],
-                                        ),
                                       ),
                                     ),
                                   ],
@@ -475,7 +500,10 @@ class TaskBlockWidget extends ConsumerWidget {
                                   width: _StatusGlyph.width,
                                   child: statusGlyph,
                                 ),
-                              if (hasOverlap)
+                              // Narrow lanes drop the icon: the stripes and amber
+                              // outline still mark the overlap and the icon would
+                              // cover the end of the title.
+                              if (hasOverlap && !narrowLane)
                                 Positioned(
                                   top: 0,
                                   right: 0,
