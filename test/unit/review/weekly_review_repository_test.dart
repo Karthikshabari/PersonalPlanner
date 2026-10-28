@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -17,7 +18,7 @@ void main() {
 
   late AppDatabase db;
   late ReviewRepository reviews;
-  final week = DateTime(2026, 9, 28);
+  final week = PlannerTimeZone.calendarDate(2026, 9, 28);
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());

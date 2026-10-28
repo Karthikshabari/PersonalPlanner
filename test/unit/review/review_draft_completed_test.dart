@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -15,7 +16,7 @@ import '../../helpers/sqlite_setup.dart';
 /// B4: a reason that belongs to a Completed task is invisible and dropped by
 /// Save, so it must not count as an unsaved edit.
 void main() {
-  final day = startOfDay(DateTime(2026, 10, 6));
+  final day = startOfDay(PlannerTimeZone.calendarDate(2026, 10, 6));
 
   group('ReviewDraft.differsFromSaved', () {
     ReviewDraft draft({
@@ -104,7 +105,12 @@ void main() {
 
     test('completing the task drops its reason from the dirty state', () async {
       final repo = container.read(taskRepositoryProvider);
-      final start = DateTime(day.year, day.month, day.day, 9);
+      final start = PlannerTimeZone.calendarDate(
+        day.year,
+        day.month,
+        day.day,
+        hour: 9,
+      );
       final task = await repo.insertTask(
         Task(
           id: '',
@@ -141,7 +147,12 @@ void main() {
 
     test('reopening the task makes its reason count again', () async {
       final repo = container.read(taskRepositoryProvider);
-      final start = DateTime(day.year, day.month, day.day, 9);
+      final start = PlannerTimeZone.calendarDate(
+        day.year,
+        day.month,
+        day.day,
+        hour: 9,
+      );
       final task = await repo.insertTask(
         Task(
           id: '',

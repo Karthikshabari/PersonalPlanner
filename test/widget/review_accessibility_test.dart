@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/plan_title_change.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -17,8 +18,7 @@ import '../helpers/test_container.dart';
 
 void main() {
   DateTime today() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
+    return startOfDay(DateTime.now());
   }
 
   /// The Daily day these tests seed and open: yesterday, so every block has
@@ -38,7 +38,12 @@ void main() {
     final repo = container.read(taskRepositoryProvider);
     final day = seedDay();
     for (var i = 0; i < 4; i++) {
-      final start = DateTime(day.year, day.month, day.day, 6 + i * 2);
+      final start = PlannerTimeZone.calendarDate(
+        day.year,
+        day.month,
+        day.day,
+        hour: 6 + i * 2,
+      );
       await runDb(
         tester,
         () => repo.insertTask(

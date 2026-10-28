@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
@@ -16,8 +17,7 @@ import '../helpers/test_container.dart';
 /// Overview day strip.
 void main() {
   DateTime today() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
+    return startOfDay(DateTime.now());
   }
 
   final strip = find.byKey(const ValueKey('overview-strip'));
@@ -42,7 +42,12 @@ void main() {
     final container = await buildTestContainer(tester);
     if (seed) {
       final day = today();
-      final start = DateTime(day.year, day.month, day.day, 9);
+      final start = PlannerTimeZone.calendarDate(
+        day.year,
+        day.month,
+        day.day,
+        hour: 9,
+      );
       await runDb(
         tester,
         () => container

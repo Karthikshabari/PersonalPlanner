@@ -25,6 +25,7 @@ import 'package:personal_planner/features/review/presentation/widgets/review_lay
 import 'package:personal_planner/features/review/presentation/widgets/review_theme.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
 
+import '../helpers/sqlite_setup.dart';
 import '../helpers/test_container.dart';
 
 /// Overview strips: layout at every width and text scale, lazy building of a
@@ -48,6 +49,10 @@ void stripTest(String name, Future<void> Function(WidgetTester) body) {
 }
 
 void main() {
+  // Pin the planner zone the screen runs in before computing today and this
+  // week; otherwise they are computed in the default UTC zone and point at
+  // another day whenever the UTC date differs.
+  setupSqliteForTests();
   final today = startOfDay(DateTime.now());
   final thisWeek = startOfWeek(DateTime.now());
 
@@ -847,7 +852,7 @@ void main() {
       }
       final container = await buildTestContainer(tester);
       await runDb(tester, () async {
-        final start = DateTime(today.year, today.month, today.day, 9);
+        final start = today.add(const Duration(hours: 9));
         await container
             .read(taskRepositoryProvider)
             .insertTask(

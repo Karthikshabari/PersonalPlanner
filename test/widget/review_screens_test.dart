@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/day_context.dart';
 import 'package:personal_planner/core/models/enums/task_status.dart';
@@ -28,15 +29,13 @@ void main() {
   }
 
   DateTime today() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
+    return startOfDay(DateTime.now());
   }
 
   /// A day that is over, so its unfinished blocks are asked for a reason
   /// whatever the time of day the test runs (REV-002).
   DateTime yesterday() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day - 1);
+    return addDays(DateTime.now(), -1);
   }
 
   Future<void> seedTwoTasks(
@@ -57,8 +56,18 @@ void main() {
         Task(
           id: '',
           title: 'Morning run',
-          startTime: DateTime(date.year, date.month, date.day, 9),
-          endTime: DateTime(date.year, date.month, date.day, 10),
+          startTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 9,
+          ),
+          endTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 10,
+          ),
           status: TaskStatus.completed,
           categoryId: work.id,
           createdAt: DateTime.now(),
@@ -72,8 +81,19 @@ void main() {
         Task(
           id: '',
           title: 'Deep work',
-          startTime: DateTime(date.year, date.month, date.day, 11),
-          endTime: DateTime(date.year, date.month, date.day, 12, 30),
+          startTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 11,
+          ),
+          endTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 12,
+            minute: 30,
+          ),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         ),
@@ -155,8 +175,18 @@ void main() {
         Task(
           id: '',
           title: 'sample 6',
-          startTime: DateTime(date.year, date.month, date.day, 14),
-          endTime: DateTime(date.year, date.month, date.day, 15),
+          startTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 14,
+          ),
+          endTime: PlannerTimeZone.calendarDate(
+            date.year,
+            date.month,
+            date.day,
+            hour: 15,
+          ),
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         ),

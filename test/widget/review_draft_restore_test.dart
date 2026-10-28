@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/task.dart';
@@ -57,7 +58,7 @@ void main() {
     DateTime d,
     String title,
   ) {
-    final start = DateTime(d.year, d.month, d.day, 9);
+    final start = PlannerTimeZone.calendarDate(d.year, d.month, d.day, hour: 9);
     return runDb(
       tester,
       () => container

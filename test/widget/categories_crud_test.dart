@@ -12,12 +12,19 @@ import 'package:personal_planner/features/templates/data/template_repository.dar
 import '../helpers/test_container.dart';
 
 void main() {
-  Future<ProviderContainer> pumpCategories(WidgetTester tester) async {
-    final container = await buildTestContainer(tester);
+  Future<void> openCategories(
+    WidgetTester tester,
+    ProviderContainer container,
+  ) async {
     await pumpApp(tester, container, surface: const Size(1400, 1000));
     // Navigate to the categories screen.
     await tester.tap(find.text('Categories').last);
     await settle(tester);
+  }
+
+  Future<ProviderContainer> pumpCategories(WidgetTester tester) async {
+    final container = await buildTestContainer(tester);
+    await openCategories(tester, container);
     return container;
   }
 
@@ -148,7 +155,8 @@ void main() {
   testWidgets(
     'delete dialog shows counts; past tasks keep the category; Undo restores',
     (tester) async {
-      final container = await pumpCategories(tester);
+      // Seed before the screen is mounted: see runDb.
+      final container = await buildTestContainer(tester);
       final db = container.read(appDatabaseProvider);
       final work = await runDb(
         tester,
@@ -205,6 +213,7 @@ void main() {
         );
         return (past, future, rule, template);
       });
+      await openCategories(tester, container);
 
       await tester.tap(find.byKey(const ValueKey('delete-category-Work')));
       await settle(tester);

@@ -80,6 +80,14 @@ Future<void> settle(WidgetTester tester) async {
   }
 }
 
+/// Runs [action] in the real async zone.
+///
+/// Keep it to one write while a screen is mounted. A write wakes the screen's
+/// Drift stream queries on that table, which run in the fake-async zone and
+/// hold Drift's opening lock until the fake microtasks are flushed; that only
+/// happens after [action] returns, so a later database call inside the same
+/// [action] can wait forever. Seed several rows before pumping the screen, or
+/// use one [runDb] per write.
 Future<T> runDb<T>(WidgetTester tester, Future<T> Function() action) async {
   final result = await tester.runAsync(action);
   return result as T;

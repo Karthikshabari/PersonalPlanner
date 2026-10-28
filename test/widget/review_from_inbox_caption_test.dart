@@ -2,6 +2,8 @@
 // Inbox idea, and only to those. Caption text only: no other change.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
@@ -16,8 +18,13 @@ void main() {
   ) async {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
-    final day = DateTime(now.year, now.month, now.day - 1);
-    final start = DateTime(day.year, day.month, day.day, 9);
+    final day = addDays(now, -1);
+    final start = PlannerTimeZone.calendarDate(
+      day.year,
+      day.month,
+      day.day,
+      hour: 9,
+    );
     final idea = await runDb(
       tester,
       () =>

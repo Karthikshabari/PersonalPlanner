@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
@@ -13,8 +14,7 @@ import '../helpers/test_container.dart';
 
 void main() {
   DateTime today() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
+    return startOfDay(DateTime.now());
   }
 
   Finder card(DateTime date) =>
@@ -89,8 +89,18 @@ void main() {
               Task(
                 id: '',
                 title: 'Old task',
-                startTime: DateTime(date.year, date.month, date.day, 9),
-                endTime: DateTime(date.year, date.month, date.day, 10),
+                startTime: PlannerTimeZone.calendarDate(
+                  date.year,
+                  date.month,
+                  date.day,
+                  hour: 9,
+                ),
+                endTime: PlannerTimeZone.calendarDate(
+                  date.year,
+                  date.month,
+                  date.day,
+                  hour: 10,
+                ),
                 createdAt: DateTime.now(),
                 updatedAt: DateTime.now(),
               ),

@@ -6,6 +6,7 @@ import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/widgets/app_surface.dart';
 import 'package:personal_planner/features/review/domain/review_reason_presets.dart';
 import 'package:personal_planner/features/review/providers/review_providers.dart';
@@ -21,10 +22,7 @@ class DailySeed {
   final TaskStatus status;
 }
 
-DateTime dailyToday() {
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day);
-}
+DateTime dailyToday() => startOfDay(DateTime.now());
 
 /// The day the Daily fixtures seed and open by default. It is yesterday, so
 /// every seeded block has ended whatever the hour of the run: a block of today
@@ -48,11 +46,11 @@ Future<List<String>> seedDailyTasks(
   final day = date ?? dailyDefaultDay();
   final repo = container.read(taskRepositoryProvider);
   for (var i = 0; i < seeds.length; i++) {
-    final start = DateTime(
+    final start = PlannerTimeZone.calendarDate(
       day.year,
       day.month,
       day.day,
-      5,
+      hour: 5,
     ).add(Duration(minutes: 40 * i));
     await runDb(
       tester,

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
@@ -32,7 +33,12 @@ Future<void> _task(
   String title,
   DateTime day,
 ) {
-  final start = DateTime(day.year, day.month, day.day, 9);
+  final start = PlannerTimeZone.calendarDate(
+    day.year,
+    day.month,
+    day.day,
+    hour: 9,
+  );
   return runDb(
     tester,
     () => container

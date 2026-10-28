@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/date_utils.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/models/task.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/router/app_router.dart';
@@ -23,8 +25,13 @@ void main() {
     final container = await buildTestContainer(tester);
     final now = DateTime.now();
     // Yesterday: the block has ended, so it is asked for a reason (REV-002).
-    final day = DateTime(now.year, now.month, now.day - 1);
-    final start = DateTime(day.year, day.month, day.day, 11);
+    final day = addDays(now, -1);
+    final start = PlannerTimeZone.calendarDate(
+      day.year,
+      day.month,
+      day.day,
+      hour: 11,
+    );
     await runDb(
       tester,
       () => container
@@ -47,7 +54,7 @@ void main() {
           .taskDao
           .getTasksBetween(
             day,
-            DateTime(day.year, day.month, day.day + 1),
+            PlannerTimeZone.calendarDate(day.year, day.month, day.day + 1),
           ),
     );
     final id = TaskRepository.fromRow(rows.single).id;

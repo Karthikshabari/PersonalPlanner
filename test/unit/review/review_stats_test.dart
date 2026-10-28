@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/models/daily_review.dart';
 import 'package:personal_planner/core/models/daily_stats.dart';
@@ -39,7 +40,7 @@ void main() {
     categories = CategoryRepository(db);
     await categories.seedDefaultsIfEmpty();
     final now = DateTime.now();
-    day = DateTime(now.year, now.month, now.day - 1);
+    day = addDays(now, -1);
   });
 
   tearDown(() async {
@@ -218,12 +219,17 @@ void main() {
           Task(
             id: '',
             title: title,
-            startTime: DateTime(day.year, day.month, day.day, startHour),
-            endTime: DateTime(
+            startTime: PlannerTimeZone.calendarDate(
               day.year,
               day.month,
               day.day,
-              startHour,
+              hour: startHour,
+            ),
+            endTime: PlannerTimeZone.calendarDate(
+              day.year,
+              day.month,
+              day.day,
+              hour: startHour,
             ).add(Duration(minutes: durationMin)),
             status: status,
             categoryId: categoryId,
@@ -336,11 +342,21 @@ void main() {
         ),
       );
       await seedOn(
-        DateTime(weekStart.year, weekStart.month, weekStart.day, 9),
+        PlannerTimeZone.calendarDate(
+          weekStart.year,
+          weekStart.month,
+          weekStart.day,
+          hour: 9,
+        ),
         30,
       );
       await seedOn(
-        DateTime(weekStart.year, weekStart.month, weekStart.day + 1, 10),
+        PlannerTimeZone.calendarDate(
+          weekStart.year,
+          weekStart.month,
+          weekStart.day + 1,
+          hour: 10,
+        ),
         90,
       );
 
@@ -357,7 +373,12 @@ void main() {
 
     test('getTasksBetween excludes inbox items and deleted rows', () async {
       final weekStart = startOfWeek(DateTime.now());
-      final at = DateTime(weekStart.year, weekStart.month, weekStart.day, 8);
+      final at = PlannerTimeZone.calendarDate(
+        weekStart.year,
+        weekStart.month,
+        weekStart.day,
+        hour: 8,
+      );
       final kept = await tasks.insertTask(
         Task(
           id: '',
@@ -399,7 +420,7 @@ void main() {
     test(
       'cross-midnight tasks are queried and allocated once per day',
       () async {
-        final firstDay = DateTime(2026, 8, 10);
+        final firstDay = PlannerTimeZone.calendarDate(2026, 8, 10);
         final secondDay = addDays(firstDay, 1);
         final task = await tasks.insertTask(
           Task(
@@ -451,7 +472,7 @@ void main() {
     );
 
     test('range actual time rounds each day before summing buckets', () async {
-      final firstDay = DateTime(2026, 8, 12);
+      final firstDay = PlannerTimeZone.calendarDate(2026, 8, 12);
       final secondDay = addDays(firstDay, 1);
       final task = await tasks.insertTask(
         Task(

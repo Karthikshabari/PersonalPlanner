@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/core/database/app_database.dart';
 import 'package:personal_planner/core/providers/database_provider.dart';
 import 'package:personal_planner/core/utils/date_utils.dart';
@@ -21,7 +22,7 @@ void main() {
 
   late AppDatabase db;
   late ProviderContainer container;
-  final day = startOfDay(DateTime(2026, 10, 6));
+  final day = startOfDay(PlannerTimeZone.calendarDate(2026, 10, 6));
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
@@ -43,8 +44,10 @@ void main() {
           TasksCompanion.insert(
             id: id,
             title: id,
-            startTime: Value(DateTime(2026, 10, 6, 9)),
-            endTime: Value(DateTime(2026, 10, 6, 10)),
+            startTime: Value(
+              PlannerTimeZone.calendarDate(2026, 10, 6, hour: 9),
+            ),
+            endTime: Value(PlannerTimeZone.calendarDate(2026, 10, 6, hour: 10)),
             createdAt: stamp,
             updatedAt: stamp,
           ),
