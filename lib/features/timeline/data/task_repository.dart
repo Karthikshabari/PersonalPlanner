@@ -633,13 +633,14 @@ class TaskRepository {
     }
   }
 
-  /// History links form a single directed successor chain. Check the
-  /// complete proposed graph in the same SQLite transaction so self-links,
-  /// direct cycles, and longer remote/local cycles cannot be committed.
+  /// History links form a single directed successor chain. Check the proposed
+  /// links together with every chain they touch in the same SQLite
+  /// transaction, so self-links, direct cycles, and longer remote/local cycles
+  /// cannot be committed. Only those chains are read, not the whole table.
   Future<void> _validateHistoryLinks(Task proposed, {TaskRow? previous}) async {
     // Title/status/schedule edits do not change the relationship graph. Do
     // not rescan unrelated history for those ordinary mutations; relationship
-    // changes still validate the complete graph in the same transaction.
+    // changes still validate the chains they touch in the same transaction.
     if (previous != null &&
         previous.rescheduledFromId == proposed.rescheduledFromId &&
         previous.rescheduledToId == proposed.rescheduledToId) {
@@ -650,16 +651,18 @@ class TaskRepository {
         proposed.rescheduledToId == null) {
       return;
     }
-    final rows = await (_db.select(_db.tasks)).get();
+    final rows = await _dao.getHistoryLinks([
+      proposed.id,
+      ?proposed.rescheduledFromId,
+      ?proposed.rescheduledToId,
+    ]);
     final graph = <String, Set<String>>{
       for (final row in rows) row.id: <String>{},
     };
     for (final row in rows) {
-      if (row.rescheduledToId != null) {
-        graph[row.id]!.add(row.rescheduledToId!);
-      }
-      if (row.rescheduledFromId != null) {
-        graph.putIfAbsent(row.rescheduledFromId!, () => <String>{}).add(row.id);
+      if (row.toId != null) graph[row.id]!.add(row.toId!);
+      if (row.fromId != null) {
+        graph.putIfAbsent(row.fromId!, () => <String>{}).add(row.id);
       }
     }
     graph[proposed.id] = <String>{};

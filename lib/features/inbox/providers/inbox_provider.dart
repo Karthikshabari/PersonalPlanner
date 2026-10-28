@@ -106,28 +106,6 @@ final inboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
   );
 });
 
-/// Focused Inbox projection used only by the Day/Today surface. The full
-/// Inbox intentionally continues to consume [inboxProvider].
-final todayInboxProvider = StreamProvider.autoDispose<List<InboxItem>>((ref) {
-  final clock = ref.watch(inboxClockProvider);
-  final inbox = ref.watch(inboxProvider);
-  if (clock.hasError) {
-    return Stream<List<InboxItem>>.error(clock.error!, clock.stackTrace);
-  }
-  if (inbox.hasError) {
-    return Stream<List<InboxItem>>.error(inbox.error!, inbox.stackTrace);
-  }
-  if (!clock.hasValue || !inbox.hasValue) {
-    return const Stream<List<InboxItem>>.empty();
-  }
-  final now = clock.requireValue;
-  return Stream.value(
-    inbox.requireValue
-        .where((item) => isInboxItemVisibleInToday(item, now))
-        .toList(growable: false),
-  );
-});
-
 /// Small Day-surface projection: only overdue scheduled work and explicit
 /// Inbox captures whose date-only due date is today. General captures remain
 /// available from the dedicated Inbox screen.

@@ -73,7 +73,8 @@ class ReviewInsightsService {
   Future<ReviewInsights> forDay(DateTime date) async {
     final day = startOfDay(date);
     final end = addDays(day, 1);
-    final (tasks, byId) = await _loadTasksAroundDay(day, end);
+    final nextEnd = addDays(end, 1);
+    final (tasks, byId) = await _loadTasksAround(day, end, nextEnd);
     final relevant = tasks.where((task) => _scheduledIn(task, day, end));
     final changes = <ReviewChange>[];
     for (final task in relevant) {
@@ -81,13 +82,7 @@ class ReviewInsightsService {
     }
     return ReviewInsights(
       changes: changes,
-      carryover: _carryoverFor(
-        tasks,
-        end,
-        addDays(end, 1),
-        byId,
-        sourceStart: day,
-      ),
+      carryover: _carryoverFor(tasks, end, nextEnd, byId, sourceStart: day),
     );
   }
 
@@ -97,8 +92,7 @@ class ReviewInsightsService {
     final start = startOfWeek(weekStart);
     final end = addDays(start, 7);
     final nextEnd = addDays(end, 7);
-    final tasks = await _loadTasks();
-    final byId = {for (final task in tasks) task.id: task};
+    final (tasks, byId) = await _loadTasksAround(start, end, nextEnd);
     final changes = <ReviewChange>[];
     for (final task in tasks) {
       if (!_scheduledIn(task, start, end)) continue;
@@ -118,23 +112,25 @@ class ReviewInsightsService {
     );
   }
 
-  /// The tasks [forDay] can actually look at, instead of the whole table:
-  /// the ones scheduled on [day], the ones starting on the next day (carry-over
-  /// candidates), and the reschedule targets/sources those two sets point to.
+  /// The tasks [forDay] and [forWeek] can actually look at, instead of the
+  /// whole table: the ones scheduled in [start]..[end], the ones starting in
+  /// [end]..[nextEnd] (carry-over candidates), and the reschedule
+  /// targets/sources those two sets point to.
   ///
   /// The SQL ranges are widened by a day as a prefilter; every exact range test
   /// stays in Dart (`_scheduledIn`, `_inRange`), and rows come back in rowid
   /// order, which is the order a full scan produced. The result is therefore
   /// the same as filtering the full list.
-  Future<(List<Task>, Map<String, Task>)> _loadTasksAroundDay(
-    DateTime day,
+  Future<(List<Task>, Map<String, Task>)> _loadTasksAround(
+    DateTime start,
     DateTime end,
+    DateTime nextEnd,
   ) async {
     String iso(DateTime instant) => instant.toUtc().toIso8601String();
-    final windowStart = iso(addDays(day, -1));
+    final windowStart = iso(addDays(start, -1));
     final scheduledBefore = iso(addDays(end, 1));
     final nextStart = iso(addDays(end, -1));
-    final nextBefore = iso(addDays(end, 2));
+    final nextBefore = iso(addDays(nextEnd, 1));
     final rows =
         await (_db.select(_db.tasks)
               ..where(
@@ -174,14 +170,6 @@ class ReviewInsightsService {
       }
     }
     return (tasks, byId);
-  }
-
-  Future<List<Task>> _loadTasks() async {
-    final rows = await (_db.select(_db.tasks)).get();
-    return rows
-        .where((row) => row.deletedAt == null && !row.isInbox)
-        .map(TaskRepository.fromRow)
-        .toList(growable: false);
   }
 
   bool _scheduledIn(Task task, DateTime start, DateTime end) {

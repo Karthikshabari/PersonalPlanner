@@ -5,8 +5,8 @@ import 'package:timezone/timezone.dart' as tz;
 
 const MethodChannel _channel = MethodChannel('personal_planner/timezone');
 
-/// Windows display names -> IANA ids for the common zones. Anything missing
-/// falls back to an offset match, then UTC.
+/// Windows 'Standard Time' display names -> IANA ids for the common zones.
+/// Anything missing falls back to an offset match, then UTC.
 const Map<String, String> _windowsZones = {
   'UTC': 'UTC',
   'GMT Standard Time': 'Europe/London',
@@ -55,6 +55,20 @@ const Map<String, String> _windowsZones = {
   'New Zealand Standard Time': 'Pacific/Auckland',
 };
 
+const _standardSuffix = ' Standard Time';
+const _daylightSuffix = ' Daylight Time';
+
+/// IANA id for a Windows zone display name, or null when it is not mapped.
+/// Dart reports the 'Daylight Time' name while summer time is in force; it
+/// resolves through the zone's 'Standard Time' key.
+String? ianaIdForWindowsName(String name) {
+  final key = name.endsWith(_daylightSuffix)
+      ? '${name.substring(0, name.length - _daylightSuffix.length)}'
+            '$_standardSuffix'
+      : name;
+  return _windowsZones[key];
+}
+
 /// Resolves the device's IANA timezone id without any native plugin DLL.
 ///
 /// Android asks `java.util.TimeZone` through a tiny MethodChannel; Linux reads
@@ -88,7 +102,9 @@ Future<String?> _platformId() async {
     if (await file.exists()) return (await file.readAsString()).trim();
     return null;
   }
-  if (Platform.isWindows) return _windowsZones[DateTime.now().timeZoneName];
+  if (Platform.isWindows) {
+    return ianaIdForWindowsName(DateTime.now().timeZoneName);
+  }
   return null;
 }
 

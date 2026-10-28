@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:personal_planner/core/utils/planner_time_zone.dart';
 import 'package:personal_planner/features/recurring/domain/rrule_utils.dart';
 import 'package:rrule/rrule.dart';
 
@@ -116,6 +117,23 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('occursOnDate follows the calendar date on a day whose midnight is '
+        'skipped by daylight saving', () {
+      // Cairo 2026-04-24 (a Friday) starts at 01:00.
+      addTearDown(() => PlannerTimeZone.initialize(identifier: 'Asia/Kolkata'));
+      PlannerTimeZone.initialize(identifier: 'Africa/Cairo');
+      final start = PlannerTimeZone.calendarDate(2026, 4, 1);
+      final gapDay = PlannerTimeZone.calendarDate(2026, 4, 24);
+
+      bool on(String rrule, DateTime date) =>
+          RruleUtils.occursOnDate(rrule, start, date);
+
+      expect(on('FREQ=DAILY', gapDay), isTrue);
+      expect(on('FREQ=WEEKLY;BYDAY=FR', gapDay), isTrue);
+      expect(on('FREQ=WEEKLY;BYDAY=SA', gapDay), isFalse);
+      expect(on('FREQ=WEEKLY;BYDAY=TH', gapDay), isFalse);
     });
 
     test('monthly day 29-31 clamps to month end, keeping the rule shape '

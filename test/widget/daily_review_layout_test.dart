@@ -115,7 +115,11 @@ void main() {
   }
 
   testWidgets('the date used by the header is today', (tester) async {
-    final container = await pumpDaily(tester, surface: const Size(1100, 900));
+    final container = await pumpDaily(
+      tester,
+      surface: const Size(1100, 900),
+      date: dailyToday(),
+    );
     expect(find.byKey(const ValueKey('review-glance-today')), findsOneWidget);
     expect(isSameDay(dailyToday(), DateTime.now()), isTrue);
     await finish(tester, container);

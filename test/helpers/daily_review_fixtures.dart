@@ -26,21 +26,26 @@ DateTime dailyToday() {
   return DateTime(now.year, now.month, now.day);
 }
 
+/// The day the Daily fixtures seed and open by default. It is yesterday, so
+/// every seeded block has ended whatever the hour of the run: a block of today
+/// only asks for a reason once its end has passed.
+DateTime dailyDefaultDay() => addDays(dailyToday(), -1);
+
 /// `n` characters of readable text, no spaces at the cut so it is one long
 /// word-ish title (80 characters is a worst case for the row).
 String longTitle(int n) =>
     ('Quarterly planning workshop preparation and follow-up notes ' * 4)
         .substring(0, n);
 
-/// Inserts [seeds] on [date], one every 40 minutes from 05:00, and returns the
-/// stored ids in the same order.
+/// Inserts [seeds] on [date] (default [dailyDefaultDay]), one every 40 minutes
+/// from 05:00, and returns the stored ids in the same order.
 Future<List<String>> seedDailyTasks(
   WidgetTester tester,
   ProviderContainer container,
   List<DailySeed> seeds, {
   DateTime? date,
 }) async {
-  final day = date ?? dailyToday();
+  final day = date ?? dailyDefaultDay();
   final repo = container.read(taskRepositoryProvider);
   for (var i = 0; i < seeds.length; i++) {
     final start = DateTime(
@@ -108,12 +113,12 @@ Future<ProviderContainer> pumpDaily(
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
   }
   final container = await buildTestContainer(tester);
-  final ids = await seedDailyTasks(tester, container, seeds, date: date);
+  // After the container: it sets the planner time zone `addDays` reads.
+  final day = date ?? dailyDefaultDay();
+  final ids = await seedDailyTasks(tester, container, seeds, date: day);
   onSeeded?.call(ids);
   if (presets != null) await seedPresets(tester, container, presets);
-  if (date != null) {
-    container.read(selectedReviewDateProvider.notifier).state = date;
-  }
+  container.read(selectedReviewDateProvider.notifier).state = day;
   appRouter.go('/review');
   await pumpApp(tester, container, surface: surface);
   return container;

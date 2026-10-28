@@ -190,7 +190,8 @@ void main() {
       final container = await pumpDaily(
         tester,
         surface: const Size(1100, 900),
-        seeds: [const DailySeed('Today task', status: TaskStatus.skipped)],
+        date: dailyToday(),
+        seeds: [const DailySeed('Today task', status: TaskStatus.completed)],
       );
       expect(find.byKey(const ValueKey('review-glance-today')), findsOneWidget);
       expect(find.byKey(const ValueKey('review-status-chip')), findsOneWidget);

@@ -206,6 +206,39 @@ class TaskDao extends DatabaseAccessor<AppDatabase> with _$TaskDaoMixin {
     ];
   }
 
+  /// The reschedule links of every row connected to [ids] through either
+  /// link column, in either direction and including [ids] (deleted rows too).
+  /// A task repository write validates its history chain from this instead of
+  /// reading the whole table. UNION makes a cycle terminate.
+  Future<List<({String id, String? fromId, String? toId})>> getHistoryLinks(
+    Iterable<String> ids,
+  ) async {
+    final seeds = ids.toSet().toList(growable: false);
+    if (seeds.isEmpty) return const [];
+    final rows = await customSelect(
+      'WITH RECURSIVE chain(id) AS ('
+      'SELECT id FROM tasks WHERE id IN (${List.filled(seeds.length, '?').join(', ')}) '
+      'UNION SELECT t.rescheduled_to_id FROM tasks t JOIN chain c ON t.id = c.id '
+      'WHERE t.rescheduled_to_id IS NOT NULL '
+      'UNION SELECT t.rescheduled_from_id FROM tasks t JOIN chain c ON t.id = c.id '
+      'WHERE t.rescheduled_from_id IS NOT NULL '
+      'UNION SELECT t.id FROM tasks t JOIN chain c ON t.rescheduled_to_id = c.id '
+      'UNION SELECT t.id FROM tasks t JOIN chain c ON t.rescheduled_from_id = c.id) '
+      'SELECT t.id, t.rescheduled_from_id, t.rescheduled_to_id '
+      'FROM tasks t JOIN chain c ON t.id = c.id',
+      variables: [for (final id in seeds) Variable<String>(id)],
+      readsFrom: {tasks},
+    ).get();
+    return [
+      for (final row in rows)
+        (
+          id: row.read<String>('id'),
+          fromId: row.readNullable<String>('rescheduled_from_id'),
+          toId: row.readNullable<String>('rescheduled_to_id'),
+        ),
+    ];
+  }
+
   /// The new blocks of the rescheduled rows among [rows] that still exist.
   /// Pass the result to [TaskRowPlanCounting].
   Future<Set<String>> liveSuccessorIds(Iterable<TaskRow> rows) => liveTaskIds([

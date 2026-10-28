@@ -62,8 +62,14 @@ abstract final class PlannerTimeZone {
     microsecond,
   );
 
+  /// Moves [date] by whole calendar days, keeping its wall-clock time. A day
+  /// start moves to the start of the target day, so it stays a day start where
+  /// local midnight is skipped (the day then starts at 01:00).
   static DateTime addDays(DateTime date, int days) {
     final local = toPlannerLocal(date);
+    if (local.isAtSameMomentAs(startOfDay(local))) {
+      return tz.TZDateTime(location, local.year, local.month, local.day + days);
+    }
     return tz.TZDateTime(
       location,
       local.year,

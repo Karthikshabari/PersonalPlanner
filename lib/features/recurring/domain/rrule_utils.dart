@@ -68,12 +68,21 @@ abstract final class RruleUtils {
     try {
       final rule = _clampToMonthEnd(parse(rrule), startOfDay(ruleStartDate));
       final start = _wallClockUtc(startOfDay(ruleStartDate));
-      final dayEnd = _wallClockUtc(addDays(dayStart, 1));
+      // The window is the calendar date from 00:00, not `dayStart`'s hour: a
+      // day whose midnight is skipped by daylight saving starts at 01:00.
+      final dayEnd = DateTime.utc(
+        dayStart.year,
+        dayStart.month,
+        dayStart.day + 1,
+      );
       // Lower bound of the queried window; `after` is exclusive and must
       // stay >= DTSTART, so it is omitted entirely when the window begins
       // at or before DTSTART.
-      final windowStart = _wallClockUtc(dayStart)
-          .subtract(const Duration(microseconds: 1));
+      final windowStart = DateTime.utc(
+        dayStart.year,
+        dayStart.month,
+        dayStart.day,
+      ).subtract(const Duration(microseconds: 1));
       final after = windowStart.isAfter(start) ? windowStart : null;
       return rule
           .getAllInstances(start: start, after: after, before: dayEnd)

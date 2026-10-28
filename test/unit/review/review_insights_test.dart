@@ -246,6 +246,109 @@ void main() {
     });
   });
 
+  group('weekly range edges', () {
+    late DateTime week;
+
+    DateTime at(int dayOffset, int hour) =>
+        addDays(week, dayOffset).add(Duration(hours: hour));
+
+    Future<void> skipped(String title, DateTime start, DateTime end) async {
+      await tasks.insertTask(
+        Task(
+          id: '',
+          title: title,
+          startTime: start,
+          endTime: end,
+          status: TaskStatus.skipped,
+          createdAt: start,
+          updatedAt: start,
+        ),
+      );
+    }
+
+    /// A block rescheduled from [sourceStart] to a planned block at [target].
+    Future<void> moved(
+      String title,
+      DateTime sourceStart,
+      DateTime target,
+    ) async {
+      final targetId = await tasks
+          .insertTask(
+            Task(
+              id: '',
+              title: '$title (new)',
+              startTime: target,
+              endTime: target.add(const Duration(hours: 1)),
+              createdAt: sourceStart,
+              updatedAt: sourceStart,
+            ),
+          )
+          .then((task) => task.id);
+      final source = await tasks.insertTask(
+        Task(
+          id: '',
+          title: title,
+          startTime: sourceStart,
+          endTime: sourceStart.add(const Duration(hours: 1)),
+          status: TaskStatus.rescheduled,
+          rescheduledToId: targetId,
+          createdAt: sourceStart,
+          updatedAt: sourceStart,
+        ),
+      );
+      final targetRow = await db.taskDao.getTaskById(targetId);
+      await tasks.updateTask(
+        TaskRepository.fromRow(targetRow!)
+            .copyWith(rescheduledFromId: source.id),
+        allowRescheduledTransition: true,
+      );
+    }
+
+    test('keeps what the full scan reported: edges, deleted rows, links '
+        'that leave the week', () async {
+      week = addDays(startOfWeek(DateTime.now()), -7);
+      await skipped('Inside', at(2, 9), at(2, 10));
+      final gone = await tasks.insertTask(
+        Task(
+          id: '',
+          title: 'Deleted inside',
+          startTime: at(3, 9),
+          endTime: at(3, 10),
+          status: TaskStatus.skipped,
+          createdAt: at(3, 1),
+          updatedAt: at(3, 1),
+        ),
+      );
+      await tasks.deleteTask(gone.id);
+      await skipped('Straddles the start', at(-1, 23), at(0, 1));
+      await skipped('Ends at the start', at(-1, 22), at(0, 0));
+      await skipped('Starts at the end', at(7, 0), at(7, 1));
+      await skipped('Long before', at(-20, 9), at(-20, 10));
+      await skipped('Long after', at(30, 9), at(30, 10));
+      await moved('Into next week', at(4, 9), at(8, 10));
+      await moved('Two weeks on', at(5, 9), at(15, 10));
+      await moved('From the week before', at(-3, 9), at(9, 10));
+
+      final insights = await ReviewInsightsService(db).forWeek(week);
+
+      expect(insights.changes.map((c) => c.taskTitle), [
+        'Inside',
+        'Straddles the start',
+        'Into next week',
+        'Two weeks on',
+      ]);
+      expect(insights.changes.map((c) => c.detail).take(2), [
+        'Skipped',
+        'Skipped',
+      ]);
+      expect(
+        insights.changes.skip(2).map((c) => c.detail),
+        everyElement(startsWith('Moved → ')),
+      );
+      expect(insights.carryover.map((c) => c.title), ['Into next week (new)']);
+    });
+  });
+
   test('returns no changes for an unchanged empty day', () async {
     final insights = await ReviewInsightsService(db).forDay(day);
     expect(insights.changes, isEmpty);

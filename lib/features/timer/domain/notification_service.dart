@@ -135,16 +135,16 @@ class NotificationService
 
   static DateTime nextOccurrence(DateTime now, int hour, int minute) {
     final local = PlannerTimeZone.toPlannerLocal(now);
-    DateTime next = tz.TZDateTime(
+    DateTime at(int dayOffset) => tz.TZDateTime(
       PlannerTimeZone.location,
       local.year,
       local.month,
-      local.day,
+      local.day + dayOffset,
       hour,
       minute,
     );
-    if (!next.isAfter(now)) next = PlannerTimeZone.addDays(next, 1);
-    return next;
+    final today = at(0);
+    return today.isAfter(now) ? today : at(1);
   }
 
   Future<bool> scheduleDailyReminder({

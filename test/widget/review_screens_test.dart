@@ -511,7 +511,7 @@ void main() {
     );
     await settle(tester);
 
-    expect(container.read(selectedReviewDateProvider), startOfWeek(today()));
+    expect(container.read(selectedReviewDateProvider), today());
     expect(find.text('Daily Review'), findsOneWidget);
     await finish(tester, container);
   });

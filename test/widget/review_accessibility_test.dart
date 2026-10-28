@@ -21,18 +21,22 @@ void main() {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// The Daily day these tests seed and open: yesterday, so every block has
+  /// ended whatever the hour of the run (a block of today only asks for a
+  /// reason once its end has passed).
+  DateTime seedDay() => addDays(today(), -1);
+
   String longTitle(int i) =>
       'Task $i ${'long title words ' * 4}'.substring(0, 60);
 
   /// Four tasks with 60-character titles: one with a plan change and one with
-  /// tracked time. Starts 06:00-09:00 so they sit in the past or the future
-  /// without mattering to the Daily list.
+  /// tracked time, starting 06:00-13:00 on [seedDay].
   Future<void> seedTasks(
     WidgetTester tester,
     ProviderContainer container,
   ) async {
     final repo = container.read(taskRepositoryProvider);
-    final day = today();
+    final day = seedDay();
     for (var i = 0; i < 4; i++) {
       final start = DateTime(day.year, day.month, day.day, 6 + i * 2);
       await runDb(
@@ -90,7 +94,10 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     }
     final container = await buildTestContainer(tester);
-    if (seed) await seedTasks(tester, container);
+    if (seed) {
+      await seedTasks(tester, container);
+      container.read(selectedReviewDateProvider.notifier).state = seedDay();
+    }
     appRouter.go(path);
     await pumpApp(tester, container, surface: surface);
     return container;
