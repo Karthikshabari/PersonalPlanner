@@ -1,12 +1,14 @@
+
+
 <p align="center">
   <img src="assets/branding/app_logo_with_text.png" alt="Personal Planner" width="440">
 </p>
 
-<h3 align="center">Plan your day. Track what really happened. Learn from it.</h3>
+<h3 align="center">Plan your day. See where your time actually went.</h3>
 
 <p align="center">
-  A free, local-first planner for Linux, Android, Windows and macOS.<br>
-  Your past days stay useful, instead of disappearing into a "completed" list.
+  A free, offline-first planner for Linux, Android, Windows and macOS.<br>
+  Make a plan, track what happens, and have something useful to look back on.
 </p>
 
 <p align="center">
@@ -17,214 +19,185 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Karthikshabari/PersonalPlanner/releases"><b>⬇ Download the latest release</b></a>
+  <a href="https://github.com/Karthikshabari/PersonalPlanner/releases"><b>Download Personal Planner</b></a>
 </p>
 
-<!-- PHOTO 1 (hero): wide screenshot of the Day screen with a full, filled-in day. Save as Photos/hero_day.png -->
 <p align="center">
   <img src="Photos/Day_plan.png" alt="Personal Planner day view" width="900">
 </p>
 
----
-
-## Quick question
-
-**What did you actually do last Tuesday?**
-
-If you have to think hard, or scroll through a pile of ticked-off tasks to find out, this app is for you.
-
-Most planners are good at tomorrow. The moment you finish something, it disappears. You never find out if that "2 hour" task really took 2 hours, whether this week was better than the last one, or if that new routine you started is actually sticking.
-
-Personal Planner keeps the past. It lets you plan the day, do the day, look back at it, and learn from it, all in one place.
-
-## Why I built this
-
-I tried a lot of planners before this. Super Productivity, Vikunja, Planify, TickTick and a few more open source alternatives for Linux and Android.
-
-Some of them were really good. But none of them did what I wanted, and the ones that came close kept the useful parts behind a paywall. I wasn't going to pay a monthly fee just to plan my own day.
-
-So I built my own. It took me several months to get here, and it now runs on four platforms. I use it every day.
-
-## Is this for you?
-
-| If you've ever thought... | Personal Planner gives you... |
-| --- | --- |
-| "Where did my day go?" | Planned time and actual time, side by side |
-| "I had a good week, I think?" | Daily and weekly reviews with the real data next to what you write |
-| "Am I actually being consistent?" | A year-long heatmap and streaks |
-| "Is this new routine working or not?" | Experiments that track themselves |
-| "I have an idea but no time for it yet" | An Inbox that turns ideas into scheduled work |
-| "I don't want yet another subscription" | Free, offline-first, your data is yours |
+<p align="center">
+  <a href="#why-i-built-it">Why I built it</a> ·
+  <a href="#what-you-can-do">What you can do</a> ·
+  <a href="#download-and-install">Download</a> ·
+  <a href="#under-the-hood">Under the hood</a> ·
+  <a href="#support-the-project">Support</a>
+</p>
 
 ---
 
-## The features, and why you'd care
+## A planner that doesn't forget yesterday
 
-### 📅 Day: plan it like a real calendar
+I've used task lists where everything looks great at the end of the day because the boxes are ticked. But that doesn't tell me much. Did that 30-minute task take an hour? What kept getting pushed to tomorrow? Was the week actually going the way I thought it was?
 
-The Day screen is an hour-by-hour timeline. Put a block on it, drag it to move it, pull the edge to resize it. That's it.
+**Personal Planner keeps the plan and the reality together.** You put tasks on a timeline, use a timer while you work, and come back later to see what happened. You can also write a few lines about the day or week, right next to your actual tasks and time spent.
 
-**Why it matters:** planning on a timeline makes you face how many hours you really have. It's much harder to lie to yourself when the blocks don't fit.
+It's a personal planner, not a team management tool. You can use it completely offline, without signing up or setting up a server. If you want to use it across devices, there's optional sync through a Supabase project you control.
 
-- Clashing blocks get flagged instead of silently stacking on top of each other
-- Day view and week view
-- Recurring activities and reusable templates, so you don't re-enter the same thing every week
-- Categories to colour-code your time (Development, Personal, whatever you need)
-- Didn't finish something? Carry it forward without losing where it came from
-- Undo and redo, because plans change about five times a day
+## Why I built it
 
-<!-- PHOTO 2: existing screenshot, planned and completed work on the Day screen -->
+I used to set aside 30 minutes for something, spend an hour on it, and then make the next day's plan as though the first estimate had been right. I was planning every day, but not really learning from any of them.
+
+I tried other planners, including Super Productivity, Vikunja, Planify and TickTick. They each do things well. What I kept missing was a simple way to look back: *this is what I planned, this is what I actually spent my time on, and this is why the rest didn't happen.* I also wanted to do that without paying a subscription just to see my own history.
+
+So I started building Personal Planner. I use it myself, and the feedback from people who've tried it has helped shape what it is now.
+
+The idea isn't to make every day look productive. Some days don't go to plan. I just wanted a place where those days are still worth looking at.
+
+## What you can do
+
+A normal day in Personal Planner is pretty straightforward: make a plan in **Day**, start a timer when you begin working, and use **Review** later to see how it went. **Insights** helps you notice patterns over time, while **Inbox** keeps ideas that aren't ready for the calendar yet.
+
+### Plan your day on a timeline
+
+Instead of making a list and hoping everything fits, you place tasks into actual hours. Drag a block to move it, resize it when plans change, and switch between day and week views.
+
+- See overlapping blocks before they become a problem
+- Use recurring activities and templates for the things you plan regularly
+- Colour-code tasks with categories
+- Move unfinished work forward without losing its history
+- Undo and redo changes
+- Work with a 24-hour clock throughout the app
+
 <p align="center">
   <img src="Photos/Day_plan_2.png" alt="Planned and completed work on the Day screen" width="900">
 </p>
-<p align="center"><sub>The plan is useful. What actually happened is more useful.</sub></p>
+<p align="center"><sub>Day view: put tasks where they fit, then see how the day turned out.</sub></p>
 
-### ⏱ Timers: planned vs actual, finally in one place
+### Find out how long things really take
 
-Start, pause, resume and stop a timer straight from a task. When you complete a block, the minutes you really spent are saved next to the minutes you planned.
+Each task has a timer you can start, pause, resume and stop. When the task is finished, its actual time sits alongside the time you planned for it.
 
-**Why it matters:** a two-hour block on the calendar and two hours of real focus are rarely the same thing. After a few weeks you'll know how you actually work, and your estimates get better. (Mine started out very wrong.)
+For example, if you allowed 30 minutes to work on something but spent 65, that difference is saved. Next time you're making a similar plan, you have something better to go on than a guess.
 
-Timer controls also show up in your notifications on Linux and Android.
+The timer also keeps its time when you close the app. Timer controls are available in notifications on Linux and Android.
 
-### 📝 Review: look back at your day and your week
+### Review the day, not just the completed tasks
 
-This is the part I care about most. Review has three views: **Daily**, **Weekly** and **Overview**.
+This is the part I wanted most when I started the project.
 
-**Daily review.** At the end of the day you see what you planned, what you finished and how your time was split across categories. Then you add your part:
+**Daily review** brings together the day's plan, completed and unfinished work, and the time spent across categories. You can record how the day felt and write whatever mattered. For skipped tasks, you can write your own reason rather than choosing a generic option. "I spent most of the afternoon fixing a bug" is a lot more useful when you read it back next month.
 
-- Pick how the day felt
-- Write your own note
-- For anything you didn't finish, write *why* in your own words. No preset dropdown, because "I got stuck on a bug and spent three hours on it" is more useful to you than "Not enough time"
+**Weekly review** helps you look at the week as a whole. It shows what got done, what was skipped or rescheduled, and gives you room to reflect or set an intention for the following week.
 
-**Weekly review.** Same idea, one level up. You get a "Your week" summary, pick how the week felt, write a few lines, and optionally set an intention for next week. It shows only the tasks that were skipped or rescheduled, so you see what slipped without a wall of noise. The tone is neutral on purpose. No red numbers, no guilt trips.
+**Overview** lets you return to earlier days and weeks without digging through a completed-task list. Your notes and the data are in the same place. Draft reflections are saved if you leave halfway through writing one.
 
-**Overview.** Scroll back through your past days and weeks as cards, each showing the mood you picked and how much you got done. Spot the pattern: *"Every week after a bad Monday, I skip Thursday."*
+This isn't meant to be another daily chore. You can write as much or as little as you find useful.
 
-**Why it matters:** a normal journal lives in a different app from your tasks, so you write from memory. Here the real week is right next to your reflection, and your drafts are kept if you get interrupted mid-sentence. Reviews take a couple of minutes, not a ritual.
-
-<!-- PHOTO 3: Daily review screen, with a day that has some completed and some unfinished tasks. Save as Photos/daily_review.png -->
 <p align="center">
   <img src="Photos/daily_review.png" alt="Daily review" width="900">
 </p>
-<p align="center"><sub>Daily review: what happened, how it felt, and why something didn't get done.</sub></p>
+<p align="center"><sub>Daily review: the day’s work, the time it took, and your own notes.</sub></p>
 
-<!-- PHOTO 4: Weekly review screen. Save as Photos/weekly_review.png -->
 <p align="center">
   <img src="Photos/weekly_review.png" alt="Weekly review" width="900">
 </p>
-<p align="center"><sub>Weekly review: write it with the real week right beside it.</sub></p>
+<p align="center"><sub>Weekly review: a clearer picture of what happened across the week.</sub></p>
 
 <p align="center">
   <img src="Photos/weekly_overview.png" alt="Review overview" width="900">
 </p>
-<p align="center"><sub>Overview: your last few weeks at a glance.</sub></p>
+<p align="center"><sub>Overview: revisit earlier days and weeks without losing the context.</sub></p>
 
+### See patterns over time
 
-### 📈 Insights: see the long game
+A single good or bad day doesn't tell the whole story. Insights gives you a longer view.
 
-One bad day doesn't mean you're unproductive, and one good day doesn't mean you're fixed. Insights shows the longer picture.
+**Consistency** shows a year-long heatmap along with current and best streaks. It's useful for seeing stretches when you kept showing up, periods when things slowed down, and whether a routine has actually been consistent.
 
-#### Consistency
-
-A year-long heatmap, like GitHub's contribution graph, plus your current and best streak.
-
-**Why it matters:** it answers "have I actually been consistent?" with a picture instead of a feeling. Gaps, streaks and slow periods are easy to spot.
-
-<!-- PHOTO 5: existing consistency heatmap screenshot -->
 <p align="center">
   <img src="Photos/consitency.png" alt="Consistency heatmap" width="900">
 </p>
-<p align="center"><sub>A longer view tells you more than a streak number.</sub></p>
+<p align="center"><sub>Consistency: the bigger picture, not just today’s result.</sub></p>
 
-#### Experiments
+#### Try a routine as an Experiment
 
-This is my favourite feature, so here's the plain version.
+Say you want to spend an hour learning C on weekdays for the next month. Instead of creating another tracker and logging the same work twice, you can make it an Experiment.
 
-You want to try something for a few weeks. Learn C for an hour a day. Wake up earlier. Study on weekends. Normally you'd start, drift, and never know if it worked.
+1. Add a tag, such as `Learn C`, to the relevant tasks.
+2. Choose a start and end date.
+3. Set targets for weekdays and weekends.
+4. Choose when to check in, and write notes as you go.
 
-With an Experiment you set it up once:
+As you complete tagged tasks, the experiment updates from the time you've already tracked. You can compare your progress with your target, see the days you met it, and check whether you're ahead or behind.
 
-1. **Pick a tag** for it, like `Learn C`. Tag the blocks on your Day screen that belong to it.
-2. **Set the window**: a start date and an end date.
-3. **Set targets**: for example 60 minutes on weekdays and 90 on weekends.
-4. **Pick how often you want to check in** and write short notes on how it's going.
+When the experiment ends, you can **conclude** it and write down what you learned, **extend** it with a reason, or **keep** it as an ongoing routine. Kept experiments continue tracking against a weekly minimum without an end date or check-ins.
 
-After that, you don't log anything extra. Every time you complete a block with that tag, the experiment updates itself. You see how much you've done against how much you should have done by now, whether you're ahead or behind, how many days you hit your target, and a chart that fits your screen without scrolling.
+I like this approach because it makes a new routine something you can actually evaluate, rather than something you vaguely remember starting.
 
-When the window ends you decide:
-
-- **Extend it.** You have to write a reason, so you can't just keep pushing the deadline.
-- **Conclude it.** Write down what you learned.
-- **Keep it.** The experiment moves to a *Kept* list. No end date, no check-ins. It just keeps counting, and your weekday/weekend targets become a weekly minimum. Do more than the minimum and it simply shows as ahead.
-
-**Why it matters:** most "new routines" fail quietly. This makes the result visible, from data you were already recording, so you can decide with facts instead of guilt.
-
-<!-- PHOTO 6: Insights > Experiments showing one running experiment with progress and the chart. Save as Photos/experiments.png -->
 <p align="center">
   <img src="Photos/experiment.png" alt="A running experiment in Insights" width="900">
 </p>
-<p align="center"><sub>Try something for a few weeks and let your own data tell you if it worked.</sub></p>
+<p align="center"><sub>Experiments: test a routine using time you’ve already recorded.</sub></p>
 
-### 💡 Inbox: for ideas that don't have a day yet
+### Keep ideas out of today's schedule until they're ready
 
-Everyone has ideas that come at the wrong time. "Research SAP." "Look into that library." "Plan the trip." If you put them on today's schedule, they're clutter. If you don't write them down, they're gone.
+Not everything you think of needs to become a task today. That's what Inbox is for.
 
-The Inbox is where they wait. Then, when you're ready:
+You can save an idea, come back to it later, and then decide what to do with it:
 
-- **Give it a date** and it becomes a task on that day
-- **Or give it dated sessions** (up to about two weeks, each with a time and a length) and every session turns into a timed task on your Day screen. A research item that needs 45 minutes across five days is now five blocks, not one
-- **Missed a session?** It doesn't vanish. It lands in a *Left over* backlog with a Missed badge, so you can reschedule it or let it go
-- **Let go or Close it** with a reason you type yourself. It moves to *Dropped* instead of pretending it was *Done*
-- **Start as an experiment** if an idea turns out to be something bigger than two weeks
-- Bring back something you dropped, any time
+- Put it on a particular day
+- Break it into dated sessions, each with its own time and duration, for up to about two weeks
+- Turn those sessions into tasks on the Day timeline
+- Reschedule missed sessions from the **Left over** list
+- Close or drop an idea with a reason, without pretending it was completed
+- Restore a dropped idea or turn a longer-term idea into an Experiment
 
-You never set a status by hand. The Inbox works it out from the sessions, so it's always honest.
+The Inbox works out the status from your sessions; you don't have to keep updating it manually. The goal is to keep an idea somewhere useful without letting it crowd every day's plan.
 
-**Why it matters:** your head stays clear, and ideas don't rot in a list. They either become real work, or you consciously let them go.
-
-<!-- PHOTO 7: Inbox screen with a few ideas, one expanded to show its dated sessions. Save as Photos/inbox.png -->
 <p align="center">
   <img src="Photos/inbox.png" alt="Inbox idea with dated sessions" width="900">
 </p>
-<p align="center"><sub>An idea with dated sessions. Each one becomes a timed task on the Day screen.</sub></p>
+<p align="center"><sub>Inbox: turn an idea into actual sessions when you’re ready for it.</sub></p>
 
-<p align="center"><sub>Capture it before it slips away.</sub></p>
+### Use it offline. Sync only if you want to.
 
-### 🔄 Works offline, syncs when it can
+Everything you do starts with data stored on your device. Planning, timers, reviews and insights work without an internet connection.
 
-The app reads and writes a local database first. That means moving a block, starting a timer or looking at an old day never waits for the internet.
+If you use multiple devices, you can set up sync with your **own Supabase project**. Each device still keeps a local copy. Changes that haven't synced yet stay in a local outbox and are retried when connectivity returns. A small indicator shows sync status and the last sync time.
 
-- Plan on your Linux laptop, check it on your Android phone, and it all matches through Supabase sync
-- No signal? Keep working. Your changes wait on the device and go through when you're back online
-- A sync indicator shows what's happening (syncing, synced, and when it last synced)
+You don't have to enable any of this to use the planner on one device. There is no Personal Planner account required for local use, and I don't run a central server that stores everyone's planner data.
 
 <p align="center">
   <img src="Photos/Sync.png" alt="Offline use and sync recovery on Android" width="320">
 </p>
-<p align="center"><sub>Offline? Keep working. Sync catches up later.</sub></p>
+<p align="center"><sub>Offline work stays on your device and can sync later if you enable it.</sub></p>
 
-### 🪶 Light, free, and yours
+### A few other things worth knowing
 
-- Built to stay light on RAM and CPU, with the screens tuned so switching days, weeks and tabs feels smooth
-- Search to dig up something from weeks ago
-- Free. No subscription, no locked features. Supabase and Cloudflare both have free tiers that are enough for personal use (their limits can change, so check them)
-- Your planner data sits on your device and in your own Supabase project
+- **Search:** find older entries in Review, Insights and Inbox with keyword search
+- **Backup and restore:** move or recover your planner data
+- **Lightweight by design:** attention has gone into keeping day and week navigation responsive and resource usage reasonable
+- **No paid features:** the app is free, with no premium tier or subscription
 
----
+## Is it a good fit for you?
 
-## Download
+You might like Personal Planner if you schedule work in blocks, often underestimate how long things take, want to reflect on your week without opening a separate journal, or are trying to make a routine stick.
 
-Grab the build for your platform from the **[Releases page](https://github.com/Karthikshabari/PersonalPlanner/releases)**.
+It may not be the right fit if you're looking for a shared team planner, built-in connections to external calendars and work tools, or an iPhone/iPad app. Those aren't available right now.
 
-| Platform | Notes |
+## Download and install
+
+Get the latest build from **[GitHub Releases](https://github.com/Karthikshabari/PersonalPlanner/releases)**. Release downloads include a `SHA256SUMS.txt` file if you'd like to verify the archive or APK.
+
+| Platform | What to download / know |
 | --- | --- |
-| Android | Install the APK. You may need to allow installs from your browser or file manager. |
-| Linux | Extract the tarball and run the app inside. |
-| Windows | Unsigned build. See below. |
-| macOS | Unsigned build. See below. |
+| **Android** | Install the APK. Your phone may ask you to allow installation from your browser or file manager. |
+| **Linux** | Download and extract the tarball, then run the included app. |
+| **Windows** | Download and extract the ZIP. The build is unsigned; see below. |
+| **macOS** | Download the ZIP and move the app to Applications. The build is unsigned; see below. |
 
-> I don't have an Apple developer account and I couldn't test on a real Mac, so the macOS build is only tested on GitHub Actions. The Windows build is unsigned, so Windows will warn you the first time. You just have to tell your OS you trust it.
+Windows and macOS builds are distributed unsigned, so the operating system may display a warning. The macOS build has been checked in GitHub Actions, **not on a physical Mac**. I want to be clear about that before anyone installs it.
 
 <!-- OPTIONAL PHOTO: the app running on Windows or macOS. If you add it, save as Photos/desktop.png and uncomment below.
 <p align="center">
@@ -234,51 +207,52 @@ Grab the build for your platform from the **[Releases page](https://github.com/K
 
 ### Windows
 
-1. Extract the whole zip. Keep `personal_planner.exe`, the `.dll` files and the `data` folder together.
+1. Extract the entire ZIP. Keep `personal_planner.exe`, the `.dll` files and the `data` folder together.
 2. Run `personal_planner.exe`.
-3. If SmartScreen says "Windows protected your PC", click **More info**, then **Run anyway**.
+3. If SmartScreen blocks it, verify you downloaded it from this project's Releases page. Then use **More info → Run anyway** if you choose to proceed.
 
-**Setup fails with `CERTIFICATE_VERIFY_FAILED`?** This happened to me on Windows. It means Windows doesn't trust the root certificate needed to reach Supabase. Updating Windows and refreshing the root certificates fixed it for me:
+If sync setup fails with `CERTIFICATE_VERIFY_FAILED`, check Windows updates and the system's trusted root certificates. I encountered this while testing on Windows. The following command can retrieve Microsoft's root certificate list as part of troubleshooting:
 
 ```powershell
 certutil -generateSSTFromWU roots.sst
 ```
 
-Then restart the app and run setup again.
+This creates a `roots.sst` file; it does **not** install root certificates by itself.
 
 ### macOS
 
-1. Unzip and move `Personal Planner.app` to **Applications**.
-2. Open it once. macOS will block it.
-3. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-4. If that button doesn't show up, or it says the app is damaged, run:
+1. Unzip the download and move `Personal Planner.app` to **Applications**.
+2. Try opening the app. macOS may block it because the build isn't signed.
+3. If you trust the download, open **System Settings → Privacy & Security** and select **Open Anyway**.
+4. If macOS still blocks the app, this removes its quarantine attribute. Only use it after checking the source of the download:
 
    ```bash
    xattr -dr com.apple.quarantine "/Applications/Personal Planner.app"
    ```
 
-### Known limits on Windows and macOS
+### Current platform limitations
 
-- Reminders and timer notifications only work on Linux and Android for now.
-- Email and password sign-in works. Links that should open the app (the sign-up confirmation email and the provisioning authorization) don't, because the `com.personalplanner.personalplanner://` link scheme isn't registered on these two.
+- Reminders and timer notifications currently work on Linux and Android, not Windows or macOS.
+- Email/password sign-in works on Windows and macOS, but some confirmation and provisioning links cannot open the app directly because the `com.personalplanner.personalplanner://` URL scheme isn't registered on those platforms.
+- There is no iOS or iPadOS build.
 
----
+## A few common questions
 
-## Questions you might have
+**Do I need an account?** Not for local use. Just install it and start planning. Sync setup uses Supabase authentication.
 
-**Is it really free?** Yes. No paywall, no premium tier.
+**Do I need internet?** No, unless you're setting up or using sync.
 
-**Do I need internet?** No. Planning, timers, reviews and insights all work offline. You only need a connection to sync between devices.
+**Where does my data go?** It stays on your device. With sync enabled, it is also stored in your own Supabase project.
 
-**Do I have to set up sync?** No. You can use the app on a single device and never touch Supabase.
+**Do I need to set up Supabase?** Only if you want to sync devices. Everything else works locally.
 
-**Where is my data?** On your device, and in your own Supabase project if you turn sync on.
+**Can I request a feature?** Yes. [Open an issue](https://github.com/Karthikshabari/PersonalPlanner/issues) and tell me what you're trying to do. Real examples help more than a long wish list.
 
----
+## Under the hood
 
-## How it works (for the curious)
+If you're only here to use the app, you can skip this section.
 
-The short version: the app works from a local database, and sync is an extra layer on top. Supabase handles sign-in and moves changes between your devices. A Cloudflare Worker sets up the Supabase project for you so you don't have to do it by hand.
+The main idea is simple: **the local database is the source the app works with during everyday use.** Sync is an optional layer, rather than something every screen has to wait for.
 
 ```mermaid
 flowchart TB
@@ -316,17 +290,20 @@ flowchart TB
     Worker -->|"client-safe project config"| UI
 ```
 
-**Local first.** Drift on top of SQLite is the everyday store. Moving a block, finishing a task, starting a timer or opening an old day never waits on a server. Anything that still needs to sync sits in a local outbox until the connection is back.
+**Flutter + Riverpod** handle the app's interface and state. **Drift + SQLite** hold the planner data locally, so actions like moving a block or finishing a timer don't have to call a server. Changes waiting to sync are kept in a local outbox.
 
-**Supabase connects the devices.** Supabase Auth handles sign-in and PostgreSQL holds the data that needs to be shared. Each device keeps its own local copy, so the UI never blocks on the network.
+**Supabase Auth + PostgreSQL** provide authentication and a copy of the data for users who choose cross-device sync. Each device reads and writes locally and the sync engine handles moving changes between devices.
 
-**Cloudflare sets up the project.** A usable Supabase project needs the right schema, migrations, access rules and client config, and doing that by hand is painful. The Worker does it from inside the app: it connects your Supabase account, reuses a compatible project or creates a new one, applies the migrations and verifies the schema. Setup can take several steps, so Durable Objects keep track of its state in between. After setup, the Worker is out of the picture and the app talks to Supabase directly.
+**Cloudflare Workers + Durable Objects** handle the optional provisioning flow. The Worker connects to the user's Supabase account, finds or creates a compatible project, runs and verifies the required schema migrations, and returns client-safe configuration. Durable Objects keep track of the multi-step setup. After provisioning, the app communicates with Supabase directly.
 
-**Stack:** Flutter, Drift + SQLite, Riverpod, Supabase (Auth + PostgreSQL), Cloudflare Workers + Durable Objects.
+**Tech stack:** Flutter, Riverpod, Drift, SQLite, Supabase Auth, PostgreSQL, Cloudflare Workers and Durable Objects.
 
-## Build it yourself
+## Build from source
 
-You can run the app without touching Supabase or Cloudflare. Everything works locally, you just won't have sync.
+You can build the app from this repository and use it without setting up Supabase or Cloudflare. Only cross-device sync needs the extra services.
+
+<details>
+<summary><b>Build from source</b></summary>
 
 ```bash
 flutter doctor -v
@@ -368,7 +345,10 @@ flutter build macos --release     # build/macos/Build/Products/Release/Personal 
 
 The `Desktop check` workflow (`.github/workflows/desktop-check.yml`) builds both on GitHub Actions and runs a smoke test on each.
 
-## Set up sync
+</details>
+
+<details>
+<summary><b>Set up sync</b></summary>
 
 ### Option 1: Use your own Supabase project
 
@@ -423,4 +403,22 @@ npm run deploy:dry
 
 Once the Cloudflare environment and the Supabase OAuth callback are set up, deploy and use the Worker's HTTPS URL as `PROVISIONING_BASE_URL`.
 
----
+</details>
+
+## Bugs, suggestions and feedback
+
+If something doesn't work, or if a screen is confusing, please [open an issue](https://github.com/Karthikshabari/PersonalPlanner/issues). Let me know which platform you're using, what you were doing, and what happened. A screenshot or steps to reproduce the issue help a lot.
+
+I also appreciate feedback from people who simply tried the app and found something awkward. That's often more useful than another feature request.
+
+<!-- If you add a LICENSE file, link to the actual license here. A public repository alone does not grant an open-source license. -->
+
+LICENSE: https://github.com/Karthikshabari/PersonalPlanner?tab=MIT-1-ov-file
+
+## Support the project
+
+Personal Planner is free, and I want to keep it that way.If the app has been helpful share it with someone who might use it genuinely helps. If you'd rather support its development financially, you can do that through GitHub Sponsors(If you do thanks for your contribution as well :) ). And thanks for reading this far, have a great day :)
+
+<p align="center">
+  <a href="https://github.com/sponsors/Karthikshabari"><b>Sponsor Personal Planner on GitHub</b></a>
+</p>
