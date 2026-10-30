@@ -35,6 +35,8 @@
 </p>
 
 ---
+## Link to website of this app: https://karthikshabari.github.io/PersonalPlanner/
+
 
 ## A planner that doesn't forget yesterday
 
