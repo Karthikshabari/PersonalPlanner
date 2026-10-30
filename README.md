@@ -35,8 +35,10 @@
 </p>
 
 ---
-## Link to website of this app: https://karthikshabari.github.io/PersonalPlanner/
 
+**Want to see Personal Planner in action?**
+
+Take a look at the [Personal Planner website](https://karthikshabari.github.io/PersonalPlanner/) for a quick demo, screenshots, and a closer look at how the app helps you plan your day, track your time, and learn from what actually happened.
 
 ## A planner that doesn't forget yesterday
 
