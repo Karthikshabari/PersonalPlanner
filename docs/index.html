@@ -579,6 +579,29 @@ html:not(.js) .film-expand{display:none}
  .film-view{padding:14px;border-radius:18px}
  .film-view-heading{gap:8px}.film-view-heading h2{font-size:15px}
 }
+
+/* Phone-only option A: Support stays visible beside Menu. Desktop placement is unchanged. */
+.header-actions{display:none;align-items:center;gap:8px;flex:none}
+#mobileSupportSlot{display:none}
+@media(max-width:1040px){.header-actions{display:flex}}
+@media(max-width:760px){
+ #mobileSupportSlot{display:block}
+ .nav-inner{gap:10px}
+ .brand img{height:clamp(32px,10vw,42px)}
+ .header-actions .support-toggle{margin:0;padding:10px 12px;min-height:44px;font-size:12px;line-height:22px}
+ .header-actions .support-menu{margin:0}
+ .header-actions .support-popover{position:fixed;top:calc(var(--nav-h) + 10px);left:18px;right:18px;width:auto;max-width:none;max-height:calc(100vh - 96px);max-height:calc(100dvh - 96px);overflow:auto}
+ .nav-toggle{font-size:13px;min-height:44px;padding:10px 12px}
+}
+@media(max-width:360px){
+ .nav-toggle{font-size:0;width:44px;min-width:44px;padding:9px}
+ .nav-toggle::after{content:"☰";font-size:18px;line-height:24px}
+ .nav-toggle[aria-expanded="true"]::after{content:"×"}
+}
+
+/* Native video remains uncropped in the original frame. JS may add tiny letterbox
+   gutters to avoid fractional pixels or to use a near-identical integer downscale. */
+.film-window video.pixel-aligned{position:absolute;max-width:none;object-fit:contain;object-position:center}
 </style>
 <script>document.documentElement.classList.add('js');</script>
 </head>
@@ -589,7 +612,7 @@ html:not(.js) .film-expand{display:none}
 <header class="nav">
   <div class="container nav-inner">
     <a class="brand" href="#top" aria-label="Personal Planner, back to top"><img src="assets/lockup-dark.webp" width="480" height="160" alt="Personal Planner"></a>
-    <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks">Menu ☰</button>
+    <div class="header-actions" id="headerActions"><div id="mobileSupportSlot"></div><button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-controls="navLinks">Menu ☰</button></div>
     <nav class="nav-links" id="navLinks" aria-label="Main navigation">
       <a href="#how-it-works" data-spy="how-it-works">How it works</a>
       <a href="#try-it" data-spy="try-it">Try it</a>
@@ -598,6 +621,7 @@ html:not(.js) .film-expand{display:none}
       <a href="https://github.com/Karthikshabari/PersonalPlanner" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
       <div class="nav-actions">
         <a class="pill primary" href="#download">Download</a>
+        <span id="supportHome" hidden></span>
         <details class="support-menu" id="supportMenu">
           <summary class="pill support-toggle" id="supportToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>Support</summary>
           <div class="support-popover" aria-labelledby="supportTitle">
@@ -638,7 +662,7 @@ html:not(.js) .film-expand{display:none}
       <div class="film-top"><strong class="eyebrow">↳ The app in 48 seconds</strong><div class="film-heading-actions"><span class="mono">REAL FOOTAGE · NO SOUND</span><button type="button" class="film-expand" id="filmExpand" aria-haspopup="dialog" aria-controls="filmView" title="Open a larger player to read the app details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>Larger view</button></div></div>
       <div class="film-shell">
         <div class="film-window" id="filmWindow">
-          <video id="film" src="assets/film.mp4" poster="assets/poster.jpg" loop muted playsinline controls preload="metadata" title="Silent 48-second film of Personal Planner: plan, track, reflect, review the week, run an experiment and sync.">Your browser can't play this video. The app is described below.</video>
+          <video id="film" width="2560" height="1440" src="assets/film.mp4" poster="assets/poster.jpg" loop muted playsinline controls preload="metadata" title="Silent 48-second film of Personal Planner: plan, track, reflect, review the week, run an experiment and sync.">Your browser can't play this video. The app is described below.</video>
           <button type="button" class="film-big" id="filmBig" aria-label="Play film"><span><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg></span></button>
         </div>
       </div>
@@ -646,7 +670,6 @@ html:not(.js) .film-expand{display:none}
         <button type="button" class="film-btn" id="filmToggle" aria-label="Pause film"><svg id="icoPause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg><svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M7 4.5v15l13-7.5z"/></svg></button>
         <div class="seek" id="seek" role="slider" tabindex="0" aria-label="Seek film" aria-valuemin="0" aria-valuemax="48" aria-valuenow="0" aria-valuetext="0 seconds"><span class="seek-tip" id="seekTip">0:00</span></div>
         <span class="time" id="time">0:00 / 0:48</span>
-        <button type="button" class="film-btn" id="filmFs" aria-label="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <ul class="chapters" id="chapters" aria-label="Jump to a part of the film"></ul>
       <details class="transcript"><summary>Read the film as text</summary><ol>
@@ -896,6 +919,17 @@ $('#year').textContent=String(new Date().getFullYear());
 
 /* Native details keeps Support usable with or without JavaScript. */
 var supportMenu=$('#supportMenu'),supportToggle=$('#supportToggle');
+
+var mobileSupportQuery=window.matchMedia('(max-width:760px)'),supportHome=$('#supportHome'),mobileSupportSlot=$('#mobileSupportSlot');
+function placeSupport(){
+  supportMenu.open=false;
+  if(mobileSupportQuery.matches)mobileSupportSlot.appendChild(supportMenu);
+  else supportHome.parentNode.insertBefore(supportMenu,supportHome.nextSibling);
+}
+placeSupport();
+if(mobileSupportQuery.addEventListener)mobileSupportQuery.addEventListener('change',placeSupport);
+else if(mobileSupportQuery.addListener)mobileSupportQuery.addListener(placeSupport);
+
 document.addEventListener('click',function(e){if(supportMenu.open&&!supportMenu.contains(e.target))supportMenu.open=false});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&supportMenu.open){e.preventDefault();supportMenu.open=false;supportToggle.focus()}});
 supportToggle.addEventListener('keydown',function(e){if(e.key==='ArrowDown'){e.preventDefault();supportMenu.open=true;$('.support-option',supportMenu).focus()}});
@@ -960,25 +994,49 @@ function seekTo(clientX){var r=seek.getBoundingClientRect(),f=Math.min(1,Math.ma
 seek.addEventListener('click',function(e){seekTo(e.clientX)});
 seek.addEventListener('mousemove',function(e){var r=seek.getBoundingClientRect(),f=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),t=f*duration(),idx=0;CH.forEach(function(c,i){if(t>=c[0])idx=i});seekTip.textContent=fmt(t)+' · '+CH[idx][1];seekTip.style.left=(e.clientX-r.left)+'px'});
 seek.addEventListener('keydown',function(e){var d=0;if(e.key==='ArrowRight'||e.key==='ArrowUp')d=5;else if(e.key==='ArrowLeft'||e.key==='ArrowDown')d=-5;else if(e.key==='Home'){film.currentTime=0;paint();e.preventDefault();return}else if(e.key==='End'){film.currentTime=duration()-.1;paint();e.preventDefault();return}if(d){film.currentTime=Math.min(duration(),Math.max(0,film.currentTime+d));e.preventDefault();paint()}});
-$('#filmFs').addEventListener('click',function(){var f=film.requestFullscreen||film.webkitRequestFullscreen||film.webkitEnterFullscreen;if(f){try{var result=f.call(film);if(result&&result.catch)result.catch(function(){})}catch(e){}}});
 function autoplay(){if(!manual&&!reduced&&visible&&!document.hidden)playFilm()}
 if('IntersectionObserver' in window){new IntersectionObserver(function(es){es.forEach(function(e){visible=e.isIntersecting;if(visible)autoplay();else if(!film.paused)film.pause()})},{threshold:.35}).observe(fw)}else{visible=true;autoplay()}
 document.addEventListener('visibilitychange',function(){if(document.hidden)film.pause();else autoplay()});
 film.controls=false;$('.film-frame').classList.add('film-ready');
 setPlayUI();paint();
 
+/* ---------- native, pixel-aligned video sizing: no canvas, crop or sharpening filter ---------- */
+/* The full source is always decoded. There is no HTML "max quality" flag.
+   A near-exact integer reduction can avoid a second fractional resample of fine UI text.
+   Limit any extra letterboxing to 2% so the existing composition and frame stay the same. */
+function fitFilmPixels(){
+  var nativeFullscreen=document.fullscreenElement===film||document.webkitFullscreenElement===film||film.webkitDisplayingFullscreen;
+  if(nativeFullscreen){film.classList.remove('pixel-aligned');film.style.width='';film.style.height='';film.style.left='';film.style.top='';return}
+  if(!film.videoWidth||!film.videoHeight)return;
+  var r=fw.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  var x0=Math.ceil(r.left*dpr),x1=Math.floor(r.right*dpr),y0=Math.ceil(r.top*dpr),y1=Math.floor(r.bottom*dpr);
+  var aw=x1-x0,ah=y1-y0;if(aw<16||ah<9)return;
+  var vw=film.videoWidth,vh=film.videoHeight,scale=Math.min(aw/vw,ah/vh),w=Math.floor(vw*scale),h=Math.floor(vh*scale);
+  // Prefer a clean 2:1, 4:1, etc. reduction only when it nearly fills the existing box.
+  [1,2,4,8,16].some(function(n){var cw=vw/n,ch=vh/n;if(Number.isInteger(cw)&&Number.isInteger(ch)&&cw<=aw&&ch<=ah&&cw/w>=.98&&ch/h>=.98){w=cw;h=ch;return true}return false});
+  var x=Math.max(x0,Math.min(x1-w,Math.round((x0+x1-w)/2))),y=Math.max(y0,Math.min(y1-h,Math.round((y0+y1-h)/2)));
+  film.style.width=(w/dpr)+'px';film.style.height=(h/dpr)+'px';
+  film.style.left=(x/dpr-r.left)+'px';film.style.top=(y/dpr-r.top)+'px';
+  film.classList.add('pixel-aligned');
+}
+film.addEventListener('loadedmetadata',fitFilmPixels);film.addEventListener('loadeddata',fitFilmPixels);
+window.addEventListener('resize',fitFilmPixels,{passive:true});
+document.addEventListener('fullscreenchange',fitFilmPixels);film.addEventListener('webkitbeginfullscreen',fitFilmPixels);film.addEventListener('webkitendfullscreen',fitFilmPixels);
+if('ResizeObserver' in window)new ResizeObserver(fitFilmPixels).observe(fw);
+fitFilmPixels();
+
 /* ---------- larger film view; reuse the same video and playback position ---------- */
 var filmFrame=$('.film-frame'),filmView=$('#filmView'),filmExpand=$('#filmExpand'),filmPlaceholder=null,bodyOverflow='';
 filmExpand.addEventListener('click',function(){
   if(filmView.open)return;
-  if(typeof filmView.showModal!=='function'){$('#filmFs').click();return}
+  if(typeof filmView.showModal!=='function'){var f=film.requestFullscreen||film.webkitRequestFullscreen||film.webkitEnterFullscreen;if(f){try{var p=f.call(film);if(p&&p.catch)p.catch(function(){})}catch(e){}}return}
   var wasPlaying=!film.paused;
   filmPlaceholder=document.createElement('div');filmPlaceholder.setAttribute('aria-hidden','true');
   filmPlaceholder.style.height=filmFrame.getBoundingClientRect().height+'px';
   filmFrame.parentNode.insertBefore(filmPlaceholder,filmFrame);
   bodyOverflow=document.body.style.overflow;
   try{filmView.showModal()}catch(e){filmPlaceholder.remove();filmPlaceholder=null;return}
-  $('#filmViewHost').appendChild(filmFrame);
+  $('#filmViewHost').appendChild(filmFrame);fitFilmPixels();
   document.body.style.overflow='hidden';
   if(wasPlaying)playFilm();
 });
@@ -987,7 +1045,7 @@ filmView.addEventListener('click',function(e){if(e.target===filmView){var r=film
 filmView.addEventListener('close',function(){
   var wasPlaying=!film.paused;
   if(filmPlaceholder&&filmPlaceholder.parentNode){filmPlaceholder.parentNode.replaceChild(filmFrame,filmPlaceholder);filmPlaceholder=null}
-  document.body.style.overflow=bodyOverflow;
+  document.body.style.overflow=bodyOverflow;fitFilmPixels();
   var r=fw.getBoundingClientRect();
   if(wasPlaying&&r.bottom>0&&r.top<window.innerHeight&&!document.hidden)playFilm();
   else if(!film.paused)film.pause();
