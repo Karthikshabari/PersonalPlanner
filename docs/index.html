@@ -130,6 +130,12 @@ em.serif,.display em{font-family:var(--serif);font-style:italic;font-weight:400;
 .trust{list-style:none;display:flex;flex-wrap:wrap;gap:8px 10px;margin:0;padding:0}
 .trust li{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#d4d5e0;background:#ffffff0b;border:1px solid #ffffff1a;border-radius:999px;padding:7px 13px}
 .trust b{color:var(--mint);font-weight:760;font-variant-numeric:tabular-nums}
+.trust #dlCount {
+  display: inline-block;
+  min-width: 5ch;
+  text-align: right;
+}
+
 .trust svg{width:14px;height:14px;color:var(--mint)}
 
 /* film */
@@ -491,6 +497,11 @@ html:not(.js) .nav-links{display:flex!important;position:static!important;flex-d
 @media(max-width:760px){.install{padding:22px 16px;border-radius:20px}.steps>li{padding-left:42px}.itabs button{flex:1 1 calc(50% - 6px)}.letterhead{height:50px}.hand-note{font-size:22px}.timeline{padding-left:18px}.film-aside{max-width:none}}
 @media(max-width:560px){.real-tag{display:block;margin:2px 0 0}}
 @media(max-width:420px){.mynums ul{grid-template-columns:1fr 1fr}.mynums b{font-size:24px}.xp-days button{font-size:10px}}
+@media (max-width: 360px) {
+  .hero h1 em {
+    font-size: 0.96em;
+  }
+}
 </style>
 <script>document.documentElement.classList.add('js');</script>
 </head>
@@ -943,6 +954,7 @@ function xpRender(){
 xpRender();
 
 /* ---------- live GitHub data (downloads, stars, latest release) ---------- */
+var ASSET = {};
 var osKey=(function(){var ua=navigator.userAgent||'',pl=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||'',touch=navigator.maxTouchPoints>1;
   if(/android/i.test(ua))return 'android';
   if(/iphone|ipad|ipod/i.test(ua)||((/Macintosh/.test(ua)||/Mac/.test(pl))&&touch))return 'ios'; /* iPads in desktop mode look like Macs, but real Macs have no touch screen */
@@ -980,7 +992,6 @@ function applyRelease(rels,repo){
 })();
 
 /* ---------- install guide ---------- */
-var ASSET={};
 function fillCmds(){var G={windows:'*windows*.zip',macos:'*macos*.zip',linux:'*linux*.tar.gz'};$$('.cmd code[data-cmd]').forEach(function(c){var t=c.dataset.cmd;Object.keys(G).forEach(function(k){if(ASSET[k]&&t.indexOf(G[k])>-1){t=t.replace(G[k],ASSET[k]);c.dataset.cmd=t;c.textContent=t}})})}
 var itabs=$$('#itabs [role=tab]'),ipanels=$$('.ipanel');
 function pickInstall(os,focus,user){itabs.forEach(function(b){var on=b.dataset.i===os;b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;if(on&&focus)b.focus()});ipanels.forEach(function(p){p.hidden=p.id!=='ipanel-'+os});if(user)track('install-tab-'+os,'Opened install steps for '+os)}
