@@ -561,8 +561,7 @@ html:not(.js) .nav-links{display:flex!important;position:static!important;flex-d
 .film-expand svg{width:13px;height:13px}
 .film-expand:hover{background:#ffffff18;border-color:var(--mint)}
 html:not(.js) .film-expand{display:none}
-/* On phones the inline player already spans the available width; keep its existing fullscreen control. */
-@media(max-width:860px){.film-expand{display:none}}
+/* Larger view remains available at every screen size. */
 .film-view{width:min(1200px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:22px;margin:auto;overflow:auto;background:var(--ink);color:var(--cream);border:1px solid #78738a;border-radius:22px;box-shadow:0 30px 100px #0009}
 .film-view::backdrop{background:#07080df0;backdrop-filter:blur(6px)}
 .film-view-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
@@ -602,6 +601,46 @@ html:not(.js) .film-expand{display:none}
 /* Native video remains uncropped in the original frame. JS may add tiny letterbox
    gutters to avoid fractional pixels or to use a near-identical integer downscale. */
 .film-window video.pixel-aligned{position:absolute;max-width:none;object-fit:contain;object-position:center}
+
+/* Give the existing two-column hero more room; all other sections keep their widths. */
+.hero-grid{width:min(1520px,calc(100% - 80px));grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(28px,3vw,56px)}
+.hero-copy{min-width:0}
+.hero h1{font-size:clamp(46px,5.6vw,92px)}
+.hero-sub{max-width:560px;font-size:clamp(18px,1.2vw,20px)}
+.film-frame{width:100%;min-width:0}
+.film-top{flex-wrap:wrap;row-gap:10px}
+.film-expand{min-height:44px;padding:9px 13px}
+.film-clarity{margin:-4px 0 12px;color:#c5c7d2;font-family:var(--font);font-size:12px;line-height:1.5;text-align:right;letter-spacing:0}
+.film-clarity strong{font-weight:650;color:var(--mint)}
+html:not(.js) .film-clarity{display:none}
+.film-view .film-clarity{display:none}
+.film-view-tip{display:none;margin:-8px 0 14px;color:#c5c7d2;font:400 12px/1.5 var(--font)}
+@media(max-width:1020px){
+ .hero-grid{width:calc(100% - 52px)}
+ .hero-sub{font-size:17px}
+ .hero h1{font-size:clamp(46px,5.6vw,92px)}
+}
+@media(max-width:860px){
+ .hero-grid{grid-template-columns:minmax(0,1fr);gap:40px}
+ .film-frame{max-width:none}
+ .film-view{width:calc(100vw - 12px);max-height:calc(100vh - 12px);max-height:calc(100dvh - 12px);padding:8px;border-radius:14px}
+ .film-view-heading{margin-bottom:12px}
+ .film-view-tip{display:block}
+ .film-view .film-top{display:none}
+}
+@media(max-width:760px){
+ .hero-grid{width:calc(100% - 28px)}
+ .hero h1{font-size:clamp(46px,12.4vw,66px)}
+ .film-heading-actions{gap:8px}
+ .film-expand{font-size:12px;padding:8px 11px}
+ .film-clarity{font-size:12px;text-align:left}
+}
+@media(max-width:360px){
+ .hero h1 em{font-size:.96em}
+ .film-top{gap:6px}
+ .film-top strong{font-size:10px}
+ .film-expand{padding:8px 9px;font-size:11px}
+}
 </style>
 <script>document.documentElement.classList.add('js');</script>
 </head>
@@ -659,7 +698,8 @@ html:not(.js) .film-expand{display:none}
     </div>
 
     <div class="film-frame" role="group" aria-label="Personal Planner 48-second demo film">
-      <div class="film-top"><strong class="eyebrow">↳ The app in 48 seconds</strong><div class="film-heading-actions"><span class="mono">REAL FOOTAGE · NO SOUND</span><button type="button" class="film-expand" id="filmExpand" aria-haspopup="dialog" aria-controls="filmView" title="Open a larger player to read the app details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>Larger view</button></div></div>
+      <div class="film-top"><strong class="eyebrow">↳ The app in 48 seconds</strong><div class="film-heading-actions"><span class="mono">REAL FOOTAGE · NO SOUND</span><button type="button" class="film-expand" id="filmExpand" aria-controls="filmView" aria-describedby="filmClarity" title="Open a larger player to read the app details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>Larger view</button></div></div>
+      <p class="film-clarity" id="filmClarity">For best clarity, choose <strong>Larger view</strong>.</p>
       <div class="film-shell">
         <div class="film-window" id="filmWindow">
           <video id="film" width="2560" height="1440" src="assets/film.mp4" poster="assets/poster.jpg" loop muted playsinline controls preload="metadata" title="Silent 48-second film of Personal Planner: plan, track, reflect, review the week, run an experiment and sync.">Your browser can't play this video. The app is described below.</video>
@@ -882,6 +922,7 @@ html:not(.js) .film-expand{display:none}
 <!-- The original 1440p source is shared by both views. Fine UI text needs more display pixels; no CSS sharpening or replacement video is used. -->
 <dialog class="film-view" id="filmView" aria-labelledby="filmViewTitle">
   <div class="film-view-heading"><h2 id="filmViewTitle">Personal Planner, a closer look.</h2><button type="button" class="film-view-close" id="filmViewClose" autofocus>Close <span aria-hidden="true">×</span></button></div>
+  <p class="film-view-tip">On your phone, turn sideways for a bigger picture.</p>
   <div id="filmViewHost"></div>
 </dialog>
 
@@ -988,7 +1029,7 @@ function startFilmPaint(){if(!paintFrame)paintFrame=requestAnimationFrame(animat
 function stopFilmPaint(){if(paintFrame)cancelAnimationFrame(paintFrame);paintFrame=0;paint()}
 film.addEventListener('play',function(){setPlayUI();startFilmPaint()});film.addEventListener('pause',function(){setPlayUI();stopFilmPaint()});film.addEventListener('timeupdate',function(){if(film.paused)paint()});film.addEventListener('loadedmetadata',paint);film.addEventListener('loadeddata',function(){autoplay()});
 fbig.addEventListener('click',function(){manual=false;playFilm();once('film-play','Film played')});
-fw.addEventListener('click',function(e){if(e.target===film&&!film.paused){manual=true;film.pause()}});
+fw.addEventListener('click',function(e){if(e.target===film&&!film.paused&&!isFilmFullscreen()){manual=true;film.pause()}});
 ftog.addEventListener('click',function(){if(film.paused){manual=false;playFilm();once('film-play','Film played')}else{manual=true;film.pause()}});
 function seekTo(clientX){var r=seek.getBoundingClientRect(),f=Math.min(1,Math.max(0,(clientX-r.left)/r.width));film.currentTime=f*duration();paint()}
 seek.addEventListener('click',function(e){seekTo(e.clientX)});
@@ -1027,9 +1068,24 @@ fitFilmPixels();
 
 /* ---------- larger film view; reuse the same video and playback position ---------- */
 var filmFrame=$('.film-frame'),filmView=$('#filmView'),filmExpand=$('#filmExpand'),filmPlaceholder=null,bodyOverflow='';
-filmExpand.addEventListener('click',function(){
+var nativeFilmView=false,inlineFilmControls=false;
+function isFilmFullscreen(){return document.fullscreenElement===film||document.webkitFullscreenElement===film||film.webkitDisplayingFullscreen}
+function restoreInlineFilmControls(){
+  if(!nativeFilmView||isFilmFullscreen())return;
+  film.controls=inlineFilmControls;nativeFilmView=false;fitFilmPixels();
+  filmExpand.focus({preventScroll:true});
+}
+function openNativeFilmView(onFailure){
+  var enter=film.requestFullscreen||film.webkitRequestFullscreen||film.webkitEnterFullscreen;
+  if(!enter)return false;
+  inlineFilmControls=film.controls;nativeFilmView=true;film.controls=true;
+  function failed(){film.controls=inlineFilmControls;nativeFilmView=false;if(onFailure)onFailure()}
+  try{var result=enter.call(film);if(result&&result.then)result.then(fitFilmPixels,failed);return true}
+  catch(e){failed();return true}
+}
+function openFilmDialog(){
   if(filmView.open)return;
-  if(typeof filmView.showModal!=='function'){var f=film.requestFullscreen||film.webkitRequestFullscreen||film.webkitEnterFullscreen;if(f){try{var p=f.call(film);if(p&&p.catch)p.catch(function(){})}catch(e){}}return}
+  if(typeof filmView.showModal!=='function'){openNativeFilmView();return}
   var wasPlaying=!film.paused;
   filmPlaceholder=document.createElement('div');filmPlaceholder.setAttribute('aria-hidden','true');
   filmPlaceholder.style.height=filmFrame.getBoundingClientRect().height+'px';
@@ -1039,7 +1095,16 @@ filmExpand.addEventListener('click',function(){
   $('#filmViewHost').appendChild(filmFrame);fitFilmPixels();
   document.body.style.overflow='hidden';
   if(wasPlaying)playFilm();
+}
+filmExpand.addEventListener('click',function(){
+  // A portrait dialog cannot add much width on a phone. Prefer its native video
+  // viewer, which can use the full screen in landscape; fall back to the dialog.
+  if(window.matchMedia('(max-width:860px)').matches&&openNativeFilmView(openFilmDialog))return;
+  openFilmDialog();
 });
+document.addEventListener('fullscreenchange',restoreInlineFilmControls);
+document.addEventListener('webkitfullscreenchange',restoreInlineFilmControls);
+film.addEventListener('webkitendfullscreen',restoreInlineFilmControls);
 $('#filmViewClose').addEventListener('click',function(){filmView.close()});
 filmView.addEventListener('click',function(e){if(e.target===filmView){var r=filmView.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)filmView.close()}});
 filmView.addEventListener('close',function(){
