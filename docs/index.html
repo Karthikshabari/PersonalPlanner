@@ -1310,7 +1310,7 @@ $('#shLi').href='https://www.linkedin.com/sharing/share-offsite/?url='+encodeURI
 $('#shRd').href='https://www.reddit.com/submit?url='+encodeURIComponent(url)+'&title='+encodeURIComponent('Personal Planner: free, offline-first planner (open source)');
 $('#copyLink').addEventListener('click',function(){track('share-copy','Copied the page link');var b=this;function ok(){b.textContent='Copied ✓';setTimeout(function(){b.textContent='Copy link'},1800)}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(ok,function(){})}else{var t=document.createElement('textarea');t.value=url;document.body.appendChild(t);t.select();try{document.execCommand('copy');ok()}catch(e){}t.remove()}});
 })();
+<a href="https://fazier.com" target="_blank"><img src="https://fazier.com/api/v1//public/badges/launch_badges.svg?badge_type=launched&theme=dark" width=0 alt="Fazier badge" /></a>
 </script>
-<a href="https://fazier.com" target="_blank"><img src="https://fazier.com/api/v1//public/badges/launch_badges.svg?badge_type=launched&theme=dark" width=120 alt="Fazier badge" /></a>
 </body>
 </html>
